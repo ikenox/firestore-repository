@@ -17,5 +17,8 @@
     "firebase-admin": "^12.7.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.33.22"
   }
 }
