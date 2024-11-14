@@ -1,6 +1,11 @@
 import { type Static, TObject, Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { getFirestore } from 'firebase-admin/firestore';
+import {
+  AggregateField,
+  DocumentReference,
+  Timestamp,
+  getFirestore,
+} from 'firebase-admin/firestore';
 import { Prettify } from './util.js';
 
 const schema = Type.Object({
@@ -18,19 +23,15 @@ type Test = Static<typeof schema>;
 const parsed = Value.Parse(schema, {});
 
 const db = getFirestore();
-const q = db.collection('hoge').limit(1).where('a').where('a').orderBy().select().get();
 
-export type Collection<T extends TObject = TObject> = {
+export type Collection<T extends Document = Document> = {
   readonly name: string;
   readonly schema: T;
 };
 
 export const users = {
   name: 'TestCollection',
-  schema: Type.Object({
-    name: Type.String(),
-    age: Type.Number(),
-  }),
+  schema: { name: string, age: number },
 } as const satisfies Collection;
 
 export const comments = {
@@ -54,6 +55,26 @@ export type FilterOptions<T extends Collection> = {
   where?: (fields: Static<T['schema']>) => Condition;
   limit?: number;
 };
+
+export type Document = {
+  [key: string]:
+    | number
+    | string
+    | null
+    | Timestamp
+    | DocumentReference
+    | Document[]
+    | Record<string, Document>;
+};
+
+const q = db.collection('hoge').withConverter().limit(1).where('a').orderBy().select().get();
+const subq = db
+  .collectionGroup('hoge')
+  .aggregate({
+    foo: AggregateField.count(),
+  })
+  .get();
+const a = subq.get().then((a) => a.data().foo);
 
 export const list = <T extends Collection>(collection: T, filter?: FilterOptions<T>): Query<T> =>
   new Query();
