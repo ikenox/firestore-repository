@@ -31,7 +31,10 @@ export type Collection<T extends Document = Document> = {
 
 export const users = {
   name: 'TestCollection',
-  schema: { name: string, age: number },
+  schema: Type.Object({
+    userId: Type.String(),
+    message: Type.String(),
+  }),
 } as const satisfies Collection;
 
 export const comments = {
