@@ -1,4 +1,5 @@
 FROM public.ecr.aws/docker/library/node:lts-alpine
+
 RUN apk add --no-cache openjdk21-jre-headless curl
 RUN npm install -g firebase-tools
 
