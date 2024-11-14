@@ -1,0 +1,8 @@
+version: '3'
+services:
+  app:
+    build:
+      context: ./firestore-emulator
+    ports:
+      - "60000:60000"
+      - "60001:60001"
