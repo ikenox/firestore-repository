@@ -1,41 +1,70 @@
-import { type Static, TObject, Type } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
+import { type Static, Type } from '@sinclair/typebox';
 import {
   AggregateField,
   DocumentReference,
+  Query,
   Timestamp,
+  WhereFilterOp,
   getFirestore,
 } from 'firebase-admin/firestore';
 import { Prettify } from './util.js';
 
-const schema = Type.Object({
-  x: Type.Number(),
-  y: Type.Number(),
-  z: Type.Number({
-    maximum: 3,
-    minimum: 1,
-  }),
-  foo: Type.Union([Type.Literal('foo'), Type.Literal('bar')]),
-});
-
-type Test = Static<typeof schema>;
-
-const parsed = Value.Parse(schema, {});
-
 const db = getFirestore();
 
-export type Collection<T extends Document = Document> = {
-  readonly name: string;
-  readonly schema: T;
+export type Document = {
+  [key: string]: ValueType;
 };
 
-export const users = {
+export type ValueType =
+  | number
+  | string
+  | null
+  | Timestamp
+  | DocumentReference
+  | ValueType[]
+  | { [K in string]: ValueType };
+
+export class TypedQuery<
+  DbModelType extends Document = Document,
+  AppModelType extends Document = DbModelType,
+> extends Query<DbModelType, AppModelType> {
+  $where<T extends keyof AppModelType>(
+    fieldPath: T,
+    opStr: WhereFilterOp,
+    value: AppModelType[T], // TODO change type per operator
+  ): TypedQuery<DbModelType, AppModelType> {}
+
+  $select<T extends (keyof AppModelType)[]>(
+    ...fields: T
+  ): TypedQuery<DbModelType, Pick<AppModelType, T>> {}
+}
+
+export const collection = <DbModel extends Document = never>(name: string): TypedQuery<DbModel> =>
+  new TypedQuery<DbModel>(name);
+
+const users = collection<{
+  userId: string;
+  message: string;
+  someData: { kind: 'a'; value: number } | { kind: 'b'; value: 456 };
+}>('Users');
+
+const res = users.$where('someData', '>', { kind: 'a', value: 213 }).$select('userId');
+res.get().then((a) => a.docs.map((a) => a.data()));
+
+export class Collection<DbModel extends Document> {
+  constructor(readonly name: string) {}
+}
+
+export const users: Collection<{
+  userId: string;
+  message: string;
+  someData: {
+    kind: 'a';
+    value: 123;
+  };
+}> = {
   name: 'TestCollection',
-  schema: Type.Object({
-    userId: Type.String(),
-    message: Type.String(),
-  }),
-} as const satisfies Collection;
+};
 
 export const comments = {
   name: 'TestCollection',
@@ -59,69 +88,9 @@ export type FilterOptions<T extends Collection> = {
   limit?: number;
 };
 
-export type Document = {
-  [key: string]:
-    | number
-    | string
-    | null
-    | Timestamp
-    | DocumentReference
-    | Document[]
-    | Record<string, Document>;
-};
-
-const q = db.collection('hoge').withConverter().limit(1).where('a').orderBy().select().get();
 const subq = db
   .collectionGroup('hoge')
   .aggregate({
     foo: AggregateField.count(),
   })
   .get();
-const a = subq.get().then((a) => a.data().foo);
-
-export const list = <T extends Collection>(collection: T, filter?: FilterOptions<T>): Query<T> =>
-  new Query();
-export const get = <T extends Collection>(id: string): Query<T> => new Query();
-export const getMulti = <T extends Collection>(ids: string[]): Query<T> => new Query();
-
-export type JoinByKeyOptions<T extends Collection, As extends string> = {
-  key: (fields: Static<T['schema']>) => unknown;
-  as: As;
-};
-
-export type JoinByConditionOptions<T extends Collection, U extends Query, As extends string> = {
-  left: (fields: Static<T['schema']>) => unknown;
-  right: (fields: Static<U['collection']['schema']>) => unknown;
-  as: As;
-};
-
-export class Query<
-  T extends Collection = Collection,
-  Joined extends Record<string, Collection | Query> = {},
-> {
-  constructor(
-    readonly collection: T,
-    readonly joined?: Joined,
-  ) {}
-
-  joinByKey<U extends Collection, As extends string>(
-    collection: U,
-    options: JoinByKeyOptions<T, As>,
-  ): Query<T, Prettify<Joined & Record<As, U>>> {}
-
-  joinByField<U extends Query, As extends string>(
-    query: U,
-    options: JoinByConditionOptions<T, U, As>,
-  ): Query<T, Prettify<Joined & Record<As, U>>> {}
-}
-
-const q = list(posts, { where: (v) => v.title, limit: 3 })
-  .joinByKey(users, {
-    key: (post) => post.userId,
-    as: 'author',
-  })
-  .joinByField(list(comments), {
-    left: (post) => post.userId,
-    right: (comment) => comment.userId,
-    as: 'comments',
-  });
