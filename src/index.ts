@@ -10,44 +10,57 @@ import {
   WhereFilterOp,
   getFirestore,
 } from 'firebase-admin/firestore';
-import { Prettify } from './util.js';
 
 const db = getFirestore();
 
+/**
+ * Document type of collection.
+ */
 export type Document = {
   [key: string]: ValueType;
 };
 
+/**
+ * Value type of collection field.
+ */
 export type ValueType = number | string | null | Timestamp | DocumentReference | ValueType[] | Map;
 export type Map = { [K in string]: ValueType };
 
-type TypedFieldPath<T extends Document> = {
-  [K in keyof T & string]: `${K}` | `${K}.${ValuePaths<T[K]>}`;
-}[keyof T & string];
-type ValuePaths<T extends ValueType> = T extends Map
-  ? {
-      [K in keyof T & string]: `${K}` | `${K}.${ValuePaths<T[K]>}`;
-    }[T & string]
+/**
+ * A valid path to a field in the collection.
+ */
+type TypedFieldPath<T extends Document> =
+  | {
+      [K in keyof T & string]: `${K}` | `${K}.${ValuePath<T[K]>}`;
+    }[keyof T & string]
+  // A special field name of document ID
+  | '__name__';
+
+/**
+ * Nested field path of a map field.
+ */
+type ValuePath<T extends ValueType> = T extends Map
+  ? { [K in keyof T & string]: `${K}` | `${K}.${ValuePath<T[K]>}` }[keyof T & string]
   : never;
 
-export class TypedQuery<DbModelType extends Document = Document, AppModelType = DbModelType> {
-  constructor(readonly inner: Query<AppModelType, DbModelType>) {}
+export class TypedQuery<DbModelType extends Document = Document> {
+  constructor(readonly inner: Query) {}
 
-  where(filter: Filter): TypedQuery<DbModelType, AppModelType>;
-  where<T extends AppModelType>(
+  where(filter: Filter): TypedQuery<DbModelType>;
+  where<T extends TypedFieldPath<DbModelType>>(
     fieldPath: T,
     opStr: WhereFilterOp,
-    value: AppModelType[T], // TODO change type per operator
-  ): TypedQuery<DbModelType, AppModelType>;
-  where<T extends keyof AppModelType>(
+    value: DbModelType[T], // TODO change type per operator
+  ): TypedQuery<DbModelType>;
+  where<T extends TypedFieldPath<DbModelType>>(
     fieldPathOrFilter: Filter | T,
     opStr?: WhereFilterOp,
-    value?: AppModelType[T],
-  ): TypedQuery<DbModelType, AppModelType> {
+    value?: DbModelType[T],
+  ): TypedQuery<DbModelType> {
     if (fieldPathOrFilter instanceof Filter) {
       return new TypedQuery(this.inner.where(fieldPathOrFilter));
     }
-    return new TypedQuery(this.inner.where(fieldPathOrFilter, opStr, value));
+    return new TypedQuery(this.inner.where(fieldPathOrFilter, opStr!, value));
   }
 
   orderBy<T extends keyof AppModelType>(
@@ -64,25 +77,19 @@ export class TypedQuery<DbModelType extends Document = Document, AppModelType = 
 
 export class TypedCollectionReference<
   DbModelType extends Document = Document,
-  AppModelType extends Document = DbModelType,
-> extends TypedQuery<DbModelType, AppModelType> {}
+> extends TypedQuery<DbModelType> {}
 
 export const collection = <DbModel extends Document = never>(
   name: string,
-): TypedCollectionReference<DbModel> => new TypedQuery<DbModel>(name);
+): TypedCollectionReference<DbModel> => new TypedCollectionReference<DbModel>(name);
 
 const users = collection<{
   userId: string;
   message: string;
-  someData: { kind: 'a'; value: number } | { kind: 'b'; value: 456 };
+  someData: { kind: 'a'; value: number } | { kind: 'b'; value: 456; foobar: { hoge: 123 } };
 }>('Users');
 
-const res = users.$where('someData', '>', { kind: 'a', value: 213 }).$select('userId');
-res.get().then((a) => a.docs.map((a) => a.data()));
-
-export class Collection<DbModel extends Document> {
-  constructor(readonly name: string) {}
-}
+const res = users.where('__name__', '>', { kind: 'a', value: 213 });
 
 export const users: Collection<{
   userId: string;

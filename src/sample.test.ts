@@ -12,7 +12,7 @@ it('test', async () => {
   await doc.set({
     a: { b: [1, 2, 3] },
   });
-  const res = await db.collection('testCollection').where('a.b.1', '==', 2).get();
+  const res = await db.collection('testCollection').where('__name__', '==', 'hoge').get();
   console.log(res.docs.map((d) => d.data()));
   // const collection = db.collection('hoge');
   // const doc = collection.doc();
