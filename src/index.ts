@@ -63,21 +63,25 @@ export class TypedQuery<DbModelType extends Document = Document> {
     return new TypedQuery(this.inner.where(fieldPathOrFilter, opStr!, value));
   }
 
-  orderBy<T extends keyof AppModelType>(
+  orderBy<T extends TypedFieldPath<DbModelType>>(
     fieldPath: T,
     directionStr?: OrderByDirection,
-  ): TypedQuery<DbModelType, AppModelType> {
-    return new TypedQuery<DbModelType, AppModelType>(this.inner.orderBy(fieldPath, directionStr));
+  ): TypedQuery<DbModelType> {
+    return new TypedQuery<DbModelType>(this.inner.orderBy(fieldPath, directionStr));
   }
 
-  limit(limit: number): TypedQuery<DbModelType, AppModelType> {
-    return new TypedQuery<DbModelType, AppModelType>(this.inner.limit(limit));
+  limit(limit: number): TypedQuery<DbModelType> {
+    return new TypedQuery<DbModelType>(this.inner.limit(limit));
   }
 }
 
 export class TypedCollectionReference<
   DbModelType extends Document = Document,
-> extends TypedQuery<DbModelType> {}
+> extends TypedQuery<DbModelType> {
+  constructor(readonly collectionName: string) {
+    super();
+  }
+}
 
 export const collection = <DbModel extends Document = never>(
   name: string,
@@ -86,43 +90,18 @@ export const collection = <DbModel extends Document = never>(
 const users = collection<{
   userId: string;
   message: string;
-  someData: { kind: 'a'; value: number } | { kind: 'b'; value: 456; foobar: { hoge: 123 } };
+  someData: { kind: 'a'; value: number } | { kind: 'b'; value: string; foobar: { hoge: 123 } };
 }>('Users');
-
-const res = users.where('__name__', '>', { kind: 'a', value: 213 });
-
-export const users: Collection<{
+const comments = collection<{
   userId: string;
   message: string;
-  someData: {
-    kind: 'a';
-    value: 123;
-  };
-}> = {
-  name: 'TestCollection',
-};
+}>('Comments');
+const posts = collection<{
+  userId: DocumentReference;
+  title: string;
+}>('Posts');
 
-export const comments = {
-  name: 'TestCollection',
-  schema: Type.Object({
-    userId: Type.String(),
-    message: Type.String(),
-  }),
-} as const satisfies Collection;
-
-export const posts = {
-  name: 'TestCollection',
-  schema: Type.Object({
-    userId: Type.String(),
-    title: Type.String(),
-  }),
-} as const satisfies Collection;
-
-export type Condition = {};
-export type FilterOptions<T extends Collection> = {
-  where?: (fields: Static<T['schema']>) => Condition;
-  limit?: number;
-};
+users.where('someData.foobar.hoge', '>', { kind: 'a', value: 213 });
 
 const subq = db
   .collectionGroup('hoge')
