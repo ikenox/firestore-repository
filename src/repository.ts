@@ -1,59 +1,39 @@
 import {
-  type DocData,
-  type DocId,
-  type CollectionSchema,
-  type CollectionPath,
-} from './types.js';
-import {
+  DocumentSnapshot,
   type Firestore,
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { firestore } from 'firebase-admin';
-import DocumentSnapshot = firestore.DocumentSnapshot;
+import { type CollectionPath, type CollectionSchema, type DocData, type DocId } from './types.js';
 
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
 
 export abstract class Repository<T extends CollectionSchema> {
-  protected constructor(
+  constructor(
     readonly collection: T,
-    readonly db: Firestore
+    readonly db: Firestore,
   ) {}
 
   /**
-   * ID指定で一括取得
+   * Get a document by ID
    */
-  async get(
-    id: DocId<T>,
-    options?: TransactionOption
-  ): Promise<DocObject<T> | undefined> {
-    const doc = await (options?.tx
-      ? options.tx.get(this.docRef(id))
-      : this.docRef(id).get());
+  async get(id: DocId<T>, options?: TransactionOption): Promise<DocObject<T> | undefined> {
+    const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : this.docRef(id).get());
     return this.getData(doc);
   }
 
   /**
-   * ドキュメントを新規に作成
-   * 既に同じIDのドキュメントが存在する場合はエラー
+   * @throws
    */
-  async create(
-    doc: DocObject<T>,
-    options?: WriteTransactionOption
-  ): Promise<void> {
-    await (options?.tx
-      ? options.tx.create(this.docRef(doc), doc)
-      : this.docRef(doc).create(doc));
+  async create(doc: DocObject<T>, options?: WriteTransactionOption): Promise<void> {
+    await (options?.tx ? options.tx.create(this.docRef(doc), doc) : this.docRef(doc).create(doc));
   }
 
   /**
    * 作成もしくは上書き（upsert）
    */
-  async set(
-    doc: DocObject<T>,
-    options?: WriteTransactionOption
-  ): Promise<void> {
+  async set(doc: DocObject<T>, options?: WriteTransactionOption): Promise<void> {
     await (options?.tx
       ? options.tx instanceof Transaction
         ? options.tx.set(this.docRef(doc), doc)
@@ -65,9 +45,7 @@ export abstract class Repository<T extends CollectionSchema> {
    * 削除
    */
   async delete(id: DocId<T>, options?: WriteTransactionOption): Promise<void> {
-    await (options?.tx
-      ? options.tx.delete(this.docRef(id))
-      : this.docRef(id).delete());
+    await (options?.tx ? options.tx.delete(this.docRef(id)) : this.docRef(id).delete());
   }
 
   /**
@@ -77,13 +55,11 @@ export abstract class Repository<T extends CollectionSchema> {
    */
   async getAll(
     ids: DocId<T>[],
-    options?: TransactionOption
+    options?: TransactionOption,
   ): Promise<(DocObject<T> | undefined)[]> {
     if (ids.length === 0) return [];
     const docRefs = ids.map((id) => this.docRef(id));
-    const docs = await (options?.tx
-      ? options.tx.getAll(...docRefs)
-      : this.db.getAll(...docRefs));
+    const docs = await (options?.tx ? options.tx.getAll(...docRefs) : this.db.getAll(...docRefs));
     return docs.map((doc) => this.getData(doc));
   }
 

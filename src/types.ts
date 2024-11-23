@@ -1,64 +1,43 @@
-import {
-  type DocumentReference,
-  type Timestamp,
-  type GeoPoint,
-} from 'firebase-admin/firestore';
-
-/**
- * Firestoreコレクションの定義
- */
-export type CollectionSchema<
-  Id extends Record<string, string | number> = Record<string, string | number>,
-  ParentId extends IdFields = Record<never, never>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  Data = DocumentData,
-> = {
-  name: string;
-  /**
-   * root collectionの場合はundefinedを返却
-   * subcollectionの場合は親のドキュメントのパスを返却
-   */
-  parentPath(data: ParentId): string | undefined;
-  docId(data: Id): string;
-};
+import type * as admin from 'firebase-admin/firestore';
+import type * as sdk from 'firebase/firestore';
 
 export const collection = <
-  Id extends IdFields,
-  Data extends DocumentData,
-  ParentId extends IdFields = Record<never, never>,
+  DbModel extends DocumentData,
+  AppModel,
+  IdKeys extends (keyof AppModel)[],
+  ParentKeys extends (keyof AppModel)[] = never,
 >(
-  name: string,
-  params: {
-    docId: (id: Id) => string;
-    parentId?: (parentId: ParentId) => string;
-    // 型情報を後置で指定できるように用意しているphantom type的なもの
-    data: DataSchema<Data>;
-  }
-): CollectionSchema<Id, ParentId, Data> => ({
-  name,
-  docId: params.docId,
-  parentPath: params.parentId ?? (() => undefined),
-});
+  schema: CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys>,
+): CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys> => schema;
 
 /**
- * 型情報を後置で指定できるように用意しているphantom type的なもの
+ * A definition of firestore collection
  */
-export type DataSchema<T extends DocumentData> = T[];
-export const schema = <T extends DocumentData>(): DataSchema<T> => [];
-
-export type DocId<T> =
-  T extends CollectionSchema<infer Id> ? Id & CollectionPath<T> : never;
-
-export type CollectionPath<T> =
-  T extends CollectionSchema<IdFields, infer ParentId> ? ParentId : never;
-
-export type DocData<T> =
-  T extends CollectionSchema<IdFields, IdFields, infer Data> ? Data : never;
-
-/**
- * ドキュメントのID
- */
-export type IdFields = Record<string, string | number>;
+export type CollectionSchema<
+  DbModel extends DocumentData = DocumentData,
+  AppModel = unknown,
+  IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
+  ParentKeys extends (keyof AppModel)[] = never,
+> = {
+  name: string;
+  fromFirestore(
+    data: DbModel,
+    id: string,
+    // TODO more type-safety
+    parentId?: string[],
+  ): AppModel;
+  id: {
+    keys: IdKeys;
+    docId: (keys: Pick<AppModel, IdKeys[number]>) => string;
+  };
+  /**
+   * Define if the collection is a subcollection
+   */
+  parent?: {
+    keys: ParentKeys;
+    docId: (keys: Pick<AppModel, ParentKeys[number]>) => string;
+  };
+};
 
 /**
  * Firestoreドキュメントのデータ型
@@ -80,4 +59,8 @@ export type ValueType =
   | GeoPoint
   | ValueType[]
   | Map;
+
+export type Timestamp = sdk.Timestamp | admin.Timestamp;
+export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
+export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type Map = { [K in string]: ValueType };

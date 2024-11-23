@@ -1,6 +1,8 @@
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { it } from 'vitest';
+import { Repository } from './repository.js';
+import { Timestamp, collection } from './types.js';
 
 it('test', async () => {
   const db = getFirestore(
@@ -8,17 +10,21 @@ it('test', async () => {
       projectId: 'dummy-project',
     }),
   );
-  const doc = await db.collection('testCollection').doc('hoge');
-  await doc.set({
-    a: { b: [1, 2, 3] },
+
+  const authors = collection({
+    name: 'Authors',
+    fromFirestore: (data: { name: string; registeredAt: Timestamp }, authorId) => ({
+      authorId,
+      ...data,
+    }),
+    id: {
+      keys: ['authorId'],
+      docId: ({ authorId }) => authorId,
+    },
   });
-  const res = await db.collection('testCollection').where('__name__', '==', 'hoge').get();
-  console.log(res.docs.map((d) => d.data()));
-  // const collection = db.collection('hoge');
-  // const doc = collection.doc();
-  // await doc.set({ a: { b: { c: 123 } } });
-  // console.log(await doc.get().then((d) => d.data()));
-  //
-  // await doc.update({ a: { b: { d: 123 } } }, { exists: false });
-  // console.log(await doc.get().then((d) => d.data()));
+
+  class AuthorRepository extends Repository<typeof authors> {}
+
+  const repo = new AuthorRepository(authors, db);
+  const author1 = await repo.get({ authorId: 'author1' });
 });
