@@ -25,14 +25,14 @@ it('test', async () => {
 
   const posts = collection({
     name: 'Posts',
-    id: {
-      from: (postId) => ({ postId }),
-      to: ({ postId }) => postId,
-    },
     parent: {
       schema: authors,
       from: ({ authorId }) => ({ authorId }),
       to: ({ authorId }) => ({ authorId }),
+    },
+    id: {
+      from: (postId) => ({ postId }),
+      to: ({ postId }) => postId,
     },
     data: {
       from: (data: { title: string; postedAt: Timestamp }) => ({

@@ -32,7 +32,7 @@ export type CollectionSchema<
   name: string;
   id: {
     from(id: string): ModelId;
-    to(id: NoInfer<ModelId>): string;
+    to(id: ModelId): string;
   };
   parent?: {
     schema: Parent;
