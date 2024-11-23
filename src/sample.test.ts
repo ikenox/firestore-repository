@@ -13,8 +13,8 @@ it('test', async () => {
 
   const authors = collection({
     name: 'Authors',
-    fromFirestore: (data: { name: string; registeredAt: Timestamp }, authorId) => ({
-      authorId,
+    fromFirestore: (data: { name: string; registeredAt: Timestamp }, id: string) => ({
+      authorId: id,
       ...data,
     }),
     id: {

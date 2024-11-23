@@ -7,18 +7,22 @@ export const collection = <
   IdKeys extends (keyof AppModel)[],
   ParentKeys extends (keyof AppModel)[] = never,
 >(
-  schema: CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys>,
+  schema: Omit<
+    CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys>,
+    // Omit fields for a phantom type
+    `\$${string}`
+  >,
 ): CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys> => schema;
 
 /**
  * A definition of firestore collection
  */
-export type CollectionSchema<
+export interface CollectionSchema<
   DbModel extends DocumentData = DocumentData,
-  AppModel = unknown,
+  AppModel = Record<string, unknown>,
   IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
   ParentKeys extends (keyof AppModel)[] = never,
-> = {
+> {
   name: string;
   fromFirestore(
     data: DbModel,
@@ -28,7 +32,7 @@ export type CollectionSchema<
   ): AppModel;
   id: {
     keys: IdKeys;
-    docId: (keys: Pick<AppModel, IdKeys[number]>) => string;
+    docId(keys: Pick<AppModel, IdKeys[number]>): string;
   };
   /**
    * Define if the collection is a subcollection
@@ -37,7 +41,15 @@ export type CollectionSchema<
     keys: ParentKeys;
     docId: (keys: Pick<AppModel, ParentKeys[number]>) => string;
   };
-};
+
+  /**
+   * Phantom types
+   */
+  $dbModel: DbModel;
+  $appModel: AppModel;
+  $id: Pick<AppModel, IdKeys[number]>;
+  $parentId: Pick<AppModel, ParentKeys[number]>;
+}
 
 /**
  * Firestoreドキュメントのデータ型

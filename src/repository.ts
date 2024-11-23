@@ -4,7 +4,7 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { type CollectionPath, type CollectionSchema, type DocData, type DocId } from './types.js';
+import { type CollectionSchema } from './types.js';
 
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
