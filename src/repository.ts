@@ -4,7 +4,7 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { type CollectionSchema } from './types.js';
+import { type CollectionSchema, collectionPath, docPath } from './types.js';
 
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
@@ -85,13 +85,8 @@ export abstract class Repository<T extends CollectionSchema> {
     return this.db.doc(docPath(this.collection, id));
   }
 
-  collectionRef(id: T['$parentPath']) {
-    const path = this.collection.parent?.(id);
-    return path
-      ? // subcollection
-        this.db.collection(`${path}/${this.collection.name}`)
-      : // root collection
-        this.db.collection(this.collection.name);
+  collectionRef(parentId: T['$parentId']) {
+    return this.db.collection(collectionPath(this.collection, parentId));
   }
 
   getData(doc: DocumentSnapshot): T['$model'] | undefined {
@@ -99,18 +94,14 @@ export abstract class Repository<T extends CollectionSchema> {
     if (!data) {
       return undefined;
     }
-    const path: string[] = [];
-    let parent = doc.ref.parent.parent;
-    while (parent) {
-      path.push(parent.id);
-      parent = parent.parent.parent;
-    }
-    return this.collection.fromFirestore(data, doc.id, path);
+    const id = this.collection.id.from(doc.id);
+
+    const parent = this.collection.parent;
+    const parentId = parent ? parent.from(parent.schema?.id.from(doc.ref.parent.id)) : {};
+    return {
+      ...this.collection.data.from(data),
+      ...parentId,
+      ...id,
+    };
   }
 }
-
-export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
-  const [docId, parent] = schema.id.to(id);
-  const collectionAndId = `${schema.name}/${docId}`;
-  return schema.parent ? `${docPath(schema.parent, parent)}/${collectionAndId}` : collectionAndId;
-};

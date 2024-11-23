@@ -6,26 +6,28 @@ import type * as sdk from 'firebase/firestore';
  */
 export const collection = <
   DbModel extends DocumentData = DocumentData,
+  Parent extends CollectionSchema = CollectionSchema,
   ModelData extends Record<string, unknown> = Record<string, unknown>,
   ModelId extends Record<string, unknown> = Record<string, unknown>,
-  Parent extends CollectionSchema = never,
+  ModelParentId extends Record<string, unknown> = Record<never, never>,
 >(
   schema: Omit<
-    CollectionSchema<DbModel, ModelData, ModelId, Parent>,
+    CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>,
     // Omit fields for a phantom type
     `\$${string}`
   >,
-): CollectionSchema<DbModel, ModelData, ModelId, Parent> =>
-  schema as CollectionSchema<DbModel, ModelData, ModelId, Parent>;
+): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
+  schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
 
 /**
  * A definition of firestore collection
  */
 export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
+  Parent extends CollectionSchema = CollectionSchema,
   ModelData extends Record<string, unknown> = Record<string, unknown>,
   ModelId extends Record<string, unknown> = Record<string, unknown>,
-  Parent extends CollectionSchema = never,
+  ModelParentId extends Record<string, unknown> = Record<never, never>,
 > = {
   name: string;
   data: {
@@ -34,18 +36,43 @@ export type CollectionSchema<
     to(data: NoInfer<ModelData & ModelId>): DbModel;
   };
   id: {
-    from(id: string, parent: Parent['$id']): ModelId;
-    to(data: NoInfer<ModelId>): [string, Parent['$id']];
+    from(id: string): ModelId;
+    to(data: NoInfer<ModelId>): string;
   };
-  parent?: Parent;
+  parent?: {
+    schema: Parent;
+    from(id: Unwrap<Parent>['$id']): ModelParentId;
+    to(id: ModelParentId): Unwrap<Parent>['$id'];
+  };
 
   /**
    * Phantom types
    * These fields are only accessible at type-level, and actually it will be undefined at runtime
    */
   $dbModel: DbModel;
-  $model: ModelData & ModelId;
+  $model: ModelData & ModelId & ModelParentId;
   $id: ModelId;
+  $parentId: ModelParentId;
+};
+
+export type ParentRef<T extends CollectionSchema, ModelParentId> = {
+  schema: T;
+  from(id: T['$id']): ModelParentId;
+  to(id: ModelParentId): T['$id'];
+};
+
+export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
+  const docId = schema.id.to(id);
+  return `${collectionPath(schema, id)}/${docId}`;
+};
+
+export const collectionPath = <T extends CollectionSchema>(
+  schema: T,
+  id: T['$parentId'],
+): string => {
+  return schema.parent?.schema
+    ? `${docPath(schema.parent.schema, id)}/${schema.name}`
+    : schema.name;
 };
 
 /**
@@ -72,3 +99,5 @@ export type Timestamp = sdk.Timestamp | admin.Timestamp;
 export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
 export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type Map = { [K in string]: ValueType };
+
+export type Unwrap<T> = T extends undefined ? never : T;
