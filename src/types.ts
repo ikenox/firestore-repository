@@ -6,10 +6,10 @@ import type * as sdk from 'firebase/firestore';
  */
 export const collection = <
   DbModel extends DocumentData = DocumentData,
-  Parent extends CollectionSchema = CollectionSchema,
-  ModelData extends Record<string, unknown> = Record<string, unknown>,
-  ModelId extends Record<string, unknown> = Record<string, unknown>,
-  ModelParentId extends Record<string, unknown> = Record<never, never>,
+  Parent extends CollectionSchema = never,
+  ModelData extends Record<string, unknown> = Record<never, never>,
+  ModelId extends Record<string, unknown> = Record<never, never>,
+  ModelParentId extends Record<string, unknown> = Record<string, unknown>,
 >(
   schema: Omit<
     CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>,
@@ -24,25 +24,25 @@ export const collection = <
  */
 export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
-  Parent extends CollectionSchema = CollectionSchema,
-  ModelData extends Record<string, unknown> = Record<string, unknown>,
-  ModelId extends Record<string, unknown> = Record<string, unknown>,
-  ModelParentId extends Record<string, unknown> = Record<never, never>,
+  Parent extends CollectionSchema = never,
+  ModelData extends Record<string, unknown> = Record<never, never>,
+  ModelId extends Record<string, unknown> = Record<never, never>,
+  ModelParentId extends Record<string, unknown> = Record<string, unknown>,
 > = {
   name: string;
+  id: {
+    from(id: string): ModelId;
+    to(id: NoInfer<ModelId>): string;
+  };
   data: {
     from(data: DbModel): ModelData;
     // TODO allow Date etc.
-    to(data: NoInfer<ModelData & ModelId>): DbModel;
-  };
-  id: {
-    from(id: string): ModelId;
-    to(data: NoInfer<ModelId>): string;
+    to(data: NoInfer<ModelData & ModelId & ModelParentId>): NoInfer<DbModel>;
   };
   parent?: {
     schema: Parent;
-    from(id: Unwrap<Parent>['$id']): ModelParentId;
-    to(id: ModelParentId): Unwrap<Parent>['$id'];
+    from(id: Parent['$id']): ModelParentId;
+    to(id: NoInfer<ModelParentId>): NoInfer<Parent['$id']>;
   };
 
   /**
@@ -55,7 +55,10 @@ export type CollectionSchema<
   $parentId: ModelParentId;
 };
 
-export type ParentRef<T extends CollectionSchema, ModelParentId> = {
+export type ParentRef<
+  T extends CollectionSchema = CollectionSchema,
+  ModelParentId extends Record<string, unknown> = Record<never, never>,
+> = {
   schema: T;
   from(id: T['$id']): ModelParentId;
   to(id: ModelParentId): T['$id'];

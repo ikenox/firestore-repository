@@ -13,31 +13,33 @@ it('test', async () => {
 
   const authors = collection({
     name: 'Authors',
-    from: {
-      data: (data: { name: string; registeredAt: Timestamp }) => data,
-      id: (authorId) => ({ authorId }),
+    id: {
+      from: (authorId) => ({ authorId }),
+      to: ({ authorId }) => authorId,
     },
-    to: {
-      data: (data) => data,
-      id: ({ authorId }) => [authorId],
+    data: {
+      from: (data: { name: string; registeredAt: Timestamp }) => data,
+      to: (data) => data,
     },
   });
 
   const posts = collection({
     name: 'Posts',
-    from: {
-      data: (data: { title: string; postedAt: Timestamp }) => ({
+    id: {
+      from: (postId) => ({ postId }),
+      to: ({ postId, authorId }) => postId,
+    },
+    data: {
+      from: (data: { title: string; postedAt: Timestamp }) => ({
         ...data,
       }),
-      id: (postId) => ({ postId }),
+      to: (data) => ({ ...data }),
     },
-    to: {
-      data: (data) => ({
-        ...data,
-      }),
-      id: ({ postId, authorId }) => [postId, { authorId }],
+    parent: {
+      schema: authors,
+      from: ({ authorId }) => ({ authorId }),
+      to: ({ authorId }) => ({ authorId }),
     },
-    parent: authors,
   });
 
   class AuthorRepository extends Repository<typeof authors> {}
