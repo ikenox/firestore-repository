@@ -4,7 +4,7 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { type CollectionSchema, collectionPath, docPath } from './types.js';
+import { type CollectionSchema, collectionPath, docPath } from './index.js';
 
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
@@ -50,11 +50,13 @@ export abstract class Repository<T extends CollectionSchema> {
   }
 
   /**
-   * ID指定で一括取得
-   * 返り値の配列は、引数に渡したIDの配列と必ず同じ長さになり、並び順も保持される
-   * 例: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
+   * Get documents by multiple ID
+   * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
    */
-  async getAll(ids: T['$id'][], options?: TransactionOption): Promise<(T['$model'] | undefined)[]> {
+  async batchGet(
+    ids: T['$id'][],
+    options?: TransactionOption,
+  ): Promise<(T['$model'] | undefined)[]> {
     if (ids.length === 0) return [];
     const docRefs = ids.map((id) => this.docRef(id));
     const docs = await (options?.tx ? options.tx.getAll(...docRefs) : this.db.getAll(...docRefs));
@@ -62,23 +64,37 @@ export abstract class Repository<T extends CollectionSchema> {
   }
 
   /**
-   * 一括での作成もしくは上書き
-   * Firestore側の制約により500件が上限な点に注意
+   * Create or update multiple documents
+   * Up to 500 documents
    */
-  async batchSet(docs: T['$model'][]): Promise<void> {
-    const batch = this.db.batch();
-    docs.forEach((doc) => void batch.set(this.docRef(doc), doc));
-    await batch.commit();
+  async batchSet(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
+    const tx = options?.tx;
+    if (tx) {
+      if (tx instanceof Transaction) {
+        docs.forEach((doc) => tx.set(this.docRef(doc), doc));
+      } else {
+        docs.forEach((doc) => tx.set(this.docRef(doc), doc));
+      }
+    } else {
+      const batch = this.db.batch();
+      docs.forEach((doc) => void this.set(doc));
+      await batch.commit();
+    }
   }
 
   /**
-   * 一括削除
-   * Firestore側の制約により500件が上限な点に注意
+   * Delete documents by multiple ID
+   * Up to 500 documents
    */
-  async batchDelete(ids: T['$id'][]): Promise<void> {
-    const batch = this.db.batch();
-    ids.forEach((id) => void batch.delete(this.docRef(id)));
-    await batch.commit();
+  async batchDelete(ids: T['$id'][], options?: WriteTransactionOption): Promise<void> {
+    const tx = options?.tx;
+    if (tx) {
+      ids.forEach((id) => tx.delete(this.docRef(id)));
+    } else {
+      const batch = this.db.batch();
+      ids.forEach((id) => void this.delete(id));
+      await batch.commit();
+    }
   }
 
   docRef(id: T['$id']) {

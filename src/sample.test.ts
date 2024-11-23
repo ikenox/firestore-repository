@@ -1,10 +1,10 @@
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
-import { it } from 'vitest';
+import { describe, it } from 'vitest';
+import { Timestamp, collection } from './index.js';
 import { Repository } from './repository.js';
-import { Timestamp, collection } from './types.js';
 
-it('test', async () => {
+describe('test', async () => {
   const db = getFirestore(
     admin.initializeApp({
       projectId: 'dummy-project',
@@ -25,14 +25,14 @@ it('test', async () => {
 
   const posts = collection({
     name: 'Posts',
+    id: {
+      from: (postId) => ({ postId }),
+      to: ({ postId }) => postId,
+    },
     parent: {
       schema: authors,
       from: ({ authorId }) => ({ authorId }),
       to: ({ authorId }) => ({ authorId }),
-    },
-    id: {
-      from: (postId) => ({ postId }),
-      to: ({ postId }) => postId,
     },
     data: {
       from: (data: { title: string; postedAt: Timestamp }) => ({
@@ -43,7 +43,8 @@ it('test', async () => {
   });
 
   class AuthorRepository extends Repository<typeof authors> {}
+  class PostsRepository extends Repository<typeof posts> {}
 
-  const repo = new AuthorRepository(authors, db);
-  const author1 = await repo.get({ authorId: 'author1' });
+  const authorRepository = new AuthorRepository(authors, db);
+  const postsRepository = new PostsRepository(posts, db);
 });

@@ -18,7 +18,7 @@
     "firebase-admin": "^12.7.0",
     "testcontainers": "^10.14.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.5"
   },
   "dependencies": {},
   "packageManager": "pnpm@9.3.0"
