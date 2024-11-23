@@ -1,35 +1,36 @@
 import type * as admin from 'firebase-admin/firestore';
 import type * as sdk from 'firebase/firestore';
 
+/**
+ * An entrypoint of schema definition
+ */
 export const collection = <
   DbModel extends DocumentData,
   AppModel,
   IdKeys extends (keyof AppModel)[],
-  ParentKeys extends (keyof AppModel)[] = never,
+  Parent extends CollectionSchema = never,
 >(
   schema: Omit<
-    CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys>,
+    CollectionSchema<DbModel, AppModel, IdKeys, Parent>,
     // Omit fields for a phantom type
     `\$${string}`
   >,
-): CollectionSchema<DbModel, AppModel, IdKeys, ParentKeys> => schema;
+): CollectionSchema<DbModel, AppModel, IdKeys, Parent> =>
+  schema as CollectionSchema<DbModel, AppModel, IdKeys, Parent>;
 
 /**
  * A definition of firestore collection
  */
-export interface CollectionSchema<
+export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
   AppModel = Record<string, unknown>,
   IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
-  ParentKeys extends (keyof AppModel)[] = never,
-> {
+  Parent extends CollectionSchema = never,
+> = {
   name: string;
-  fromFirestore(
-    data: DbModel,
-    id: string,
-    // TODO more type-safety
-    parentId?: string[],
-  ): AppModel;
+  fromFirestore(data: DbModel, id: string, collectionPath: PathParams<Parent>): AppModel;
+  // TODO only allow exact type
+  toFirestore(data: NoInfer<AppModel>): NoInfer<DbModel>;
   id: {
     keys: IdKeys;
     docId(keys: Pick<AppModel, IdKeys[number]>): string;
@@ -37,30 +38,38 @@ export interface CollectionSchema<
   /**
    * Define if the collection is a subcollection
    */
-  parent?: {
-    keys: ParentKeys;
-    docId: (keys: Pick<AppModel, ParentKeys[number]>) => string;
-  };
+  parent?: Parent;
 
   /**
    * Phantom types
+   * These fields are only accessible at type-level, and actually it will be undefined at runtime
    */
   $dbModel: DbModel;
-  $appModel: AppModel;
+  $model: AppModel;
   $id: Pick<AppModel, IdKeys[number]>;
-  $parentId: Pick<AppModel, ParentKeys[number]>;
-}
+  $collectionPath: PathParams<Parent>;
+};
 
 /**
- * Firestoreドキュメントのデータ型
+ * A full path parameters of the collection
+ */
+export type PathParams<T extends CollectionSchema> = [T] extends [never]
+  ? []
+  : [
+      // T['$id'],
+      string, // TODO more type-safety
+      ...T['$collectionPath'],
+    ];
+
+/**
+ * Type of firestore document data
  */
 export type DocumentData = {
   [key: string]: ValueType;
 };
 
 /**
- * Firestoreドキュメントのフィールド値
- * Timestampなどはサーバー(firebase-admin)の値である点に注意
+ * Type of firestore field value
  */
 export type ValueType =
   | number
