@@ -82,7 +82,7 @@ export abstract class Repository<T extends CollectionSchema> {
   }
 
   docRef(id: T['$id']) {
-    return this.collectionRef(id).doc(this.collection.to.id(id));
+    return this.db.doc(docPath(this.collection, id));
   }
 
   collectionRef(id: T['$parentPath']) {
@@ -108,3 +108,9 @@ export abstract class Repository<T extends CollectionSchema> {
     return this.collection.fromFirestore(data, doc.id, path);
   }
 }
+
+export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
+  const [docId, parent] = schema.id.to(id);
+  const collectionAndId = `${schema.name}/${docId}`;
+  return schema.parent ? `${docPath(schema.parent, parent)}/${collectionAndId}` : collectionAndId;
+};

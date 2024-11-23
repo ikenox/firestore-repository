@@ -8,7 +8,7 @@ export const collection = <
   DbModel extends DocumentData = DocumentData,
   ModelData extends Record<string, unknown> = Record<string, unknown>,
   ModelId extends Record<string, unknown> = Record<string, unknown>,
-  Parent extends CollectionSchema | undefined = undefined,
+  Parent extends CollectionSchema = never,
 >(
   schema: Omit<
     CollectionSchema<DbModel, ModelData, ModelId, Parent>,
@@ -25,19 +25,17 @@ export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
   ModelData extends Record<string, unknown> = Record<string, unknown>,
   ModelId extends Record<string, unknown> = Record<string, unknown>,
-  Parent extends CollectionSchema | undefined = undefined,
+  Parent extends CollectionSchema = never,
 > = {
   name: string;
-  from: {
-    data(data: DbModel): ModelData;
-    id(id: string): ModelId;
-  };
-  to: {
+  data: {
+    from(data: DbModel): ModelData;
     // TODO allow Date etc.
-    data(data: NoInfer<ModelData & ModelId>): NoInfer<DbModel>;
-    id(
-      data: NoInfer<ModelData & ModelId>,
-    ): [string, Parent extends CollectionSchema ? PathParams<Parent> : []];
+    to(data: NoInfer<ModelData & ModelId>): DbModel;
+  };
+  id: {
+    from(id: string, parent: Parent['$id']): ModelId;
+    to(data: NoInfer<ModelId>): [string, Parent['$id']];
   };
   parent?: Parent;
 
@@ -48,10 +46,7 @@ export type CollectionSchema<
   $dbModel: DbModel;
   $model: ModelData & ModelId;
   $id: ModelId;
-  $parentPath: Parent extends CollectionSchema ? PathParams<Parent> : [];
 };
-
-export type PathParams<T extends CollectionSchema> = [T['$id'], ...T['$parentPath']];
 
 /**
  * Type of firestore document data
