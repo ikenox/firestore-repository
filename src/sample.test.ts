@@ -2,7 +2,7 @@ import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { it } from 'vitest';
 import { Repository } from './repository.js';
-import { PathParams, Timestamp, collection } from './types.js';
+import { Timestamp, collection } from './types.js';
 
 it('test', async () => {
   const db = getFirestore(
@@ -20,7 +20,7 @@ it('test', async () => {
     toFirestore: (data) => data,
     id: {
       keys: ['authorId'],
-      docId: ({ authorId }) => authorId,
+      serialize: ({ authorId }) => authorId,
     },
   });
 
@@ -29,7 +29,7 @@ it('test', async () => {
     fromFirestore: (
       data: { title: string; postedAt: Timestamp },
       id: string,
-      [authorId]: PathParams<typeof authors>,
+      [authorId]: string[],
     ) => ({
       postId: id,
       authorId: authorId,
@@ -38,9 +38,12 @@ it('test', async () => {
     toFirestore: (data) => data,
     id: {
       keys: ['postId'],
-      docId: ({ postId }) => postId,
+      serialize: ({ postId }) => postId,
     },
-    parent: authors,
+    parent: {
+      keys: ['authorId'],
+      path: ({ authorId }) => `${authors.name}/${authorId}`,
+    },
   });
 
   class AuthorRepository extends Repository<typeof authors> {}

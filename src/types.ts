@@ -8,15 +8,15 @@ export const collection = <
   DbModel extends DocumentData,
   AppModel,
   IdKeys extends (keyof AppModel)[],
-  Parent extends CollectionSchema = never,
+  ParentIdKeys extends (keyof AppModel)[] = never,
 >(
   schema: Omit<
-    CollectionSchema<DbModel, AppModel, IdKeys, Parent>,
+    CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>,
     // Omit fields for a phantom type
     `\$${string}`
   >,
-): CollectionSchema<DbModel, AppModel, IdKeys, Parent> =>
-  schema as CollectionSchema<DbModel, AppModel, IdKeys, Parent>;
+): CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys> =>
+  schema as CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>;
 
 /**
  * A definition of firestore collection
@@ -25,20 +25,28 @@ export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
   AppModel = Record<string, unknown>,
   IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
-  Parent extends CollectionSchema = never,
+  ParentIdKeys extends (keyof AppModel)[] = never,
 > = {
   name: string;
-  fromFirestore(data: DbModel, id: string, collectionPath: PathParams<Parent>): AppModel;
+  fromFirestore(
+    data: DbModel,
+    id: string,
+    // TODO more type-safety
+    collectionPath: string[],
+  ): AppModel;
   // TODO only allow exact type
   toFirestore(data: NoInfer<AppModel>): NoInfer<DbModel>;
   id: {
     keys: IdKeys;
-    docId(keys: Pick<AppModel, IdKeys[number]>): string;
+    serialize(keys: Pick<AppModel, IdKeys[number]>): string;
   };
   /**
    * Define if the collection is a subcollection
    */
-  parent?: Parent;
+  parent?: {
+    keys: ParentIdKeys;
+    path(keys: Pick<AppModel, ParentIdKeys[number]>): string;
+  };
 
   /**
    * Phantom types
@@ -47,19 +55,8 @@ export type CollectionSchema<
   $dbModel: DbModel;
   $model: AppModel;
   $id: Pick<AppModel, IdKeys[number]>;
-  $collectionPath: PathParams<Parent>;
+  $parentDocId: Pick<AppModel, ParentIdKeys[number]>;
 };
-
-/**
- * A full path parameters of the collection
- */
-export type PathParams<T extends CollectionSchema> = [T] extends [never]
-  ? []
-  : [
-      // T['$id'],
-      string, // TODO more type-safety
-      ...T['$collectionPath'],
-    ];
 
 /**
  * Type of firestore document data

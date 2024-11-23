@@ -10,7 +10,7 @@ export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
 
 export abstract class Repository<T extends CollectionSchema> {
-  protected constructor(
+  constructor(
     readonly collection: T,
     readonly db: Firestore,
   ) {}
@@ -82,11 +82,11 @@ export abstract class Repository<T extends CollectionSchema> {
   }
 
   docRef(id: T['$id']) {
-    return this.collectionRef(id).doc(this.collection.docId(id));
+    return this.collectionRef(id).doc(this.collection.id.serialize(id));
   }
 
-  collectionRef(id: T['$collectionPath']) {
-    const path = this.collection.parent?.collectionRef(id);
+  collectionRef(id: T['$parentDocId']) {
+    const path = this.collection.parent?.path(id);
     return path
       ? // subcollection
         this.db.collection(`${path}/${this.collection.name}`)
@@ -99,6 +99,12 @@ export abstract class Repository<T extends CollectionSchema> {
     if (!data) {
       return undefined;
     }
-    return this.collection.fromFirestore(data, doc.id, []);
+    const path: string[] = [];
+    let parent = doc.ref.parent.parent;
+    while (parent) {
+      path.push(parent.id);
+      parent = parent.parent.parent;
+    }
+    return this.collection.fromFirestore(data, doc.id, path);
   }
 }
