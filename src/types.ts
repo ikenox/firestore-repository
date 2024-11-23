@@ -34,15 +34,11 @@ export type CollectionSchema<
     from(id: string): ModelId;
     to(id: NoInfer<ModelId>): string;
   };
+  parent?: ParentRef<Parent, ModelParentId>;
   data: {
     from(data: DbModel): ModelData;
     // TODO allow Date etc.
     to(data: NoInfer<ModelData & ModelId & ModelParentId>): NoInfer<DbModel>;
-  };
-  parent?: {
-    schema: Parent;
-    from(id: Parent['$id']): ModelParentId;
-    to(id: NoInfer<ModelParentId>): NoInfer<Parent['$id']>;
   };
 
   /**
@@ -56,7 +52,7 @@ export type CollectionSchema<
 };
 
 export type ParentRef<
-  T extends CollectionSchema = CollectionSchema,
+  T extends CollectionSchema,
   ModelParentId extends Record<string, unknown> = Record<never, never>,
 > = {
   schema: T;

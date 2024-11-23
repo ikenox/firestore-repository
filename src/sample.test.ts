@@ -27,18 +27,18 @@ it('test', async () => {
     name: 'Posts',
     id: {
       from: (postId) => ({ postId }),
-      to: ({ postId, authorId }) => postId,
+      to: ({ postId }) => postId,
+    },
+    parent: {
+      schema: authors,
+      from: ({ authorId }) => ({ authorId }),
+      to: ({ authorId }) => ({ authorId }),
     },
     data: {
       from: (data: { title: string; postedAt: Timestamp }) => ({
         ...data,
       }),
       to: (data) => ({ ...data }),
-    },
-    parent: {
-      schema: authors,
-      from: ({ authorId }) => ({ authorId }),
-      to: ({ authorId }) => ({ authorId }),
     },
   });
 
