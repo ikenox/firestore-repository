@@ -82,11 +82,11 @@ export abstract class Repository<T extends CollectionSchema> {
   }
 
   docRef(id: T['$id']) {
-    return this.collectionRef(id).doc(this.collection.id.serialize(id));
+    return this.collectionRef(id).doc(this.collection.to.id(id));
   }
 
-  collectionRef(id: T['$parentDocId']) {
-    const path = this.collection.parent?.path(id);
+  collectionRef(id: T['$parentPath']) {
+    const path = this.collection.parent?.(id);
     return path
       ? // subcollection
         this.db.collection(`${path}/${this.collection.name}`)

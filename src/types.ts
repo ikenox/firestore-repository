@@ -5,58 +5,53 @@ import type * as sdk from 'firebase/firestore';
  * An entrypoint of schema definition
  */
 export const collection = <
-  DbModel extends DocumentData,
-  AppModel,
-  IdKeys extends (keyof AppModel)[],
-  ParentIdKeys extends (keyof AppModel)[] = never,
+  DbModel extends DocumentData = DocumentData,
+  ModelData extends Record<string, unknown> = Record<string, unknown>,
+  ModelId extends Record<string, unknown> = Record<string, unknown>,
+  Parent extends CollectionSchema | undefined = undefined,
 >(
   schema: Omit<
-    CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>,
+    CollectionSchema<DbModel, ModelData, ModelId, Parent>,
     // Omit fields for a phantom type
     `\$${string}`
   >,
-): CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys> =>
-  schema as CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>;
+): CollectionSchema<DbModel, ModelData, ModelId, Parent> =>
+  schema as CollectionSchema<DbModel, ModelData, ModelId, Parent>;
 
 /**
  * A definition of firestore collection
  */
 export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
-  AppModel = Record<string, unknown>,
-  IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
-  ParentIdKeys extends (keyof AppModel)[] = never,
+  ModelData extends Record<string, unknown> = Record<string, unknown>,
+  ModelId extends Record<string, unknown> = Record<string, unknown>,
+  Parent extends CollectionSchema | undefined = undefined,
 > = {
   name: string;
-  fromFirestore(
-    data: DbModel,
-    id: string,
-    // TODO more type-safety
-    collectionPath: string[],
-  ): AppModel;
-  // TODO only allow exact type
-  toFirestore(data: NoInfer<AppModel>): NoInfer<DbModel>;
-  id: {
-    keys: IdKeys;
-    serialize(keys: Pick<AppModel, IdKeys[number]>): string;
+  from: {
+    data(data: DbModel): ModelData;
+    id(id: string): ModelId;
   };
-  /**
-   * Define if the collection is a subcollection
-   */
-  parent?: {
-    keys: ParentIdKeys;
-    path(keys: Pick<AppModel, ParentIdKeys[number]>): string;
+  to: {
+    // TODO allow Date etc.
+    data(data: NoInfer<ModelData & ModelId>): NoInfer<DbModel>;
+    id(
+      data: NoInfer<ModelData & ModelId>,
+    ): [string, Parent extends CollectionSchema ? PathParams<Parent> : []];
   };
+  parent?: Parent;
 
   /**
    * Phantom types
    * These fields are only accessible at type-level, and actually it will be undefined at runtime
    */
   $dbModel: DbModel;
-  $model: AppModel;
-  $id: Pick<AppModel, IdKeys[number]>;
-  $parentDocId: Pick<AppModel, ParentIdKeys[number]>;
+  $model: ModelData & ModelId;
+  $id: ModelId;
+  $parentPath: Parent extends CollectionSchema ? PathParams<Parent> : [];
 };
+
+export type PathParams<T extends CollectionSchema> = [T['$id'], ...T['$parentPath']];
 
 /**
  * Type of firestore document data

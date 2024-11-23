@@ -13,37 +13,31 @@ it('test', async () => {
 
   const authors = collection({
     name: 'Authors',
-    fromFirestore: (data: { name: string; registeredAt: Timestamp }, id: string) => ({
-      authorId: id,
-      ...data,
-    }),
-    toFirestore: (data) => data,
-    id: {
-      keys: ['authorId'],
-      serialize: ({ authorId }) => authorId,
+    from: {
+      data: (data: { name: string; registeredAt: Timestamp }) => data,
+      id: (authorId) => ({ authorId }),
+    },
+    to: {
+      data: (data) => data,
+      id: ({ authorId }) => [authorId],
     },
   });
 
   const posts = collection({
     name: 'Posts',
-    fromFirestore: (
-      data: { title: string; postedAt: Timestamp },
-      id: string,
-      [authorId]: string[],
-    ) => ({
-      postId: id,
-      authorId: authorId,
-      ...data,
-    }),
-    toFirestore: (data) => data,
-    id: {
-      keys: ['postId'],
-      serialize: ({ postId }) => postId,
+    from: {
+      data: (data: { title: string; postedAt: Timestamp }) => ({
+        ...data,
+      }),
+      id: (postId) => ({ postId }),
     },
-    parent: {
-      keys: ['authorId'],
-      path: ({ authorId }) => `${authors.name}/${authorId}`,
+    to: {
+      data: (data) => ({
+        ...data,
+      }),
+      id: ({ postId, authorId }) => [postId, { authorId }],
     },
+    parent: authors,
   });
 
   class AuthorRepository extends Repository<typeof authors> {}
