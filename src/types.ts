@@ -34,7 +34,11 @@ export type CollectionSchema<
     from(id: string): ModelId;
     to(id: NoInfer<ModelId>): string;
   };
-  parent?: ParentRef<Parent, ModelParentId>;
+  parent?: {
+    schema: Parent;
+    from(id: Parent['$id']): ModelParentId;
+    to(id: ModelParentId): Parent['$id'];
+  };
   data: {
     from(data: DbModel): ModelData;
     // TODO allow Date etc.
@@ -49,15 +53,6 @@ export type CollectionSchema<
   $model: ModelData & ModelId & ModelParentId;
   $id: ModelId;
   $parentId: ModelParentId;
-};
-
-export type ParentRef<
-  T extends CollectionSchema,
-  ModelParentId extends Record<string, unknown> = Record<never, never>,
-> = {
-  schema: T;
-  from(id: T['$id']): ModelParentId;
-  to(id: ModelParentId): T['$id'];
 };
 
 export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {

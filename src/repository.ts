@@ -4,7 +4,7 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { type CollectionSchema, ParentRef, collectionPath, docPath } from './types.js';
+import { type CollectionSchema, collectionPath, docPath } from './types.js';
 
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
@@ -96,7 +96,7 @@ export abstract class Repository<T extends CollectionSchema> {
     }
     const id = this.collection.id.from(doc.id);
 
-    const parent = this.collection.parent as ParentRef<CollectionSchema>;
+    const parent = this.collection.parent as CollectionSchema<never, CollectionSchema>['parent'];
     const parentId = parent ? parent.from(parent.schema.id.from(doc.ref.parent.id)) : {};
     return {
       ...this.collection.data.from(data),
