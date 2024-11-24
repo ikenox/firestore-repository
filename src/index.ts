@@ -39,8 +39,10 @@ export type CollectionSchema<
   id: ModelIdSchema<ModelId>;
   parent?: {
     schema: Parent;
-    from(id: Parent['$id']): ModelParentId;
-    to(id: ModelParentId): Parent['$id'];
+    id: {
+      from(id: Parent['$id']): ModelParentId;
+      to(id: ModelParentId): Parent['$id'];
+    };
   };
   data: {
     from(data: DbModel): ModelData;

@@ -149,8 +149,10 @@ const postsCollection = collection({
   },
   parent: {
     schema: authorsCollection,
-    from: ({ authorId }) => ({ authorId }),
-    to: ({ authorId }) => ({ authorId }),
+    id: {
+      from: ({ authorId }) => ({ authorId }),
+      to: ({ authorId }) => ({ authorId }),
+    },
   },
   data: {
     from: (data: { title: string; postedAt: Timestamp }) => ({
