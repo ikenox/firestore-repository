@@ -1,11 +1,12 @@
 import { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CollectionSchema, Repository, Timestamp, as, collection } from '../index.js';
+import { deleteAll, randomNumber } from './util.js';
 
 /**
  * List of specifications that repository implementations must satisfy
  */
-export const defineRepositorySpecificationTests = <T extends Repository>(
+export const defineRepositorySpecificationTests = (
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
 ) => {
   describe('repository specifications', () => {
@@ -184,11 +185,6 @@ export const allMethodsTests = <T extends Repository>(params: {
     });
   });
 };
-
-const deleteAll = <T extends Repository>(repository: T, parentId: T['collection']['$parentId']) =>
-  repository.query(parentId).then((docs) => repository.batchDelete(docs));
-
-const randomNumber = () => 1000000 + Math.floor(Math.random() * 1000000);
 
 /**
  * Root collection

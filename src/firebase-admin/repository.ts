@@ -25,6 +25,23 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return this.fromFirestore(doc);
   }
 
+  async query(parentId: T['$parentId']): Promise<T['$model'][]> {
+    const { docs } = await this.collectionRef(parentId).get();
+    return docs.map(
+      (doc) =>
+        // FIXME do not use unsafe assertion
+        this.fromFirestore(doc)!,
+    );
+  }
+
+  onUpdateDoc(
+    id: T['$id'],
+    onNext: (snapshot: T['$model']) => void,
+    onError?: (error: Error) => void,
+  ): void {
+    this.docRef(id).onSnapshot();
+  }
+
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
@@ -106,15 +123,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       targets.forEach((target) => runner.batch(batch, target));
       await batch.commit();
     }
-  }
-
-  async query(parentId: T['$parentId']): Promise<T['$model'][]> {
-    const { docs } = await this.collectionRef(parentId).get();
-    return docs.map(
-      (doc) =>
-        // FIXME do not use unsafe assertion
-        this.fromFirestore(doc)!,
-    );
   }
 
   toFirestore(data: T['$model']): T['$dbModel'] {

@@ -96,6 +96,21 @@ export interface Repository<
    */
   get(id: T['$id'], options?: TransactionOption<Env>): Promise<T['$model'] | undefined>;
 
+  // TODO
+  query(parentId: T['$parentId']): Promise<T['$model'][]>;
+
+  onUpdateDoc(
+    id: T['$id'],
+    onNext: (snapshot: T['$model'] | undefined) => void,
+    onError?: (error: Error) => void,
+  ): void;
+
+  onUpdateQuery(
+    id: T['$id'],
+    onNext: (snapshot: T['$model'][]) => void,
+    onError?: (error: Error) => void,
+  ): void;
+
   /**
    * Create a new document
    * @throws If the document already exists
@@ -135,9 +150,6 @@ export interface Repository<
    * Up to 500 documents
    */
   batchDelete(ids: T['$id'][], options?: WriteTransactionOption<Env>): Promise<void>;
-
-  // TODO
-  query(parentId: T['$parentId']): Promise<T['$model'][]>;
 }
 
 /**
