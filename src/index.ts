@@ -101,3 +101,63 @@ export type Timestamp = sdk.Timestamp | admin.Timestamp;
 export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
 export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type Map = { [K in string]: ValueType };
+
+export type FirestoreEnvironment = {
+  transaction: unknown;
+  writeBatch: unknown;
+};
+
+export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };
+export type WriteTransactionOption<T extends FirestoreEnvironment> = {
+  tx?: T['transaction'] | T['writeBatch'];
+};
+
+export interface Repository<
+  T extends CollectionSchema = CollectionSchema,
+  Env extends FirestoreEnvironment = FirestoreEnvironment,
+> {
+  /**
+   * Get a document by ID
+   */
+  get(id: T['$id'], options?: TransactionOption<Env>): Promise<T['$model'] | undefined>;
+
+  /**
+   * Create a new document
+   * @throws If the document already exists
+   */
+  create(doc: T['$model'], options?: WriteTransactionOption<Env>): Promise<void>;
+
+  /**
+   * Create or update
+   */
+  set(doc: T['$model'], options?: WriteTransactionOption<Env>): Promise<void>;
+
+  /**
+   * Delete a document by ID
+   */
+  delete(id: T['$id'], options?: WriteTransactionOption<Env>): Promise<void>;
+
+  /**
+   * Get documents by multiple ID
+   * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
+   */
+  batchGet(ids: T['$id'][], options?: TransactionOption<Env>): Promise<(T['$model'] | undefined)[]>;
+
+  /**
+   * Create or update multiple documents
+   * The entire operation will fail if one creation fails
+   */
+  batchCreate(docs: T['$model'][], options?: WriteTransactionOption<Env>): Promise<void>;
+
+  /**
+   * Create or update multiple documents
+   * Up to 500 documents
+   */
+  batchSet(docs: T['$model'][], options?: WriteTransactionOption<Env>): Promise<void>;
+
+  /**
+   * Delete documents by multiple ID
+   * Up to 500 documents
+   */
+  batchDelete(ids: T['$id'][], options?: WriteTransactionOption<Env>): Promise<void>;
+}

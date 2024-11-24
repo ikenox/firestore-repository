@@ -5,12 +5,16 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { type CollectionSchema, collectionPath, docPath } from './index.js';
+import { collectionPath, docPath } from './index.js';
+import type * as base from './index.js';
 
-export type TransactionOption = { tx: Transaction };
-export type WriteTransactionOption = { tx: Transaction | WriteBatch };
+export type Env = { transaction: Transaction; writeBatch: WriteBatch };
+export type TransactionOption = base.TransactionOption<Env>;
+export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
-export class Repository<T extends CollectionSchema = CollectionSchema> {
+export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
+  implements base.Repository<T, Env>
+{
   constructor(
     readonly collection: T,
     readonly db: Firestore,
