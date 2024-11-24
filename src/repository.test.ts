@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import { Timestamp as AdminTimestamp, getFirestore } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Timestamp, collection } from './index.js';
+import { Timestamp, as, collection } from './index.js';
 import { IdGenerator, Repository } from './repository.js';
 
 describe('test', async () => {
@@ -12,10 +12,7 @@ describe('test', async () => {
 
   const authorsCollection = collection({
     name: 'Authors',
-    id: {
-      from: (authorId) => ({ authorId }),
-      to: ({ authorId }) => authorId,
-    },
+    id: as('authorId'),
     data: {
       from: (data: { name: string; registeredAt: Timestamp }) => ({
         ...data,
@@ -90,6 +87,31 @@ describe('test', async () => {
     const author0 = await authorRepository.get({ authorId: authors[0].authorId });
     expect(author0).toStrictEqual(authors[0]);
     expect(await authorRepository.get({ authorId: 'other-author-id' })).toBeUndefined();
+
+    // get by entire document
+    expect(await authorRepository.get(authors[0])).toStrictEqual(authors[0]);
+  });
+
+  it('set', async () => {
+    const newAuthor: Author = {
+      authorId: 'author100',
+      name: 'name100',
+      registeredAt: AdminTimestamp.fromDate(new Date()),
+    };
+
+    // create
+    await authorRepository.set(newAuthor);
+
+    // TODO assertion
+
+    // update
+    const updated: Author = {
+      ...newAuthor,
+      name: 'name100_updated',
+    };
+    await authorRepository.set(updated);
+
+    // TODO assertion
   });
 
   it('create', async () => {

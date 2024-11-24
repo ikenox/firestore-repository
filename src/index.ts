@@ -20,6 +20,11 @@ export const collection = <
 ): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
   schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
 
+export const as = <const T extends string>(fieldName: T): ModelIdSchema<Record<T, string>> => ({
+  from: (id) => ({ [fieldName]: id }) as Record<T, string>,
+  to: (data) => data[fieldName],
+});
+
 /**
  * A definition of firestore collection
  */
@@ -31,10 +36,7 @@ export type CollectionSchema<
   ModelParentId extends Record<string, unknown> = Record<never, never>,
 > = {
   name: string;
-  id: {
-    from(id: string): ModelId;
-    to(id: ModelId): string;
-  };
+  id: ModelIdSchema<ModelId>;
   parent?: {
     schema: Parent;
     from(id: Parent['$id']): ModelParentId;
@@ -54,6 +56,11 @@ export type CollectionSchema<
   $id: ModelId;
   $parentId: ModelParentId;
   $model: Prettify<ModelData & ModelId & ModelParentId>;
+};
+
+export type ModelIdSchema<ModelId extends Record<string, unknown> = Record<string, unknown>> = {
+  from(id: string): ModelId;
+  to(id: ModelId): string;
 };
 
 export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
