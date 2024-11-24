@@ -9,17 +9,10 @@ import { CollectionSchema, Repository, Timestamp, as, collection } from '../inde
 export const defineRepositorySpecificationTests = <T extends Repository>(
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
 ) => {
-  type AuthorsCollection = typeof authorsCollection;
-  type Author = AuthorsCollection['$model'];
-
-  type PostsCollection = typeof postsCollection;
-  type Posts = PostsCollection['$model'];
-
   const authorRepository = repository(authorsCollection);
   const postsRepository = repository(postsCollection);
-
-  describe('repository specifications', async () => {
-    const authors = [
+  allMethodsTests(authorRepository, {
+    initial: [
       {
         authorId: 'author0',
         name: 'name0',
@@ -35,91 +28,99 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
         name: 'name2',
         registeredAt: AdminTimestamp.fromDate(new Date()),
       },
-    ] as const satisfies Author[];
+    ],
+    newData: () => ({
+      authorId: `author_${crypto.randomUUID()}`,
+      name: `name_${crypto.randomUUID()}`,
+      registeredAt: AdminTimestamp.fromDate(new Date()),
+    }),
+    mutate: (data) => ({
+      ...data,
+      name: `${data.name}_updated`,
+    }),
+  });
+};
 
-    const deleteAll = <T extends Repository>(
-      repository: T,
-      parentId: T['collection']['$parentId'],
-    ) => repository.query(parentId).then((docs) => repository.batchDelete(docs));
-
+export const allMethodsTests = <T extends Repository>(
+  repository: T,
+  params: {
+    initial: [T['collection']['$model'], T['collection']['$model'], T['collection']['$model']];
+    newData: () => T['collection']['$model'];
+    mutate: (data: T['collection']['$model']) => T['collection']['$model'];
+  },
+) => {
+  describe('repository specifications', async () => {
     beforeEach(async () => {
-      await deleteAll(authorRepository, {});
-      await authorRepository.batchSet(authors);
+      await deleteAll(repository, {});
+      await repository.batchSet(params.initial);
     });
 
+    const dataList = params.initial;
+
     it('get', async () => {
-      const author0 = await authorRepository.get({ authorId: authors[0].authorId });
-      expect(author0).toStrictEqual(authors[0]);
-      expect(await authorRepository.get({ authorId: 'other-author-id' })).toBeUndefined();
+      const author0 = await repository.get(dataList[0]);
+      expect(author0).toStrictEqual(dataList[0]);
+      expect(await repository.get({ authorId: 'other-author-id' })).toBeUndefined();
 
       // get by entire document
-      expect(await authorRepository.get(authors[0])).toStrictEqual(authors[0]);
+      expect(await repository.get(dataList[0])).toStrictEqual(dataList[0]);
     });
 
     it('set', async () => {
-      const newAuthor: Author = {
-        authorId: 'author100',
-        name: 'name100',
-        registeredAt: AdminTimestamp.fromDate(new Date()),
-      };
+      const newData = params.newData();
 
       // create
-      await authorRepository.set(newAuthor);
+      await repository.set(newData);
 
       // TODO assertion
 
       // update
-      const updated: Author = {
-        ...newAuthor,
-        name: 'name100_updated',
-      };
-      await authorRepository.set(updated);
+      const updated = params.mutate(newData);
+      await repository.set(updated);
 
       // TODO assertion
     });
 
     it('create', async () => {
-      const newAuthor: Author = {
-        authorId: 'author100',
-        name: 'name100',
-        registeredAt: AdminTimestamp.fromDate(new Date()),
-      };
+      const newData = params.newData();
 
-      expect(await authorRepository.get({ authorId: newAuthor.authorId })).toBeUndefined();
+      expect(await repository.get(newData)).toBeUndefined();
 
-      await authorRepository.create(newAuthor);
-      const author = await authorRepository.get({ authorId: newAuthor.authorId });
-      expect(author).toStrictEqual<typeof author>(newAuthor);
+      await repository.create(newData);
+      const author = await repository.get(newData);
+      expect(author).toStrictEqual<typeof author>(newData);
 
       // already exists
-      await expect(authorRepository.create(newAuthor)).rejects.toThrowError(/ALREADY_EXISTS/);
+      await expect(repository.create(newData)).rejects.toThrowError(/ALREADY_EXISTS/);
     });
 
     it('delete', async () => {
-      const id0 = { authorId: authors[0].authorId };
       // delete
-      await authorRepository.delete(id0);
-      expect(await authorRepository.get(id0)).toBeUndefined();
+      await repository.delete(dataList[0]);
+      expect(await repository.get(dataList[0])).toBeUndefined();
       // check idempotency
-      await authorRepository.delete(id0);
-      expect(await authorRepository.get(id0)).toBeUndefined();
+      await repository.delete(dataList[0]);
+      expect(await repository.get(dataList[0])).toBeUndefined();
     });
 
     it('batchGet', async () => {
-      expect(await authorRepository.batchGet([])).toStrictEqual([]);
+      expect(await repository.batchGet([])).toStrictEqual([]);
 
       expect(
-        await authorRepository.batchGet([
-          { authorId: authors[0].authorId },
-          { authorId: authors[2].authorId },
-          { authorId: authors[1].authorId },
+        await repository.batchGet([
+          dataList[0],
+          dataList[2],
+          dataList[1],
           { authorId: 'other-author-id' },
-          { authorId: authors[2].authorId },
+          dataList[2],
         ]),
-      ).toStrictEqual([authors[0], authors[2], authors[1], undefined, authors[2]]);
+      ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
     });
   });
 };
+
+const deleteAll = <T extends Repository>(repository: T, parentId: T['collection']['$parentId']) =>
+  repository.query(parentId).then((docs) => repository.batchDelete(docs));
 
 /**
  * Root collection
