@@ -5,8 +5,10 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { collectionPath, docPath } from '../index.js';
+import firebase from 'firebase/compat';
+import { Unsubscribe, collectionPath, docPath } from '../index.js';
 import type * as base from '../index.js';
+import Error = firebase.auth.Error;
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -34,13 +36,17 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  onUpdateDoc(
+  getOnShanpshot(
     id: T['$id'],
     onNext: (snapshot: T['$model']) => void,
     onError?: (error: Error) => void,
-  ): void {
-    this.docRef(id).onSnapshot();
-  }
+  ): Unsubscribe {}
+
+  queryOnSnapshot(
+    id: T['$id'],
+    onNext: (snapshot: T['$model'][]) => void,
+    onError?: (error: Error) => void,
+  ): Unsubscribe {}
 
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);

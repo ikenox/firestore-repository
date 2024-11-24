@@ -99,17 +99,17 @@ export interface Repository<
   // TODO
   query(parentId: T['$parentId']): Promise<T['$model'][]>;
 
-  onUpdateDoc(
+  getOnShanpshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
-  ): void;
+  ): Unsubscribe;
 
-  onUpdateQuery(
+  queryOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'][]) => void,
     onError?: (error: Error) => void,
-  ): void;
+  ): Unsubscribe;
 
   /**
    * Create a new document
@@ -164,6 +164,8 @@ export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transa
 export type WriteTransactionOption<T extends FirestoreEnvironment> = {
   tx?: T['transaction'] | T['writeBatch'];
 };
+
+export type Unsubscribe = () => void;
 
 /**
  * Type of firestore document data
