@@ -9,39 +9,6 @@ import { CollectionSchema, Repository, Timestamp, as, collection } from '../inde
 export const defineRepositorySpecificationTests = <T extends Repository>(
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
 ) => {
-  const authorsCollection = collection({
-    name: 'Authors',
-    id: as('authorId'),
-    data: {
-      from: (data: { name: string; registeredAt: Timestamp }) => ({
-        ...data,
-      }),
-      to: ({ name, registeredAt }) => ({
-        name,
-        registeredAt,
-      }),
-    },
-  });
-
-  const postsCollection = collection({
-    name: 'Posts',
-    id: {
-      from: (postId) => ({ postId: Number(postId) }),
-      to: ({ postId }) => postId.toString(),
-    },
-    parent: {
-      schema: authorsCollection,
-      from: ({ authorId }) => ({ authorId }),
-      to: ({ authorId }) => ({ authorId }),
-    },
-    data: {
-      from: (data: { title: string; postedAt: Timestamp }) => ({
-        ...data,
-      }),
-      to: (data) => ({ ...data }),
-    },
-  });
-
   type AuthorsCollection = typeof authorsCollection;
   type Author = AuthorsCollection['$model'];
 
@@ -51,7 +18,7 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
   const authorRepository = repository(authorsCollection);
   const postsRepository = repository(postsCollection);
 
-  describe('test', async () => {
+  describe('repository specifications', async () => {
     const authors = [
       {
         authorId: 'author0',
@@ -153,3 +120,42 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
     });
   });
 };
+
+/**
+ * Root collection
+ */
+const authorsCollection = collection({
+  name: 'Authors',
+  id: as('authorId'),
+  data: {
+    from: (data: { name: string; registeredAt: Timestamp }) => ({
+      ...data,
+    }),
+    to: ({ name, registeredAt }) => ({
+      name,
+      registeredAt,
+    }),
+  },
+});
+
+/**
+ * Subcollection
+ */
+const postsCollection = collection({
+  name: 'Posts',
+  id: {
+    from: (postId) => ({ postId: Number(postId) }),
+    to: ({ postId }) => postId.toString(),
+  },
+  parent: {
+    schema: authorsCollection,
+    from: ({ authorId }) => ({ authorId }),
+    to: ({ authorId }) => ({ authorId }),
+  },
+  data: {
+    from: (data: { title: string; postedAt: Timestamp }) => ({
+      ...data,
+    }),
+    to: (data) => ({ ...data }),
+  },
+});
