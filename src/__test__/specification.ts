@@ -57,7 +57,7 @@ export const allMethodsTests = <T extends Repository>(
 
     const dataList = params.initial;
 
-    describe('get', () => {
+    describe.sequential('get', () => {
       it('exists', async () => {
         const dataFromDb = await repository.get(dataList[0]);
         expect(dataFromDb).toStrictEqual(dataList[0]);
@@ -67,7 +67,7 @@ export const allMethodsTests = <T extends Repository>(
       });
     });
 
-    describe('set', () => {
+    describe.sequential('set', () => {
       const newData = params.newData();
 
       it('create', async () => {
@@ -81,7 +81,7 @@ export const allMethodsTests = <T extends Repository>(
       });
     });
 
-    describe('create', () => {
+    describe.sequential('create', () => {
       const newData = params.newData();
 
       it('precondition', async () => {
@@ -97,7 +97,7 @@ export const allMethodsTests = <T extends Repository>(
       });
     });
 
-    describe('delete', () => {
+    describe.sequential('delete', () => {
       it('precondition', async () => {
         expect(await repository.get(dataList[0])).toBeTruthy();
       });
@@ -111,7 +111,7 @@ export const allMethodsTests = <T extends Repository>(
       });
     });
 
-    describe('batchGet', () => {
+    describe.sequential('batchGet', () => {
       it('empty', async () => {
         expect(await repository.batchGet([])).toStrictEqual([]);
       });
