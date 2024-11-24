@@ -14,7 +14,7 @@ export const collection = <
 >(
   schema: Omit<
     CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>,
-    // Omit fields for a phantom type
+    // Omit phantom type fields
     `\$${string}`
   >,
 ): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
@@ -80,40 +80,8 @@ export const collectionPath = <T extends CollectionSchema>(
 };
 
 /**
- * Type of firestore document data
+ * A universal repository interface
  */
-export type DocumentData = {
-  [key: string]: ValueType;
-};
-
-/**
- * Type of firestore field value
- */
-export type ValueType =
-  | number
-  | string
-  | null
-  | Timestamp
-  | DocumentReference
-  | GeoPoint
-  | ValueType[]
-  | Map;
-
-export type Timestamp = sdk.Timestamp | admin.Timestamp;
-export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
-export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
-export type Map = { [K in string]: ValueType };
-
-export type FirestoreEnvironment = {
-  transaction: unknown;
-  writeBatch: unknown;
-};
-
-export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };
-export type WriteTransactionOption<T extends FirestoreEnvironment> = {
-  tx?: T['transaction'] | T['writeBatch'];
-};
-
 export interface Repository<
   T extends CollectionSchema = CollectionSchema,
   Env extends FirestoreEnvironment = FirestoreEnvironment,
@@ -168,3 +136,41 @@ export interface Repository<
   // TODO
   query(parentId: T['$parentId']): Promise<T['$model'][]>;
 }
+
+/**
+ * Platform-specific types
+ */
+export type FirestoreEnvironment = {
+  transaction: unknown;
+  writeBatch: unknown;
+};
+
+export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };
+export type WriteTransactionOption<T extends FirestoreEnvironment> = {
+  tx?: T['transaction'] | T['writeBatch'];
+};
+
+/**
+ * Type of firestore document data
+ */
+export type DocumentData = {
+  [key: string]: ValueType;
+};
+
+/**
+ * Type of firestore field value
+ */
+export type ValueType =
+  | number
+  | string
+  | null
+  | Timestamp
+  | DocumentReference
+  | GeoPoint
+  | ValueType[]
+  | Map;
+
+export type Timestamp = sdk.Timestamp | admin.Timestamp;
+export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
+export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
+export type Map = { [K in string]: ValueType };
