@@ -28,18 +28,20 @@ export abstract class Repository<T extends CollectionSchema> {
    * @throws If the document already exists
    */
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
-    await (options?.tx ? options.tx.create(this.docRef(doc), doc) : this.docRef(doc).create(doc));
+    const data = this.docData(doc);
+    await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
 
   /**
    * Create or update
    */
   async set(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
+    const data = this.docData(doc);
     await (options?.tx
       ? options.tx instanceof Transaction
-        ? options.tx.set(this.docRef(doc), doc)
-        : options.tx.set(this.docRef(doc), doc)
-      : this.docRef(doc).set(doc));
+        ? options.tx.set(this.docRef(doc), data)
+        : options.tx.set(this.docRef(doc), data)
+      : this.docRef(doc).set(data));
   }
 
   /**
@@ -65,21 +67,32 @@ export abstract class Repository<T extends CollectionSchema> {
 
   /**
    * Create or update multiple documents
+   * The entire operation will fail if one creation fails
+   */
+  async batchCreate(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
+    await this.batchWriteOperation(
+      docs,
+      {
+        batch: (batch, doc) => batch.create(this.docRef(doc), this.docData(doc)),
+        transaction: (tx, doc) => tx.create(this.docRef(doc), this.docData(doc)),
+      },
+      options,
+    );
+  }
+
+  /**
+   * Create or update multiple documents
    * Up to 500 documents
    */
   async batchSet(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
-    const tx = options?.tx;
-    if (tx) {
-      if (tx instanceof Transaction) {
-        docs.forEach((doc) => tx.set(this.docRef(doc), doc));
-      } else {
-        docs.forEach((doc) => tx.set(this.docRef(doc), doc));
-      }
-    } else {
-      const batch = this.db.batch();
-      docs.forEach((doc) => void this.set(doc));
-      await batch.commit();
-    }
+    await this.batchWriteOperation(
+      docs,
+      {
+        batch: (batch, doc) => batch.set(this.docRef(doc), this.docData(doc)),
+        transaction: (tx, doc) => tx.set(this.docRef(doc), this.docData(doc)),
+      },
+      options,
+    );
   }
 
   /**
@@ -87,25 +100,51 @@ export abstract class Repository<T extends CollectionSchema> {
    * Up to 500 documents
    */
   async batchDelete(ids: T['$id'][], options?: WriteTransactionOption): Promise<void> {
+    await this.batchWriteOperation(
+      ids,
+      {
+        batch: (batch, id) => batch.delete(this.docRef(id)),
+        transaction: (tx, id) => tx.delete(this.docRef(id)),
+      },
+      options,
+    );
+  }
+
+  protected async batchWriteOperation<U>(
+    targets: U[],
+    runner: {
+      batch: (batch: WriteBatch, target: U) => void;
+      transaction: (transaction: Transaction, target: U) => void;
+    },
+    options?: WriteTransactionOption,
+  ): Promise<void> {
     const tx = options?.tx;
     if (tx) {
-      ids.forEach((id) => tx.delete(this.docRef(id)));
+      if (tx instanceof Transaction) {
+        targets.forEach((target) => runner.transaction(tx, target));
+      } else {
+        targets.forEach((target) => runner.batch(tx, target));
+      }
     } else {
       const batch = this.db.batch();
-      ids.forEach((id) => void this.delete(id));
+      targets.forEach((target) => runner.batch(batch, target));
       await batch.commit();
     }
   }
 
-  docRef(id: T['$id']) {
+  protected docData(data: T['$model']): T['$dbModel'] {
+    return this.collection.data.to(data);
+  }
+
+  protected docRef(id: T['$id']) {
     return this.db.doc(docPath(this.collection, id));
   }
 
-  collectionRef(parentId: T['$parentId']) {
+  protected collectionRef(parentId: T['$parentId']) {
     return this.db.collection(collectionPath(this.collection, parentId));
   }
 
-  getData(doc: DocumentSnapshot): T['$model'] | undefined {
+  protected getData(doc: DocumentSnapshot): T['$model'] | undefined {
     const data = doc.data();
     if (!data) {
       return undefined;

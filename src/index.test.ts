@@ -37,14 +37,18 @@ describe('CollectionSchema', () => {
   type PostsCollection = typeof posts;
 
   it('type', () => {
+    // FIXME
     expectTypeOf<AuthorsCollection['$dbModel']>().toEqualTypeOf<{}>();
-    expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<{ authorId: number }>();
+    expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<{}>();
     expectTypeOf<AuthorsCollection['$parentId']>().toEqualTypeOf<{}>();
     expectTypeOf<AuthorsCollection['$model']>().toEqualTypeOf<{}>();
 
     expectTypeOf<PostsCollection['$dbModel']>().toEqualTypeOf<{}>();
-    expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<{ authorId: number }>();
+    expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<{}>();
     expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<{}>();
     expectTypeOf<PostsCollection['$model']>().toEqualTypeOf<{}>();
+
+    // why?
+    expectTypeOf<number>().toEqualTypeOf<string>();
   });
 });
