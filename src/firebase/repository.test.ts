@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { Firestore, connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
+import { Firestore, Timestamp, connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 import { describe } from 'vitest';
 import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository } from './repository.js';
@@ -12,5 +12,7 @@ describe('repository', async () => {
   const [host, port] = process.env['FIRESTORE_EMULATOR_HOST']!.split(':');
   connectFirestoreEmulator(db, host!, Number(port));
 
-  defineRepositorySpecificationTests((collection) => new Repository(collection, db));
+  defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
+    timestamp: (date) => Timestamp.fromDate(date),
+  });
 });

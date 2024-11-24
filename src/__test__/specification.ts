@@ -8,6 +8,9 @@ import { deleteAll, randomNumber } from './util.js';
  */
 export const defineRepositorySpecificationTests = (
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
+  converters: {
+    timestamp: (date: Date) => Timestamp;
+  },
 ) => {
   describe('repository specifications', () => {
     allMethodsTests({
@@ -17,17 +20,17 @@ export const defineRepositorySpecificationTests = (
         {
           authorId: 'author0',
           name: 'name0',
-          registeredAt: AdminTimestamp.fromDate(new Date()),
+          registeredAt: converters.timestamp(new Date()),
         },
         {
           authorId: 'author1',
           name: 'name1',
-          registeredAt: AdminTimestamp.fromDate(new Date()),
+          registeredAt: converters.timestamp(new Date()),
         },
         {
           authorId: 'author2',
           name: 'name2',
-          registeredAt: AdminTimestamp.fromDate(new Date()),
+          registeredAt: converters.timestamp(new Date()),
         },
       ],
       newData: () => {
@@ -35,7 +38,7 @@ export const defineRepositorySpecificationTests = (
         return {
           authorId: `author${id}`,
           name: `name${id}`,
-          registeredAt: AdminTimestamp.fromDate(new Date()),
+          registeredAt: converters.timestamp(new Date()),
         };
       },
       mutate: (data) => ({
@@ -53,19 +56,19 @@ export const defineRepositorySpecificationTests = (
           postId: 0,
           title: 'post0',
           authorId: 'author0',
-          postedAt: AdminTimestamp.fromDate(new Date()),
+          postedAt: converters.timestamp(new Date()),
         },
         {
           postId: 1,
           title: 'post1',
           authorId: 'author0',
-          postedAt: AdminTimestamp.fromDate(new Date()),
+          postedAt: converters.timestamp(new Date()),
         },
         {
           postId: 2,
           title: 'post2',
           authorId: 'author1',
-          postedAt: AdminTimestamp.fromDate(new Date()),
+          postedAt: converters.timestamp(new Date()),
         },
       ],
       newData: () => {
@@ -75,7 +78,7 @@ export const defineRepositorySpecificationTests = (
           postId: id,
           title: `post${id}`,
           authorId: `author${authorId}`,
-          postedAt: AdminTimestamp.fromDate(new Date()),
+          postedAt: converters.timestamp(new Date()),
         };
       },
       mutate: (data) => ({
