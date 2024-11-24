@@ -5,5 +5,9 @@ export default defineConfig({
     globalSetup: './src/__test__/setup.ts',
     isolate: false,
     pool: 'threads',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text'],
+    },
   },
 });
