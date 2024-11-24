@@ -1,5 +1,5 @@
 import { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CollectionSchema, Repository, Timestamp, as, collection } from '../index.js';
 
 /**
@@ -93,14 +93,16 @@ export const allMethodsTests = <T extends Repository>(params: {
   const repository = params.repository;
 
   describe(params.title, async () => {
-    beforeEach(async () => {
-      await deleteAll(repository, {});
-      await repository.batchSet(params.initial);
-    });
+    const setup = () =>
+      beforeAll(async () => {
+        await deleteAll(repository, {});
+        await repository.batchSet(params.initial);
+      });
 
     const dataList = params.initial;
 
     describe.sequential('get', () => {
+      setup();
       it('exists', async () => {
         const dataFromDb = await repository.get(dataList[0]);
         expect(dataFromDb).toStrictEqual(dataList[0]);
@@ -111,6 +113,7 @@ export const allMethodsTests = <T extends Repository>(params: {
     });
 
     describe.sequential('set', () => {
+      setup();
       const newData = params.newData();
 
       it('create', async () => {
@@ -127,6 +130,7 @@ export const allMethodsTests = <T extends Repository>(params: {
     });
 
     describe.sequential('create', () => {
+      setup();
       const newData = params.newData();
       console.log(newData);
 
@@ -144,6 +148,7 @@ export const allMethodsTests = <T extends Repository>(params: {
     });
 
     describe.sequential('delete', () => {
+      setup();
       it('precondition', async () => {
         expect(await repository.get(dataList[0])).toBeTruthy();
       });
@@ -158,6 +163,7 @@ export const allMethodsTests = <T extends Repository>(params: {
     });
 
     describe.sequential('batchGet', () => {
+      setup();
       it('empty', async () => {
         expect(await repository.batchGet([])).toStrictEqual([]);
       });
