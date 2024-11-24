@@ -32,8 +32,8 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
       newData: () => {
         const id = randomNumber();
         return {
-          authorId: `author_${id}`,
-          name: `name_${id}`,
+          authorId: `author${id}`,
+          name: `name${id}`,
           registeredAt: AdminTimestamp.fromDate(new Date()),
         };
       },
@@ -68,10 +68,11 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
       ],
       newData: () => {
         const id = randomNumber();
+        const authorId = randomNumber();
         return {
           postId: id,
           title: `post${id}`,
-          authorId: `author${id}`,
+          authorId: `author${authorId}`,
           postedAt: AdminTimestamp.fromDate(new Date()),
         };
       },

@@ -57,6 +57,7 @@ export type CollectionSchema<
   $dbModel: DbModel;
   $id: ModelId;
   $parentId: ModelParentId;
+  $docPathParams: ModelId & ModelParentId;
   $model: Prettify<ModelData & ModelId & ModelParentId>;
 };
 
@@ -65,9 +66,12 @@ export type ModelIdSchema<ModelId extends Record<string, unknown> = Record<strin
   to(id: ModelId): string;
 };
 
-export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
-  const docId = schema.id.to(id);
-  return `${collectionPath(schema, id)}/${docId}`;
+export const docPath = <T extends CollectionSchema>(
+  schema: T,
+  pathParams: T['$docPathParams'],
+): string => {
+  const docId = schema.id.to(pathParams);
+  return `${collectionPath(schema, pathParams)}/${docId}`;
 };
 
 export const collectionPath = <T extends CollectionSchema>(

@@ -1,40 +1,9 @@
-import { describe, expectTypeOf, it } from 'vitest';
-import { Timestamp, collection } from './index.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { Timestamp, as, collection, docPath } from './index.js';
 
 describe('CollectionSchema', () => {
-  const authors = collection({
-    name: 'Authors',
-    id: {
-      from: (authorId) => ({ authorId }),
-      to: ({ authorId }) => authorId,
-    },
-    data: {
-      from: (data: { name: string; registeredAt: Timestamp }) => data,
-      to: (data) => data,
-    },
-  });
-
-  const posts = collection({
-    name: 'Posts',
-    id: {
-      from: (postId) => ({ postId }),
-      to: ({ postId }) => postId,
-    },
-    parent: {
-      schema: authors,
-      from: ({ authorId }) => ({ authorId }),
-      to: ({ authorId }) => ({ authorId }),
-    },
-    data: {
-      from: (data: { title: string; postedAt: Timestamp }) => ({
-        ...data,
-      }),
-      to: (data) => ({ ...data }),
-    },
-  });
-
-  type AuthorsCollection = typeof authors;
-  type PostsCollection = typeof posts;
+  type AuthorsCollection = typeof authorsCollection;
+  type PostsCollection = typeof postsCollection;
 
   it('type', () => {
     // FIXME
@@ -51,4 +20,54 @@ describe('CollectionSchema', () => {
     // why?
     expectTypeOf<number>().toEqualTypeOf<string>();
   });
+
+  it('docPath', () => {
+    expect(docPath(authorsCollection, { authorId: 'abc' })).toBe('Authors/abc');
+    expect(docPath(postsCollection, { postId: 123, authorId: 'abc' })).toBe(
+      `Authors/abc/Posts/123`,
+    );
+  });
+
+  it('collectionPath', () => {});
+});
+
+/**
+ * Root collection
+ */
+const authorsCollection = collection({
+  name: 'Authors',
+  id: as('authorId'),
+  data: {
+    from: (data: { name: string; registeredAt: Timestamp }) => ({
+      ...data,
+    }),
+    to: ({ name, registeredAt }) => ({
+      name,
+      registeredAt,
+    }),
+  },
+});
+
+/**
+ * Subcollection
+ */
+const postsCollection = collection({
+  name: 'Posts',
+  id: {
+    from: (postId) => ({ postId: Number(postId) }),
+    to: ({ postId }) => postId.toString(),
+  },
+  parent: {
+    schema: authorsCollection,
+    id: {
+      from: ({ authorId }) => ({ authorId }),
+      to: ({ authorId }) => ({ authorId }),
+    },
+  },
+  data: {
+    from: (data: { title: string; postedAt: Timestamp }) => ({
+      ...data,
+    }),
+    to: (data) => ({ ...data }),
+  },
 });
