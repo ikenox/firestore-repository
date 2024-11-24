@@ -1,4 +1,5 @@
 import {
+  CollectionReference,
   DocumentSnapshot,
   type Firestore,
   Transaction,
@@ -158,5 +159,15 @@ export class Repository<T extends CollectionSchema> {
       ...parentId,
       ...id,
     };
+  }
+}
+
+export class IdGenerator {
+  collection: CollectionReference;
+  constructor(readonly db: Firestore) {
+    this.collection = this.db.collection('_DUMMY_COLLECTION_FOR_ID_GENERATOR');
+  }
+  generate(): string {
+    return this.collection.doc().id;
   }
 }

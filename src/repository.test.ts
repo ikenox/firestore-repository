@@ -2,14 +2,12 @@ import admin from 'firebase-admin';
 import { Timestamp as AdminTimestamp, getFirestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 import { Timestamp, collection } from './index.js';
-import { Repository } from './repository.js';
+import { IdGenerator, Repository } from './repository.js';
 
 describe('test', async () => {
   const db = getFirestore(
-    admin.initializeApp({
-      projectId: 'ikenox-sunrise',
-    }),
-    'test-db',
+    admin.initializeApp({ projectId: process.env['TEST_PROJECT']! }),
+    process.env['TEST_DB']!,
   );
 
   const authors = collection({
@@ -60,32 +58,74 @@ describe('test', async () => {
   const authorRepository = new AuthorRepository(authors, db);
   const postsRepository = new PostsRepository(posts, db);
 
-  it('get/set', async () => {
-    await db.doc('test/foo').set({ hello: 'world' });
+  const idGenerator = new IdGenerator(db);
 
+  it('get/set', async () => {
     const data: Author = {
-      authorId: '123',
+      authorId: idGenerator.generate(),
       name: 'author1',
       registeredAt: AdminTimestamp.fromDate(new Date()),
     };
+    const id = { authorId: data.authorId };
 
     {
-      const author = await authorRepository.get({ authorId: '123' });
+      const author = await authorRepository.get(id);
       expect(author).toBeUndefined();
     }
     {
+      // create
       await authorRepository.set(data);
-      const author = await authorRepository.get({ authorId: '123' });
+      const author = await authorRepository.get(id);
       expect(author).toStrictEqual<typeof author>(data);
     }
     {
+      // update
       const updated: Author = {
         ...data,
         name: 'author1_updated',
       };
       await authorRepository.set(updated);
-      const author = await authorRepository.get({ authorId: '123' });
+      const author = await authorRepository.get(id);
       expect(author).toStrictEqual<typeof author>(updated);
     }
+  });
+
+  it('create', async () => {
+    const data: Author = {
+      authorId: idGenerator.generate(),
+      name: 'author1',
+      registeredAt: AdminTimestamp.fromDate(new Date()),
+    };
+
+    {
+      const author = await authorRepository.get({ authorId: data.authorId });
+      expect(author).toBeUndefined();
+    }
+    {
+      await authorRepository.create(data);
+      const author = await authorRepository.get({ authorId: data.authorId });
+      expect(author).toStrictEqual<typeof author>(data);
+    }
+    {
+      // already exists
+      await expect(authorRepository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
+    }
+  });
+
+  it('delete', async () => {
+    const data: Author = {
+      authorId: idGenerator.generate(),
+      name: 'author1',
+      registeredAt: AdminTimestamp.fromDate(new Date()),
+    };
+
+    await authorRepository.create(data);
+    expect(await authorRepository.get({ authorId: data.authorId })).toBeTruthy();
+
+    await authorRepository.delete(data);
+    expect(await authorRepository.get({ authorId: data.authorId })).toBeUndefined();
+    // check idempotency
+    await authorRepository.delete(data);
+    expect(await authorRepository.get({ authorId: data.authorId })).toBeUndefined();
   });
 });
