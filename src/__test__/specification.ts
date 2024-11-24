@@ -57,64 +57,75 @@ export const allMethodsTests = <T extends Repository>(
 
     const dataList = params.initial;
 
-    it('get', async () => {
-      const author0 = await repository.get(dataList[0]);
-      expect(author0).toStrictEqual(dataList[0]);
-      expect(await repository.get({ authorId: 'other-author-id' })).toBeUndefined();
-
-      // get by entire document
-      expect(await repository.get(dataList[0])).toStrictEqual(dataList[0]);
+    describe('get', () => {
+      it('exists', async () => {
+        const dataFromDb = await repository.get(dataList[0]);
+        expect(dataFromDb).toStrictEqual(dataList[0]);
+      });
+      it('not found', async () => {
+        expect(await repository.get({ authorId: 'other-author-id' })).toBeUndefined();
+      });
     });
 
-    it('set', async () => {
+    describe('set', () => {
       const newData = params.newData();
 
-      // create
-      await repository.set(newData);
-
-      // TODO assertion
-
-      // update
-      const updated = params.mutate(newData);
-      await repository.set(updated);
-
-      // TODO assertion
+      it('create', async () => {
+        await repository.set(newData);
+        // TODO assertion
+      });
+      it('update', async () => {
+        const updated = params.mutate(newData);
+        await repository.set(updated);
+        // TODO assertion
+      });
     });
 
-    it('create', async () => {
+    describe('create', () => {
       const newData = params.newData();
 
-      expect(await repository.get(newData)).toBeUndefined();
-
-      await repository.create(newData);
-      const author = await repository.get(newData);
-      expect(author).toStrictEqual<typeof author>(newData);
-
-      // already exists
-      await expect(repository.create(newData)).rejects.toThrowError(/ALREADY_EXISTS/);
+      it('precondition', async () => {
+        expect(await repository.get(newData)).toBeUndefined();
+      });
+      it('success', async () => {
+        await repository.create(newData);
+        const dataFromDb = await repository.get(newData);
+        expect(dataFromDb).toStrictEqual<typeof dataFromDb>(newData);
+      });
+      it('already exists', async () => {
+        await expect(repository.create(newData)).rejects.toThrowError(/ALREADY_EXISTS/);
+      });
     });
 
-    it('delete', async () => {
-      // delete
-      await repository.delete(dataList[0]);
-      expect(await repository.get(dataList[0])).toBeUndefined();
-      // check idempotency
-      await repository.delete(dataList[0]);
-      expect(await repository.get(dataList[0])).toBeUndefined();
+    describe('delete', () => {
+      it('precondition', async () => {
+        expect(await repository.get(dataList[0])).toBeTruthy();
+      });
+      it('success', async () => {
+        await repository.delete(dataList[0]);
+        expect(await repository.get(dataList[0])).toBeUndefined();
+      });
+      it('if not exists', async () => {
+        await repository.delete(dataList[0]);
+        expect(await repository.get(dataList[0])).toBeUndefined();
+      });
     });
 
-    it('batchGet', async () => {
-      expect(await repository.batchGet([])).toStrictEqual([]);
-
-      expect(
-        await repository.batchGet([
-          dataList[0],
-          dataList[2],
-          dataList[1],
-          { authorId: 'other-author-id' },
-          dataList[2],
-        ]),
-      ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
+    describe('batchGet', () => {
+      it('empty', async () => {
+        expect(await repository.batchGet([])).toStrictEqual([]);
+      });
+      it('not empty', async () => {
+        expect(
+          await repository.batchGet([
+            dataList[0],
+            dataList[2],
+            dataList[1],
+            { authorId: 'other-author-id' },
+            dataList[2],
+          ]),
+        ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
+      });
     });
   });
 };
