@@ -10,7 +10,7 @@ import { type CollectionSchema, collectionPath, docPath } from './index.js';
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
 
-export class Repository<T extends CollectionSchema> {
+export class Repository<T extends CollectionSchema = CollectionSchema> {
   constructor(
     readonly collection: T,
     readonly db: Firestore,
@@ -21,7 +21,7 @@ export class Repository<T extends CollectionSchema> {
    */
   async get(id: T['$id'], options?: TransactionOption): Promise<T['$model'] | undefined> {
     const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : this.docRef(id).get());
-    return this.getData(doc);
+    return this.fromFirestore(doc);
   }
 
   /**
@@ -29,7 +29,7 @@ export class Repository<T extends CollectionSchema> {
    * @throws If the document already exists
    */
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
-    const data = this.docData(doc);
+    const data = this.toFirestore(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
 
@@ -37,7 +37,7 @@ export class Repository<T extends CollectionSchema> {
    * Create or update
    */
   async set(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
-    const data = this.docData(doc);
+    const data = this.toFirestore(doc);
     await (options?.tx
       ? options.tx instanceof Transaction
         ? options.tx.set(this.docRef(doc), data)
@@ -63,7 +63,7 @@ export class Repository<T extends CollectionSchema> {
     if (ids.length === 0) return [];
     const docRefs = ids.map((id) => this.docRef(id));
     const docs = await (options?.tx ? options.tx.getAll(...docRefs) : this.db.getAll(...docRefs));
-    return docs.map((doc) => this.getData(doc));
+    return docs.map((doc) => this.fromFirestore(doc));
   }
 
   /**
@@ -74,8 +74,8 @@ export class Repository<T extends CollectionSchema> {
     await this.batchWriteOperation(
       docs,
       {
-        batch: (batch, doc) => batch.create(this.docRef(doc), this.docData(doc)),
-        transaction: (tx, doc) => tx.create(this.docRef(doc), this.docData(doc)),
+        batch: (batch, doc) => batch.create(this.docRef(doc), this.toFirestore(doc)),
+        transaction: (tx, doc) => tx.create(this.docRef(doc), this.toFirestore(doc)),
       },
       options,
     );
@@ -89,8 +89,8 @@ export class Repository<T extends CollectionSchema> {
     await this.batchWriteOperation(
       docs,
       {
-        batch: (batch, doc) => batch.set(this.docRef(doc), this.docData(doc)),
-        transaction: (tx, doc) => tx.set(this.docRef(doc), this.docData(doc)),
+        batch: (batch, doc) => batch.set(this.docRef(doc), this.toFirestore(doc)),
+        transaction: (tx, doc) => tx.set(this.docRef(doc), this.toFirestore(doc)),
       },
       options,
     );
@@ -133,19 +133,28 @@ export class Repository<T extends CollectionSchema> {
     }
   }
 
-  protected docData(data: T['$model']): T['$dbModel'] {
+  async query(parentId: T['$parentId']): Promise<T['$model'][]> {
+    const { docs } = await this.collectionRef(parentId).get();
+    return docs.map(
+      (doc) =>
+        // FIXME do not use unsafe assertion
+        this.fromFirestore(doc)!,
+    );
+  }
+
+  toFirestore(data: T['$model']): T['$dbModel'] {
     return this.collection.data.to(data);
   }
 
-  protected docRef(id: T['$id']) {
+  docRef(id: T['$id']) {
     return this.db.doc(docPath(this.collection, id));
   }
 
-  protected collectionRef(parentId: T['$parentId']) {
+  collectionRef(parentId: T['$parentId']) {
     return this.db.collection(collectionPath(this.collection, parentId));
   }
 
-  protected getData(doc: DocumentSnapshot): T['$model'] | undefined {
+  fromFirestore(doc: DocumentSnapshot): T['$model'] | undefined {
     const data = doc.data();
     if (!data) {
       return undefined;

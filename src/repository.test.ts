@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { Timestamp as AdminTimestamp, getFirestore } from 'firebase-admin/firestore';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Timestamp, collection } from './index.js';
 import { IdGenerator, Repository } from './repository.js';
 
@@ -10,7 +10,7 @@ describe('test', async () => {
     process.env['TEST_DB']!,
   );
 
-  const authors = collection({
+  const authorsCollection = collection({
     name: 'Authors',
     id: {
       from: (authorId) => ({ authorId }),
@@ -27,14 +27,14 @@ describe('test', async () => {
     },
   });
 
-  const posts = collection({
+  const postsCollection = collection({
     name: 'Posts',
     id: {
       from: (postId) => ({ postId: Number(postId) }),
       to: ({ postId }) => postId.toString(),
     },
     parent: {
-      schema: authors,
+      schema: authorsCollection,
       from: ({ authorId }) => ({ authorId }),
       to: ({ authorId }) => ({ authorId }),
     },
@@ -46,86 +46,90 @@ describe('test', async () => {
     },
   });
 
-  type AuthorsCollection = typeof authors;
+  type AuthorsCollection = typeof authorsCollection;
   type Author = AuthorsCollection['$model'];
 
-  type PostsCollection = typeof posts;
+  type PostsCollection = typeof postsCollection;
   type Posts = PostsCollection['$model'];
 
   class AuthorRepository extends Repository<AuthorsCollection> {}
   class PostsRepository extends Repository<PostsCollection> {}
 
-  const authorRepository = new AuthorRepository(authors, db);
-  const postsRepository = new PostsRepository(posts, db);
+  const authorRepository = new AuthorRepository(authorsCollection, db);
+  const postsRepository = new PostsRepository(postsCollection, db);
 
   const idGenerator = new IdGenerator(db);
 
-  it('get/set', async () => {
-    const data: Author = {
-      authorId: idGenerator.generate(),
-      name: 'author1',
+  const authors = [
+    {
+      authorId: 'author0',
+      name: 'name0',
       registeredAt: AdminTimestamp.fromDate(new Date()),
-    };
-    const id = { authorId: data.authorId };
+    },
+    {
+      authorId: 'author1',
+      name: 'name1',
+      registeredAt: AdminTimestamp.fromDate(new Date()),
+    },
+    {
+      authorId: 'author2',
+      name: 'name2',
+      registeredAt: AdminTimestamp.fromDate(new Date()),
+    },
+  ] as const satisfies Author[];
 
-    {
-      const author = await authorRepository.get(id);
-      expect(author).toBeUndefined();
-    }
-    {
-      // create
-      await authorRepository.set(data);
-      const author = await authorRepository.get(id);
-      expect(author).toStrictEqual<typeof author>(data);
-    }
-    {
-      // update
-      const updated: Author = {
-        ...data,
-        name: 'author1_updated',
-      };
-      await authorRepository.set(updated);
-      const author = await authorRepository.get(id);
-      expect(author).toStrictEqual<typeof author>(updated);
-    }
+  const deleteAll = <T extends Repository>(repository: T, parentId: T['collection']['$parentId']) =>
+    repository.query(parentId).then((docs) => repository.batchDelete(docs));
+
+  beforeEach(async () => {
+    await deleteAll(authorRepository, {});
+    await authorRepository.batchSet(authors);
+  });
+
+  it('get', async () => {
+    const author0 = await authorRepository.get({ authorId: authors[0].authorId });
+    expect(author0).toStrictEqual(authors[0]);
+    expect(await authorRepository.get({ authorId: 'other-author-id' })).toBeUndefined();
   });
 
   it('create', async () => {
-    const data: Author = {
-      authorId: idGenerator.generate(),
-      name: 'author1',
+    const newAuthor: Author = {
+      authorId: 'author100',
+      name: 'name100',
       registeredAt: AdminTimestamp.fromDate(new Date()),
     };
 
-    {
-      const author = await authorRepository.get({ authorId: data.authorId });
-      expect(author).toBeUndefined();
-    }
-    {
-      await authorRepository.create(data);
-      const author = await authorRepository.get({ authorId: data.authorId });
-      expect(author).toStrictEqual<typeof author>(data);
-    }
-    {
-      // already exists
-      await expect(authorRepository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
-    }
+    expect(await authorRepository.get({ authorId: newAuthor.authorId })).toBeUndefined();
+
+    await authorRepository.create(newAuthor);
+    const author = await authorRepository.get({ authorId: newAuthor.authorId });
+    expect(author).toStrictEqual<typeof author>(newAuthor);
+
+    // already exists
+    await expect(authorRepository.create(newAuthor)).rejects.toThrowError(/ALREADY_EXISTS/);
   });
 
   it('delete', async () => {
-    const data: Author = {
-      authorId: idGenerator.generate(),
-      name: 'author1',
-      registeredAt: AdminTimestamp.fromDate(new Date()),
-    };
-
-    await authorRepository.create(data);
-    expect(await authorRepository.get({ authorId: data.authorId })).toBeTruthy();
-
-    await authorRepository.delete(data);
-    expect(await authorRepository.get({ authorId: data.authorId })).toBeUndefined();
+    const id0 = { authorId: authors[0].authorId };
+    // delete
+    await authorRepository.delete(id0);
+    expect(await authorRepository.get(id0)).toBeUndefined();
     // check idempotency
-    await authorRepository.delete(data);
-    expect(await authorRepository.get({ authorId: data.authorId })).toBeUndefined();
+    await authorRepository.delete(id0);
+    expect(await authorRepository.get(id0)).toBeUndefined();
+  });
+
+  it('batchGet', async () => {
+    expect(await authorRepository.batchGet([])).toStrictEqual([]);
+
+    expect(
+      await authorRepository.batchGet([
+        { authorId: authors[0].authorId },
+        { authorId: authors[2].authorId },
+        { authorId: authors[1].authorId },
+        { authorId: 'other-author-id' },
+        { authorId: authors[2].authorId },
+      ]),
+    ).toStrictEqual([authors[0], authors[2], authors[1], undefined, authors[2]]);
   });
 });
