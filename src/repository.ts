@@ -20,26 +20,16 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     readonly db: Firestore,
   ) {}
 
-  /**
-   * Get a document by ID
-   */
   async get(id: T['$id'], options?: TransactionOption): Promise<T['$model'] | undefined> {
     const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : this.docRef(id).get());
     return this.fromFirestore(doc);
   }
 
-  /**
-   * Create a new document
-   * @throws If the document already exists
-   */
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
 
-  /**
-   * Create or update
-   */
   async set(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx
@@ -49,17 +39,10 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       : this.docRef(doc).set(data));
   }
 
-  /**
-   * Delete a document by ID
-   */
   async delete(id: T['$id'], options?: WriteTransactionOption): Promise<void> {
     await (options?.tx ? options.tx.delete(this.docRef(id)) : this.docRef(id).delete());
   }
 
-  /**
-   * Get documents by multiple ID
-   * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
-   */
   async batchGet(
     ids: T['$id'][],
     options?: TransactionOption,
@@ -70,10 +53,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return docs.map((doc) => this.fromFirestore(doc));
   }
 
-  /**
-   * Create or update multiple documents
-   * The entire operation will fail if one creation fails
-   */
   async batchCreate(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       docs,
@@ -85,10 +64,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  /**
-   * Create or update multiple documents
-   * Up to 500 documents
-   */
   async batchSet(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       docs,
@@ -100,10 +75,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  /**
-   * Delete documents by multiple ID
-   * Up to 500 documents
-   */
   async batchDelete(ids: T['$id'][], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       ids,
@@ -165,7 +136,10 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }
     const id = this.collection.id.from(doc.id);
 
-    const parent = this.collection.parent as CollectionSchema<never, CollectionSchema>['parent'];
+    const parent = this.collection.parent as base.CollectionSchema<
+      never,
+      base.CollectionSchema
+    >['parent'];
     const parentId = parent ? parent.from(parent.schema.id.from(doc.ref.parent.id)) : {};
     return {
       ...this.collection.data.from(data),
