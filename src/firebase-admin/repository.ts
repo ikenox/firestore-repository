@@ -5,8 +5,8 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { collectionPath, docPath } from './index.js';
-import type * as base from './index.js';
+import { collectionPath, docPath } from '../index.js';
+import type * as base from '../index.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch };
 export type TransactionOption = base.TransactionOption<Env>;

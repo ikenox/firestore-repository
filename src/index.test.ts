@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { Timestamp, as, collection, docPath } from './index.js';
+import { Timestamp, as, collection, collectionPath, docPath } from './index.js';
 
 describe('CollectionSchema', () => {
   type AuthorsCollection = typeof authorsCollection;
@@ -28,7 +28,10 @@ describe('CollectionSchema', () => {
     );
   });
 
-  it('collectionPath', () => {});
+  it('collectionPath', () => {
+    expect(collectionPath(authorsCollection, {})).toBe('Authors');
+    expect(collectionPath(postsCollection, { authorId: 'abc' })).toBe(`Authors/abc/Posts`);
+  });
 });
 
 /**

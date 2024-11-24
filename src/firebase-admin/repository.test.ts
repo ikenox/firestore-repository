@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import { Timestamp as AdminTimestamp, getFirestore } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { defineRepositorySpecificationTests } from './__test__/specification.js';
+import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository } from './repository.js';
 
 describe('repository', async () => {

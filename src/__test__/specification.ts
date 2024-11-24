@@ -1,5 +1,5 @@
 import { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { CollectionSchema, Repository, Timestamp, as, collection } from '../index.js';
 
 /**
