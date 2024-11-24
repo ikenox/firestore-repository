@@ -140,7 +140,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       never,
       base.CollectionSchema
     >['parent'];
-    const parentId = parent ? parent.from(parent.schema.id.from(doc.ref.parent.id)) : {};
+    const parentId = parent ? parent.id.from(parent.schema.id.from(doc.ref.parent.id)) : {};
     return {
       ...this.collection.data.from(data),
       ...parentId,

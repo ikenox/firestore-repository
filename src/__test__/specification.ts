@@ -9,9 +9,9 @@ import { CollectionSchema, Repository, Timestamp, as, collection } from '../inde
 export const defineRepositorySpecificationTests = <T extends Repository>(
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
 ) => {
-  const authorRepository = repository(authorsCollection);
-  const postsRepository = repository(postsCollection);
-  allMethodsTests(authorRepository, {
+  allMethodsTests({
+    title: 'root collection',
+    repository: repository(authorsCollection),
     initial: [
       {
         authorId: 'author0',
@@ -39,16 +39,55 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
       name: `${data.name}_updated`,
     }),
   });
+
+  allMethodsTests({
+    title: 'subcollection',
+    repository: repository(postsCollection),
+    initial: [
+      {
+        postId: 0,
+        title: 'post0',
+        authorId: 'author0',
+        postedAt: AdminTimestamp.fromDate(new Date()),
+      },
+      {
+        postId: 1,
+        title: 'post1',
+        authorId: 'author0',
+        postedAt: AdminTimestamp.fromDate(new Date()),
+      },
+      {
+        postId: 2,
+        title: 'post2',
+        authorId: 'author1',
+        postedAt: AdminTimestamp.fromDate(new Date()),
+      },
+    ],
+    newData: () => {
+      const randomNumber = Math.floor(Math.random() * 1000);
+      return {
+        postId: randomNumber,
+        title: `post${randomNumber}`,
+        authorId: `author${randomNumber}`,
+        postedAt: AdminTimestamp.fromDate(new Date()),
+      };
+    },
+    mutate: (data) => ({
+      ...data,
+      title: `${data.title}_updated`,
+    }),
+  });
 };
 
-export const allMethodsTests = <T extends Repository>(
-  repository: T,
-  params: {
-    initial: [T['collection']['$model'], T['collection']['$model'], T['collection']['$model']];
-    newData: () => T['collection']['$model'];
-    mutate: (data: T['collection']['$model']) => T['collection']['$model'];
-  },
-) => {
+export const allMethodsTests = <T extends Repository>(params: {
+  title: string;
+  repository: T;
+  initial: [T['collection']['$model'], T['collection']['$model'], T['collection']['$model']];
+  newData: () => T['collection']['$model'];
+  mutate: (data: T['collection']['$model']) => T['collection']['$model'];
+}) => {
+  const repository = params.repository;
+
   describe('repository specifications', async () => {
     beforeEach(async () => {
       await deleteAll(repository, {});
