@@ -9,7 +9,7 @@ import { type CollectionSchema, collectionPath, docPath } from './index.js';
 export type TransactionOption = { tx: Transaction };
 export type WriteTransactionOption = { tx: Transaction | WriteBatch };
 
-export abstract class Repository<T extends CollectionSchema> {
+export class Repository<T extends CollectionSchema> {
   constructor(
     readonly collection: T,
     readonly db: Firestore,

@@ -1,5 +1,5 @@
 import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { Timestamp as AdminTimestamp, getFirestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 import { Timestamp, collection } from './index.js';
 import { Repository } from './repository.js';
@@ -7,8 +7,9 @@ import { Repository } from './repository.js';
 describe('test', async () => {
   const db = getFirestore(
     admin.initializeApp({
-      projectId: 'dummy-project',
+      projectId: 'ikenox-sunrise',
     }),
+    'test-db',
   );
 
   const authors = collection({
@@ -20,11 +21,10 @@ describe('test', async () => {
     data: {
       from: (data: { name: string; registeredAt: Timestamp }) => ({
         ...data,
-        registeredAt: data.registeredAt.toDate(),
       }),
       to: ({ name, registeredAt }) => ({
         name,
-        registeredAt: Timestamp.fromDate(),
+        registeredAt,
       }),
     },
   });
@@ -60,16 +60,32 @@ describe('test', async () => {
   const authorRepository = new AuthorRepository(authors, db);
   const postsRepository = new PostsRepository(posts, db);
 
-  it('get and set', async () => {
+  it('get/set', async () => {
+    await db.doc('test/foo').set({ hello: 'world' });
+
     const data: Author = {
       authorId: '123',
       name: 'author1',
-      registeredAt: new Timestamp(),
+      registeredAt: AdminTimestamp.fromDate(new Date()),
     };
-    const author = await authorRepository.get({ authorId: '123' });
-    expect(author).toBeUndefined();
-    authorRepository.set({
-      authorId: '123',
-    });
+
+    {
+      const author = await authorRepository.get({ authorId: '123' });
+      expect(author).toBeUndefined();
+    }
+    {
+      await authorRepository.set(data);
+      const author = await authorRepository.get({ authorId: '123' });
+      expect(author).toStrictEqual<typeof author>(data);
+    }
+    {
+      const updated: Author = {
+        ...data,
+        name: 'author1_updated',
+      };
+      await authorRepository.set(updated);
+      const author = await authorRepository.get({ authorId: '123' });
+      expect(author).toStrictEqual<typeof author>(updated);
+    }
   });
 });
