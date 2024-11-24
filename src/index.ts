@@ -116,6 +116,8 @@ export interface Repository<
   T extends CollectionSchema = CollectionSchema,
   Env extends FirestoreEnvironment = FirestoreEnvironment,
 > {
+  collection: T;
+
   /**
    * Get a document by ID
    */
@@ -160,4 +162,7 @@ export interface Repository<
    * Up to 500 documents
    */
   batchDelete(ids: T['$id'][], options?: WriteTransactionOption<Env>): Promise<void>;
+
+  // TODO
+  query(parentId: T['$parentId']): Promise<T['$model'][]>;
 }

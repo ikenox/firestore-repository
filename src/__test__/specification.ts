@@ -6,7 +6,7 @@ import { CollectionSchema, Repository, Timestamp, as, collection } from '../inde
  * List of specifications that repository implementations must satisfy
  */
 
-export const repositorySpecification = <T extends Repository>(
+export const defineRepositorySpecificationTests = <T extends Repository>(
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
 ) => {
   const authorsCollection = collection({
