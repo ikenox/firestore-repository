@@ -5,7 +5,6 @@ import { CollectionSchema, Repository, Timestamp, as, collection } from '../inde
 /**
  * List of specifications that repository implementations must satisfy
  */
-
 export const defineRepositorySpecificationTests = <T extends Repository>(
   repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
 ) => {
@@ -117,11 +116,13 @@ export const allMethodsTests = <T extends Repository>(params: {
       it('create', async () => {
         await repository.set(newData);
         // TODO assertion
+        expect(await repository.get(newData)).toStrictEqual(newData);
       });
       it('update', async () => {
         const updated = params.mutate(newData);
         await repository.set(updated);
         // TODO assertion
+        expect(await repository.get(newData)).toStrictEqual(updated);
       });
     });
 
