@@ -55,9 +55,8 @@ export type CollectionSchema<
    * These fields are only accessible at type-level, and actually it will be undefined at runtime
    */
   $dbModel: DbModel;
-  $id: ModelId;
+  $id: ModelId & ModelParentId;
   $parentId: ModelParentId;
-  $docPathParams: ModelId & ModelParentId;
   $model: Prettify<ModelData & ModelId & ModelParentId>;
 };
 
@@ -66,12 +65,9 @@ export type ModelIdSchema<ModelId extends Record<string, unknown> = Record<strin
   to(id: ModelId): string;
 };
 
-export const docPath = <T extends CollectionSchema>(
-  schema: T,
-  pathParams: T['$docPathParams'],
-): string => {
-  const docId = schema.id.to(pathParams);
-  return `${collectionPath(schema, pathParams)}/${docId}`;
+export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
+  const docId = schema.id.to(id);
+  return `${collectionPath(schema, id)}/${docId}`;
 };
 
 export const collectionPath = <T extends CollectionSchema>(
@@ -79,7 +75,7 @@ export const collectionPath = <T extends CollectionSchema>(
   id: T['$parentId'],
 ): string => {
   return schema.parent?.schema
-    ? `${docPath(schema.parent.schema, id)}/${schema.name}`
+    ? `${docPath(schema.parent.schema, schema.parent.id.to(id))}/${schema.name}`
     : schema.name;
 };
 

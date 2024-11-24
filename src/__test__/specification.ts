@@ -41,6 +41,7 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
         ...data,
         name: `${data.name}_updated`,
       }),
+      notExistDocId: () => ({ authorId: 'not-exists' }),
     });
 
     allMethodsTests({
@@ -80,6 +81,7 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
         ...data,
         title: `${data.title}_updated`,
       }),
+      notExistDocId: () => ({ postId: randomNumber(), authorId: 'post0' }),
     });
   });
 };
@@ -90,6 +92,7 @@ export const allMethodsTests = <T extends Repository>(params: {
   initial: [T['collection']['$model'], T['collection']['$model'], T['collection']['$model']];
   newData: () => T['collection']['$model'];
   mutate: (data: T['collection']['$model']) => T['collection']['$model'];
+  notExistDocId: () => T['collection']['$id'];
 }) => {
   const repository = params.repository;
 
@@ -109,7 +112,7 @@ export const allMethodsTests = <T extends Repository>(params: {
         expect(dataFromDb).toStrictEqual(dataList[0]);
       });
       it('not found', async () => {
-        expect(await repository.get({ authorId: 'other-author-id' })).toBeUndefined();
+        expect(await repository.get(params.notExistDocId())).toBeUndefined();
       });
     });
 
@@ -133,7 +136,6 @@ export const allMethodsTests = <T extends Repository>(params: {
     describe.sequential('create', () => {
       setup();
       const newData = params.newData();
-      console.log(newData);
 
       it('precondition', async () => {
         expect(await repository.get(newData)).toBeUndefined();
@@ -174,7 +176,7 @@ export const allMethodsTests = <T extends Repository>(params: {
             dataList[0],
             dataList[2],
             dataList[1],
-            { authorId: 'other-author-id' },
+            params.notExistDocId(),
             dataList[2],
           ]),
         ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
@@ -186,7 +188,7 @@ export const allMethodsTests = <T extends Repository>(params: {
 const deleteAll = <T extends Repository>(repository: T, parentId: T['collection']['$parentId']) =>
   repository.query(parentId).then((docs) => repository.batchDelete(docs));
 
-const randomNumber = () => Math.floor(Math.random() * 1000000);
+const randomNumber = () => 1000000 + Math.floor(Math.random() * 1000000);
 
 /**
  * Root collection
@@ -218,7 +220,7 @@ const postsCollection = collection({
     schema: authorsCollection,
     id: {
       from: ({ authorId }) => ({ authorId }),
-      to: ({ authorId }) => ({ authorId }),
+      to: (data) => ({ authorId: data.authorId }),
     },
   },
   data: {

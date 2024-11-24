@@ -121,7 +121,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return this.collection.data.to(data);
   }
 
-  docRef(id: T['$docPathParams']) {
+  docRef(id: T['$id']) {
     return this.db.doc(docPath(this.collection, id));
   }
 

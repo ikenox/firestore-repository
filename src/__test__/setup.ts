@@ -9,7 +9,6 @@ const setUp = async (): Promise<void> => {
     `http://${envVars.FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${envVars.TEST_PROJECT}/databases/${envVars.TEST_DB}/documents`,
     { method: 'delete' },
   );
-  console.log(res.status, await res.text());
 
   Object.entries(envVars).forEach(([k, v]) => {
     process.env[k] = v;
