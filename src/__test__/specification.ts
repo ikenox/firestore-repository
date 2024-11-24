@@ -29,11 +29,14 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
         registeredAt: AdminTimestamp.fromDate(new Date()),
       },
     ],
-    newData: () => ({
-      authorId: `author_${crypto.randomUUID()}`,
-      name: `name_${crypto.randomUUID()}`,
-      registeredAt: AdminTimestamp.fromDate(new Date()),
-    }),
+    newData: () => {
+      const id = randomNumber();
+      return {
+        authorId: `author_${id}`,
+        name: `name_${id}`,
+        registeredAt: AdminTimestamp.fromDate(new Date()),
+      };
+    },
     mutate: (data) => ({
       ...data,
       name: `${data.name}_updated`,
@@ -64,11 +67,11 @@ export const defineRepositorySpecificationTests = <T extends Repository>(
       },
     ],
     newData: () => {
-      const randomNumber = Math.floor(Math.random() * 1000);
+      const id = randomNumber();
       return {
-        postId: randomNumber,
-        title: `post${randomNumber}`,
-        authorId: `author${randomNumber}`,
+        postId: id,
+        title: `post${id}`,
+        authorId: `author${id}`,
         postedAt: AdminTimestamp.fromDate(new Date()),
       };
     },
@@ -122,6 +125,7 @@ export const allMethodsTests = <T extends Repository>(params: {
 
     describe.sequential('create', () => {
       const newData = params.newData();
+      console.log(newData);
 
       it('precondition', async () => {
         expect(await repository.get(newData)).toBeUndefined();
@@ -171,6 +175,8 @@ export const allMethodsTests = <T extends Repository>(params: {
 
 const deleteAll = <T extends Repository>(repository: T, parentId: T['collection']['$parentId']) =>
   repository.query(parentId).then((docs) => repository.batchDelete(docs));
+
+const randomNumber = () => Math.floor(Math.random() * 1000000);
 
 /**
  * Root collection
