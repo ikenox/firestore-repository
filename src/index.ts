@@ -20,6 +20,9 @@ export const collection = <
 ): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
   schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
 
+/**
+ * A utility method to define simple id field
+ */
 export const as = <const T extends string>(fieldName: T): ModelIdSchema<Record<T, string>> => ({
   from: (id) => ({ [fieldName]: id }) as Record<T, string>,
   to: (data) => data[fieldName],
