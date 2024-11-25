@@ -5,10 +5,8 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import firebase from 'firebase/compat';
 import { Unsubscribe, collectionPath, docPath } from '../index.js';
 import type * as base from '../index.js';
-import Error = firebase.auth.Error;
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -38,7 +36,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   getOnShanpshot(
     id: T['$id'],
-    onNext: (snapshot: T['$model']) => void,
+    onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe {}
 

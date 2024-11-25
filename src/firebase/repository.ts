@@ -46,19 +46,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   getOnShanpshot(
     id: T['$id'],
-    onNext: (snapshot: T['$model']) => void,
-    onError?: (error: Error) => void,
-    complete?: () => void,
-  ): Unsubscribe {
-    onSnapshot(query().withConverter());
-  }
-
-  queryOnSnapshot(
-    id: T['$id'],
-    onNext: (snapshot: T['$model'][]) => void,
+    onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {}
+
+  queryOnSnapshot(
+    id: T['$parentId'],
+    onNext: (snapshot: T['$model'][]) => void,
+    onError?: (error: Error) => void,
+    complete?: () => void,
+  ): Unsubscribe {
+    query();
+  }
 
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
