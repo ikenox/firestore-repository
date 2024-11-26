@@ -14,7 +14,7 @@ import {
   query,
   setDoc,
   writeBatch,
-} from 'firebase/firestore';
+} from '@firebase/firestore';
 import { Unsubscribe, collectionPath, docPath } from '../index.js';
 import type * as base from '../index.js';
 
@@ -61,6 +61,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
+    executeWrite();
+    addDoc();
     const data = this.toFirestore(doc);
     await (options?.tx
       ? options.tx.create(this.docRef(doc), data)
