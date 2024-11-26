@@ -1,4 +1,3 @@
-import { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CollectionSchema, Repository, Timestamp, as, collection } from '../index.js';
 import { deleteAll, randomNumber } from './util.js';
@@ -7,13 +6,98 @@ import { deleteAll, randomNumber } from './util.js';
  * List of specifications that repository implementations must satisfy
  */
 export const defineRepositorySpecificationTests = (
-  repository: <const T extends CollectionSchema>(collection: T) => Repository<T>,
-  converters: {
-    timestamp: (date: Date) => Timestamp;
+  repository: <T extends CollectionSchema>(collection: T) => Repository<T>,
+  params: {
+    converters: {
+      timestamp: (date: Date) => Timestamp;
+    };
+    implementationSpecificTests?: <T extends Repository>(params: TestCollectionParams<T>) => void;
   },
 ) => {
+  const converters = params.converters;
+
+  const defineTests = <T extends Repository>(params: TestCollectionParams<T>) => {
+    const repository = params.repository;
+
+    describe(params.title, async () => {
+      const setup = () =>
+        beforeAll(async () => {
+          await deleteAll(repository, {});
+          await repository.batchSet(params.initial);
+        });
+
+      const dataList = params.initial;
+
+      describe.sequential('get', () => {
+        setup();
+        it('exists', async () => {
+          const dataFromDb = await repository.get(dataList[0]);
+          expect(dataFromDb).toStrictEqual(dataList[0]);
+        });
+        it('not found', async () => {
+          expect(await repository.get(params.notExistDocId())).toBeUndefined();
+        });
+      });
+
+      describe.sequential('set', () => {
+        setup();
+        const newData = params.newData();
+
+        it('create', async () => {
+          await repository.set(newData);
+          // TODO assertion
+          expect(await repository.get(newData)).toStrictEqual(newData);
+        });
+        it('update', async () => {
+          const updated = params.mutate(newData);
+          await repository.set(updated);
+          // TODO assertion
+          expect(await repository.get(newData)).toStrictEqual(updated);
+        });
+      });
+
+      describe.sequential('delete', () => {
+        setup();
+        it('precondition', async () => {
+          expect(await repository.get(dataList[0])).toBeTruthy();
+        });
+        it('success', async () => {
+          await repository.delete(dataList[0]);
+          expect(await repository.get(dataList[0])).toBeUndefined();
+        });
+        it('if not exists', async () => {
+          await repository.delete(dataList[0]);
+          expect(await repository.get(dataList[0])).toBeUndefined();
+        });
+      });
+
+      describe.sequential('batchGet', () => {
+        setup();
+        it('empty', async () => {
+          expect(await repository.batchGet([])).toStrictEqual([]);
+        });
+        it('not empty', async () => {
+          expect(
+            await repository.batchGet([
+              dataList[0],
+              dataList[2],
+              dataList[1],
+              params.notExistDocId(),
+              dataList[2],
+            ]),
+          ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
+        });
+      });
+
+      describe('implementation specifice tests', ()=>{
+          params.(params);
+      })
+
+    });
+  };
+
   describe('repository specifications', () => {
-    allMethodsTests({
+    defineTests({
       title: 'root collection',
       repository: repository(authorsCollection),
       initial: [
@@ -48,7 +132,7 @@ export const defineRepositorySpecificationTests = (
       notExistDocId: () => ({ authorId: 'not-exists' }),
     });
 
-    allMethodsTests({
+    defineTests({
       title: 'subcollection',
       repository: repository(postsCollection),
       initial: [
@@ -90,103 +174,13 @@ export const defineRepositorySpecificationTests = (
   });
 };
 
-export const allMethodsTests = <T extends Repository>(params: {
+export type TestCollectionParams<T extends Repository> = {
   title: string;
   repository: T;
   initial: [T['collection']['$model'], T['collection']['$model'], T['collection']['$model']];
   newData: () => T['collection']['$model'];
   mutate: (data: T['collection']['$model']) => T['collection']['$model'];
   notExistDocId: () => T['collection']['$id'];
-}) => {
-  const repository = params.repository;
-
-  describe(params.title, async () => {
-    const setup = () =>
-      beforeAll(async () => {
-        await deleteAll(repository, {});
-        await repository.batchSet(params.initial);
-      });
-
-    const dataList = params.initial;
-
-    describe.sequential('get', () => {
-      setup();
-      it('exists', async () => {
-        const dataFromDb = await repository.get(dataList[0]);
-        expect(dataFromDb).toStrictEqual(dataList[0]);
-      });
-      it('not found', async () => {
-        expect(await repository.get(params.notExistDocId())).toBeUndefined();
-      });
-    });
-
-    describe.sequential('set', () => {
-      setup();
-      const newData = params.newData();
-
-      it('create', async () => {
-        await repository.set(newData);
-        // TODO assertion
-        expect(await repository.get(newData)).toStrictEqual(newData);
-      });
-      it('update', async () => {
-        const updated = params.mutate(newData);
-        await repository.set(updated);
-        // TODO assertion
-        expect(await repository.get(newData)).toStrictEqual(updated);
-      });
-    });
-
-    describe.sequential('create', () => {
-      setup();
-      const newData = params.newData();
-
-      it('precondition', async () => {
-        expect(await repository.get(newData)).toBeUndefined();
-      });
-      it('success', async () => {
-        await repository.create(newData);
-        const dataFromDb = await repository.get(newData);
-        expect(dataFromDb).toStrictEqual<typeof dataFromDb>(newData);
-      });
-      it('already exists', async () => {
-        await expect(repository.create(newData)).rejects.toThrowError(/ALREADY_EXISTS/);
-      });
-    });
-
-    describe.sequential('delete', () => {
-      setup();
-      it('precondition', async () => {
-        expect(await repository.get(dataList[0])).toBeTruthy();
-      });
-      it('success', async () => {
-        await repository.delete(dataList[0]);
-        expect(await repository.get(dataList[0])).toBeUndefined();
-      });
-      it('if not exists', async () => {
-        await repository.delete(dataList[0]);
-        expect(await repository.get(dataList[0])).toBeUndefined();
-      });
-    });
-
-    describe.sequential('batchGet', () => {
-      setup();
-      it('empty', async () => {
-        expect(await repository.batchGet([])).toStrictEqual([]);
-      });
-      it('not empty', async () => {
-        expect(
-          await repository.batchGet([
-            dataList[0],
-            dataList[2],
-            dataList[1],
-            params.notExistDocId(),
-            dataList[2],
-          ]),
-        ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
-      });
-    });
-  });
 };
 
 /**

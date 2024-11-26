@@ -112,12 +112,6 @@ export interface Repository<
   ): Unsubscribe;
 
   /**
-   * Create a new document
-   * @throws If the document already exists
-   */
-  create(doc: T['$model'], options?: WriteTransactionOption<Env>): Promise<void>;
-
-  /**
    * Create or update
    */
   set(doc: T['$model'], options?: WriteTransactionOption<Env>): Promise<void>;
@@ -130,14 +124,10 @@ export interface Repository<
   /**
    * Get documents by multiple ID
    * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
+   *
+   * TODO: about firebase does not provide batch get interface
    */
   batchGet(ids: T['$id'][], options?: TransactionOption<Env>): Promise<(T['$model'] | undefined)[]>;
-
-  /**
-   * Create or update multiple documents
-   * The entire operation will fail if one creation fails
-   */
-  batchCreate(docs: T['$model'][], options?: WriteTransactionOption<Env>): Promise<void>;
 
   /**
    * Create or update multiple documents

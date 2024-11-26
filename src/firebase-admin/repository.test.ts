@@ -11,6 +11,25 @@ describe('repository', async () => {
   );
 
   defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
-    timestamp: (date) => Timestamp.fromDate(date),
+    converters: {
+      timestamp: (date) => Timestamp.fromDate(date),
+    },
+    implementationSpecificTests: <Repository>({ repository, newData }) => {
+      describe.sequential('create', () => {
+        const data = newData();
+
+        it('precondition', async () => {
+          expect(await repository.get(data)).toBeUndefined();
+        });
+        it('success', async () => {
+          await repository.create(data);
+          const dataFromDb = await repository.get(data);
+          expect(dataFromDb).toStrictEqual<typeof dataFromDb>(data);
+        });
+        it('already exists', async () => {
+          await expect(repository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
+        });
+      });
+    },
   });
 });

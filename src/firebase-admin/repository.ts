@@ -46,6 +46,12 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     onError?: (error: Error) => void,
   ): Unsubscribe {}
 
+  /**
+   * Create a new document
+   * @throws If the document already exists
+   *
+   * TODO: Move to universal Repository interface
+   */
   async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
@@ -74,6 +80,12 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return docs.map((doc) => this.fromFirestore(doc));
   }
 
+  /**
+   * Create or update multiple documents
+   * The entire operation will fail if one creation fails
+   *
+   * TODO: Move to universal Repository interface
+   */
   async batchCreate(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       docs,
