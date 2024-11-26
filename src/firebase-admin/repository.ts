@@ -76,6 +76,13 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     await (options?.tx ? options.tx.delete(this.docRef(id)) : this.docRef(id).delete());
   }
 
+  /**
+   * Get documents by multiple ID
+   * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
+   *
+   * TODO: Move to universal Repository interface
+   */
+  batchGet(ids: T['$id'][], options?: TransactionOption<Env>): Promise<(T['$model'] | undefined)[]>;
   async batchGet(
     ids: T['$id'][],
     options?: TransactionOption,

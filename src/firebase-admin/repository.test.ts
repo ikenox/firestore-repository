@@ -20,6 +20,8 @@ describe('repository', async () => {
     implementationSpecificTests: <Repository>({
       repository,
       newData,
+      initial,
+      notExistDocId,
     }: TestCollectionParams<any>) => {
       describe('create', () => {
         const data = newData();
@@ -34,6 +36,24 @@ describe('repository', async () => {
         });
         it('already exists', async () => {
           await expect(repository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
+        });
+      });
+
+      describe('batchGet', () => {
+        it('empty', async () => {
+          expect(await repository.batchGet([])).toStrictEqual([]);
+        });
+        it('not empty', async () => {
+          const dataList = initial;
+          expect(
+            await repository.batchGet([
+              dataList[0],
+              dataList[2],
+              dataList[1],
+              notExistDocId(),
+              dataList[2],
+            ]),
+          ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
         });
       });
     },

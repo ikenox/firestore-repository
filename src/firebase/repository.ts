@@ -4,13 +4,11 @@ import {
   type Firestore,
   Transaction,
   type WriteBatch,
-  addDoc,
   collection,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
-  onSnapshot,
   query,
   setDoc,
   writeBatch,
@@ -49,7 +47,10 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
     complete?: () => void,
-  ): Unsubscribe {}
+  ): Unsubscribe {
+    // TODO
+    return () => {};
+  }
 
   queryOnSnapshot(
     id: T['$parentId'],
@@ -57,16 +58,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     onError?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
-    query();
-  }
-
-  async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
-    executeWrite();
-    addDoc();
-    const data = this.toFirestore(doc);
-    await (options?.tx
-      ? options.tx.create(this.docRef(doc), data)
-      : addDoc(this.docRef(doc), data));
+    // TODO
+    return () => {};
   }
 
   async set(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
@@ -80,27 +73,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   async delete(id: T['$id'], options?: WriteTransactionOption): Promise<void> {
     await (options?.tx ? options.tx.delete(this.docRef(id)) : deleteDoc(this.docRef(id)));
-  }
-
-  async batchGet(
-    ids: T['$id'][],
-    options?: TransactionOption,
-  ): Promise<(T['$model'] | undefined)[]> {
-    if (ids.length === 0) return [];
-    const docRefs = ids.map((id) => this.docRef(id));
-    const docs = await (options?.tx ? options.tx.getAll(...docRefs) : this.db.getAll(...docRefs));
-    return docs.map((doc) => this.fromFirestore(doc));
-  }
-
-  async batchCreate(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
-    await this.batchWriteOperation(
-      docs,
-      {
-        batch: (batch, doc) => batch.create(this.docRef(doc), this.toFirestore(doc)),
-        transaction: (tx, doc) => tx.create(this.docRef(doc), this.toFirestore(doc)),
-      },
-      options,
-    );
   }
 
   async batchSet(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {

@@ -122,14 +122,6 @@ export interface Repository<
   delete(id: T['$id'], options?: WriteTransactionOption<Env>): Promise<void>;
 
   /**
-   * Get documents by multiple ID
-   * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
-   *
-   * TODO: about firebase does not provide batch get interface
-   */
-  batchGet(ids: T['$id'][], options?: TransactionOption<Env>): Promise<(T['$model'] | undefined)[]>;
-
-  /**
    * Create or update multiple documents
    * Up to 500 documents
    */

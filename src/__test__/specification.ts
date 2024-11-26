@@ -71,24 +71,6 @@ export const defineRepositorySpecificationTests = (
         });
       });
 
-      describe('batchGet', () => {
-        setup();
-        it('empty', async () => {
-          expect(await repository.batchGet([])).toStrictEqual([]);
-        });
-        it('not empty', async () => {
-          expect(
-            await repository.batchGet([
-              dataList[0],
-              dataList[2],
-              dataList[1],
-              params.notExistDocId(),
-              dataList[2],
-            ]),
-          ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
-        });
-      });
-
       if (environment.implementationSpecificTests) {
         describe('implementation specific tests', () => {
           environment.implementationSpecificTests?.(params);
