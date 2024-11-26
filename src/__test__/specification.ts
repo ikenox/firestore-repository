@@ -11,8 +11,8 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     converters: {
       timestamp: (date: Date) => Timestamp;
     };
-    implementationSpecificTests?: (
-      params: TestCollectionParams,
+    implementationSpecificTests?: <T extends CollectionSchema>(
+      params: TestCollectionParams<T>,
       testWithDb: TestWithDb<Repo>,
     ) => void;
   },
