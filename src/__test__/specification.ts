@@ -28,7 +28,7 @@ export const defineRepositorySpecificationTests = (
 
       const dataList = params.initial;
 
-      describe.sequential('get', () => {
+      describe('get', () => {
         setup();
         it('exists', async () => {
           const dataFromDb = await repository.get(dataList[0]);
@@ -39,7 +39,7 @@ export const defineRepositorySpecificationTests = (
         });
       });
 
-      describe.sequential('set', () => {
+      describe('set', () => {
         setup();
         const newData = params.newData();
 
@@ -56,7 +56,7 @@ export const defineRepositorySpecificationTests = (
         });
       });
 
-      describe.sequential('delete', () => {
+      describe('delete', () => {
         setup();
         it('precondition', async () => {
           expect(await repository.get(dataList[0])).toBeTruthy();
@@ -71,7 +71,7 @@ export const defineRepositorySpecificationTests = (
         });
       });
 
-      describe.sequential('batchGet', () => {
+      describe('batchGet', () => {
         setup();
         it('empty', async () => {
           expect(await repository.batchGet([])).toStrictEqual([]);

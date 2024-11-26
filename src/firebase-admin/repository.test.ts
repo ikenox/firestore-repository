@@ -21,7 +21,7 @@ describe('repository', async () => {
       repository,
       newData,
     }: TestCollectionParams<any>) => {
-      describe.sequential('create', () => {
+      describe('create', () => {
         const data = newData();
 
         it('precondition', async () => {
