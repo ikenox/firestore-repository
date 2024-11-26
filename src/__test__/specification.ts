@@ -1,54 +1,63 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CollectionSchema, Repository, Timestamp, as, collection } from '../index.js';
-import { deleteAll, randomNumber } from './util.js';
+import { deleteAll, randomNumber, randomString } from './util.js';
 
 /**
  * List of specifications that repository implementations must satisfy
  */
-export const defineRepositorySpecificationTests = (
-  repository: <T extends CollectionSchema>(collection: T) => Repository<T>,
+export const defineRepositorySpecificationTests = <Repo extends Repository>(
+  repository: <T extends CollectionSchema>(collection: T) => Repo,
   environment: {
     converters: {
       timestamp: (date: Date) => Timestamp;
     };
-    implementationSpecificTests?: <T extends Repository>(params: TestCollectionParams<T>) => void;
+    implementationSpecificTests?: (
+      params: TestCollectionParams,
+      testWithDb: TestWithDb<Repo>,
+    ) => void;
   },
 ) => {
   const converters = environment.converters;
 
-  const defineTests = <T extends Repository>(params: TestCollectionParams<T>) => {
-    const repository = params.repository;
+  const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
+    const testWithDb: TestWithDb<Repo> = (label, test) => {
+      it(label, async () => {
+        const repo = repository({
+          ...params.collection,
+          // use unique collection for each test
+          name: `${params.collection.name}_${randomString()}`,
+        });
+        // setup initial data
+        await repo.batchSet(params.initial);
+
+        await test({ repository: repo });
+      });
+    };
 
     describe(params.title, async () => {
-      const setup = () =>
-        beforeAll(async () => {
-          await deleteAll(repository, {});
-          await repository.batchSet(params.initial);
-        });
-
       const dataList = params.initial;
 
       describe('get', () => {
-        setup();
-        it('exists', async () => {
+        testWithDb('exists', async ({ repository }) => {
           const dataFromDb = await repository.get(dataList[0]);
           expect(dataFromDb).toStrictEqual(dataList[0]);
         });
-        it('not found', async () => {
+
+        testWithDb('not found', async ({ repository }) => {
           expect(await repository.get(params.notExistDocId())).toBeUndefined();
         });
       });
 
       describe('set', () => {
-        setup();
         const newData = params.newData();
 
-        it('create', async () => {
+        testWithDb('create', async ({ repository }) => {
           await repository.set(newData);
           // TODO assertion
           expect(await repository.get(newData)).toStrictEqual(newData);
         });
-        it('update', async () => {
+
+        testWithDb('update', async ({ repository }) => {
           const updated = params.mutate(newData);
           await repository.set(updated);
           // TODO assertion
@@ -57,23 +66,22 @@ export const defineRepositorySpecificationTests = (
       });
 
       describe('delete', () => {
-        setup();
-        it('precondition', async () => {
-          expect(await repository.get(dataList[0])).toBeTruthy();
-        });
-        it('success', async () => {
+        testWithDb('success', async ({ repository }) => {
           await repository.delete(dataList[0]);
           expect(await repository.get(dataList[0])).toBeUndefined();
         });
-        it('if not exists', async () => {
+
+        testWithDb('if not exists', async ({ repository }) => {
+          await repository.delete(dataList[0]);
+          expect(await repository.get(dataList[0])).toBeUndefined();
           await repository.delete(dataList[0]);
           expect(await repository.get(dataList[0])).toBeUndefined();
         });
       });
 
       if (environment.implementationSpecificTests) {
-        describe('implementation specific tests', () => {
-          environment.implementationSpecificTests?.(params);
+        describe('implementation-specific tests', () => {
+          environment.implementationSpecificTests?.(params, testWithDb);
         });
       }
     });
@@ -82,7 +90,7 @@ export const defineRepositorySpecificationTests = (
   describe('repository specifications', () => {
     defineTests({
       title: 'root collection',
-      repository: repository(authorsCollection),
+      collection: authorsCollection,
       initial: [
         {
           authorId: 'author0',
@@ -117,7 +125,7 @@ export const defineRepositorySpecificationTests = (
 
     defineTests({
       title: 'subcollection',
-      repository: repository(postsCollection),
+      collection: postsCollection,
       initial: [
         {
           postId: 0,
@@ -157,14 +165,21 @@ export const defineRepositorySpecificationTests = (
   });
 };
 
-export type TestCollectionParams<T extends Repository> = {
+export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> = {
   title: string;
-  repository: T;
-  initial: [T['collection']['$model'], T['collection']['$model'], T['collection']['$model']];
-  newData: () => T['collection']['$model'];
-  mutate: (data: T['collection']['$model']) => T['collection']['$model'];
-  notExistDocId: () => T['collection']['$id'];
+  collection: T;
+  initial: [T['$model'], T['$model'], T['$model']];
+  newData: () => T['$model'];
+  mutate: (data: T['$model']) => T['$model'];
+  notExistDocId: () => T['$id'];
 };
+
+export type TestWithDb<T extends Repository = Repository> = (
+  label: string,
+  test: (context: {
+    repository: T;
+  }) => Promise<void>,
+) => void;
 
 /**
  * Root collection

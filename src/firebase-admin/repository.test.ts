@@ -17,33 +17,28 @@ describe('repository', async () => {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
     },
-    implementationSpecificTests: <Repository>({
-      repository,
-      newData,
-      initial,
-      notExistDocId,
-    }: TestCollectionParams<any>) => {
+    implementationSpecificTests: ({ newData, initial, notExistDocId }, testWithDb) => {
       describe('create', () => {
         const data = newData();
 
-        it('precondition', async () => {
-          expect(await repository.get(data)).toBeUndefined();
-        });
-        it('success', async () => {
+        testWithDb('success', async ({ repository }) => {
           await repository.create(data);
           const dataFromDb = await repository.get(data);
           expect(dataFromDb).toStrictEqual<typeof dataFromDb>(data);
         });
-        it('already exists', async () => {
+
+        testWithDb('already exists', async ({ repository }) => {
+          await repository.create(data);
           await expect(repository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
         });
       });
 
       describe('batchGet', () => {
-        it('empty', async () => {
+        testWithDb('empty', async ({ repository }) => {
           expect(await repository.batchGet([])).toStrictEqual([]);
         });
-        it('not empty', async () => {
+
+        testWithDb('not empty', async ({ repository }) => {
           const dataList = initial;
           expect(
             await repository.batchGet([
