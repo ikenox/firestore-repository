@@ -1,7 +1,10 @@
 import admin from 'firebase-admin';
 import { Timestamp as AdminTimestamp, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { defineRepositorySpecificationTests } from '../__test__/specification.js';
+import {
+  TestCollectionParams,
+  defineRepositorySpecificationTests,
+} from '../__test__/specification.js';
 import { Repository } from './repository.js';
 
 describe('repository', async () => {
@@ -14,7 +17,10 @@ describe('repository', async () => {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
     },
-    implementationSpecificTests: <Repository>({ repository, newData }) => {
+    implementationSpecificTests: <Repository>({
+      repository,
+      newData,
+    }: TestCollectionParams<any>) => {
       describe.sequential('create', () => {
         const data = newData();
 

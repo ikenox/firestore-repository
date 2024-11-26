@@ -7,14 +7,14 @@ import { deleteAll, randomNumber } from './util.js';
  */
 export const defineRepositorySpecificationTests = (
   repository: <T extends CollectionSchema>(collection: T) => Repository<T>,
-  params: {
+  environment: {
     converters: {
       timestamp: (date: Date) => Timestamp;
     };
     implementationSpecificTests?: <T extends Repository>(params: TestCollectionParams<T>) => void;
   },
 ) => {
-  const converters = params.converters;
+  const converters = environment.converters;
 
   const defineTests = <T extends Repository>(params: TestCollectionParams<T>) => {
     const repository = params.repository;
@@ -89,10 +89,11 @@ export const defineRepositorySpecificationTests = (
         });
       });
 
-      describe('implementation specifice tests', ()=>{
-          params.(params);
-      })
-
+      if (environment.implementationSpecificTests) {
+        describe('implementation specific tests', () => {
+          environment.implementationSpecificTests?.(params);
+        });
+      }
     });
   };
 

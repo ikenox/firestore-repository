@@ -1,5 +1,5 @@
+import type * as sdk from '@firebase/firestore';
 import type * as admin from 'firebase-admin/firestore';
-import type * as sdk from 'firebase/firestore';
 import { Prettify } from './util.js';
 
 /**

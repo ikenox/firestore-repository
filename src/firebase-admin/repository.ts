@@ -38,13 +38,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     id: T['$id'],
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
-  ): Unsubscribe {}
+  ): Unsubscribe {
+    // TODO
+    return () => {};
+  }
 
   queryOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'][]) => void,
     onError?: (error: Error) => void,
-  ): Unsubscribe {}
+  ): Unsubscribe {
+    // TODO
+    return () => {};
+  }
 
   /**
    * Create a new document
