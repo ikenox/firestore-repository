@@ -1,14 +1,12 @@
 import admin from 'firebase-admin';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
-import { describe, expect } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository } from './repository.js';
 
 describe('repository', async () => {
   const db = getFirestore(
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
     admin.initializeApp({ projectId: process.env['TEST_PROJECT']! }),
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
     process.env['TEST_DB']!,
   );
 
@@ -16,28 +14,33 @@ describe('repository', async () => {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
     },
-    implementationSpecificTests: ({ newData, initial, notExistDocId }, testWithDb) => {
+    implementationSpecificTests: ({ newData, initial, notExistDocId }, setupRepository) => {
+      let repository!: Repository;
+      beforeEach(async () => {
+        repository = await setupRepository();
+      });
+
       describe('create', () => {
         const data = newData();
 
-        testWithDb('success', async ({ repository }) => {
+        it('success', async () => {
           await repository.create(data);
           const dataFromDb = await repository.get(data);
           expect(dataFromDb).toStrictEqual<typeof dataFromDb>(data);
         });
 
-        testWithDb('already exists', async ({ repository }) => {
+        it('already exists', async () => {
           await repository.create(data);
           await expect(repository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
         });
       });
 
       describe('batchGet', () => {
-        testWithDb('empty', async ({ repository }) => {
+        it('empty', async () => {
           expect(await repository.batchGet([])).toStrictEqual([]);
         });
 
-        testWithDb('not empty', async ({ repository }) => {
+        it('not empty', async () => {
           const dataList = initial;
           expect(
             await repository.batchGet([

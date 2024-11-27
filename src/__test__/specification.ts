@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   type CollectionSchema,
   type Repository,
@@ -19,37 +19,39 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
-      testWithDb: TestWithDb<Repo>,
+      setupRepository: () => Promise<Repo>,
     ) => void;
   },
 ) => {
   const converters = environment.converters;
 
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
-    const testWithDb: TestWithDb<Repo> = (label, test) => {
-      it(label, async () => {
-        const repo = repository({
-          ...params.collection,
-          // use unique collection for each test
-          name: `${params.collection.name}_${randomString()}`,
-        });
-        // setup initial data
-        await repo.batchSet(params.initial);
-
-        await test({ repository: repo });
+    const setupRepository = async (): Promise<Repo> => {
+      const repo = repository({
+        ...params.collection,
+        // use unique collection for each test
+        name: `${params.collection.name}_${randomString()}`,
       });
+      // setup initial data
+      await repo.batchSet(params.initial);
+      return repo;
     };
 
     describe(params.title, async () => {
+      let repository!: Repo;
+      beforeEach(async () => {
+        repository = await setupRepository();
+      });
+
       const dataList = params.initial;
 
       describe('get', () => {
-        testWithDb('exists', async ({ repository }) => {
+        it('exists', async () => {
           const dataFromDb = await repository.get(dataList[0]);
           expect(dataFromDb).toStrictEqual(dataList[0]);
         });
 
-        testWithDb('not found', async ({ repository }) => {
+        it('not found', async () => {
           expect(await repository.get(params.notExistDocId())).toBeUndefined();
         });
       });
@@ -57,13 +59,13 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       describe('set', () => {
         const newData = params.newData();
 
-        testWithDb('create', async ({ repository }) => {
+        it('create', async () => {
           await repository.set(newData);
           // TODO assertion
           expect(await repository.get(newData)).toStrictEqual(newData);
         });
 
-        testWithDb('update', async ({ repository }) => {
+        it('update', async () => {
           const updated = params.mutate(newData);
           await repository.set(updated);
           // TODO assertion
@@ -72,12 +74,12 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       });
 
       describe('delete', () => {
-        testWithDb('success', async ({ repository }) => {
+        it('success', async () => {
           await repository.delete(dataList[0]);
           expect(await repository.get(dataList[0])).toBeUndefined();
         });
 
-        testWithDb('if not exists', async ({ repository }) => {
+        it('if not exists', async () => {
           await repository.delete(dataList[0]);
           expect(await repository.get(dataList[0])).toBeUndefined();
           await repository.delete(dataList[0]);
@@ -87,7 +89,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
 
       if (environment.implementationSpecificTests) {
         describe('implementation-specific tests', () => {
-          environment.implementationSpecificTests?.(params, testWithDb);
+          environment.implementationSpecificTests?.(params, setupRepository);
         });
       }
     });
@@ -179,13 +181,6 @@ export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> 
   mutate: (data: T['$model']) => T['$model'];
   notExistDocId: () => T['$id'];
 };
-
-export type TestWithDb<T extends Repository = Repository> = (
-  label: string,
-  test: (context: {
-    repository: T;
-  }) => Promise<void>,
-) => void;
 
 /**
  * Root collection

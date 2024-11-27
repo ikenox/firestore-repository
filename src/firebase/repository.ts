@@ -109,19 +109,13 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     const tx = options?.tx;
     if (tx) {
       if (tx instanceof Transaction) {
-        for (const target of targets) {
-          runner.transaction(tx, target);
-        }
+        targets.forEach((target) => runner.transaction(tx, target));
       } else {
-        for (const target of targets) {
-          runner.batch(tx, target);
-        }
+        targets.forEach((target) => runner.batch(tx, target));
       }
     } else {
       const batch = writeBatch(this.db);
-      for (const target of targets) {
-        runner.batch(batch, target);
-      }
+      targets.forEach((target) => runner.batch(batch, target));
       await batch.commit();
     }
   }
@@ -144,23 +138,22 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       return undefined;
     }
     const id = this.collection.id.from(doc.id);
-
     const parent = this.collection.parent as base.CollectionSchema<
       never,
       base.CollectionSchema
     >['parent'];
 
-    let parentId: T['$parentId'] | undefined = undefined;
+    let parentId: T['$parentId'] | undefined;
     if (parent) {
       const parentDocRef = doc.ref.parent.parent;
       if (!parentDocRef) {
-        throw new Error('');
+        throw new Error('the collection is unexpectedly root collection');
       }
       parentId = parent.id.from(parent.schema.id.from(parentDocRef.id));
     }
     return {
       ...this.collection.data.from(data),
-      ...(parentId ?? {}),
+      ...parentId,
       ...id,
     };
   }

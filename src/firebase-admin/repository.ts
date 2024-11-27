@@ -82,7 +82,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
    *
    * TODO: Move to universal Repository interface
    */
-  batchGet(ids: T['$id'][], options?: TransactionOption<Env>): Promise<(T['$model'] | undefined)[]>;
+  batchGet(ids: T['$id'][], options?: WriteTransactionOption): Promise<(T['$model'] | undefined)[]>;
   async batchGet(
     ids: T['$id'][],
     options?: TransactionOption,
@@ -172,12 +172,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       return undefined;
     }
     const id = this.collection.id.from(doc.id);
-
     const parent = this.collection.parent as base.CollectionSchema<
       never,
       base.CollectionSchema
     >['parent'];
-    const parentId = parent ? parent.id.from(parent.schema.id.from(doc.ref.parent.parent!.id)) : {};
+
+    let parentId: T['$parentId'] | undefined;
+    if (parent) {
+      const parentDocRef = doc.ref.parent.parent;
+      if (!parentDocRef) {
+        throw new Error('the collection is unexpectedly root collection');
+      }
+      parentId = parent.id.from(parent.schema.id.from(parentDocRef.id));
+    }
     return {
       ...this.collection.data.from(data),
       ...parentId,

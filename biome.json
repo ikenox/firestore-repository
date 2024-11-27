@@ -8,7 +8,8 @@
     "rules": {
       "all": true,
       "complexity": {
-        "useLiteralKeys": "off"
+        "useLiteralKeys": "off",
+        "noForEach": "off"
       },
       "style": {
         "noParameterProperties": "off"
@@ -24,5 +25,21 @@
     "formatter": {
       "quoteStyle": "single"
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["**/*.test.ts"],
+      "linter": {
+        "enabled": true,
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "performance": {
+            "all": false
+          }
+        }
+      }
+    }
+  ]
 }
