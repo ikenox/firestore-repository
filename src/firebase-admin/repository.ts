@@ -34,7 +34,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  getOnShanpshot(
+  getOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,

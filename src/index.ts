@@ -100,7 +100,7 @@ export interface Repository<
   // TODO
   query(parentId: T['$parentId']): Promise<T['$model'][]>;
 
-  getOnShanpshot(
+  getOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
