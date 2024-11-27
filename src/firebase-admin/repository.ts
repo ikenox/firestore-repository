@@ -39,12 +39,11 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe {
-    // TODO
-    return () => {};
+    return this.docRef(id).onSnapshot(onNext, onError);
   }
 
   queryOnSnapshot(
-    id: T['$id'],
+    id: T['$parentId'],
     onNext: (snapshot: T['$model'][]) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe {

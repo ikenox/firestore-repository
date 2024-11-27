@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   setDoc,
   writeBatch,
@@ -49,8 +50,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     onError?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
-    // TODO
-    return () => {};
+    return onSnapshot(this.docRef(id), onNext, onError, complete);
   }
 
   queryOnSnapshot(

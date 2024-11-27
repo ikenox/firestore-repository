@@ -93,19 +93,25 @@ export interface Repository<
   collection: T;
 
   /**
-   * Get a document by ID
+   * Get single document by ID
    */
   get(id: T['$id'], options?: TransactionOption<Env>): Promise<T['$model'] | undefined>;
 
   // TODO
   query(parentId: T['$parentId']): Promise<T['$model'][]>;
 
+  /**
+   * Listen single document
+   */
   getOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'] | undefined) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe;
 
+  /**
+   * Listen documents by the specified query
+   */
   queryOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'][]) => void,
