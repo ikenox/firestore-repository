@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { Timestamp, as, collection, collectionPath, docPath } from './index.js';
+import { type Timestamp, as, collection, collectionPath, docPath } from './index.js';
 
 describe('CollectionSchema', () => {
   type AuthorsCollection = typeof authorsCollection;

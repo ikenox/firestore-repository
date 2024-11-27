@@ -1,6 +1,6 @@
 import type * as sdk from '@firebase/firestore';
 import type * as admin from 'firebase-admin/firestore';
-import { Prettify } from './util.js';
+import type { Prettify } from './util.js';
 
 /**
  * An entrypoint of schema definition

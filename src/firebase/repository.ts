@@ -1,6 +1,6 @@
 import {
-  CollectionReference,
-  DocumentSnapshot,
+  type CollectionReference,
+  type DocumentSnapshot,
   type Firestore,
   Transaction,
   type WriteBatch,
@@ -13,7 +13,7 @@ import {
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
-import { Unsubscribe, collectionPath, docPath } from '../index.js';
+import { type Unsubscribe, collectionPath, docPath } from '../index.js';
 import type * as base from '../index.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch };

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Repository } from '../index.js';
+import type { Repository } from '../index.js';
 
 /**
  * Delete all documents of the specified collection

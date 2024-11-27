@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CollectionSchema, Repository, Timestamp, as, collection } from '../index.js';
+import { type CollectionSchema, type Repository, type Timestamp, as, collection } from '../index.js';
 import { deleteAll, randomNumber, randomString } from './util.js';
 
 /**
