@@ -20,6 +20,8 @@ export const collection = <
 ): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
   schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
 
+type Foo = [keyof { foo: 1 }] extends [never] ? 'true' : 'false';
+
 /**
  * A utility method to define simple id field
  */
@@ -123,6 +125,8 @@ export interface Repository<
    */
   query(...args: T['$parentId'] extends undefined ? [] : [never]): Query<T>;
   query(parentId: T['$parentId']): Query<T>;
+
+  collectionGroupQuery(): Query<T>;
 
   /**
    * Create or update
