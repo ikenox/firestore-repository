@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import type { Repository } from '../index.js';
 
 /**

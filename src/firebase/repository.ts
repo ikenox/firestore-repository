@@ -38,6 +38,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return docs.map(
       (doc) =>
         // FIXME do not use unsafe assertion
+        // biome-ignore lint/style/noNonNullAssertion: <explanation>
         this.fromFirestore(doc)!,
     );
   }
@@ -108,13 +109,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     const tx = options?.tx;
     if (tx) {
       if (tx instanceof Transaction) {
-        targets.forEach((target) => runner.transaction(tx, target));
+        for (const target of targets) {
+          runner.transaction(tx, target);
+        }
       } else {
-        targets.forEach((target) => runner.batch(tx, target));
+        for (const target of targets) {
+          runner.batch(tx, target);
+        }
       }
     } else {
       const batch = writeBatch(this.db);
-      targets.forEach((target) => runner.batch(batch, target));
+      for (const target of targets) {
+        runner.batch(batch, target);
+      }
       await batch.commit();
     }
   }
@@ -142,10 +149,18 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       never,
       base.CollectionSchema
     >['parent'];
-    const parentId = parent ? parent.id.from(parent.schema.id.from(doc.ref.parent.parent!.id)) : {};
+
+    let parentId: T['$parentId'] | undefined = undefined;
+    if (parent) {
+      const parentDocRef = doc.ref.parent.parent;
+      if (!parentDocRef) {
+        throw new Error('');
+      }
+      parentId = parent.id.from(parent.schema.id.from(parentDocRef.id));
+    }
     return {
       ...this.collection.data.from(data),
-      ...parentId,
+      ...(parentId ?? {}),
       ...id,
     };
   }

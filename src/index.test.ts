@@ -7,15 +7,15 @@ describe('CollectionSchema', () => {
 
   it('type', () => {
     // FIXME
-    expectTypeOf<AuthorsCollection['$dbModel']>().toEqualTypeOf<{}>();
-    expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<{}>();
-    expectTypeOf<AuthorsCollection['$parentId']>().toEqualTypeOf<{}>();
-    expectTypeOf<AuthorsCollection['$model']>().toEqualTypeOf<{}>();
+    expectTypeOf<AuthorsCollection['$dbModel']>().toEqualTypeOf<never>();
+    expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<never>();
+    expectTypeOf<AuthorsCollection['$parentId']>().toEqualTypeOf<never>();
+    expectTypeOf<AuthorsCollection['$model']>().toEqualTypeOf<never>();
 
-    expectTypeOf<PostsCollection['$dbModel']>().toEqualTypeOf<{}>();
-    expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<{}>();
-    expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<{}>();
-    expectTypeOf<PostsCollection['$model']>().toEqualTypeOf<{}>();
+    expectTypeOf<PostsCollection['$dbModel']>().toEqualTypeOf<never>();
+    expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<never>();
+    expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<never>();
+    expectTypeOf<PostsCollection['$model']>().toEqualTypeOf<never>();
 
     // why?
     expectTypeOf<number>().toEqualTypeOf<string>();
@@ -24,13 +24,13 @@ describe('CollectionSchema', () => {
   it('docPath', () => {
     expect(docPath(authorsCollection, { authorId: 'abc' })).toBe('Authors/abc');
     expect(docPath(postsCollection, { postId: 123, authorId: 'abc' })).toBe(
-      `Authors/abc/Posts/123`,
+      'Authors/abc/Posts/123',
     );
   });
 
   it('collectionPath', () => {
     expect(collectionPath(authorsCollection, {})).toBe('Authors');
-    expect(collectionPath(postsCollection, { authorId: 'abc' })).toBe(`Authors/abc/Posts`);
+    expect(collectionPath(postsCollection, { authorId: 'abc' })).toBe('Authors/abc/Posts');
   });
 });
 

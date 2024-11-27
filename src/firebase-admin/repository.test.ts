@@ -1,15 +1,14 @@
 import admin from 'firebase-admin';
-import { Timestamp as AdminTimestamp, Timestamp, getFirestore } from 'firebase-admin/firestore';
-import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  TestCollectionParams,
-  defineRepositorySpecificationTests,
-} from '../__test__/specification.js';
+import { Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { describe, expect } from 'vitest';
+import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository } from './repository.js';
 
 describe('repository', async () => {
   const db = getFirestore(
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
     admin.initializeApp({ projectId: process.env['TEST_PROJECT']! }),
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
     process.env['TEST_DB']!,
   );
 

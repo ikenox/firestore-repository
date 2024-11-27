@@ -7,7 +7,9 @@
   "scripts": {
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "emulator:start": "docker compose up -d"
+    "emulator:start": "docker compose up -d",
+    "check": "biome check .",
+    "fix": "biome check --fix"
   },
   "keywords": [],
   "author": "",

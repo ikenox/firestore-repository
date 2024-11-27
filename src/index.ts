@@ -7,7 +7,7 @@ import type { Prettify } from './util.js';
  */
 export const collection = <
   DbModel extends DocumentData = DocumentData,
-  Parent extends CollectionSchema = any,
+  Parent extends CollectionSchema = CollectionSchema,
   ModelData extends Record<string, unknown> = Record<never, never>,
   ModelId extends Record<string, unknown> = Record<never, never>,
   ModelParentId extends Record<string, unknown> = Record<never, never>,
@@ -33,6 +33,7 @@ export const as = <const T extends string>(fieldName: T): ModelIdSchema<Record<T
  */
 export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Parent extends CollectionSchema = any,
   ModelData extends Record<string, unknown> = Record<never, never>,
   ModelId extends Record<string, unknown> = Record<never, never>,

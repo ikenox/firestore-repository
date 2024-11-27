@@ -4,7 +4,16 @@
     "enabled": true
   },
   "linter": {
-    "enabled": true
+    "enabled": true,
+    "rules": {
+      "all": true,
+      "complexity": {
+        "useLiteralKeys": "off"
+      },
+      "style": {
+        "noParameterProperties": "off"
+      }
+    }
   },
   "formatter": {
     "enabled": true,
