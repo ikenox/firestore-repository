@@ -29,7 +29,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     const { docs } = await this.collectionRef(parentId).get();
     return docs.map(
       (doc) =>
-        // FIXME do not use unsafe assertion
+        // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
         this.fromFirestore(doc)!,
     );
   }
@@ -82,12 +82,13 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
    *
    * TODO: Move to universal Repository interface
    */
-  batchGet(ids: T['$id'][], options?: WriteTransactionOption): Promise<(T['$model'] | undefined)[]>;
   async batchGet(
     ids: T['$id'][],
     options?: TransactionOption,
   ): Promise<(T['$model'] | undefined)[]> {
-    if (ids.length === 0) return [];
+    if (ids.length === 0) {
+      return [];
+    }
     const docRefs = ids.map((id) => this.docRef(id));
     const docs = await (options?.tx ? options.tx.getAll(...docRefs) : this.db.getAll(...docRefs));
     return docs.map((doc) => this.fromFirestore(doc));
