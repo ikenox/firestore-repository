@@ -20,8 +20,6 @@ export const collection = <
 ): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
   schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
 
-type Foo = [keyof { foo: 1 }] extends [never] ? 'true' : 'false';
-
 /**
  * A utility method to define simple id field
  */
@@ -47,8 +45,8 @@ export type CollectionSchema<
   parent?: {
     schema: Parent;
     id: {
-      from(id: Parent['$id']): ModelParentId;
-      to(id: ModelParentId): Parent['$id'];
+      from(id: Id<Parent>): ModelParentId;
+      to(id: ModelParentId): Id<Parent>;
     };
   };
   data: {
@@ -56,31 +54,48 @@ export type CollectionSchema<
     // TODO allow Date etc.
     to(data: NoInfer<Prettify<ModelData & ModelId & ModelParentId>>): NoInfer<DbModel>;
   };
-
-  /**
-   * Phantom types
-   * These fields are only accessible at type-level, and actually it will be undefined at runtime
-   */
-  $dbModel: DbModel;
-  $id: ModelId & ModelParentId;
-  $parentId: ModelParentId;
-  $model: Prettify<ModelData & ModelId & ModelParentId>;
 };
+
+export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<infer A> ? A : never;
+export type Model<T extends CollectionSchema> = T extends CollectionSchema<
+  DocumentData,
+  CollectionSchema,
+  infer ModelData,
+  infer ModelId,
+  infer ModelParentId
+>
+  ? Prettify<ModelData & ModelId & ModelParentId>
+  : never;
+export type Id<T extends CollectionSchema> = T extends CollectionSchema<
+  DocumentData,
+  CollectionSchema,
+  Record<string, unknown>,
+  infer ModelId,
+  infer ModelParentId
+>
+  ? ModelId & ModelParentId
+  : never;
+export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
+  DocumentData,
+  CollectionSchema,
+  Record<string, unknown>,
+  Record<string, unknown>,
+  infer ModelParentId
+>
+  ? ModelParentId
+  : never;
 
 export type ModelIdSchema<ModelId extends Record<string, unknown> = Record<string, unknown>> = {
   from(id: string): ModelId;
   to(id: ModelId): string;
 };
 
-export const docPath = <T extends CollectionSchema>(schema: T, id: T['$id']): string => {
+export const docPath = <T extends CollectionSchema>(schema: T, id: Id<T>): string => {
   const docId = schema.id.to(id);
   return `${collectionPath(schema, id)}/${docId}`;
 };
 
-export const collectionPath = <T extends CollectionSchema>(
-  schema: T,
-  id: T['$parentId'],
-): string => {
+export const collectionPath = <T extends CollectionSchema>(schema: T, id: ParentId<T>): string => {
   return schema.parent?.schema
     ? `${docPath(schema.parent.schema, schema.parent.id.to(id))}/${schema.name}`
     : schema.name;
@@ -98,56 +113,57 @@ export interface Repository<
   /**
    * Get single document by ID
    */
-  get(id: T['$id'], options?: TransactionOption<Env>): Promise<T['$model'] | undefined>;
+  get(id: Id<T>, options?: TransactionOption<Env>): Promise<Model<T> | undefined>;
 
   /**
    * Listen single document
    */
   getOnSnapshot(
-    id: T['$id'],
-    onNext: (snapshot: T['$model'] | undefined) => void,
+    id: Id<T>,
+    onNext: (snapshot: Model<T> | undefined) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe;
 
-  list(query: Query<T>): Promise<T['$model'][]>;
+  list(query: Query<T>): Promise<Model<T>[]>;
 
   /**
    * Listen documents by the specified query
    */
   listOnSnapshot(
     query: Query<T>,
-    onNext: (snapshot: T['$model'][]) => void,
+    onNext: (snapshot: Model<T>[]) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe;
 
   /**
    *
    */
-  query(...args: T['$parentId'] extends undefined ? [] : [never]): Query<T>;
-  query(parentId: T['$parentId']): Query<T>;
+  query(parentId: ParentId<T>): Query<T>;
 
   collectionGroupQuery(): Query<T>;
 
   /**
    * Create or update
    */
-  set(doc: T['$model'], options?: WriteTransactionOption<Env>): Promise<void>;
+  set(doc: Model<T>, options?: WriteTransactionOption<Env>): Promise<void>;
 
   /**
    * Delete a document by ID
    */
-  delete(id: T['$id'], options?: WriteTransactionOption<Env>): Promise<void>;
+  delete(id: Id<T>, options?: WriteTransactionOption<Env>): Promise<void>;
 
   /**
    * Create or update multiple documents
    */
-  batchSet(docs: T['$model'][], options?: WriteTransactionOption<Env>): Promise<void>;
+  batchSet(docs: Model<T>[], options?: WriteTransactionOption<Env>): Promise<void>;
 
   /**
    * Delete documents by multiple ID
    */
-  batchDelete(ids: T['$id'][], options?: WriteTransactionOption<Env>): Promise<void>;
+  batchDelete(ids: Id<T>[], options?: WriteTransactionOption<Env>): Promise<void>;
 }
+
+export const rootCollection = { name: '' } satisfies CollectionSchema;
 
 /**
  * Query representation

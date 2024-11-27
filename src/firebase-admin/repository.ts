@@ -6,7 +6,16 @@ import {
   Transaction,
   type WriteBatch,
 } from 'firebase-admin/firestore';
-import { type Query, type Unsubscribe, collectionPath, docPath } from '../index.js';
+import {
+  type DbModel,
+  type Id,
+  type Model,
+  type ParentId,
+  type Query,
+  type Unsubscribe,
+  collectionPath,
+  docPath,
+} from '../index.js';
 import type * as base from '../index.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch };
@@ -21,14 +30,14 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     readonly db: Firestore,
   ) {}
 
-  async get(id: T['$id'], options?: TransactionOption): Promise<T['$model'] | undefined> {
+  async get(id: Id<T>, options?: TransactionOption): Promise<Model<T> | undefined> {
     const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : this.docRef(id).get());
     return this.fromFirestore(doc);
   }
 
   getOnSnapshot(
-    id: T['$id'],
-    onNext: (snapshot: T['$model'] | undefined) => void,
+    id: Model<T>,
+    onNext: (snapshot: Model<T> | undefined) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe {
     return this.docRef(id).onSnapshot((snapshot) => {
@@ -36,7 +45,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }, onError);
   }
 
-  async list(query: Query<T>): Promise<T['$model'][]> {
+  async list(query: Query<T>): Promise<Model<T>[]> {
     const { docs } = await (query.inner as CollectionReference).get();
     return docs.map(
       (doc) =>
@@ -47,7 +56,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   listOnSnapshot(
     query: Query<T>,
-    onNext: (snapshot: T['$model'][]) => void,
+    onNext: (snapshot: Model<T>[]) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe {
     // TODO
@@ -57,9 +66,9 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }, onError);
   }
 
-  query(...args: T['$parentId'] extends undefined ? [] : [never]): Query<T>;
-  query(parentId: T['$parentId']): Query<T>;
-  query(parentId?: T['$parentId']): Query<T> {
+  query(...args: ParentId<T> extends undefined ? [] : [never]): Query<T>;
+  query(parentId: ParentId<T>): Query<T>;
+  query(parentId?: ParentId<T>): Query<T> {
     return { collection: this.collection, inner: this.collectionRef(parentId) };
   }
 
@@ -73,12 +82,12 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
    *
    * TODO: Move to universal Repository interface
    */
-  async create(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
+  async create(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
 
-  async set(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
+  async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx
       ? options.tx instanceof Transaction
@@ -87,7 +96,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       : this.docRef(doc).set(data));
   }
 
-  async delete(id: T['$id'], options?: WriteTransactionOption): Promise<void> {
+  async delete(id: Model<T>, options?: WriteTransactionOption): Promise<void> {
     await (options?.tx ? options.tx.delete(this.docRef(id)) : this.docRef(id).delete());
   }
 
@@ -95,10 +104,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
    * Get documents by multiple ID
    * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
    */
-  async batchGet(
-    ids: T['$id'][],
-    options?: TransactionOption,
-  ): Promise<(T['$model'] | undefined)[]> {
+  async batchGet(ids: Model<T>[], options?: TransactionOption): Promise<(Model<T> | undefined)[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -107,7 +113,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return docs.map((doc) => this.fromFirestore(doc));
   }
 
-  async batchSet(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
+  async batchSet(docs: Model<T>[], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       docs,
       {
@@ -122,7 +128,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
    * Create multiple documents
    * The entire operation will fail if one creation fails
    */
-  async batchCreate(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
+  async batchCreate(docs: Model<T>[], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       docs,
       {
@@ -133,7 +139,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  async batchDelete(ids: T['$id'][], options?: WriteTransactionOption): Promise<void> {
+  async batchDelete(ids: Model<T>[], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       ids,
       {
@@ -166,23 +172,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }
   }
 
-  toFirestore(data: T['$model']): T['$dbModel'] {
+  toFirestore(data: Model<T>): DbModel<T> {
     return this.collection.data.to(data);
   }
 
-  docRef(id: T['$id']) {
+  docRef(id: Id<T>) {
     return this.db.doc(docPath(this.collection, id));
   }
 
-  collectionRef(
-    ...args: [keyof T['$parentId']] extends [never] ? [] : [never]
-  ): CollectionReference;
-  collectionRef(parentId: T['$parentId']): CollectionReference;
-  collectionRef(parentId?: T['$parentId']): CollectionReference {
+  collectionRef(parentId: ParentId<T>): CollectionReference {
     return this.db.collection(collectionPath(this.collection, parentId));
   }
 
-  fromFirestore(doc: DocumentSnapshot): T['$model'] | undefined {
+  fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
     const data = doc.data();
     if (!data) {
       return undefined;
@@ -193,7 +195,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       base.CollectionSchema
     >['parent'];
 
-    let parentId: T['$parentId'] | undefined;
+    let parentId: ParentId<T>;
     if (parent) {
       const parentDocRef = doc.ref.parent.parent;
       if (!parentDocRef) {
