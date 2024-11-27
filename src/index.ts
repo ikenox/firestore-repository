@@ -37,6 +37,7 @@ export type CollectionSchema<
   Parent extends CollectionSchema = any,
   ModelData extends Record<string, unknown> = Record<never, never>,
   ModelId extends Record<string, unknown> = Record<never, never>,
+  // TODO allow undefined?
   ModelParentId extends Record<string, unknown> = Record<never, never>,
 > = {
   name: string;
@@ -97,9 +98,6 @@ export interface Repository<
    */
   get(id: T['$id'], options?: TransactionOption<Env>): Promise<T['$model'] | undefined>;
 
-  // TODO
-  query(parentId: T['$parentId']): Promise<T['$model'][]>;
-
   /**
    * Listen single document
    */
@@ -109,14 +107,22 @@ export interface Repository<
     onError?: (error: Error) => void,
   ): Unsubscribe;
 
+  list(query: Query<T>): Promise<T['$model'][]>;
+
   /**
    * Listen documents by the specified query
    */
-  queryOnSnapshot(
-    id: T['$id'],
+  listOnSnapshot(
+    query: Query<T>,
     onNext: (snapshot: T['$model'][]) => void,
     onError?: (error: Error) => void,
   ): Unsubscribe;
+
+  /**
+   *
+   */
+  query(...args: T['$parentId'] extends undefined ? [] : [never]): Query<T>;
+  query(parentId: T['$parentId']): Query<T>;
 
   /**
    * Create or update
@@ -130,16 +136,22 @@ export interface Repository<
 
   /**
    * Create or update multiple documents
-   * Up to 500 documents
    */
   batchSet(docs: T['$model'][], options?: WriteTransactionOption<Env>): Promise<void>;
 
   /**
    * Delete documents by multiple ID
-   * Up to 500 documents
    */
   batchDelete(ids: T['$id'][], options?: WriteTransactionOption<Env>): Promise<void>;
 }
+
+/**
+ * Query representation
+ */
+export type Query<T extends CollectionSchema = CollectionSchema> = {
+  collection: T;
+  inner: unknown;
+};
 
 /**
  * Platform-specific types

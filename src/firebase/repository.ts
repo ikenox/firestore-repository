@@ -34,16 +34,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return this.fromFirestore(doc);
   }
 
-  async query(parentId: T['$parentId']): Promise<T['$model'][]> {
-    const { docs } = await getDocs(query(this.collectionRef(parentId)));
-    return docs.map(
-      (doc) =>
-        // FIXME do not use unsafe assertion
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        this.fromFirestore(doc)!,
-    );
-  }
-
   getOnSnapshot(
     id: T['$id'],
     onNext: (snapshot: T['$model'] | undefined) => void,
@@ -53,7 +43,17 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return onSnapshot(this.docRef(id), onNext, onError, complete);
   }
 
-  queryOnSnapshot(
+  async list(parentId: T['$parentId']): Promise<T['$model'][]> {
+    const { docs } = await getDocs(query(this.collectionRef(parentId)));
+    return docs.map(
+      (doc) =>
+        // FIXME do not use unsafe assertion
+        // biome-ignore lint/style/noNonNullAssertion: <explanation>
+        this.fromFirestore(doc)!,
+    );
+  }
+
+  listOnSnapshot(
     id: T['$parentId'],
     onNext: (snapshot: T['$model'][]) => void,
     onError?: (error: Error) => void,

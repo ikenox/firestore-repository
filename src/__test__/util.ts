@@ -6,7 +6,7 @@ import type { Repository } from '../index.js';
 export const deleteAll = <T extends Repository>(
   repository: T,
   parentId: T['collection']['$parentId'],
-) => repository.query(parentId).then((docs) => repository.batchDelete(docs));
+) => repository.list(parentId).then((docs) => repository.batchDelete(docs));
 
 export const randomNumber = () => 1000000 + Math.floor(Math.random() * 1000000);
 
