@@ -10,7 +10,6 @@ import {
   type DbModel,
   type Id,
   type Model,
-  type ModelData,
   type ParentId,
   type Query,
   type Unsubscribe,
@@ -184,27 +183,20 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     if (!data) {
       return undefined;
     }
-    const id: Id<T> = this.collection.id.from(doc.id);
-    let parentId: ParentId<T> = {};
-    if (this.collection.parent) {
-      const parentDocRef = doc.ref.parent.parent;
-      if (!parentDocRef) {
-        throw new Error('the collection is unexpectedly root collection');
-      }
-      parentId = this.collection.parent.id.from(
-        this.collection.parent.schema.id.from(parentDocRef.id),
-      );
-    }
-    const modelData: ModelData<T> = this.collection.data.from(data);
     return {
-      ...modelData,
-      ...parentId,
-      ...id,
-    };
+      ...this.collection.data.from(data),
+      ...(this.collection.parent
+        ? this.collection.parent.id.from(
+            // biome-ignore lint/style/noNonNullAssertion: subcollection should have parent document
+            this.collection.parent.schema.id.from(doc.ref.parent.parent!.id),
+          )
+        : {}),
+      ...this.collection.id.from(doc.id),
+    } as Model<T>;
   }
 
   toFirestore(data: Model<T>): DbModel<T> {
-    return this.collection.data.to(data);
+    return this.collection.data.to(data) as DbModel<T>;
   }
 }
 
