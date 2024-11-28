@@ -14,7 +14,15 @@ import {
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
-import { type Unsubscribe, collectionPath, docPath } from '../index.js';
+import {
+  type DbModel,
+  type Id,
+  type Model,
+  type ParentId,
+  type Unsubscribe,
+  collectionPath,
+  docPath,
+} from '../index.js';
 import type * as base from '../index.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch };
@@ -29,21 +37,21 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     readonly db: Firestore,
   ) {}
 
-  async get(id: T['$id'], options?: TransactionOption): Promise<T['$model'] | undefined> {
+  async get(id: Id<T>, options?: TransactionOption): Promise<Model<T> | undefined> {
     const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : getDoc(this.docRef(id)));
     return this.fromFirestore(doc);
   }
 
   getOnSnapshot(
-    id: T['$id'],
-    onNext: (snapshot: T['$model'] | undefined) => void,
+    id: Id<T>,
+    onNext: (snapshot: Model<T> | undefined) => void,
     onError?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
     return onSnapshot(this.docRef(id), onNext, onError, complete);
   }
 
-  async list(parentId: T['$parentId']): Promise<T['$model'][]> {
+  async list(parentId: ParentId<T>): Promise<Model<T>[]> {
     const { docs } = await getDocs(query(this.collectionRef(parentId)));
     return docs.map(
       (doc) =>
@@ -54,8 +62,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   listOnSnapshot(
-    id: T['$parentId'],
-    onNext: (snapshot: T['$model'][]) => void,
+    id: ParentId<T>,
+    onNext: (snapshot: Model<T>[]) => void,
     onError?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
@@ -63,7 +71,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return () => {};
   }
 
-  async set(doc: T['$model'], options?: WriteTransactionOption): Promise<void> {
+  async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
     await (options?.tx
       ? options.tx instanceof Transaction
@@ -72,11 +80,11 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       : setDoc(this.docRef(doc), data));
   }
 
-  async delete(id: T['$id'], options?: WriteTransactionOption): Promise<void> {
+  async delete(id: Id<T>, options?: WriteTransactionOption): Promise<void> {
     await (options?.tx ? options.tx.delete(this.docRef(id)) : deleteDoc(this.docRef(id)));
   }
 
-  async batchSet(docs: T['$model'][], options?: WriteTransactionOption): Promise<void> {
+  async batchSet(docs: Model<T>[], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       docs,
       {
@@ -87,7 +95,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  async batchDelete(ids: T['$id'][], options?: WriteTransactionOption): Promise<void> {
+  async batchDelete(ids: Id<T>[], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       ids,
       {
@@ -120,42 +128,33 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }
   }
 
-  toFirestore(data: T['$model']): T['$dbModel'] {
-    return this.collection.data.to(data);
-  }
-
-  docRef(id: T['$id']) {
+  docRef(id: Id<T>) {
     return doc(this.db, docPath(this.collection, id));
   }
 
-  collectionRef(parentId: T['$parentId']) {
+  collectionRef(parentId: ParentId<T>) {
     return collection(this.db, collectionPath(this.collection, parentId));
   }
 
-  fromFirestore(doc: DocumentSnapshot): T['$model'] | undefined {
+  fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
     const data = doc.data();
     if (!data) {
       return undefined;
     }
-    const id = this.collection.id.from(doc.id);
-    const parent = this.collection.parent as base.CollectionSchema<
-      never,
-      base.CollectionSchema
-    >['parent'];
-
-    let parentId: T['$parentId'] | undefined;
-    if (parent) {
-      const parentDocRef = doc.ref.parent.parent;
-      if (!parentDocRef) {
-        throw new Error('the collection is unexpectedly root collection');
-      }
-      parentId = parent.id.from(parent.schema.id.from(parentDocRef.id));
-    }
     return {
       ...this.collection.data.from(data),
-      ...parentId,
-      ...id,
-    };
+      ...(this.collection.parent
+        ? this.collection.parent.id.from(
+            // biome-ignore lint/style/noNonNullAssertion: subcollection should have parent document
+            this.collection.parent.schema.id.from(doc.ref.parent.parent!.id),
+          )
+        : {}),
+      ...this.collection.id.from(doc.id),
+    } as Model<T>;
+  }
+
+  toFirestore(data: Model<T>): DbModel<T> {
+    return this.collection.data.to(data) as DbModel<T>;
   }
 }
 
