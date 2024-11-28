@@ -19,7 +19,6 @@
     "@firebase/app": "^0.10.16",
     "@firebase/firestore": "^4.7.5",
     "@vitest/coverage-v8": "^2.1.6",
-    "eslint": "^9.14.0",
     "firebase-admin": "^12.7.0",
     "testcontainers": "^10.14.0",
     "typescript": "^5.7.2",
