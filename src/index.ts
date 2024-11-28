@@ -129,8 +129,8 @@ export interface Repository<
    */
   getOnSnapshot(
     id: Id<T>,
-    onNext: (snapshot: Model<T> | undefined) => void,
-    onError?: (error: Error) => void,
+    next: (snapshot: Model<T> | undefined) => void,
+    error?: (error: Error) => void,
   ): Unsubscribe;
 
   list(query: Query<T>): Promise<Model<T>[]>;
@@ -140,8 +140,8 @@ export interface Repository<
    */
   listOnSnapshot(
     query: Query<T>,
-    onNext: (snapshot: Model<T>[]) => void,
-    onError?: (error: Error) => void,
+    next: (snapshot: Model<T>[]) => void,
+    error?: (error: Error) => void,
   ): Unsubscribe;
 
   /**

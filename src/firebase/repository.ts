@@ -2,15 +2,16 @@ import {
   type CollectionReference,
   type DocumentSnapshot,
   type Firestore,
+  type Query as FirestoreQuery,
   Transaction,
   type WriteBatch,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
   onSnapshot,
-  query,
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
@@ -19,6 +20,7 @@ import {
   type Id,
   type Model,
   type ParentId,
+  type Query,
   type Unsubscribe,
   collectionPath,
   docPath,
@@ -44,31 +46,54 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   getOnSnapshot(
     id: Id<T>,
-    onNext: (snapshot: Model<T> | undefined) => void,
-    onError?: (error: Error) => void,
+    next: (snapshot: Model<T> | undefined) => void,
+    error?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
-    return onSnapshot(this.docRef(id), onNext, onError, complete);
+    return onSnapshot(this.docRef(id), {
+      next: (doc) => {
+        next(this.fromFirestore(doc));
+      },
+      error: (e) => error?.(e),
+      complete: () => {
+        complete?.();
+      },
+    });
   }
 
-  async list(parentId: ParentId<T>): Promise<Model<T>[]> {
-    const { docs } = await getDocs(query(this.collectionRef(parentId)));
+  async list(query: Query<T>): Promise<Model<T>[]> {
+    const { docs } = await getDocs(query.inner as FirestoreQuery);
     return docs.map(
       (doc) =>
-        // FIXME do not use unsafe assertion
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
+        // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
         this.fromFirestore(doc)!,
     );
   }
 
   listOnSnapshot(
-    id: ParentId<T>,
-    onNext: (snapshot: Model<T>[]) => void,
-    onError?: (error: Error) => void,
+    query: Query<T>,
+    next: (snapshot: Model<T>[]) => void,
+    error?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
-    // TODO
-    return () => {};
+    return onSnapshot(query.inner as FirestoreQuery, {
+      next: ({ docs }) => {
+        // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
+        next(docs.map((doc) => this.fromFirestore(doc)!));
+      },
+      error: (e) => error?.(e),
+      complete: () => {
+        complete?.();
+      },
+    });
+  }
+
+  query(parentId: ParentId<T>): Query<T> {
+    return { collection: this.collection, inner: this.collectionRef(parentId) };
+  }
+
+  collectionGroupQuery(): Query<T> {
+    return { collection: this.collection, inner: collectionGroup(this.db, this.collection.name) };
   }
 
   async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {

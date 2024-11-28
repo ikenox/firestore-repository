@@ -37,12 +37,12 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   getOnSnapshot(
     id: Model<T>,
-    onNext: (snapshot: Model<T> | undefined) => void,
-    onError?: (error: Error) => void,
+    next: (snapshot: Model<T> | undefined) => void,
+    error?: (error: Error) => void,
   ): Unsubscribe {
     return this.docRef(id).onSnapshot((snapshot) => {
-      onNext(this.fromFirestore(snapshot));
-    }, onError);
+      next(this.fromFirestore(snapshot));
+    }, error);
   }
 
   async list(query: Query<T>): Promise<Model<T>[]> {
@@ -56,14 +56,14 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   listOnSnapshot(
     query: Query<T>,
-    onNext: (snapshot: Model<T>[]) => void,
-    onError?: (error: Error) => void,
+    next: (snapshot: Model<T>[]) => void,
+    error?: (error: Error) => void,
   ): Unsubscribe {
     // TODO
     return (query.inner as FirestoreQuery).onSnapshot((snapshot) => {
       // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
-      onNext(snapshot.docs.map((doc) => this.fromFirestore(doc)!));
-    }, onError);
+      next(snapshot.docs.map((doc) => this.fromFirestore(doc)!));
+    }, error);
   }
 
   query(parentId: ParentId<T>): Query<T> {
