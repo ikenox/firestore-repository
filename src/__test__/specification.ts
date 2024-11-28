@@ -41,23 +41,25 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         Model<T>,
       ];
 
-      let repository!: Repo;
+      const repository = createRepository(params.collection);
       beforeEach(async () => {
-        repository = createRepository({
+        repository.collection = {
           ...params.collection,
-          // use unique collection for each test
           name: `${params.collection.name}_${randomString()}`,
-        });
+        };
         await repository.batchSet(items);
       });
 
       return {
-        get repository() {
-          return repository;
-        },
+        repository,
         items,
         expectDb: async (expected: Model<T>[]) => {
-          expect(await repository.list(repository.query())).toStrictEqual();
+          const items = await repository.list(repository.collectionGroupQuery());
+          expect(
+            items.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
+          ).toStrictEqual(
+            expected.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
+          );
         },
       };
     };
@@ -124,7 +126,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         });
         it('multi', async () => {
           const [target, ...rest] = items;
-          await repository.batchDelete([target, params.notExistDocId]);
+          await repository.batchDelete([target, params.notExistDocId()]);
           await expectDb(rest);
         });
       });
@@ -154,6 +156,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         name: `${data.name}_updated`,
       }),
       notExistDocId: () => ({ authorId: 'not-exists' }),
+      sortKey: (a) => a.authorId,
     });
 
     defineTests({
@@ -174,6 +177,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         title: `${data.title}_updated`,
       }),
       notExistDocId: () => ({ postId: randomNumber(), authorId: 'post0' }),
+      sortKey: ({ postId, authorId }) => `${postId}-${authorId}`,
     });
   });
 };
@@ -184,6 +188,7 @@ export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> 
   newData: () => Model<T>;
   mutate: (data: Model<T>) => Model<T>;
   notExistDocId: () => Id<T>;
+  sortKey: (id: Id<T>) => string;
 };
 
 /**
