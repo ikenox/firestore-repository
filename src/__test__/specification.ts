@@ -45,6 +45,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       beforeEach(async () => {
         repository.collection = {
           ...params.collection,
+          // use dedicated collection for each tests
           name: `${params.collection.name}_${randomString()}`,
         };
         await repository.batchSet(items);
