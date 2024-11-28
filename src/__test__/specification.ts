@@ -109,7 +109,12 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
           await repository.batchDelete([]);
         });
         it('multi', async () => {
-          items;
+          const newItem = params.newData();
+          expect(await repository.get(items[0])).toStrictEqual(items[0]);
+          expect(await repository.get(newItem)).toBeUndefined();
+          await repository.batchDelete([newItem, items[0]]);
+          expect(await repository.get(items[0])).toBeUndefined();
+          expect(await repository.get(newItem)).toBeUndefined();
         });
       });
 
