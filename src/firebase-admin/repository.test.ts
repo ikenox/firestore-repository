@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository } from './repository.js';
 
@@ -14,24 +14,20 @@ describe('repository', async () => {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
     },
-    implementationSpecificTests: ({ newData, initial, notExistDocId }, setupRepository) => {
-      let repository!: Repository;
-      beforeEach(async () => {
-        repository = await setupRepository();
-      });
+    implementationSpecificTests: ({ newData, notExistDocId }, setup) => {
+      const { repository, items, expectDb } = setup();
 
       describe('create', () => {
-        const data = newData();
-
         it('success', async () => {
-          await repository.create(data);
-          const dataFromDb = await repository.get(data);
-          expect(dataFromDb).toStrictEqual<typeof dataFromDb>(data);
+          const newItem = newData();
+          await repository.create(newItem);
+          await expectDb([newItem, ...items]);
         });
 
         it('already exists', async () => {
-          await repository.create(data);
-          await expect(repository.create(data)).rejects.toThrowError(/ALREADY_EXISTS/);
+          const newItem = newData();
+          await repository.create(newItem);
+          await expect(repository.create(newItem)).rejects.toThrowError(/ALREADY_EXISTS/);
         });
       });
 
@@ -41,16 +37,9 @@ describe('repository', async () => {
         });
 
         it('not empty', async () => {
-          const dataList = initial;
           expect(
-            await repository.batchGet([
-              dataList[0],
-              dataList[2],
-              dataList[1],
-              notExistDocId(),
-              dataList[2],
-            ]),
-          ).toStrictEqual([dataList[0], dataList[2], dataList[1], undefined, dataList[2]]);
+            await repository.batchGet([items[0], items[2], items[1], notExistDocId(), items[2]]),
+          ).toStrictEqual([items[0], items[2], items[1], undefined, items[2]]);
         });
       });
     },

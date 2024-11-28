@@ -10,47 +10,64 @@ import {
 } from '../index.js';
 import { randomNumber, randomString } from './util.js';
 
+export type RepositoryTestEnv<Repo extends Repository> = {
+  repository: Repo;
+  items: [Model<Repo['collection']>, Model<Repo['collection']>, Model<Repo['collection']>];
+  expectDb: (expected: Model<Repo['collection']>[]) => Promise<void>;
+};
+
 /**
  * List of specifications that repository implementations must satisfy
  */
 export const defineRepositorySpecificationTests = <Repo extends Repository>(
-  repository: <T extends CollectionSchema>(collection: T) => Repo,
+  createRepository: <T extends CollectionSchema>(collection: T) => Repo,
   environment: {
     converters: {
       timestamp: (date: Date) => Timestamp;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
-      setupRepository: () => Promise<Repo>,
+      setup: () => RepositoryTestEnv<Repo>,
     ) => void;
   },
 ) => {
   const converters = environment.converters;
 
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
-    const setupRepository = async (): Promise<Repo> => {
-      const repo = repository({
-        ...params.collection,
-        // use unique collection for each test
-        name: `${params.collection.name}_${randomString()}`,
+    const setup = (): RepositoryTestEnv<Repo> => {
+      const items = [params.newData(), params.newData(), params.newData()] as [
+        Model<T>,
+        Model<T>,
+        Model<T>,
+      ];
+
+      let repository!: Repo;
+      beforeEach(async () => {
+        repository = createRepository({
+          ...params.collection,
+          // use unique collection for each test
+          name: `${params.collection.name}_${randomString()}`,
+        });
+        await repository.batchSet(items);
       });
-      // setup initial data
-      await repo.batchSet(params.initial);
-      return repo;
+
+      return {
+        get repository() {
+          return repository;
+        },
+        items,
+        expectDb: async (expected: Model<T>[]) => {
+          expect(await repository.list(repository.query())).toStrictEqual();
+        },
+      };
     };
 
     describe(params.title, async () => {
-      let repository!: Repo;
-      beforeEach(async () => {
-        repository = await setupRepository();
-      });
-
-      const items = params.initial;
+      const { repository, items, expectDb } = setup();
 
       describe('get', () => {
         it('exists', async () => {
-          const dataFromDb = await repository.get(items[0]);
-          expect(dataFromDb).toStrictEqual(items[0]);
+          expect(await repository.get(items[0])).toStrictEqual(items[0]);
         });
 
         it('not found', async () => {
@@ -59,48 +76,45 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       });
 
       describe('set', () => {
-        const newData = params.newData();
+        const newItem = params.newData();
 
         it('create', async () => {
-          await repository.set(newData);
-          // TODO assertion
-          expect(await repository.get(newData)).toStrictEqual(newData);
+          await repository.set(newItem);
+          await expectDb([...items, newItem]);
         });
 
         it('update', async () => {
-          const updated = params.mutate(newData);
+          const [target, ...rest] = items;
+          const updated = params.mutate(target);
           await repository.set(updated);
-          // TODO assertion
-          expect(await repository.get(newData)).toStrictEqual(updated);
+          await expectDb([updated, ...rest]);
         });
       });
 
       describe('delete', () => {
         it('success', async () => {
-          await repository.delete(items[0]);
-          expect(await repository.get(items[0])).toBeUndefined();
+          const [target, ...rest] = items;
+          await repository.delete(target);
+          await expectDb(rest);
         });
 
         it('if not exists', async () => {
-          await repository.delete(items[0]);
-          expect(await repository.get(items[0])).toBeUndefined();
-          await repository.delete(items[0]);
-          expect(await repository.get(items[0])).toBeUndefined();
+          await repository.delete(params.notExistDocId());
+          await expectDb(items);
         });
       });
 
       describe('batchSet', () => {
         it('empty', async () => {
           await repository.batchSet([]);
+          await expectDb(items);
         });
         it('multi', async () => {
+          const [target, ...rest] = items;
+          const updatedItem = params.mutate(target);
           const newItem = params.newData();
-          const updatedItem = params.mutate(items[0]);
-          expect(await repository.get(newItem)).toBeUndefined();
-          expect(await repository.get(updatedItem)).toStrictEqual(items[0]);
           await repository.batchSet([newItem, updatedItem]);
-          expect(await repository.get(newItem)).toStrictEqual(newItem);
-          expect(await repository.get(updatedItem)).toStrictEqual(updatedItem);
+          await expectDb([updatedItem, newItem, ...rest]);
         });
       });
 
@@ -109,18 +123,15 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
           await repository.batchDelete([]);
         });
         it('multi', async () => {
-          const newItem = params.newData();
-          expect(await repository.get(items[0])).toStrictEqual(items[0]);
-          expect(await repository.get(newItem)).toBeUndefined();
-          await repository.batchDelete([newItem, items[0]]);
-          expect(await repository.get(items[0])).toBeUndefined();
-          expect(await repository.get(newItem)).toBeUndefined();
+          const [target, ...rest] = items;
+          await repository.batchDelete([target, params.notExistDocId]);
+          await expectDb(rest);
         });
       });
 
       if (environment.implementationSpecificTests) {
         describe('implementation-specific tests', () => {
-          environment.implementationSpecificTests?.(params, setupRepository);
+          environment.implementationSpecificTests?.(params, setup);
         });
       }
     });
@@ -130,23 +141,6 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     defineTests({
       title: 'root collection',
       collection: authorsCollection,
-      initial: [
-        {
-          authorId: 'author0',
-          name: 'name0',
-          registeredAt: converters.timestamp(new Date()),
-        },
-        {
-          authorId: 'author1',
-          name: 'name1',
-          registeredAt: converters.timestamp(new Date()),
-        },
-        {
-          authorId: 'author2',
-          name: 'name2',
-          registeredAt: converters.timestamp(new Date()),
-        },
-      ],
       newData: () => {
         const id = randomNumber();
         return {
@@ -165,26 +159,6 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     defineTests({
       title: 'subcollection',
       collection: postsCollection,
-      initial: [
-        {
-          postId: 0,
-          title: 'post0',
-          authorId: 'author0',
-          postedAt: converters.timestamp(new Date()),
-        },
-        {
-          postId: 1,
-          title: 'post1',
-          authorId: 'author0',
-          postedAt: converters.timestamp(new Date()),
-        },
-        {
-          postId: 2,
-          title: 'post2',
-          authorId: 'author1',
-          postedAt: converters.timestamp(new Date()),
-        },
-      ],
       newData: () => {
         const id = randomNumber();
         const authorId = randomNumber();
@@ -207,7 +181,6 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
 export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> = {
   title: string;
   collection: T;
-  initial: [Model<T>, Model<T>, Model<T>];
   newData: () => Model<T>;
   mutate: (data: Model<T>) => Model<T>;
   notExistDocId: () => Id<T>;
