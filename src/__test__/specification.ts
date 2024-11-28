@@ -45,12 +45,12 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         repository = await setupRepository();
       });
 
-      const dataList = params.initial;
+      const items = params.initial;
 
       describe('get', () => {
         it('exists', async () => {
-          const dataFromDb = await repository.get(dataList[0]);
-          expect(dataFromDb).toStrictEqual(dataList[0]);
+          const dataFromDb = await repository.get(items[0]);
+          expect(dataFromDb).toStrictEqual(items[0]);
         });
 
         it('not found', async () => {
@@ -77,15 +77,39 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
 
       describe('delete', () => {
         it('success', async () => {
-          await repository.delete(dataList[0]);
-          expect(await repository.get(dataList[0])).toBeUndefined();
+          await repository.delete(items[0]);
+          expect(await repository.get(items[0])).toBeUndefined();
         });
 
         it('if not exists', async () => {
-          await repository.delete(dataList[0]);
-          expect(await repository.get(dataList[0])).toBeUndefined();
-          await repository.delete(dataList[0]);
-          expect(await repository.get(dataList[0])).toBeUndefined();
+          await repository.delete(items[0]);
+          expect(await repository.get(items[0])).toBeUndefined();
+          await repository.delete(items[0]);
+          expect(await repository.get(items[0])).toBeUndefined();
+        });
+      });
+
+      describe('batchSet', () => {
+        it('empty', async () => {
+          await repository.batchSet([]);
+        });
+        it('multi', async () => {
+          const newItem = params.newData();
+          const updatedItem = params.mutate(items[0]);
+          expect(await repository.get(newItem)).toBeUndefined();
+          expect(await repository.get(updatedItem)).toStrictEqual(items[0]);
+          await repository.batchSet([newItem, updatedItem]);
+          expect(await repository.get(newItem)).toStrictEqual(newItem);
+          expect(await repository.get(updatedItem)).toStrictEqual(updatedItem);
+        });
+      });
+
+      describe('batchDelete', () => {
+        it('empty', async () => {
+          await repository.batchDelete([]);
+        });
+        it('multi', async () => {
+          items;
         });
       });
 
