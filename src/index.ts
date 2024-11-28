@@ -84,6 +84,15 @@ export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
 >
   ? ModelParentId
   : never;
+export type ModelData<T extends CollectionSchema> = T extends CollectionSchema<
+  DocumentData,
+  CollectionSchema,
+  infer ModelData,
+  Record<string, unknown>,
+  Record<string, unknown>
+>
+  ? ModelData
+  : never;
 
 export type ModelIdSchema<ModelId extends Record<string, unknown> = Record<string, unknown>> = {
   from(id: string): ModelId;

@@ -10,6 +10,7 @@ import {
   type DbModel,
   type Id,
   type Model,
+  type ModelData,
   type ParentId,
   type Query,
   type Unsubscribe,
@@ -66,9 +67,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }, onError);
   }
 
-  query(...args: ParentId<T> extends undefined ? [] : [never]): Query<T>;
-  query(parentId: ParentId<T>): Query<T>;
-  query(parentId?: ParentId<T>): Query<T> {
+  query(parentId: ParentId<T>): Query<T> {
     return { collection: this.collection, inner: this.collectionRef(parentId) };
   }
 
@@ -172,10 +171,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }
   }
 
-  toFirestore(data: Model<T>): DbModel<T> {
-    return this.collection.data.to(data);
-  }
-
   docRef(id: Id<T>) {
     return this.db.doc(docPath(this.collection, id));
   }
@@ -189,25 +184,27 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     if (!data) {
       return undefined;
     }
-    const id = this.collection.id.from(doc.id);
-    const parent = this.collection.parent as base.CollectionSchema<
-      never,
-      base.CollectionSchema
-    >['parent'];
-
-    let parentId: ParentId<T>;
-    if (parent) {
+    const id: Id<T> = this.collection.id.from(doc.id);
+    let parentId: ParentId<T> = {};
+    if (this.collection.parent) {
       const parentDocRef = doc.ref.parent.parent;
       if (!parentDocRef) {
         throw new Error('the collection is unexpectedly root collection');
       }
-      parentId = parent.id.from(parent.schema.id.from(parentDocRef.id));
+      parentId = this.collection.parent.id.from(
+        this.collection.parent.schema.id.from(parentDocRef.id),
+      );
     }
+    const modelData: ModelData<T> = this.collection.data.from(data);
     return {
-      ...this.collection.data.from(data),
+      ...modelData,
       ...parentId,
       ...id,
     };
+  }
+
+  toFirestore(data: Model<T>): DbModel<T> {
+    return this.collection.data.to(data);
   }
 }
 
