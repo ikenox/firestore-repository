@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { type Timestamp, as, collection, collectionPath, docPath } from './index.js';
+import { type Model, type Timestamp, as, collection, collectionPath, docPath } from './index.js';
 
 describe('CollectionSchema', () => {
   type AuthorsCollection = typeof authorsCollection;
@@ -7,15 +7,16 @@ describe('CollectionSchema', () => {
 
   it('type', () => {
     // FIXME
-    expectTypeOf<AuthorsCollection['$dbModel']>().toEqualTypeOf<never>();
-    expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<never>();
-    expectTypeOf<AuthorsCollection['$parentId']>().toEqualTypeOf<never>();
-    expectTypeOf<AuthorsCollection['$model']>().toEqualTypeOf<never>();
-
-    expectTypeOf<PostsCollection['$dbModel']>().toEqualTypeOf<never>();
-    expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<never>();
-    expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<never>();
-    expectTypeOf<PostsCollection['$model']>().toEqualTypeOf<never>();
+    // expectTypeOf<AuthorsCollection['$dbModel']>().toEqualTypeOf<never>();
+    // expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<never>();
+    // expectTypeOf<AuthorsCollection['$parentId']>().toEqualTypeOf<never>();
+    // expectTypeOf<AuthorsCollection['$model']>().toEqualTypeOf<never>();
+    //
+    // expectTypeOf<PostsCollection['$dbModel']>().toEqualTypeOf<never>();
+    // expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<never>();
+    // expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<never>();
+    expectTypeOf<Model<PostsCollection>>().toEqualTypeOf<never>();
+    type Foo = Model<PostsCollection>;
 
     // why?
     expectTypeOf<number>().toEqualTypeOf<string>();

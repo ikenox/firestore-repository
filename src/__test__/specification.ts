@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   type CollectionSchema,
+  type Id,
+  type Model,
   type Repository,
   type Timestamp,
   as,
@@ -176,10 +178,10 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
 export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> = {
   title: string;
   collection: T;
-  initial: [T['$model'], T['$model'], T['$model']];
-  newData: () => T['$model'];
-  mutate: (data: T['$model']) => T['$model'];
-  notExistDocId: () => T['$id'];
+  initial: [Model<T>, Model<T>, Model<T>];
+  newData: () => Model<T>;
+  mutate: (data: Model<T>) => Model<T>;
+  notExistDocId: () => Id<T>;
 };
 
 /**

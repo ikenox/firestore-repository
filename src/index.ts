@@ -172,8 +172,6 @@ export interface Repository<
   batchDelete(ids: Id<T>[], options?: WriteTransactionOption<Env>): Promise<void>;
 }
 
-export const rootCollection = { name: '' } satisfies CollectionSchema;
-
 /**
  * Query representation
  */
