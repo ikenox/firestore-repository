@@ -56,6 +56,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         items,
         expectDb: async (expected: Model<T>[]) => {
           const items = (await repository.list(repository.collectionGroupQuery())) as Model<T>[];
+          // biome-ignore lint/suspicious/noMisplacedAssertion:
           expect(
             items.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
           ).toStrictEqual(
