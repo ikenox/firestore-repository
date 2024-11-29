@@ -55,7 +55,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         repository,
         items,
         expectDb: async (expected: Model<T>[]) => {
-          const items = await repository.list(repository.collectionGroupQuery());
+          const items = (await repository.list(repository.collectionGroupQuery())) as Model<T>[];
           expect(
             items.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
           ).toStrictEqual(

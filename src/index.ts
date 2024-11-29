@@ -12,11 +12,7 @@ export const collection = <
   ModelId extends Record<string, unknown> = Record<never, never>,
   ModelParentId extends Record<string, unknown> = Record<never, never>,
 >(
-  schema: Omit<
-    CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>,
-    // Omit phantom type fields
-    `\$${string}`
-  >,
+  schema: CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>,
 ): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
   schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
 
@@ -122,63 +118,80 @@ export interface Repository<
   /**
    * Get single document by ID
    */
-  get(id: Id<T>, options?: TransactionOption<Env>): Promise<Model<T> | undefined>;
+  get: (id: Id<T>, options?: TransactionOption<Env>) => Promise<Model<T> | undefined>;
 
   /**
    * Listen single document
    */
-  getOnSnapshot(
+  getOnSnapshot: (
     id: Id<T>,
     next: (snapshot: Model<T> | undefined) => void,
     error?: (error: Error) => void,
-  ): Unsubscribe;
+  ) => Unsubscribe;
 
-  list(query: Query<T>): Promise<Model<T>[]>;
+  list: (query: Query<T>) => Promise<Model<T>[]>;
 
   /**
    * Listen documents by the specified query
    */
-  listOnSnapshot(
-    query: Query<T>,
+  listOnSnapshot: (
+    query: Query<T, Env>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
-  ): Unsubscribe;
+  ) => Unsubscribe;
 
   /**
-   *
+   * Start a query or chaining another query
    */
-  query(parentId: ParentId<T>): Query<T>;
+  query: (
+    parentIdOrQuery: ParentId<T> | Query<T, Env>,
+    modify?: QueryModification<T, Env>,
+  ) => Query<T, Env>;
 
-  collectionGroupQuery(): Query<T>;
+  /**
+   * Start a collection group query
+   */
+  collectionGroupQuery: (modify?: QueryModification<T, Env>) => Query<T, Env>;
 
   /**
    * Create or update
    */
-  set(doc: Model<T>, options?: WriteTransactionOption<Env>): Promise<void>;
+  set: (doc: Model<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
 
   /**
    * Delete a document by ID
    */
-  delete(id: Id<T>, options?: WriteTransactionOption<Env>): Promise<void>;
+  delete: (id: Id<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
 
   /**
    * Create or update multiple documents
    */
-  batchSet(docs: Model<T>[], options?: WriteTransactionOption<Env>): Promise<void>;
+  batchSet: (docs: Model<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 
   /**
    * Delete documents by multiple ID
    */
-  batchDelete(ids: Id<T>[], options?: WriteTransactionOption<Env>): Promise<void>;
+  batchDelete: (ids: Id<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 }
+
+export const queryTag: unique symbol = Symbol();
 
 /**
  * Query representation
  */
-export type Query<T extends CollectionSchema = CollectionSchema> = {
+export type Query<
+  T extends CollectionSchema = CollectionSchema,
+  Env extends FirestoreEnvironment = FirestoreEnvironment,
+> = {
+  [queryTag]: true;
   collection: T;
-  inner: unknown;
+  inner: Env['query'];
 };
+
+export type QueryModification<
+  T extends CollectionSchema,
+  Env extends FirestoreEnvironment = FirestoreEnvironment,
+> = (query: Env['query']) => Env['query'];
 
 /**
  * Platform-specific types
@@ -186,6 +199,7 @@ export type Query<T extends CollectionSchema = CollectionSchema> = {
 export type FirestoreEnvironment = {
   transaction: unknown;
   writeBatch: unknown;
+  query: unknown;
 };
 
 export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };

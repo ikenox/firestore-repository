@@ -21,13 +21,15 @@ import {
   type Model,
   type ParentId,
   type Query,
+  type QueryModification,
   type Unsubscribe,
   collectionPath,
   docPath,
+  queryTag,
 } from '../index.js';
 import type * as base from '../index.js';
 
-export type Env = { transaction: Transaction; writeBatch: WriteBatch };
+export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
 export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
@@ -88,12 +90,26 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     });
   }
 
-  query(parentId: ParentId<T>): Query<T> {
-    return { collection: this.collection, inner: this.collectionRef(parentId) };
+  query(
+    parentIdOrQuery: ParentId<T> | Query<T, Env>,
+    modify?: QueryModification<T, Env>,
+  ): Query<T, Env> {
+    const query =
+      queryTag in parentIdOrQuery ? parentIdOrQuery.inner : this.collectionRef(parentIdOrQuery);
+    return {
+      [queryTag]: true,
+      collection: this.collection,
+      inner: modify?.(query) ?? query,
+    };
   }
 
-  collectionGroupQuery(): Query<T> {
-    return { collection: this.collection, inner: collectionGroup(this.db, this.collection.name) };
+  collectionGroupQuery(modify?: QueryModification<T, Env>): Query<T, Env> {
+    const query = collectionGroup(this.db, this.collection.name);
+    return {
+      [queryTag]: true,
+      collection: this.collection,
+      inner: modify?.(query) ?? query,
+    };
   }
 
   async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {

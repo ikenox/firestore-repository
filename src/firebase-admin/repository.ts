@@ -12,13 +12,15 @@ import {
   type Model,
   type ParentId,
   type Query,
+  type QueryModification,
   type Unsubscribe,
   collectionPath,
   docPath,
+  queryTag,
 } from '../index.js';
 import type * as base from '../index.js';
 
-export type Env = { transaction: Transaction; writeBatch: WriteBatch };
+export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
 export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
@@ -36,7 +38,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   getOnSnapshot(
-    id: Model<T>,
+    id: Id<T>,
     next: (snapshot: Model<T> | undefined) => void,
     error?: (error: Error) => void,
   ): Unsubscribe {
@@ -66,12 +68,22 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     }, error);
   }
 
-  query(parentId: ParentId<T>): Query<T> {
-    return { collection: this.collection, inner: this.collectionRef(parentId) };
+  query(
+    parentIdOrQuery: ParentId<T> | Query<T, Env>,
+    modify?: QueryModification<T, Env>,
+  ): Query<T, Env> {
+    const query: FirestoreQuery =
+      queryTag in parentIdOrQuery ? parentIdOrQuery.inner : this.collectionRef(parentIdOrQuery);
+    return { [queryTag]: true, collection: this.collection, inner: modify?.(query) ?? query };
   }
 
-  collectionGroupQuery(): Query<T> {
-    return { collection: this.collection, inner: this.db.collectionGroup(this.collection.name) };
+  collectionGroupQuery(modify?: QueryModification<T, Env>): Query<T, Env> {
+    const query = this.db.collectionGroup(this.collection.name);
+    return {
+      [queryTag]: true,
+      collection: this.collection,
+      inner: modify?.(query) ?? query,
+    };
   }
 
   /**
@@ -94,7 +106,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       : this.docRef(doc).set(data));
   }
 
-  async delete(id: Model<T>, options?: WriteTransactionOption): Promise<void> {
+  async delete(id: Id<T>, options?: WriteTransactionOption): Promise<void> {
     await (options?.tx ? options.tx.delete(this.docRef(id)) : this.docRef(id).delete());
   }
 
@@ -137,7 +149,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     );
   }
 
-  async batchDelete(ids: Model<T>[], options?: WriteTransactionOption): Promise<void> {
+  async batchDelete(ids: Id<T>[], options?: WriteTransactionOption): Promise<void> {
     await this.batchWriteOperation(
       ids,
       {
