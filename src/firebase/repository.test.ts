@@ -16,5 +16,6 @@ describe('repository', async () => {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
     },
+    queryConstraints: {},
   });
 });

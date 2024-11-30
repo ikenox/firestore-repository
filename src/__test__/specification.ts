@@ -8,7 +8,7 @@ import {
   as,
   collection,
 } from '../index.js';
-import type { OrderBy, Query, Where } from '../query.js';
+import type { Limit, OrderBy, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
 export type RepositoryTestEnv<Repo extends Repository> = {
@@ -26,9 +26,10 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     converters: {
       timestamp: (date: Date) => Timestamp;
     };
-    queryConstraints: <T extends CollectionSchema>() => {
-      where: Where<Query<T>>;
-      orderBy: OrderBy<Query<T>>;
+    queryConstraints: {
+      where: Where;
+      orderBy: OrderBy;
+      limit: Limit;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
@@ -139,9 +140,16 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       });
 
       describe('query', () => {
-        const repo: Repository<typeof authorsCollection> = null;
-        const { where, orderBy } = environment.queryConstraints<typeof authorsCollection>();
-        repo.query({}, where('__name__', '==', 123), orderBy('registeredAt', '__name__'));
+        const { where, orderBy, limit } = environment.queryConstraints;
+        if (repository.collection === authorsCollection) {
+          const repo: Repository<typeof authorsCollection> = repository;
+          repo.query(
+            {},
+            where('__name__', '==', 123),
+            orderBy('registeredAt', '__name__'),
+            limit(3),
+          );
+        }
       });
 
       if (environment.implementationSpecificTests) {

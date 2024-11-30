@@ -21,17 +21,17 @@ export type Query<
 
 export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner'];
 
-export type Where<T extends Query> = (
+export type Where = <T extends Query>(
   fieldPath: FieldPath<T['collection']>,
   opStr: WhereFilterOp,
   value: unknown, // TODO typing
 ) => QueryConstraint<T>;
 
-export type OrderBy<T extends Query> = (
+export type OrderBy = <T extends Query>(
   ...columns: FieldPath<T['collection']>[]
 ) => QueryConstraint<T>;
 
-export type Limit = (limit: number) => QueryConstraint<never>;
+export type Limit = <T extends Query>(limit: number) => QueryConstraint<T>;
 
 // limit
 // orderBy

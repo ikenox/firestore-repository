@@ -9,9 +9,11 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
+  where as firestoreWhere,
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
@@ -26,7 +28,7 @@ import {
   queryTag,
 } from '../index.js';
 import type * as base from '../index.js';
-import type { Query, QueryConstraint } from '../query.js';
+import type { FieldPath, Query, QueryConstraint, Where, WhereFilterOp } from '../query.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -62,8 +64,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     });
   }
 
-  async list(query: Query<T>): Promise<Model<T>[]> {
-    const { docs } = await getDocs(query.inner as FirestoreQuery);
+  async list(query: Query<T, Env>): Promise<Model<T>[]> {
+    const { docs } = await getDocs(query.inner);
     return docs.map(
       (doc) =>
         // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
@@ -72,12 +74,12 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   listOnSnapshot(
-    query: Query<T>,
+    query: Query<T, Env>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
     complete?: () => void,
   ): Unsubscribe {
-    return onSnapshot(query.inner as FirestoreQuery, {
+    return onSnapshot(query.inner, {
       next: ({ docs }) => {
         // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
         next(docs.map((doc) => this.fromFirestore(doc)!));
@@ -197,6 +199,14 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return this.collection.data.to(data) as DbModel<T>;
   }
 }
+
+export const where: Where = <T extends Query>(
+  fieldPath: FieldPath<T['collection']>,
+  opStr: WhereFilterOp,
+  value: unknown,
+): QueryConstraint<T> => {
+  return (q: FirestoreQuery) => query(q, firestoreWhere(fieldPath, opStr, value));
+};
 
 export class IdGenerator {
   collection: CollectionReference;
