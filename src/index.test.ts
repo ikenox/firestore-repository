@@ -16,7 +16,6 @@ describe('CollectionSchema', () => {
     // expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<never>();
     // expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<never>();
     expectTypeOf<Model<PostsCollection>>().toEqualTypeOf<never>();
-    type Foo = Model<PostsCollection>;
 
     // why?
     expectTypeOf<number>().toEqualTypeOf<string>();

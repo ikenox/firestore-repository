@@ -24,11 +24,11 @@ export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner']
 export type Where<T extends Query> = (
   fieldPath: FieldPath<T['collection']>,
   opStr: WhereFilterOp,
-  value: unknown,
+  value: unknown, // TODO typing
 ) => QueryConstraint<T>;
 
 export type OrderBy<T extends Query> = (
-  columns: keyof DbModel<T['collection']>,
+  ...columns: FieldPath<T['collection']>[]
 ) => QueryConstraint<T>;
 
 export type Limit = (limit: number) => QueryConstraint<never>;
@@ -37,7 +37,6 @@ export type Limit = (limit: number) => QueryConstraint<never>;
 // orderBy
 // limitToLast
 // offset
-// select
 // startAt
 // startAfter
 // endBefore
@@ -46,6 +45,7 @@ export type Limit = (limit: number) => QueryConstraint<never>;
 // and
 // or
 
+// select
 // aggregate
 
 export type FieldPath<T extends CollectionSchema = CollectionSchema> =

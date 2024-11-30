@@ -8,6 +8,7 @@ import {
   as,
   collection,
 } from '../index.js';
+import type { OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
 export type RepositoryTestEnv<Repo extends Repository> = {
@@ -24,6 +25,10 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
   environment: {
     converters: {
       timestamp: (date: Date) => Timestamp;
+    };
+    queryConstraints: <T extends CollectionSchema>() => {
+      where: Where<Query<T>>;
+      orderBy: OrderBy<Query<T>>;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
@@ -131,6 +136,12 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
           await repository.batchDelete([target, params.notExistDocId()]);
           await expectDb(rest);
         });
+      });
+
+      describe('query', () => {
+        const repo: Repository<typeof authorsCollection> = null;
+        const { where, orderBy } = environment.queryConstraints<typeof authorsCollection>();
+        repo.query({}, where('__name__', '==', 123), orderBy('registeredAt', '__name__'));
       });
 
       if (environment.implementationSpecificTests) {
