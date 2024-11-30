@@ -9,9 +9,13 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
+  limit as firestoreLimit,
+  orderBy as firestoreOrderBy,
+  where as firestoreWhere,
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
@@ -26,7 +30,15 @@ import {
   docPath,
   queryTag,
 } from '../index.js';
-import type { Query, QueryConstraint } from '../query.js';
+import type {
+  FieldPath,
+  Limit,
+  OrderBy,
+  Query,
+  QueryConstraint,
+  Where,
+  WhereFilterOp,
+} from '../query.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -197,6 +209,25 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return this.collection.data.to(data) as DbModel<T>;
   }
 }
+
+export const where: Where = <T extends Query>(
+  fieldPath: FieldPath<T['collection']>,
+  opStr: WhereFilterOp,
+  value: unknown,
+): QueryConstraint<T> => {
+  return (q: FirestoreQuery) => query(q, firestoreWhere(fieldPath, opStr, value));
+};
+
+export const orderBy: OrderBy = <T extends Query>(
+  field: FieldPath<T['collection']>,
+  direction?: 'asc' | 'desc',
+): QueryConstraint<T> => {
+  return (q) => query(q, firestoreOrderBy(field, direction));
+};
+
+export const limit: Limit = (limit) => {
+  return (q) => query(q, firestoreLimit(limit));
+};
 
 export class IdGenerator {
   collection: CollectionReference;
