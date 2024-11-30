@@ -143,6 +143,7 @@ export interface Repository<
 
   /**
    * Start a query or chaining another query
+   * TODO improve interface query(parentId).constraint(...)
    */
   query: (
     parentIdOrQuery: ParentId<T> | Query<T, Env>,

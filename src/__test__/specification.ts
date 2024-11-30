@@ -201,6 +201,13 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
           ...authorsCollection,
           name: `${authorsCollection.name}_${randomString()}`,
         });
+
+        const expectQuery = async (query: Query<typeof authorsCollection>, expected: Author[]) => {
+          const result = await repository.list(query);
+          // biome-ignore lint/suspicious/noMisplacedAssertion:
+          expect(result).toStrictEqual(expected);
+        };
+
         const items: [Author, Author, Author, ...Author[]] = [
           {
             authorId: '1',
@@ -218,12 +225,6 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
             registeredAt: new Date('2020-03-01'),
           },
         ];
-
-        const expectQuery = async (query: Query<typeof authorsCollection>, expected: Author[]) => {
-          const result = await repository.list(query);
-          // biome-ignore lint/suspicious/noMisplacedAssertion:
-          expect(result).toStrictEqual(expected);
-        };
 
         beforeAll(async () => {
           await repository.batchSet(items);
