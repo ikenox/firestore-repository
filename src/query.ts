@@ -34,6 +34,7 @@ export type OrderBy = <T extends Query>(
 
 export type Limit = <T extends Query>(limit: number) => QueryConstraint<T>;
 
+// TODO
 // limitToLast
 // offset
 // startAt
@@ -43,7 +44,6 @@ export type Limit = <T extends Query>(limit: number) => QueryConstraint<T>;
 // findNearest
 // and
 // or
-
 // select
 // aggregate
 
