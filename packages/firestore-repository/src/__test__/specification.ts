@@ -7,7 +7,7 @@ import {
   type Timestamp,
   as,
   collection,
-} from '../../packages/core/src/index.js';
+} from '../index.js';
 import type { Limit, OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 

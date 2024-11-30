@@ -1,14 +1,13 @@
-import admin from 'firebase-admin';
-import { Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe, expect, it } from 'vitest';
 import { Repository, limit, orderBy, where } from './repository.js';
 
 describe('repository', async () => {
-  const db = getFirestore(
-    admin.initializeApp({ projectId: process.env['TEST_PROJECT']! }),
-    process.env['TEST_DB']!,
-  );
+  const db = new Firestore({
+    projectId: process.env['TEST_PROJECT']!,
+    databaseId: process.env['TEST_DB']!,
+  });
 
   defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
     converters: {
