@@ -5,7 +5,7 @@ import {
   type Query as FirestoreQuery,
   Transaction,
   type WriteBatch,
-} from 'firebase-admin/firestore';
+} from '@google-cloud/firestore';
 import {
   type DbModel,
   type Id,
