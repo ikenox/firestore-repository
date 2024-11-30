@@ -1,7 +1,7 @@
 import type * as sdk from '@firebase/firestore';
 import type * as admin from 'firebase-admin/firestore';
-import type { Prettify } from '../../../src/util.js';
 import type { Query, QueryConstraint } from './query.js';
+import type { Prettify } from './util.js';
 
 /**
  * An entrypoint of schema definition
@@ -130,7 +130,7 @@ export interface Repository<
     error?: (error: Error) => void,
   ) => Unsubscribe;
 
-  list: (query: Query<T>) => Promise<Model<T>[]>;
+  list: (query: Query<T, Env>) => Promise<Model<T>[]>;
 
   /**
    * Listen documents by the specified query
