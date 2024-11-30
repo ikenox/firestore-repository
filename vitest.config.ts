@@ -9,8 +9,11 @@ export default defineConfig({
       reporter: ['text'],
     },
     env: {
+      // biome-ignore lint/style/useNamingConvention:
       FIRESTORE_EMULATOR_HOST: 'localhost:60001',
+      // biome-ignore lint/style/useNamingConvention:
       TEST_PROJECT: 'ikenox-sunrise',
+      // biome-ignore lint/style/useNamingConvention:
       TEST_DB: 'test-db',
     },
   },
