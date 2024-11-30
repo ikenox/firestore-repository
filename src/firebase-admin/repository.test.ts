@@ -2,7 +2,7 @@ import admin from 'firebase-admin';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 import { defineRepositorySpecificationTests } from '../__test__/specification.js';
-import { Repository } from './repository.js';
+import { Repository, limit, orderBy, where } from './repository.js';
 
 describe('repository', async () => {
   const db = getFirestore(
@@ -13,6 +13,11 @@ describe('repository', async () => {
   defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
+    },
+    queryConstraints: {
+      where,
+      orderBy,
+      limit,
     },
     implementationSpecificTests: ({ newData, notExistDocId }, setup) => {
       const { repository, items, expectDb } = setup();

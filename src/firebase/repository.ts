@@ -9,14 +9,13 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
-  where as firestoreWhere,
   getDoc,
   getDocs,
   onSnapshot,
-  query,
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
+import type * as base from '../index.js';
 import {
   type DbModel,
   type Id,
@@ -27,8 +26,7 @@ import {
   docPath,
   queryTag,
 } from '../index.js';
-import type * as base from '../index.js';
-import type { FieldPath, Query, QueryConstraint, Where, WhereFilterOp } from '../query.js';
+import type { Query, QueryConstraint } from '../query.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -199,14 +197,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return this.collection.data.to(data) as DbModel<T>;
   }
 }
-
-export const where: Where = <T extends Query>(
-  fieldPath: FieldPath<T['collection']>,
-  opStr: WhereFilterOp,
-  value: unknown,
-): QueryConstraint<T> => {
-  return (q: FirestoreQuery) => query(q, firestoreWhere(fieldPath, opStr, value));
-};
 
 export class IdGenerator {
   collection: CollectionReference;

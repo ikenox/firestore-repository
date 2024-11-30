@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   type CollectionSchema,
   type Id,
@@ -8,12 +8,17 @@ import {
   as,
   collection,
 } from '../index.js';
-import type { Limit, OrderBy, Where } from '../query.js';
+import type { Limit, OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
 export type RepositoryTestEnv<Repo extends Repository> = {
   repository: Repo;
-  items: [Model<Repo['collection']>, Model<Repo['collection']>, Model<Repo['collection']>];
+  items: [
+    Model<Repo['collection']>,
+    Model<Repo['collection']>,
+    Model<Repo['collection']>,
+    ...Model<Repo['collection']>[],
+  ];
   expectDb: (expected: Model<Repo['collection']>[]) => Promise<void>;
 };
 
@@ -139,19 +144,6 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         });
       });
 
-      describe('query', () => {
-        const { where, orderBy, limit } = environment.queryConstraints;
-        if (repository.collection === authorsCollection) {
-          const repo: Repository<typeof authorsCollection> = repository;
-          repo.query(
-            {},
-            where('__name__', '==', 123),
-            orderBy('registeredAt', '__name__'),
-            limit(3),
-          );
-        }
-      });
-
       if (environment.implementationSpecificTests) {
         describe('implementation-specific tests', () => {
           environment.implementationSpecificTests?.(params, setup);
@@ -169,7 +161,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
         return {
           authorId: `author${id}`,
           name: `name${id}`,
-          registeredAt: converters.timestamp(new Date()),
+          registeredAt: new Date(),
         };
       },
       mutate: (data) => ({
@@ -200,6 +192,88 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       notExistDocId: () => ({ postId: randomNumber(), authorId: 'post0' }),
       sortKey: ({ postId, authorId }) => `${postId}-${authorId}`,
     });
+
+    describe('query', () => {
+      const { where, orderBy, limit } = environment.queryConstraints;
+
+      describe('root collection', () => {
+        const repository: Repository<typeof authorsCollection> = createRepository({
+          ...authorsCollection,
+          name: `${authorsCollection.name}_${randomString()}`,
+        });
+        const items: [Author, Author, Author, ...Author[]] = [
+          {
+            authorId: '1',
+            name: 'author1',
+            registeredAt: new Date('2020-02-01'),
+          },
+          {
+            authorId: '2',
+            name: 'author2',
+            registeredAt: new Date('2020-01-01'),
+          },
+          {
+            authorId: '3',
+            name: 'author3',
+            registeredAt: new Date('2020-03-01'),
+          },
+        ];
+
+        const expectQuery = async (query: Query<typeof authorsCollection>, expected: Author[]) => {
+          const result = await repository.list(query);
+          // biome-ignore lint/suspicious/noMisplacedAssertion:
+          expect(result).toStrictEqual(expected);
+        };
+
+        beforeAll(async () => {
+          await repository.batchSet(items);
+        });
+
+        it('where', async () => {
+          await expectQuery(repository.query({}, where('name', '==', 'author1')), [items[0]]);
+          await expectQuery(repository.query({}, where('name', '!=', 'author1')), [
+            items[1],
+            items[2],
+          ]);
+        });
+
+        it('orderBy', async () => {
+          await expectQuery(repository.query({}, orderBy('registeredAt')), [
+            items[1],
+            items[0],
+            items[2],
+          ]);
+          await expectQuery(repository.query({}, orderBy('registeredAt', 'asc')), [
+            items[1],
+            items[0],
+            items[2],
+          ]);
+          await expectQuery(repository.query({}, orderBy('registeredAt', 'desc')), [
+            items[2],
+            items[0],
+            items[1],
+          ]);
+        });
+
+        it('limit', async () => {
+          await expectQuery(repository.query({}, limit(1)), [items[0]]);
+          await expectQuery(repository.query({}, limit(2)), [items[0], items[1]]);
+          await expectQuery(repository.query({}, limit(100)), items);
+        });
+
+        it('query composition', async () => {
+          await expectQuery(
+            repository.query(
+              {},
+              where('name', '!=', 'author1'),
+              orderBy('registeredAt', 'desc'),
+              limit(1),
+            ),
+            [items[2]],
+          );
+        });
+      });
+    });
   });
 };
 
@@ -221,13 +295,15 @@ const authorsCollection = collection({
   data: {
     from: (data: { name: string; registeredAt: Timestamp }) => ({
       ...data,
+      registeredAt: data.registeredAt.toDate(),
     }),
     to: ({ name, registeredAt }) => ({
       name,
-      registeredAt,
+      registeredAt, //  TODO serializer
     }),
   },
 });
+type Author = Model<typeof authorsCollection>;
 
 /**
  * Subcollection

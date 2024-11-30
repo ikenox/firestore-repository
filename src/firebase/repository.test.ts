@@ -2,6 +2,7 @@ import { initializeApp } from '@firebase/app';
 import { Timestamp, connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
 import { describe } from 'vitest';
 import { defineRepositorySpecificationTests } from '../__test__/specification.js';
+import { limit, orderBy, where } from './query.js';
 import { Repository } from './repository.js';
 
 describe('repository', async () => {
@@ -16,6 +17,6 @@ describe('repository', async () => {
     converters: {
       timestamp: (date) => Timestamp.fromDate(date),
     },
-    queryConstraints: {},
+    queryConstraints: { where, orderBy, limit },
   });
 });

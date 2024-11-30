@@ -28,7 +28,8 @@ export type Where = <T extends Query>(
 ) => QueryConstraint<T>;
 
 export type OrderBy = <T extends Query>(
-  ...columns: FieldPath<T['collection']>[]
+  field: FieldPath<T['collection']>,
+  direction?: 'asc' | 'desc',
 ) => QueryConstraint<T>;
 
 export type Limit = <T extends Query>(limit: number) => QueryConstraint<T>;

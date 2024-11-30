@@ -17,7 +17,15 @@ import {
   queryTag,
 } from '../index.js';
 import type * as base from '../index.js';
-import type { Query, QueryConstraint } from '../query.js';
+import type {
+  FieldPath,
+  Limit,
+  OrderBy,
+  Query,
+  QueryConstraint,
+  Where,
+  WhereFilterOp,
+} from '../query.js';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -216,6 +224,25 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   // TODO bundle
 }
+
+export const where: Where = <T extends Query>(
+  fieldPath: FieldPath<T['collection']>,
+  opStr: WhereFilterOp,
+  value: unknown,
+): QueryConstraint<T> => {
+  return (q: FirestoreQuery) => q.where(fieldPath, opStr, value);
+};
+
+export const orderBy: OrderBy = <T extends Query>(
+  field: FieldPath<T['collection']>,
+  direction?: 'asc' | 'desc',
+): QueryConstraint<T> => {
+  return (q: FirestoreQuery) => q.orderBy(field, direction);
+};
+
+export const limit: Limit = (limit) => {
+  return (q: FirestoreQuery) => q.limit(limit);
+};
 
 export class IdGenerator {
   collection: CollectionReference;

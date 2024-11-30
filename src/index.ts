@@ -49,7 +49,7 @@ export type CollectionSchema<
   data: {
     from(data: DbModel): ModelData;
     // TODO allow Date etc.
-    to(data: NoInfer<Prettify<ModelData & ModelId & ModelParentId>>): NoInfer<DbModel>;
+    to(data: NoInfer<Prettify<ModelId & ModelParentId & ModelData>>): NoInfer<DbModel>;
   };
 };
 
@@ -61,7 +61,7 @@ export type Model<T extends CollectionSchema> = T extends CollectionSchema<
   infer ModelId,
   infer ModelParentId
 >
-  ? Prettify<ModelData & ModelId & ModelParentId>
+  ? Prettify<ModelId & ModelParentId & ModelData>
   : never;
 export type Id<T extends CollectionSchema> = T extends CollectionSchema<
   DocumentData,
