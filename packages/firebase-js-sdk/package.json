@@ -1,0 +1,28 @@
+{
+  "name": "@firestore-repository/firebase-js-sdk",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {},
+  "dependencies": {
+    "@firebase/firestore": "^4.7.5",
+    "firestore-repository": "workspace:*"
+  },
+  "devDependencies": {
+    "@firebase/app": "^0.10.16"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

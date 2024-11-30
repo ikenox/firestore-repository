@@ -19,7 +19,7 @@ import {
   setDoc,
   writeBatch,
 } from '@firebase/firestore';
-import type * as base from '../index.js';
+import type * as base from 'firestore-repository';
 import {
   type DbModel,
   type Id,
@@ -29,7 +29,7 @@ import {
   collectionPath,
   docPath,
   queryTag,
-} from '../index.js';
+} from 'firestore-repository';
 import type {
   FieldPath,
   Limit,
@@ -38,7 +38,7 @@ import type {
   QueryConstraint,
   Where,
   WhereFilterOp,
-} from '../query.js';
+} from 'firestore-repository/query';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;

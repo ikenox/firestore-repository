@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe, expect, it } from 'vitest';
-import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository, limit, orderBy, where } from './repository.js';
 
 describe('repository', async () => {

@@ -1,7 +1,7 @@
 import { initializeApp } from '@firebase/app';
 import { Timestamp, connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
+import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe } from 'vitest';
-import { defineRepositorySpecificationTests } from '../__test__/specification.js';
 import { Repository, limit, orderBy, where } from './repository.js';
 
 describe('repository', async () => {

@@ -1,5 +1,5 @@
 {
-  "name": "firestar",
+  "name": "firestore-repository",
   "version": "1.0.0",
   "description": "",
   "type": "module",
@@ -16,10 +16,7 @@
   "license": "ISC",
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@firebase/app": "^0.10.16",
-    "@firebase/firestore": "^4.7.5",
     "@vitest/coverage-v8": "^2.1.6",
-    "firebase-admin": "^12.7.0",
     "testcontainers": "^10.14.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.6"

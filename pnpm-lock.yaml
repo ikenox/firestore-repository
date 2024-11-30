@@ -33,6 +33,20 @@ importers:
         specifier: ^2.1.6
         version: 2.1.6(@types/node@22.9.0)
 
+  packages/firebase-js-sdk:
+    dependencies:
+      firestore-repository:
+        specifier: workspace:*
+        version: link:../firestore-repository
+
+  packages/firestore-repository: {}
+
+  packages/google-cloud-firestore:
+    dependencies:
+      firestore-repository:
+        specifier: workspace:*
+        version: link:../firestore-repository
+
 packages:
 
   '@ampproject/remapping@2.3.0':
