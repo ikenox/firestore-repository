@@ -1,5 +1,6 @@
 import type * as sdk from '@firebase/firestore';
 import type * as admin from 'firebase-admin/firestore';
+import type { Query, QueryConstraint } from './query.js';
 import type { Prettify } from './util.js';
 
 /**
@@ -145,13 +146,13 @@ export interface Repository<
    */
   query: (
     parentIdOrQuery: ParentId<T> | Query<T, Env>,
-    modify?: QueryModification<T, Env>,
+    ...constraints: QueryConstraint<Query<T, Env>>[]
   ) => Query<T, Env>;
 
   /**
    * Start a collection group query
    */
-  collectionGroupQuery: (modify?: QueryModification<T, Env>) => Query<T, Env>;
+  collectionGroupQuery: (...constraints: QueryConstraint<Query<T, Env>>[]) => Query<T, Env>;
 
   /**
    * Create or update
@@ -175,23 +176,6 @@ export interface Repository<
 }
 
 export const queryTag: unique symbol = Symbol();
-
-/**
- * Query representation
- */
-export type Query<
-  T extends CollectionSchema = CollectionSchema,
-  Env extends FirestoreEnvironment = FirestoreEnvironment,
-> = {
-  [queryTag]: true;
-  collection: T;
-  inner: Env['query'];
-};
-
-export type QueryModification<
-  T extends CollectionSchema,
-  Env extends FirestoreEnvironment = FirestoreEnvironment,
-> = (query: Env['query']) => Env['query'];
 
 /**
  * Platform-specific types
@@ -227,9 +211,9 @@ export type ValueType =
   | DocumentReference
   | GeoPoint
   | ValueType[]
-  | Map;
+  | MapValue;
 
 export type Timestamp = sdk.Timestamp | admin.Timestamp;
 export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
 export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
-export type Map = { [K in string]: ValueType };
+export type MapValue = { [K in string]: ValueType };
