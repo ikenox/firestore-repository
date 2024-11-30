@@ -8,6 +8,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "emulator:start": "docker compose up -d",
+    "typecheck": "tsc --noEmit",
     "check": "biome check .",
     "fix": "biome check --fix"
   },
