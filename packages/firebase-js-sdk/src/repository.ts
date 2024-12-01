@@ -189,20 +189,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
-    const data = doc.data();
-    if (!data) {
-      return undefined;
-    }
-    return {
-      ...this.collection.data.from(data),
-      ...(this.collection.parent
-        ? this.collection.parent.id.from(
-            // biome-ignore lint/style/noNonNullAssertion: subcollection should have parent document
-            this.collection.parent.schema.id.from(doc.ref.parent.parent!.id),
-          )
-        : {}),
-      ...this.collection.id.from(doc.id),
-    } as Model<T>;
+    return doc.data() as Model<T> | undefined;
   }
 
   toFirestore(data: Model<T>): DbModel<T> {

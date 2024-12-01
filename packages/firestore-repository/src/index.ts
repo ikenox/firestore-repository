@@ -75,7 +75,9 @@ export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
 
 export type Model<T extends CollectionSchema> = T extends CollectionSchema<
   DocumentData,
-  infer AppModel
+  infer AppModel,
+  infer _IdKeys,
+  infer _ParentIdKeys
 >
   ? AppModel
   : never;
