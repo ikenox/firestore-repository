@@ -1,4 +1,4 @@
-import { Firestore, Timestamp } from '@google-cloud/firestore';
+import { Firestore } from '@google-cloud/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe, expect, it } from 'vitest';
 import { Repository, limit, orderBy, where } from './repository.js';
@@ -10,9 +10,6 @@ describe('repository', async () => {
   });
 
   defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
-    converters: {
-      timestamp: (date) => Timestamp.fromDate(date),
-    },
     queryConstraints: {
       where,
       orderBy,

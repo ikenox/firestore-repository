@@ -24,9 +24,6 @@ export type RepositoryTestEnv<T extends CollectionSchema> = {
 export const defineRepositorySpecificationTests = (
   createRepository: <T extends CollectionSchema>(collection: T) => Repository<T>,
   environment: {
-    converters: {
-      timestamp: (date: Date) => Timestamp;
-    };
     queryConstraints: {
       where: Where;
       orderBy: OrderBy;
