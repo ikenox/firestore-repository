@@ -105,9 +105,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
    * TODO: Move to universal Repository interface
    */
   async create(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
-    type Foo = Model<T>;
-    type Bar = Id<T>;
-
     const data = this.toFirestore(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
