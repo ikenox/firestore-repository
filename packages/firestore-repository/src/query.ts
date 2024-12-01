@@ -62,7 +62,7 @@ export type FieldPath<T extends CollectionSchema = CollectionSchema> =
   | '__name__';
 
 export type ValueFieldPath<T extends ValueType> = T extends MapValue
-  ? { [K in keyof T]: K }[keyof T]
+  ? { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
   : never;
 
 export const aggregate = <T extends CollectionSchema>(query: Query<T>) => ({});

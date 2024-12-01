@@ -112,16 +112,33 @@ describe('CollectionSchema', () => {
       f: { g: Timestamp | Date }[];
       h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
     }>();
+  });
 
-    const c = collection({
-      name: 'Posts',
-      data: {
-        from: (data: { a: { b: string; c: { d: number; e: string } } }) => data,
-        to: (data) => data,
-      },
-      id: id('a'),
+  describe('FieldPath', () => {
+    it('simple', () => {
+      const c = collection({
+        name: 'Posts',
+        data: {
+          from: (data: { a: number; b: string; c: string[] }) => data,
+          to: (data) => data,
+        },
+        id: id('a'),
+      });
+      expectTypeOf<FieldPath<typeof c>>().toEqualTypeOf<'a' | 'b' | 'c' | '__name__'>();
     });
-    expectTypeOf<FieldPath<typeof c>>().toEqualTypeOf<'a'>();
+    it('complex', () => {
+      const c = collection({
+        name: 'Posts',
+        data: {
+          from: (data: { a: { b: string; c: { d: number; e: { f: string }[] } } }) => data,
+          to: (data) => data,
+        },
+        id: id('a'),
+      });
+      expectTypeOf<FieldPath<typeof c>>().toEqualTypeOf<
+        'a' | 'a.b' | 'a.c' | 'a.c.d' | 'a.c.e' | '__name__'
+      >();
+    });
   });
 
   it('docPath', () => {
