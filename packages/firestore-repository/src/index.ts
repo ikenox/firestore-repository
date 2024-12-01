@@ -36,7 +36,7 @@ export type CollectionSchema<
   name: string;
   data: {
     from(data: DbModel): AppModel;
-    to(data: NoInfer<AppModel>): NoInfer<DbModel>;
+    to(data: NoInfer<AppModel>): WriteModel<NoInfer<DbModel>>;
   };
   id: IdSchema<NoInfer<AppModel>, IdKeys>;
   parentPath?: ParentPathSchema<NoInfer<AppModel>, ParentIdKeys> | undefined;
@@ -205,8 +205,22 @@ export type ValueType =
   // | GeoPoint
   | ValueType[]
   | MapValue;
-
-export type Timestamp = { toDate: () => Date };
+export type Timestamp = { toDate(): Date };
 // export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
 // export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type MapValue = { [K in string]: ValueType };
+
+export type WriteModel<T extends DocumentData> = {
+  [K in keyof T]: WriteValue<T[K]>;
+};
+export type WriteValue<T extends ValueType> = T extends Timestamp
+  ? Date | Timestamp
+  : T extends MapValue
+    ? { [K in keyof T]: WriteValue<T[K]> }
+    : // TODO array
+      T extends ValueType[]
+      ? MapArray<T>
+      : T;
+export type MapArray<T extends ValueType[]> = {
+  [K in keyof T]: WriteValue<T[K]>;
+};

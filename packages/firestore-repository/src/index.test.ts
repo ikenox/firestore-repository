@@ -5,12 +5,15 @@ import {
   type Model,
   type ParentId,
   type Timestamp,
+  type WriteModel,
+  type WriteValue,
   collection,
   collectionPath,
   docPath,
   id,
   parentPath,
 } from './index.js';
+import type { FieldPath } from './query.js';
 
 describe('CollectionSchema', () => {
   // root collection
@@ -82,6 +85,43 @@ describe('CollectionSchema', () => {
       title: string;
       postedAt: Timestamp;
     }>();
+
+    expectTypeOf<WriteValue<string>>().toEqualTypeOf<string>();
+    expectTypeOf<WriteValue<{ a: { b: 123 } }>>().toEqualTypeOf<{ a: { b: 123 } }>();
+    expectTypeOf<WriteValue<Timestamp>>().toEqualTypeOf<Date | Timestamp>();
+    expectTypeOf<WriteValue<{ a: { b: Timestamp } }>>().toEqualTypeOf<{
+      a: { b: Date | Timestamp };
+    }>();
+
+    expectTypeOf<WriteModel<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
+      a: string;
+      b: Timestamp | Date;
+    }>();
+    expectTypeOf<
+      WriteModel<{
+        a: string;
+        b: { c: Timestamp; d: string };
+        e: number[];
+        f: { g: Timestamp }[];
+        h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
+      }>
+    >().toEqualTypeOf<{
+      a: string;
+      b: { c: Timestamp | Date; d: string };
+      e: number[];
+      f: { g: Timestamp | Date }[];
+      h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
+    }>();
+
+    const c = collection({
+      name: 'Posts',
+      data: {
+        from: (data: { a: { b: string; c: { d: number; e: string } } }) => data,
+        to: (data) => data,
+      },
+      id: id('a'),
+    });
+    expectTypeOf<FieldPath<typeof c>>().toEqualTypeOf<'a'>();
   });
 
   it('docPath', () => {
