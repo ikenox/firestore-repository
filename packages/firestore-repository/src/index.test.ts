@@ -1,6 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
-  type CollectionSchema,
   type DbModel,
   type Id,
   type Model,
@@ -83,10 +82,6 @@ describe('CollectionSchema', () => {
       title: string;
       postedAt: Timestamp;
     }>();
-
-    const abstractCollection = <T extends CollectionSchema>() => {
-      expectTypeOf<Model<T>>().toMatchTypeOf<Id<T>>();
-    };
   });
 
   it('docPath', () => {

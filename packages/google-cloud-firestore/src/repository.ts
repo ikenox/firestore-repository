@@ -7,6 +7,7 @@ import {
   type WriteBatch,
 } from '@google-cloud/firestore';
 import {
+  type CollectionSchema,
   type DbModel,
   type Id,
   type Model,
@@ -215,23 +216,23 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   // TODO bundle
 }
 
-export const where: Where = <T extends Query>(
-  fieldPath: FieldPath<T['collection']>,
+export const where: Where<Env> = <T extends CollectionSchema>(
+  fieldPath: FieldPath<T>,
   opStr: WhereFilterOp,
   value: unknown,
-): QueryConstraint<T> => {
-  return (q: FirestoreQuery) => q.where(fieldPath, opStr, value);
+): QueryConstraint<Query<T, Env>> => {
+  return (q) => q.where(fieldPath, opStr, value);
 };
 
-export const orderBy: OrderBy = <T extends Query>(
-  field: FieldPath<T['collection']>,
+export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
+  field: FieldPath<T>,
   direction?: 'asc' | 'desc',
-): QueryConstraint<T> => {
-  return (q: FirestoreQuery) => q.orderBy(field, direction);
+): QueryConstraint<Query<T, Env>> => {
+  return (q) => q.orderBy(field, direction);
 };
 
-export const limit: Limit = (limit) => {
-  return (q: FirestoreQuery) => q.limit(limit);
+export const limit: Limit<Env> = (limit) => {
+  return (q) => q.limit(limit);
 };
 
 export class IdGenerator {
