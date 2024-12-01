@@ -1,24 +1,92 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { type Model, type Timestamp, as, collection, collectionPath, docPath } from './index.js';
+import {
+  type CollectionSchema,
+  type DbModel,
+  type Id,
+  type Model,
+  type ParentId,
+  type Timestamp,
+  collection,
+  collectionPath,
+  docPath,
+  id,
+  parentPath,
+} from './index.js';
 
 describe('CollectionSchema', () => {
-  type AuthorsCollection = typeof authorsCollection;
-  type PostsCollection = typeof postsCollection;
+  // root collection
+  const authorsCollection = collection({
+    name: 'Authors',
+    data: {
+      from: (data: {
+        authorId: string;
+        name: string;
+        registeredAt: Timestamp;
+      }) => ({
+        ...data,
+        registeredAt: data.registeredAt.toDate(),
+      }),
+      to: (data) => data,
+    },
+    id: id('authorId'),
+  });
+
+  // subcollection
+  const postsCollection = collection({
+    name: 'Posts',
+    data: {
+      from: (data: {
+        postId: number;
+        title: string;
+        postedAt: Timestamp;
+        authorId: string;
+      }) => ({
+        ...data,
+        postedAt: data.postedAt.toDate(),
+      }),
+      to: (data) => data,
+    },
+    id: id('postId'),
+    parentPath: parentPath(authorsCollection, 'authorId'),
+  });
+
+  type Authors = typeof authorsCollection;
+  type Posts = typeof postsCollection;
 
   it('type', () => {
-    // FIXME
-    // expectTypeOf<AuthorsCollection['$dbModel']>().toEqualTypeOf<never>();
-    // expectTypeOf<AuthorsCollection['$id']>().toEqualTypeOf<never>();
-    // expectTypeOf<AuthorsCollection['$parentId']>().toEqualTypeOf<never>();
-    // expectTypeOf<AuthorsCollection['$model']>().toEqualTypeOf<never>();
-    //
-    // expectTypeOf<PostsCollection['$dbModel']>().toEqualTypeOf<never>();
-    // expectTypeOf<PostsCollection['$id']>().toEqualTypeOf<never>();
-    // expectTypeOf<PostsCollection['$parentId']>().toEqualTypeOf<never>();
-    expectTypeOf<Model<PostsCollection>>().toEqualTypeOf<never>();
+    // root collection
+    expectTypeOf<Id<Authors>>().toEqualTypeOf<{ authorId: string }>();
+    expectTypeOf<ParentId<Authors>>().toEqualTypeOf<Record<never, never>>();
+    expectTypeOf<Model<Authors>>().toEqualTypeOf<{
+      authorId: string;
+      name: string;
+      registeredAt: Date;
+    }>();
+    expectTypeOf<DbModel<Authors>>().toEqualTypeOf<{
+      authorId: string;
+      name: string;
+      registeredAt: Timestamp;
+    }>();
 
-    // why?
-    expectTypeOf<number>().toEqualTypeOf<string>();
+    // subcollection
+    expectTypeOf<Id<Posts>>().toEqualTypeOf<{ postId: number; authorId: string }>();
+    expectTypeOf<ParentId<Posts>>().toEqualTypeOf<{ authorId: string }>();
+    expectTypeOf<Model<Posts>>().toEqualTypeOf<{
+      postId: number;
+      authorId: string;
+      title: string;
+      postedAt: Date;
+    }>();
+    expectTypeOf<DbModel<Posts>>().toEqualTypeOf<{
+      postId: number;
+      authorId: string;
+      title: string;
+      postedAt: Timestamp;
+    }>();
+
+    const abstractCollection = <T extends CollectionSchema>() => {
+      expectTypeOf<Model<T>>().toMatchTypeOf<Id<T>>();
+    };
   });
 
   it('docPath', () => {
@@ -32,45 +100,4 @@ describe('CollectionSchema', () => {
     expect(collectionPath(authorsCollection, {})).toBe('Authors');
     expect(collectionPath(postsCollection, { authorId: 'abc' })).toBe('Authors/abc/Posts');
   });
-});
-
-/**
- * Root collection
- */
-const authorsCollection = collection({
-  name: 'Authors',
-  id: as('authorId'),
-  data: {
-    from: (data: { name: string; registeredAt: Timestamp }) => ({
-      ...data,
-    }),
-    to: ({ name, registeredAt }) => ({
-      name,
-      registeredAt,
-    }),
-  },
-});
-
-/**
- * Subcollection
- */
-const postsCollection = collection({
-  name: 'Posts',
-  id: {
-    from: (postId) => ({ postId: Number(postId) }),
-    to: ({ postId }) => postId.toString(),
-  },
-  parent: {
-    schema: authorsCollection,
-    id: {
-      from: ({ authorId }) => ({ authorId }),
-      to: ({ authorId }) => ({ authorId }),
-    },
-  },
-  data: {
-    from: (data: { title: string; postedAt: Timestamp }) => ({
-      ...data,
-    }),
-    to: (data) => ({ ...data }),
-  },
 });

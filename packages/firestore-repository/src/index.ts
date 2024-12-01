@@ -1,28 +1,29 @@
 import type * as sdk from '@firebase/firestore';
 import type * as admin from 'firebase-admin/firestore';
 import type { Query, QueryConstraint } from './query.js';
-import type { Prettify } from './util.js';
 
-/**
- * An entrypoint of schema definition
- */
 export const collection = <
   DbModel extends DocumentData = DocumentData,
-  Parent extends CollectionSchema = CollectionSchema,
-  ModelData extends Record<string, unknown> = Record<never, never>,
-  ModelId extends Record<string, unknown> = Record<never, never>,
-  ModelParentId extends Record<string, unknown> = Record<never, never>,
+  AppModel extends Record<string, unknown> = Record<string, unknown>,
+  IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
+  ParentIdKeys extends (keyof AppModel)[] = [],
 >(
-  schema: CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>,
-): CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId> =>
-  schema as CollectionSchema<DbModel, Parent, ModelData, ModelId, ModelParentId>;
+  schema: CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>,
+) => schema;
 
-/**
- * A utility method to define simple id field
- */
-export const as = <const T extends string>(fieldName: T): ModelIdSchema<Record<T, string>> => ({
-  from: (id) => ({ [fieldName]: id }) as Record<T, string>,
-  to: (data) => data[fieldName],
+export const id = <AppModel extends Record<string, unknown>, IdKey extends keyof AppModel>(
+  key: IdKey,
+): IdSchema<AppModel, [IdKey]> => ({
+  keys: [key],
+  to: (data) => `${data[key]}`,
+});
+
+export const parentPath = <AppModel extends Record<string, unknown>, IdKey extends keyof AppModel>(
+  parent: CollectionSchema,
+  key: IdKey,
+): ParentPathSchema<AppModel, [IdKey]> => ({
+  keys: [key],
+  to: (data) => `${parent.name}/${data[key]}`,
 });
 
 /**
@@ -30,71 +31,58 @@ export const as = <const T extends string>(fieldName: T): ModelIdSchema<Record<T
  */
 export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  Parent extends CollectionSchema = any,
-  ModelData extends Record<string, unknown> = Record<never, never>,
-  ModelId extends Record<string, unknown> = Record<never, never>,
-  // TODO allow undefined?
-  ModelParentId extends Record<string, unknown> = Record<never, never>,
+  AppModel extends Record<string, unknown> = Record<string, unknown>,
+  IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
+  ParentIdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
 > = {
   name: string;
-  id: ModelIdSchema<ModelId>;
-  parent?: {
-    schema: Parent;
-    id: {
-      from(id: Id<Parent>): ModelParentId;
-      to(id: ModelParentId): Id<Parent>;
-    };
-  };
   data: {
-    from(data: DbModel): ModelData;
-    // TODO allow Date etc.
-    to(data: NoInfer<Prettify<ModelId & ModelParentId & ModelData>>): NoInfer<DbModel>;
+    from(data: DbModel): AppModel;
+    to(data: NoInfer<AppModel>): NoInfer<DbModel>;
   };
+  id: IdSchema<NoInfer<AppModel>, IdKeys>;
+  parentPath?: ParentPathSchema<NoInfer<AppModel>, ParentIdKeys> | undefined;
 };
 
-export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<infer A> ? A : never;
-export type Model<T extends CollectionSchema> = T extends CollectionSchema<
-  DocumentData,
-  CollectionSchema,
-  infer ModelData,
-  infer ModelId,
-  infer ModelParentId
->
-  ? Prettify<ModelId & ModelParentId & ModelData>
-  : never;
+export type IdSchema<
+  AppModel extends Record<string, unknown>,
+  IdKeys extends (keyof AppModel)[],
+> = {
+  keys: IdKeys;
+  to(id: Pick<AppModel, IdKeys[number]>): string;
+};
+
+export type ParentPathSchema<
+  AppModel extends Record<string, unknown>,
+  ParentIdKeys extends (keyof AppModel)[],
+> = { keys: ParentIdKeys; to(id: Pick<AppModel, ParentIdKeys[number]>): string };
+
 export type Id<T extends CollectionSchema> = T extends CollectionSchema<
   DocumentData,
-  CollectionSchema,
-  Record<string, unknown>,
-  infer ModelId,
-  infer ModelParentId
+  infer AppModel,
+  infer IdKeys,
+  infer ParentIdKeys
 >
-  ? ModelId & ModelParentId
-  : never;
-export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
-  DocumentData,
-  CollectionSchema,
-  Record<string, unknown>,
-  Record<string, unknown>,
-  infer ModelParentId
->
-  ? ModelParentId
-  : never;
-export type ModelData<T extends CollectionSchema> = T extends CollectionSchema<
-  DocumentData,
-  CollectionSchema,
-  infer ModelData,
-  Record<string, unknown>,
-  Record<string, unknown>
->
-  ? ModelData
+  ? Pick<AppModel, IdKeys[number] | ParentIdKeys[number]>
   : never;
 
-export type ModelIdSchema<ModelId extends Record<string, unknown> = Record<string, unknown>> = {
-  from(id: string): ModelId;
-  to(id: ModelId): string;
-};
+export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
+  DocumentData,
+  infer AppModel,
+  infer _IdKeys,
+  infer ParentIdKeys
+>
+  ? Pick<AppModel, ParentIdKeys[number]>
+  : never;
+
+export type Model<T extends CollectionSchema> = T extends CollectionSchema<
+  DocumentData,
+  infer AppModel
+>
+  ? AppModel
+  : never;
+
+export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<infer A> ? A : never;
 
 export const docPath = <T extends CollectionSchema>(schema: T, id: Id<T>): string => {
   const docId = schema.id.to(id);
@@ -214,7 +202,7 @@ export type ValueType =
   | ValueType[]
   | MapValue;
 
-export type Timestamp = sdk.Timestamp | admin.Timestamp;
+export type Timestamp = { toDate: () => Date };
 export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
 export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type MapValue = { [K in string]: ValueType };
