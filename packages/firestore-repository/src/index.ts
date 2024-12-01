@@ -82,7 +82,14 @@ export type Model<T extends CollectionSchema> = T extends CollectionSchema<
   ? AppModel
   : never;
 
-export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<infer A> ? A : never;
+export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<
+  infer DbModel,
+  infer _AppModel,
+  infer _IdKeys,
+  infer _ParentIdKeys
+>
+  ? DbModel
+  : never;
 
 /**
  * Returns a path of the document
@@ -219,6 +226,10 @@ export type WriteValue<T extends ValueType> =
   | (T extends ValueType[] ? MapArray<T> : never)
   | (T extends number | string | null ? T : never);
 
-export type MapArray<T extends ValueType[]> = {
-  [K in keyof T]: WriteValue<T[K]>;
-};
+export type MapArray<T> = T extends [infer A extends ValueType, ...infer B extends ValueType[]]
+  ? [WriteValue<A>, ...MapArray<B>]
+  : T extends []
+    ? []
+    : T extends (infer A extends ValueType)[]
+      ? WriteValue<A>[]
+      : never;

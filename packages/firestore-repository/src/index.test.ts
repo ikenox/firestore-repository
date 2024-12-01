@@ -2,9 +2,11 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   type DbModel,
   type Id,
+  type MapArray,
   type Model,
   type ParentId,
   type Timestamp,
+  type ValueType,
   type WriteModel,
   type WriteValue,
   collection,
@@ -96,6 +98,13 @@ describe('CollectionSchema', () => {
     expectTypeOf<WriteValue<{ a: { b: Timestamp } }>>().toEqualTypeOf<{
       a: { b: Date | Timestamp };
     }>();
+    // prevent deep type instantiation
+    expectTypeOf<WriteValue<ValueType>>().toEqualTypeOf<WriteValue<ValueType>>();
+
+    expectTypeOf<MapArray<[number, Timestamp]>>().toEqualTypeOf<[number, Timestamp | Date]>();
+    expectTypeOf<MapArray<number[]>>().toEqualTypeOf<number[]>();
+    expectTypeOf<MapArray<Timestamp[]>>().toEqualTypeOf<(Timestamp | Date)[]>();
+    expectTypeOf<MapArray<ValueType[]>>().toEqualTypeOf<WriteValue<ValueType>[]>();
 
     expectTypeOf<WriteModel<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
       a: string;

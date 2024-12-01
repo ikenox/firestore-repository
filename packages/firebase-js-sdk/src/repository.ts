@@ -104,7 +104,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   query(
     parentIdOrQuery: ParentId<T> | Query<T, Env>,
-    ...constraints: QueryConstraint<T, Env>[]
+    ...constraints: QueryConstraint<Query<T, Env>>[]
   ): Query<T, Env> {
     const query =
       queryTag in parentIdOrQuery ? parentIdOrQuery.inner : this.collectionRef(parentIdOrQuery);
@@ -115,7 +115,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     };
   }
 
-  collectionGroupQuery(...constraints: QueryConstraint<T, Env>[]): Query<T, Env> {
+  collectionGroupQuery(...constraints: QueryConstraint<Query<T, Env>>[]): Query<T, Env> {
     const query = collectionGroup(this.db, this.collection.name);
     return {
       [queryTag]: true,
@@ -203,14 +203,14 @@ export const where: Where<Env> = <T extends CollectionSchema>(
   fieldPath: FieldPath<T>,
   opStr: WhereFilterOp,
   value: unknown,
-): QueryConstraint<T, Env> => {
+): QueryConstraint<Query<T, Env>> => {
   return (q) => query(q, firestoreWhere(fieldPath, opStr, value));
 };
 
 export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
   field: FieldPath<T>,
   direction?: 'asc' | 'desc',
-): QueryConstraint<T, Env> => {
+): QueryConstraint<Query<T, Env>> => {
   return (q) => query(q, firestoreOrderBy(field, direction));
 };
 
