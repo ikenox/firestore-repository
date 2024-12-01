@@ -1,5 +1,3 @@
-import type * as sdk from '@firebase/firestore';
-import type * as admin from 'firebase-admin/firestore';
 import type { Query, QueryConstraint } from './query.js';
 
 export const collection = <
@@ -84,15 +82,19 @@ export type Model<T extends CollectionSchema> = T extends CollectionSchema<
 
 export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<infer A> ? A : never;
 
+/**
+ * Returns a path of the document
+ */
 export const docPath = <T extends CollectionSchema>(schema: T, id: Id<T>): string => {
   const docId = schema.id.to(id);
   return `${collectionPath(schema, id)}/${docId}`;
 };
 
+/**
+ * Returns a path of the collection
+ */
 export const collectionPath = <T extends CollectionSchema>(schema: T, id: ParentId<T>): string => {
-  return schema.parent?.schema
-    ? `${docPath(schema.parent.schema, schema.parent.id.to(id))}/${schema.name}`
-    : schema.name;
+  return schema.parentPath ? `${schema.parentPath.to(id)}/${schema.name}` : schema.name;
 };
 
 /**
@@ -197,12 +199,12 @@ export type ValueType =
   | string
   | null
   | Timestamp
-  | DocumentReference
-  | GeoPoint
+  // | DocumentReference
+  // | GeoPoint
   | ValueType[]
   | MapValue;
 
 export type Timestamp = { toDate: () => Date };
-export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
-export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
+// export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
+// export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type MapValue = { [K in string]: ValueType };
