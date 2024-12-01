@@ -5,8 +5,9 @@ import {
   type Model,
   type Repository,
   type Timestamp,
-  as,
   collection,
+  id,
+  parentPath,
 } from '../index.js';
 import type { Limit, OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
@@ -182,7 +183,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
           postId: id,
           title: `post${id}`,
           authorId: `author${authorId}`,
-          postedAt: converters.timestamp(new Date()),
+          postedAt: new Date(),
         };
       },
       mutate: (data) => ({
@@ -292,40 +293,41 @@ export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> 
  */
 const authorsCollection = collection({
   name: 'Authors',
-  id: as('authorId'),
   data: {
-    from: (data: { name: string; registeredAt: Timestamp }) => ({
+    from: (data: {
+      authorId: string;
+      name: string;
+      registeredAt: Timestamp;
+    }) => ({
       ...data,
       registeredAt: data.registeredAt.toDate(),
     }),
-    to: ({ name, registeredAt }) => ({
-      name,
-      registeredAt, //  TODO serializer
-    }),
+    to: (data) => data,
   },
+  id: id('authorId'),
 });
-type Author = Model<typeof authorsCollection>;
+type Authors = typeof authorsCollection;
+type Author = Model<Authors>;
 
 /**
  * Subcollection
  */
 const postsCollection = collection({
   name: 'Posts',
-  id: {
-    from: (postId) => ({ postId: Number(postId) }),
-    to: ({ postId }) => postId.toString(),
-  },
-  parent: {
-    schema: authorsCollection,
-    id: {
-      from: ({ authorId }) => ({ authorId }),
-      to: (data) => ({ authorId: data.authorId }),
-    },
-  },
   data: {
-    from: (data: { title: string; postedAt: Timestamp }) => ({
+    from: (data: {
+      postId: number;
+      title: string;
+      postedAt: Timestamp;
+      authorId: string;
+    }) => ({
       ...data,
+      postedAt: data.postedAt.toDate(),
     }),
-    to: (data) => ({ ...data }),
+    to: (data) => data,
   },
+  id: id('postId'),
+  parentPath: parentPath(authorsCollection, 'authorId'),
 });
+type Posts = typeof postsCollection;
+type Post = Model<Posts>;
