@@ -12,22 +12,17 @@ import {
 import type { Limit, OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
-export type RepositoryTestEnv<Repo extends Repository> = {
-  repository: Repo;
-  items: [
-    Model<Repo['collection']>,
-    Model<Repo['collection']>,
-    Model<Repo['collection']>,
-    ...Model<Repo['collection']>[],
-  ];
-  expectDb: (expected: Model<Repo['collection']>[]) => Promise<void>;
+export type RepositoryTestEnv<T extends CollectionSchema> = {
+  repository: Repository<T>;
+  items: [Model<T>, Model<T>, Model<T>, ...Model<T>[]];
+  expectDb: (expected: Model<T>[]) => Promise<void>;
 };
 
 /**
  * List of specifications that repository implementations must satisfy
  */
-export const defineRepositorySpecificationTests = <Repo extends Repository>(
-  createRepository: <T extends CollectionSchema>(collection: T) => Repo,
+export const defineRepositorySpecificationTests = (
+  createRepository: <T extends CollectionSchema>(collection: T) => Repository<T>,
   environment: {
     converters: {
       timestamp: (date: Date) => Timestamp;
@@ -39,12 +34,12 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
-      setup: () => RepositoryTestEnv<Repo>,
+      setup: () => RepositoryTestEnv<T>,
     ) => void;
   },
 ) => {
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
-    const setup = (): RepositoryTestEnv<Repo> => {
+    const setup = (): RepositoryTestEnv<T> => {
       const items = [params.newData(), params.newData(), params.newData()] as [
         Model<T>,
         Model<T>,
