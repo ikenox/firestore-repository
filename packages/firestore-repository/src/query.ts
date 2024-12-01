@@ -21,18 +21,26 @@ export type Query<
 
 export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner'];
 
-export type Where = <T extends Query>(
-  fieldPath: FieldPath<T['collection']>,
+export type Where<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  fieldPath: FieldPath<T>,
   opStr: WhereFilterOp,
   value: unknown, // TODO typing
-) => QueryConstraint<T>;
+) => QueryConstraint<Query<T, Env>>;
 
-export type OrderBy = <T extends Query>(
-  field: FieldPath<T['collection']>,
+export type OrderBy<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  field: FieldPath<T>,
   direction?: 'asc' | 'desc',
-) => QueryConstraint<T>;
+) => QueryConstraint<Query<T, Env>>;
 
-export type Limit = <T extends Query>(limit: number) => QueryConstraint<T>;
+export type Limit<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  limit: number,
+) => QueryConstraint<Query<T, Env>>;
 
 // TODO
 // limitToLast

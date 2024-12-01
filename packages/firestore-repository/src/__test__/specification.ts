@@ -198,7 +198,7 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
       const { where, orderBy, limit } = environment.queryConstraints;
 
       describe('root collection', () => {
-        const repository: Repository<typeof authorsCollection> = createRepository({
+        const repository: Repository<Authors> = createRepository({
           ...authorsCollection,
           name: `${authorsCollection.name}_${randomString()}`,
         });

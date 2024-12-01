@@ -21,6 +21,7 @@ import {
 } from '@firebase/firestore';
 import type * as base from 'firestore-repository';
 import {
+  type CollectionSchema,
   type DbModel,
   type Id,
   type Model,
@@ -103,7 +104,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 
   query(
     parentIdOrQuery: ParentId<T> | Query<T, Env>,
-    ...constraints: QueryConstraint<Query<T, Env>>[]
+    ...constraints: QueryConstraint<T, Env>[]
   ): Query<T, Env> {
     const query =
       queryTag in parentIdOrQuery ? parentIdOrQuery.inner : this.collectionRef(parentIdOrQuery);
@@ -114,7 +115,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     };
   }
 
-  collectionGroupQuery(...constraints: QueryConstraint<Query<T, Env>>[]): Query<T, Env> {
+  collectionGroupQuery(...constraints: QueryConstraint<T, Env>[]): Query<T, Env> {
     const query = collectionGroup(this.db, this.collection.name);
     return {
       [queryTag]: true,
@@ -197,22 +198,22 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 }
 
-export const where: Where = <T extends Query>(
-  fieldPath: FieldPath<T['collection']>,
+export const where: Where<Env> = <T extends CollectionSchema>(
+  fieldPath: FieldPath<T>,
   opStr: WhereFilterOp,
   value: unknown,
-): QueryConstraint<T> => {
-  return (q: FirestoreQuery) => query(q, firestoreWhere(fieldPath, opStr, value));
+): QueryConstraint<T, Env> => {
+  return (q) => query(q, firestoreWhere(fieldPath, opStr, value));
 };
 
-export const orderBy: OrderBy = <T extends Query>(
-  field: FieldPath<T['collection']>,
+export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
+  field: FieldPath<T>,
   direction?: 'asc' | 'desc',
-): QueryConstraint<T> => {
+): QueryConstraint<T, Env> => {
   return (q) => query(q, firestoreOrderBy(field, direction));
 };
 
-export const limit: Limit = (limit) => {
+export const limit: Limit<Env> = (limit) => {
   return (q) => query(q, firestoreLimit(limit));
 };
 
