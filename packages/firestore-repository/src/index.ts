@@ -213,14 +213,12 @@ export type MapValue = { [K in string]: ValueType };
 export type WriteModel<T extends DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;
 };
-export type WriteValue<T extends ValueType> = T extends Timestamp
-  ? Date | Timestamp
-  : T extends MapValue
-    ? { [K in keyof T]: WriteValue<T[K]> }
-    : // TODO array
-      T extends ValueType[]
-      ? MapArray<T>
-      : T;
+export type WriteValue<T extends ValueType> =
+  | (T extends Timestamp ? Date | Timestamp : never)
+  | (T extends MapValue ? { [K in keyof T]: WriteValue<T[K]> } : never)
+  | (T extends ValueType[] ? MapArray<T> : never)
+  | (T extends number | string | null ? T : never);
+
 export type MapArray<T extends ValueType[]> = {
   [K in keyof T]: WriteValue<T[K]>;
 };
