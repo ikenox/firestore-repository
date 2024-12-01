@@ -36,7 +36,7 @@ export type CollectionSchema<
   name: string;
   data: {
     from(data: DbModel): AppModel;
-    to(data: NoInfer<AppModel>): NoInfer<WriteModel<DbModel>>;
+    to(data: NoInfer<AppModel>): WriteModel<NoInfer<DbModel>>;
   };
   id: IdSchema<NoInfer<AppModel>, IdKeys>;
   parentPath?: ParentPathSchema<NoInfer<AppModel>, ParentIdKeys> | undefined;

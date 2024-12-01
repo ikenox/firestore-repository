@@ -43,8 +43,6 @@ export const defineRepositorySpecificationTests = <Repo extends Repository>(
     ) => void;
   },
 ) => {
-  const converters = environment.converters;
-
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
     const setup = (): RepositoryTestEnv<Repo> => {
       const items = [params.newData(), params.newData(), params.newData()] as [

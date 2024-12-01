@@ -190,7 +190,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
-    return doc.data() as Model<T> | undefined;
+    const data = doc.data();
+    return data ? (this.collection.data.from(data) as Model<T>) : undefined;
   }
 
   toFirestore(data: Model<T>): DbModel<T> {
