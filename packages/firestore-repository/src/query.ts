@@ -42,6 +42,12 @@ export type Limit<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
   limit: number,
 ) => QueryConstraint<Query<T, Env>>;
 
+export type LimitToLast<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  limit: number,
+) => QueryConstraint<Query<T, Env>>;
+
 // TODO
 // limitToLast
 // offset

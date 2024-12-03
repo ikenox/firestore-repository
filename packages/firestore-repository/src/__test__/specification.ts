@@ -10,7 +10,7 @@ import {
   id,
   parentPath,
 } from '../index.js';
-import type { Limit, OrderBy, Query, Where } from '../query.js';
+import type { Limit, LimitToLast, OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
 export type RepositoryTestEnv<T extends CollectionSchema, Env extends FirestoreEnvironment> = {
@@ -29,6 +29,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       where: Where<Env>;
       orderBy: OrderBy<Env>;
       limit: Limit<Env>;
+      limitToLast: LimitToLast<Env>;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
@@ -186,7 +187,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const { where, orderBy, limit } = environment.queryConstraints;
+      const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
 
       describe('root collection', () => {
         const repository: Repository<Authors, Env> = createRepository({
@@ -255,6 +256,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(repository.query({}, limit(1)), [items[0]]);
           await expectQuery(repository.query({}, limit(2)), [items[0], items[1]]);
           await expectQuery(repository.query({}, limit(100)), items);
+        });
+
+        it('limitToLast', async () => {
+          await expectQuery(repository.query({}, orderBy('authorId'), limitToLast(1)), [items[2]]);
+          await expectQuery(repository.query({}, orderBy('authorId'), limitToLast(2)), [
+            items[1],
+            items[2],
+          ]);
+          await expectQuery(repository.query({}, orderBy('authorId'), limitToLast(100)), items);
         });
 
         it('query composition', async () => {

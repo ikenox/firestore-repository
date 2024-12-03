@@ -10,6 +10,7 @@ import {
   deleteDoc,
   doc,
   limit as firestoreLimit,
+  limitToLast as firestoreLimitToLast,
   orderBy as firestoreOrderBy,
   where as firestoreWhere,
   getDoc,
@@ -34,6 +35,7 @@ import {
 import type {
   FieldPath,
   Limit,
+  LimitToLast,
   OrderBy,
   Query,
   QueryConstraint,
@@ -216,6 +218,10 @@ export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
 
 export const limit: Limit<Env> = (limit) => {
   return (q) => query(q, firestoreLimit(limit));
+};
+
+export const limitToLast: LimitToLast<Env> = (limit) => {
+  return (q) => query(q, firestoreLimitToLast(limit));
 };
 
 export class IdGenerator {

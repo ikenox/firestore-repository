@@ -1,7 +1,7 @@
 import { Firestore } from '@google-cloud/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe, expect, it } from 'vitest';
-import { Repository, limit, orderBy, where } from './repository.js';
+import { Repository, limit, limitToLast, orderBy, where } from './repository.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -14,6 +14,7 @@ describe('repository', async () => {
       where,
       orderBy,
       limit,
+      limitToLast,
     },
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type Collection = typeof collection;

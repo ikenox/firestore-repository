@@ -21,6 +21,7 @@ import type * as base from 'firestore-repository';
 import type {
   FieldPath,
   Limit,
+  LimitToLast,
   OrderBy,
   Query,
   QueryConstraint,
@@ -231,6 +232,10 @@ export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
 
 export const limit: Limit<Env> = (limit) => {
   return (q) => q.limit(limit);
+};
+
+export const limitToLast: LimitToLast<Env> = (limit) => {
+  return (q) => q.limitToLast(limit);
 };
 
 export class IdGenerator {
