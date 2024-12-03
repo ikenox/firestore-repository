@@ -13,6 +13,7 @@ import {
 export type Query<
   T extends CollectionSchema = CollectionSchema,
   Env extends FirestoreEnvironment = FirestoreEnvironment,
+  Projection = T,
 > = {
   [queryTag]: true;
   collection: T;
@@ -43,7 +44,6 @@ export type LimitToLast<Env extends FirestoreEnvironment = FirestoreEnvironment>
 export type Where<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
   T extends CollectionSchema,
 >(
-  // TODO shorthand for where
   filter: FilterExpression<T>,
 ) => QueryConstraint<Query<T, Env>>;
 
@@ -85,6 +85,31 @@ export const and = <T extends CollectionSchema>(...filters: FilterExpression<T>[
 // select
 // aggregate
 
+export type Aggregate<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+  U extends AggregateSpec<T>,
+>(
+  query: Query<T, Env>,
+  spec: U,
+) => Query<T, Env>;
+export type AggregateSpec<T extends CollectionSchema> = Record<string, AggregateMethod<T>>;
+export type AggregateMethod<T extends CollectionSchema> = Count | Sum<T> | Average<T>;
+export type Count = { kind: 'count' };
+export type Sum<T extends CollectionSchema> = { kind: 'sum'; path: FieldPath<T> };
+export type Average<T extends CollectionSchema> = { kind: 'average'; path: FieldPath<T> };
+
+export const sum = <T extends CollectionSchema>(path: FieldPath<T>): Sum<T> => ({
+  kind: 'sum',
+  path,
+});
+export const average = <T extends CollectionSchema>(path: FieldPath<T>): Average<T> => ({
+  kind: 'average',
+  path,
+});
+export const count = (): Count => ({
+  kind: 'count',
+});
+
 export type FieldPath<T extends CollectionSchema = CollectionSchema> =
   | {
       [K in keyof DbModel<T> & string]: K | `${K}.${ValueFieldPath<DbModel<T>[K]>}`;
@@ -94,8 +119,6 @@ export type FieldPath<T extends CollectionSchema = CollectionSchema> =
 export type ValueFieldPath<T extends ValueType> = T extends MapValue
   ? { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
   : never;
-
-export const aggregate = <T extends CollectionSchema>(query: Query<T>) => ({});
 
 export type WhereFilterOp =
   | '<'
