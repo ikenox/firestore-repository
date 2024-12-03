@@ -1,6 +1,7 @@
 import {
   type CollectionReference,
   type DocumentSnapshot,
+  Filter,
   type Firestore,
   type Query as FirestoreQuery,
   Transaction,
@@ -218,7 +219,18 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 export const where: Where<Env> =
   <T extends CollectionSchema>(filter: FilterExpression<T>): QueryConstraint<Query<T, Env>> =>
   (q) =>
-    q.where(fieldPath, opStr, value);
+    q.where(convertFilterExpression(filter));
+
+const convertFilterExpression = (expr: FilterExpression): Filter => {
+  switch (expr.kind) {
+    case 'where':
+      return Filter.where(expr.fieldPath, expr.opStr, expr.value);
+    case 'and':
+      return Filter.and(...expr.filters.map(convertFilterExpression));
+    case 'or':
+      return Filter.or(...expr.filters.map(convertFilterExpression));
+  }
+};
 
 export const orderBy: OrderBy<Env> =
   <T extends CollectionSchema>(

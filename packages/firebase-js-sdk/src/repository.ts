@@ -208,19 +208,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
 export const where: Where<Env> = <T extends CollectionSchema>(
   filter: FilterExpression<T>,
 ): QueryConstraint<Query<T, Env>> => {
-  const constraint = convertExpr(filter);
+  const constraint = convertFilterExpression(filter);
   return (q) =>
     constraint instanceof QueryFieldFilterConstraint ? query(q, constraint) : query(q, constraint);
 };
 
-const convertExpr = (expr: FilterExpression): QueryFilterConstraint => {
+const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint => {
   switch (expr.kind) {
     case 'where':
       return firestoreWhere(expr.fieldPath, expr.opStr, expr.value);
     case 'and':
-      return and(...expr.filters.map(convertExpr));
+      return and(...expr.filters.map(convertFilterExpression));
     case 'or':
-      return or(...expr.filters.map(convertExpr));
+      return or(...expr.filters.map(convertFilterExpression));
   }
 };
 
