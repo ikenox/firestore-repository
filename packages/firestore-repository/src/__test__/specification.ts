@@ -11,13 +11,13 @@ import {
   parentPath,
 } from '../index.js';
 import {
+  $,
   type Limit,
   type LimitToLast,
   type OrderBy,
   type Query,
   type Where,
   and,
-  op,
   or,
 } from '../query.js';
 import { randomNumber, randomString } from './util.js';
@@ -233,8 +233,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         describe('where', () => {
           it('simple', async () => {
-            await expectQuery(repository.query({}, where(op('name', '==', 'author1'))), [items[0]]);
-            await expectQuery(repository.query({}, where(op('name', '!=', 'author1'))), [
+            await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query({}, where($('name', '!=', 'author1'))), [
               items[1],
               items[2],
             ]);
@@ -245,13 +245,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               repository.query(
                 {},
-                where(or(op('name', '==', 'author1'), op('name', '==', 'author3'))),
+                where(or($('name', '==', 'author1'), $('name', '==', 'author3'))),
               ),
               [items[0], items[2]],
             );
 
             await expectQuery(repository.query({}, where(or())), items);
-            await expectQuery(repository.query({}, where(or(op('name', '==', 'author1')))), [
+            await expectQuery(repository.query({}, where(or($('name', '==', 'author1')))), [
               items[0],
             ]);
           });
@@ -261,10 +261,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               repository.query(
                 {},
                 where(
-                  and(
-                    op('name', '==', 'author1'),
-                    op('registeredAt', '==', new Date('2020-02-01')),
-                  ),
+                  and($('name', '==', 'author1'), $('registeredAt', '==', new Date('2020-02-01'))),
                 ),
               ),
               [items[0]],
@@ -274,17 +271,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               repository.query(
                 {},
                 where(
-                  and(
-                    op('name', '==', 'author1'),
-                    op('registeredAt', '==', new Date('2020-02-02')),
-                  ),
+                  and($('name', '==', 'author1'), $('registeredAt', '==', new Date('2020-02-02'))),
                 ),
               ),
               [],
             );
 
             await expectQuery(repository.query({}, where(and())), items);
-            await expectQuery(repository.query({}, where(and(op('name', '==', 'author1')))), [
+            await expectQuery(repository.query({}, where(and($('name', '==', 'author1')))), [
               items[0],
             ]);
           });
@@ -296,12 +290,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 where(
                   or(
                     and(
-                      op('name', '==', 'author1'),
-                      op('registeredAt', '==', new Date('2020-02-01')),
+                      $('name', '==', 'author1'),
+                      $('registeredAt', '==', new Date('2020-02-01')),
                     ),
                     and(
-                      op('name', '==', 'author2'),
-                      op('registeredAt', '==', new Date('2020-01-01')),
+                      $('name', '==', 'author2'),
+                      $('registeredAt', '==', new Date('2020-01-01')),
                     ),
                   ),
                 ),
@@ -348,7 +342,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(
             repository.query(
               {},
-              where(op('name', '!=', 'author1')),
+              where($('name', '!=', 'author1')),
               orderBy('registeredAt', 'desc'),
               limit(1),
             ),
