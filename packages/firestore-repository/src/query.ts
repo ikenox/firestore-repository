@@ -60,7 +60,7 @@ export type UnaryCondition<T extends CollectionSchema> = {
 export type Or<T extends CollectionSchema> = { kind: 'or'; filters: FilterExpression<T>[] };
 export type And<T extends CollectionSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
 
-export const is = <T extends CollectionSchema>(
+export const op = <T extends CollectionSchema>(
   fieldPath: FieldPath<T>,
   opStr: WhereFilterOp,
   value: unknown,

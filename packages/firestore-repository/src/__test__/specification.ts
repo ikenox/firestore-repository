@@ -17,7 +17,7 @@ import {
   type Query,
   type Where,
   and,
-  is,
+  op,
   or,
 } from '../query.js';
 import { randomNumber, randomString } from './util.js';
@@ -233,8 +233,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         describe('where', () => {
           it('simple', async () => {
-            await expectQuery(repository.query({}, where(is('name', '==', 'author1'))), [items[0]]);
-            await expectQuery(repository.query({}, where(is('name', '!=', 'author1'))), [
+            await expectQuery(repository.query({}, where(op('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query({}, where(op('name', '!=', 'author1'))), [
               items[1],
               items[2],
             ]);
@@ -245,13 +245,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               repository.query(
                 {},
-                where(or(is('name', '==', 'author1'), is('name', '==', 'author3'))),
+                where(or(op('name', '==', 'author1'), op('name', '==', 'author3'))),
               ),
               [items[0], items[2]],
             );
 
             await expectQuery(repository.query({}, where(or())), items);
-            await expectQuery(repository.query({}, where(or(is('name', '==', 'author1')))), [
+            await expectQuery(repository.query({}, where(or(op('name', '==', 'author1')))), [
               items[0],
             ]);
           });
@@ -262,8 +262,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 {},
                 where(
                   and(
-                    is('name', '==', 'author1'),
-                    is('registeredAt', '==', new Date('2020-02-01')),
+                    op('name', '==', 'author1'),
+                    op('registeredAt', '==', new Date('2020-02-01')),
                   ),
                 ),
               ),
@@ -275,8 +275,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 {},
                 where(
                   and(
-                    is('name', '==', 'author1'),
-                    is('registeredAt', '==', new Date('2020-02-02')),
+                    op('name', '==', 'author1'),
+                    op('registeredAt', '==', new Date('2020-02-02')),
                   ),
                 ),
               ),
@@ -284,7 +284,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             );
 
             await expectQuery(repository.query({}, where(and())), items);
-            await expectQuery(repository.query({}, where(and(is('name', '==', 'author1')))), [
+            await expectQuery(repository.query({}, where(and(op('name', '==', 'author1')))), [
               items[0],
             ]);
           });
@@ -296,12 +296,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 where(
                   or(
                     and(
-                      is('name', '==', 'author1'),
-                      is('registeredAt', '==', new Date('2020-02-01')),
+                      op('name', '==', 'author1'),
+                      op('registeredAt', '==', new Date('2020-02-01')),
                     ),
                     and(
-                      is('name', '==', 'author2'),
-                      is('registeredAt', '==', new Date('2020-01-01')),
+                      op('name', '==', 'author2'),
+                      op('registeredAt', '==', new Date('2020-01-01')),
                     ),
                   ),
                 ),
@@ -348,7 +348,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(
             repository.query(
               {},
-              where(is('name', '!=', 'author1')),
+              where(op('name', '!=', 'author1')),
               orderBy('registeredAt', 'desc'),
               limit(1),
             ),
