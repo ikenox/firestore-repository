@@ -3,8 +3,11 @@ import {
   type DocumentSnapshot,
   type Firestore,
   type Query as FirestoreQuery,
+  QueryFieldFilterConstraint,
+  type QueryFilterConstraint,
   Transaction,
   type WriteBatch,
+  and,
   collection,
   collectionGroup,
   deleteDoc,
@@ -16,6 +19,7 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  or,
   query,
   setDoc,
   writeBatch,
@@ -34,13 +38,13 @@ import {
 } from 'firestore-repository';
 import type {
   FieldPath,
-  Filter,
   FilterExpression,
   Limit,
   LimitToLast,
   OrderBy,
   Query,
   QueryConstraint,
+  Where,
 } from 'firestore-repository/query';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
@@ -201,10 +205,23 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 }
 
-export const filter: Filter<Env> = <T extends CollectionSchema>(
+export const where: Where<Env> = <T extends CollectionSchema>(
   filter: FilterExpression<T>,
 ): QueryConstraint<Query<T, Env>> => {
-  return (q) => query(q, firestoreWhere(fieldPath, opStr, value));
+  const constraint = convertExpr(filter);
+  return (q) =>
+    constraint instanceof QueryFieldFilterConstraint ? query(q, constraint) : query(q, constraint);
+};
+
+const convertExpr = (expr: FilterExpression): QueryFilterConstraint => {
+  switch (expr.kind) {
+    case 'where':
+      return firestoreWhere(expr.fieldPath, expr.opStr, expr.value);
+    case 'and':
+      return and(...expr.filters.map(convertExpr));
+    case 'or':
+      return or(...expr.filters.map(convertExpr));
+  }
 };
 
 export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(

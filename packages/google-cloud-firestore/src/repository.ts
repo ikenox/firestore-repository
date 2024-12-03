@@ -20,13 +20,13 @@ import {
 import type * as base from 'firestore-repository';
 import type {
   FieldPath,
-  Filter,
+  FilterExpression,
   Limit,
   LimitToLast,
   OrderBy,
   Query,
   QueryConstraint,
-  WhereFilterOp,
+  Where,
 } from 'firestore-repository/query';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
@@ -215,12 +215,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   // TODO bundle
 }
 
-export const where: Filter<Env> =
-  <T extends CollectionSchema>(
-    fieldPath: FieldPath<T>,
-    opStr: WhereFilterOp,
-    value: unknown,
-  ): QueryConstraint<Query<T, Env>> =>
+export const where: Where<Env> =
+  <T extends CollectionSchema>(filter: FilterExpression<T>): QueryConstraint<Query<T, Env>> =>
   (q) =>
     q.where(fieldPath, opStr, value);
 

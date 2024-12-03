@@ -2,7 +2,7 @@ import { initializeApp } from '@firebase/app';
 import { connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe } from 'vitest';
-import { Repository, filter, limit, limitToLast, orderBy } from './repository.js';
+import { Repository, limit, limitToLast, orderBy, where } from './repository.js';
 
 describe('repository', async () => {
   const db = getFirestore(
@@ -13,6 +13,6 @@ describe('repository', async () => {
   connectFirestoreEmulator(db, host!, Number(port));
 
   defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
-    queryConstraints: { filter, orderBy, limit, limitToLast },
+    queryConstraints: { where, orderBy, limit, limitToLast },
   });
 });

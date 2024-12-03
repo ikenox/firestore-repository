@@ -11,12 +11,12 @@ import {
   parentPath,
 } from '../index.js';
 import {
-  type Filter,
   type Limit,
   type LimitToLast,
   type OrderBy,
   type Query,
-  where,
+  type Where,
+  is,
 } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
@@ -33,7 +33,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   createRepository: <T extends CollectionSchema>(collection: T) => Repository<T, Env>,
   environment: {
     queryConstraints: {
-      filter: Filter<Env>;
+      where: Where<Env>;
       orderBy: OrderBy<Env>;
       limit: Limit<Env>;
       limitToLast: LimitToLast<Env>;
@@ -191,7 +191,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const { filter, orderBy, limit, limitToLast } = environment.queryConstraints;
+      const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
 
       describe('root collection', () => {
         const repository: Repository<Authors, Env> = createRepository(
@@ -230,10 +230,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('filter', async () => {
-          await expectQuery(repository.query({}, filter(where('name', '==', 'author1'))), [
-            items[0],
-          ]);
-          await expectQuery(repository.query({}, filter(where('name', '!=', 'author1'))), [
+          await expectQuery(repository.query({}, where(is('name', '==', 'author1'))), [items[0]]);
+          await expectQuery(repository.query({}, where(is('name', '!=', 'author1'))), [
             items[1],
             items[2],
           ]);
@@ -276,7 +274,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(
             repository.query(
               {},
-              where('name', '!=', 'author1'),
+              where(is('name', '!=', 'author1')),
               orderBy('registeredAt', 'desc'),
               limit(1),
             ),

@@ -21,13 +21,6 @@ export type Query<
 
 export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner'];
 
-export type Filter<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
-  T extends CollectionSchema,
->(
-  // TODO shorthand for where
-  filter: FilterExpression<T>,
-) => QueryConstraint<Query<T, Env>>;
-
 export type OrderBy<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
   T extends CollectionSchema,
 >(
@@ -47,8 +40,18 @@ export type LimitToLast<Env extends FirestoreEnvironment = FirestoreEnvironment>
   limit: number,
 ) => QueryConstraint<Query<T, Env>>;
 
-export type FilterExpression<T extends CollectionSchema> = Where<T> | Or<T> | And<T>;
-export type Where<T extends CollectionSchema> = {
+export type Where<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  // TODO shorthand for where
+  filter: FilterExpression<T>,
+) => QueryConstraint<Query<T, Env>>;
+
+export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
+  | UnaryCondition<T>
+  | Or<T>
+  | And<T>;
+export type UnaryCondition<T extends CollectionSchema> = {
   kind: 'where';
   fieldPath: FieldPath<T>;
   opStr: WhereFilterOp;
@@ -57,11 +60,11 @@ export type Where<T extends CollectionSchema> = {
 export type Or<T extends CollectionSchema> = { kind: 'or'; filters: FilterExpression<T>[] };
 export type And<T extends CollectionSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
 
-export const where = <T extends CollectionSchema>(
+export const is = <T extends CollectionSchema>(
   fieldPath: FieldPath<T>,
   opStr: WhereFilterOp,
   value: unknown,
-): Where<T> => ({ kind: 'where', fieldPath, opStr, value });
+): UnaryCondition<T> => ({ kind: 'where', fieldPath, opStr, value });
 export const or = <T extends CollectionSchema>(...filters: FilterExpression<T>[]): Or<T> => ({
   kind: 'or',
   filters,
