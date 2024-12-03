@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   type CollectionSchema,
+  type FirestoreEnvironment,
   type Id,
   type Model,
   type Repository,
@@ -12,8 +13,8 @@ import {
 import type { Limit, OrderBy, Query, Where } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
-export type RepositoryTestEnv<T extends CollectionSchema> = {
-  repository: Repository<T>;
+export type RepositoryTestEnv<T extends CollectionSchema, Env extends FirestoreEnvironment> = {
+  repository: Repository<T, Env>;
   items: [Model<T>, Model<T>, Model<T>, ...Model<T>[]];
   expectDb: (expected: Model<T>[]) => Promise<void>;
 };
@@ -21,22 +22,22 @@ export type RepositoryTestEnv<T extends CollectionSchema> = {
 /**
  * List of specifications that repository implementations must satisfy
  */
-export const defineRepositorySpecificationTests = (
-  createRepository: <T extends CollectionSchema>(collection: T) => Repository<T>,
+export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironment>(
+  createRepository: <T extends CollectionSchema>(collection: T) => Repository<T, Env>,
   environment: {
     queryConstraints: {
-      where: Where;
-      orderBy: OrderBy;
-      limit: Limit;
+      where: Where<Env>;
+      orderBy: OrderBy<Env>;
+      limit: Limit<Env>;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
-      setup: () => RepositoryTestEnv<T>,
+      setup: () => RepositoryTestEnv<T, Env>,
     ) => void;
   },
 ) => {
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
-    const setup = (): RepositoryTestEnv<T> => {
+    const setup = (): RepositoryTestEnv<T, Env> => {
       const items = [params.newData(), params.newData(), params.newData()] as [
         Model<T>,
         Model<T>,
@@ -188,12 +189,15 @@ export const defineRepositorySpecificationTests = (
       const { where, orderBy, limit } = environment.queryConstraints;
 
       describe('root collection', () => {
-        const repository: Repository<Authors> = createRepository({
+        const repository: Repository<Authors, Env> = createRepository({
           ...authorsCollection,
           name: `${authorsCollection.name}_${randomString()}`,
         });
 
-        const expectQuery = async (query: Query<typeof authorsCollection>, expected: Author[]) => {
+        const expectQuery = async (
+          query: Query<typeof authorsCollection, Env>,
+          expected: Author[],
+        ) => {
           const result = await repository.list(query);
           // biome-ignore lint/suspicious/noMisplacedAssertion:
           expect(result).toStrictEqual(expected);
