@@ -15,8 +15,11 @@ describe('repository', async () => {
       orderBy,
       limit,
     },
-    implementationSpecificTests: ({ newData, notExistDocId }, setup) => {
-      const { repository, items, expectDb } = setup();
+    implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
+      type Collection = typeof collection;
+
+      const { repository: _repo, items, expectDb } = setup();
+      const repository = _repo as Repository<Collection>;
 
       describe('create', () => {
         it('success', async () => {

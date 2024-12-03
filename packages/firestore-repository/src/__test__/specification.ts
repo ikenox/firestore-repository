@@ -48,7 +48,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       beforeEach(async () => {
         repository.collection = {
           ...params.collection,
-          // use dedicated collection for each tests
+          // use unique dedicated collection for each tests
           name: `${params.collection.name}_${randomString()}`,
         };
         await repository.batchSet(items);
