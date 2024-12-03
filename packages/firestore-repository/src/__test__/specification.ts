@@ -16,7 +16,9 @@ import {
   type OrderBy,
   type Query,
   type Where,
+  and,
   is,
+  or,
 } from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
@@ -229,12 +231,53 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await repository.batchSet(items);
         });
 
-        it('filter', async () => {
-          await expectQuery(repository.query({}, where(is('name', '==', 'author1'))), [items[0]]);
-          await expectQuery(repository.query({}, where(is('name', '!=', 'author1'))), [
-            items[1],
-            items[2],
-          ]);
+        describe('where', () => {
+          it('simple', async () => {
+            await expectQuery(repository.query({}, where(is('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query({}, where(is('name', '!=', 'author1'))), [
+              items[1],
+              items[2],
+            ]);
+            // TODO for all operators
+          });
+
+          it('or', async () => {
+            await expectQuery(
+              repository.query(
+                {},
+                where(or(is('name', '==', 'author1'), is('name', '==', 'author3'))),
+              ),
+              [items[0], items[2]],
+            );
+          });
+
+          it('and', async () => {
+            await expectQuery(
+              repository.query(
+                {},
+                where(
+                  and(
+                    is('name', '==', 'author1'),
+                    is('registeredAt', '==', new Date('2020-02-01')),
+                  ),
+                ),
+              ),
+              [items[0]],
+            );
+
+            await expectQuery(
+              repository.query(
+                {},
+                where(
+                  and(
+                    is('name', '==', 'author1'),
+                    is('registeredAt', '==', new Date('2020-02-02')),
+                  ),
+                ),
+              ),
+              [],
+            );
+          });
         });
 
         it('orderBy', async () => {
