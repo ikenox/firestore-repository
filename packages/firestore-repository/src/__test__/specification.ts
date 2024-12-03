@@ -47,11 +47,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       const repository = createRepository(params.collection);
       beforeEach(async () => {
-        repository.collection = {
-          ...params.collection,
-          // use unique dedicated collection for each tests
-          name: `${params.collection.name}_${randomString()}`,
-        };
+        // use unique dedicated collection for each tests
+        repository.collection = uniqueCollection(params.collection);
         await repository.batchSet(items);
       });
 
@@ -190,10 +187,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
 
       describe('root collection', () => {
-        const repository: Repository<Authors, Env> = createRepository({
-          ...authorsCollection,
-          name: `${authorsCollection.name}_${randomString()}`,
-        });
+        const repository: Repository<Authors, Env> = createRepository(
+          uniqueCollection(authorsCollection),
+        );
 
         const expectQuery = async (
           query: Query<typeof authorsCollection, Env>,
@@ -295,7 +291,7 @@ export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> 
 /**
  * Root collection
  */
-const authorsCollection = collection({
+export const authorsCollection = collection({
   name: 'Authors',
   data: {
     from: (data: {
@@ -316,7 +312,7 @@ type Author = Model<Authors>;
 /**
  * Subcollection
  */
-const postsCollection = collection({
+export const postsCollection = collection({
   name: 'Posts',
   data: {
     from: (data: {
@@ -335,3 +331,11 @@ const postsCollection = collection({
 });
 type Posts = typeof postsCollection;
 type Post = Model<Posts>;
+
+/**
+ * Duplicates a collection config with a unique collection name
+ */
+export const uniqueCollection = <T extends CollectionSchema>(collection: T): T => ({
+  ...collection,
+  name: `${collection.name}_${randomString()}`,
+});

@@ -49,8 +49,6 @@ export type LimitToLast<Env extends FirestoreEnvironment = FirestoreEnvironment>
 ) => QueryConstraint<Query<T, Env>>;
 
 // TODO
-// limitToLast
-// offset
 // startAt
 // startAfter
 // endBefore

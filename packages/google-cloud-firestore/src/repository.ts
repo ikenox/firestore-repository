@@ -215,28 +215,33 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   // TODO bundle
 }
 
-export const where: Where<Env> = <T extends CollectionSchema>(
-  fieldPath: FieldPath<T>,
-  opStr: WhereFilterOp,
-  value: unknown,
-): QueryConstraint<Query<T, Env>> => {
-  return (q) => q.where(fieldPath, opStr, value);
-};
+export const where: Where<Env> =
+  <T extends CollectionSchema>(
+    fieldPath: FieldPath<T>,
+    opStr: WhereFilterOp,
+    value: unknown,
+  ): QueryConstraint<Query<T, Env>> =>
+  (q) =>
+    q.where(fieldPath, opStr, value);
 
-export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
-  field: FieldPath<T>,
-  direction?: 'asc' | 'desc',
-): QueryConstraint<Query<T, Env>> => {
-  return (q) => q.orderBy(field, direction);
-};
+export const orderBy: OrderBy<Env> =
+  <T extends CollectionSchema>(
+    field: FieldPath<T>,
+    direction?: 'asc' | 'desc',
+  ): QueryConstraint<Query<T, Env>> =>
+  (q) =>
+    q.orderBy(field, direction);
 
-export const limit: Limit<Env> = (limit) => {
-  return (q) => q.limit(limit);
-};
+export const limit: Limit<Env> = (limit) => (q) => q.limit(limit);
 
-export const limitToLast: LimitToLast<Env> = (limit) => {
-  return (q) => q.limitToLast(limit);
-};
+export const limitToLast: LimitToLast<Env> = (limit) => (q) => q.limitToLast(limit);
+
+export const offset: Offset = (offset) => (q) => q.offset(offset);
+
+/**
+ * A query offset constraint
+ */
+export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
 
 export class IdGenerator {
   collection: CollectionReference;

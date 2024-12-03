@@ -1,7 +1,12 @@
 import { Firestore } from '@google-cloud/firestore';
-import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
-import { describe, expect, it } from 'vitest';
-import { Repository, limit, limitToLast, orderBy, where } from './repository.js';
+import type { Model } from 'firestore-repository';
+import {
+  authorsCollection,
+  defineRepositorySpecificationTests,
+  uniqueCollection,
+} from 'firestore-repository/__test__/specification';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { Repository, limit, limitToLast, offset, orderBy, where } from './repository.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -48,5 +53,24 @@ describe('repository', async () => {
         });
       });
     },
+  });
+
+  describe('query', () => {
+    const repository = new Repository(uniqueCollection(authorsCollection), db);
+    const items = [
+      { authorId: '1', name: 'author1', registeredAt: new Date('2020-02-01') },
+      { authorId: '2', name: 'author2', registeredAt: new Date('2020-01-01') },
+      { authorId: '3', name: 'author3', registeredAt: new Date('2020-03-01') },
+    ] as const satisfies Model<typeof authorsCollection>[];
+
+    beforeAll(async () => {
+      await repository.batchSet(items);
+    });
+
+    it('offset', async () => {
+      const [first, ...rest] = items;
+      const result = await repository.list(repository.query({}, offset(1)));
+      expect(result).toStrictEqual(rest);
+    });
   });
 });
