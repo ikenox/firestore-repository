@@ -13,9 +13,13 @@
       },
       "style": {
         "noParameterProperties": "off"
+      },
+      "correctness": {
+        "noUndeclaredDependencies": "off"
       }
     }
   },
+
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
