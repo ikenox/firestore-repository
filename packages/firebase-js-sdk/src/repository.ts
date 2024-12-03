@@ -2,26 +2,31 @@ import {
   type CollectionReference,
   type DocumentSnapshot,
   type Firestore,
+  type AggregateSpec as FirestoreAggregateSpec,
   type Query as FirestoreQuery,
   QueryFieldFilterConstraint,
   type QueryFilterConstraint,
   Transaction,
   type WriteBatch,
   and,
+  average,
   collection,
   collectionGroup,
+  count,
   deleteDoc,
   doc,
   limit as firestoreLimit,
   limitToLast as firestoreLimitToLast,
   orderBy as firestoreOrderBy,
   where as firestoreWhere,
+  getAggregateFromServer,
   getDoc,
   getDocs,
   onSnapshot,
   or,
   query,
   setDoc,
+  sum,
   writeBatch,
 } from '@firebase/firestore';
 import type * as base from 'firestore-repository';
@@ -37,6 +42,8 @@ import {
   queryTag,
 } from 'firestore-repository';
 import type {
+  AggregateSpec,
+  Aggregated,
   FieldPath,
   FilterExpression,
   Limit,
@@ -106,6 +113,29 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
         complete?.();
       },
     });
+  }
+
+  async aggregate<T extends CollectionSchema, U extends AggregateSpec<T>>(
+    query: Query<T, Env>,
+    spec: U,
+  ): Promise<Aggregated<U>> {
+    const aggregateSpec: FirestoreAggregateSpec = {};
+    for (const [k, v] of Object.entries(spec)) {
+      switch (v.kind) {
+        case 'count':
+          aggregateSpec[k] = count();
+          break;
+        case 'sum':
+          aggregateSpec[k] = sum(v.path);
+          break;
+        case 'average':
+          aggregateSpec[k] = average(v.path);
+          break;
+      }
+    }
+
+    const res = await getAggregateFromServer(query.inner, aggregateSpec);
+    return res.data() as Aggregated<U>;
   }
 
   query(

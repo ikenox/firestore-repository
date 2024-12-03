@@ -58,9 +58,9 @@ describe('repository', async () => {
   describe('query', () => {
     const repository = new Repository(uniqueCollection(authorsCollection), db);
     const items = [
-      { authorId: '1', name: 'author1', registeredAt: new Date('2020-02-01') },
-      { authorId: '2', name: 'author2', registeredAt: new Date('2020-01-01') },
-      { authorId: '3', name: 'author3', registeredAt: new Date('2020-03-01') },
+      { authorId: '1', name: 'author1', age: 20, registeredAt: new Date('2020-02-01') },
+      { authorId: '2', name: 'author2', age: 40, registeredAt: new Date('2020-01-01') },
+      { authorId: '3', name: 'author3', age: 60, registeredAt: new Date('2020-03-01') },
     ] as const satisfies Model<typeof authorsCollection>[];
 
     beforeAll(async () => {

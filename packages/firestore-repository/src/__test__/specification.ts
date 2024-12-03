@@ -13,7 +13,6 @@ import {
 } from '../index.js';
 import {
   $,
-  type Aggregate,
   type Limit,
   type LimitToLast,
   type OrderBy,
@@ -75,7 +74,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       orderBy: OrderBy<Env>;
       limit: Limit<Env>;
       limitToLast: LimitToLast<Env>;
-      aggregate: Aggregate<Env>;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
@@ -197,6 +195,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         return {
           authorId: `author${id}`,
           name: `name${id}`,
+          age: randomNumber(),
           registeredAt: new Date(),
         };
       },
@@ -230,7 +229,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const { where, orderBy, limit, limitToLast, aggregate } = environment.queryConstraints;
+      const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
 
       const setup = <T extends CollectionSchema, const Items extends Model<T>[]>(params: {
         collection: T;
@@ -395,11 +394,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('aggregate', async () => {
-          const res = await repository.aggregate(repository.query(), {
-            avgAge: average('age'),
-            sumAge: sum('age'),
-            count: count(),
-          });
+          const res = await repository.aggregate(
+            // TODO cannot omit argument
+            repository.query({}),
+            { avgAge: average('age'), sumAge: sum('age'), count: count() },
+          );
           expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
         });
       });

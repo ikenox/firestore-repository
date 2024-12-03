@@ -1,8 +1,10 @@
 import {
+  AggregateField,
   type CollectionReference,
   type DocumentSnapshot,
   Filter,
   type Firestore,
+  type AggregateSpec as FirestoreAggregateSpec,
   type Query as FirestoreQuery,
   Transaction,
   type WriteBatch,
@@ -20,8 +22,8 @@ import {
 } from 'firestore-repository';
 import type * as base from 'firestore-repository';
 import type {
-  Aggregate,
   AggregateSpec,
+  Aggregated,
   FieldPath,
   FilterExpression,
   Limit,
@@ -78,6 +80,29 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
       next(snapshot.docs.map((doc) => this.fromFirestore(doc)!));
     }, error);
+  }
+
+  async aggregate<T extends CollectionSchema, U extends AggregateSpec<T>>(
+    query: Query<T, Env>,
+    spec: U,
+  ): Promise<Aggregated<U>> {
+    const aggregateSpec: FirestoreAggregateSpec = {};
+    for (const [k, v] of Object.entries(spec)) {
+      switch (v.kind) {
+        case 'count':
+          aggregateSpec[k] = AggregateField.count();
+          break;
+        case 'sum':
+          aggregateSpec[k] = AggregateField.sum(v.path);
+          break;
+        case 'average':
+          aggregateSpec[k] = AggregateField.average(v.path);
+          break;
+      }
+    }
+
+    const res = await query.inner.aggregate(aggregateSpec).get();
+    return res.data() as Aggregated<U>;
   }
 
   query(
@@ -265,11 +290,6 @@ export const limitToLast: LimitToLast<Env> = (limit) => (q) => q.limitToLast(lim
 export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
 
 export const offset: Offset = (offset) => (q) => q.offset(offset);
-
-export const aggregate: Aggregate<Env> = <T extends CollectionSchema, U extends AggregateSpec<T>>(
-  query: Query<T, Env>,
-  spec: U,
-): Query<T, Env> => {};
 
 export class IdGenerator {
   collection: CollectionReference;

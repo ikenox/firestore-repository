@@ -135,14 +135,6 @@ export interface Repository<
   list: (query: Query<T, Env>) => Promise<Model<T>[]>;
 
   /**
-   * Returns an aggregation of the specified query
-   */
-  aggregate: <T extends CollectionSchema, U extends AggregateSpec<T>>(
-    query: Query<T, Env>,
-    spec: U,
-  ) => Promise<Aggregated<U>>;
-
-  /**
    * Listen documents of the specified query
    */
   listOnSnapshot: (
@@ -150,6 +142,14 @@ export interface Repository<
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
   ) => Unsubscribe;
+
+  /**
+   * Returns an aggregation of the specified query
+   */
+  aggregate: <T extends CollectionSchema, U extends AggregateSpec<T>>(
+    query: Query<T, Env>,
+    spec: U,
+  ) => Promise<Aggregated<U>>;
 
   /**
    * Start a query or chaining another query
