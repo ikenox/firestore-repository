@@ -249,6 +249,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               ),
               [items[0], items[2]],
             );
+
+            await expectQuery(repository.query({}, where(or())), items);
+            await expectQuery(repository.query({}, where(or(is('name', '==', 'author1')))), [
+              items[0],
+            ]);
           });
 
           it('and', async () => {
@@ -276,6 +281,32 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 ),
               ),
               [],
+            );
+
+            await expectQuery(repository.query({}, where(and())), items);
+            await expectQuery(repository.query({}, where(and(is('name', '==', 'author1')))), [
+              items[0],
+            ]);
+          });
+
+          it('complex', async () => {
+            await expectQuery(
+              repository.query(
+                {},
+                where(
+                  or(
+                    and(
+                      is('name', '==', 'author1'),
+                      is('registeredAt', '==', new Date('2020-02-01')),
+                    ),
+                    and(
+                      is('name', '==', 'author2'),
+                      is('registeredAt', '==', new Date('2020-01-01')),
+                    ),
+                  ),
+                ),
+              ),
+              [items[0], items[1]],
             );
           });
         });
