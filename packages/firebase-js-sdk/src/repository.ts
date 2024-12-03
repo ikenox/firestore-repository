@@ -109,9 +109,17 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   query(
-    parentIdOrQuery: ParentId<T> | Query<T, Env>,
+    parentIdOrQuery:
+      | ParentId<T>
+      | Query<T, Env>
+      // parentId can be omitted for root collection
+      | ([keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>> : never),
     ...constraints: QueryConstraint<Query<T, Env>>[]
   ): Query<T, Env> {
+    if (typeof parentIdOrQuery === 'function') {
+      // the first argument is QueryConstraint
+      throw new Error('a');
+    }
     const query =
       queryTag in parentIdOrQuery ? parentIdOrQuery.inner : this.collectionRef(parentIdOrQuery);
     return {
@@ -248,3 +256,6 @@ export class IdGenerator {
     return doc(this.collection).id;
   }
 }
+
+type Bar = [keyof {}] extends [never] ? true : false;
+type Foo = [keyof { foo: 123 }] extends [never] ? true : false;

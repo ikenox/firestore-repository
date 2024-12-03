@@ -1,9 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 import {
   type CollectionSchema,
   type FirestoreEnvironment,
   type Id,
   type Model,
+  type ParentId,
   type Repository,
   type Timestamp,
   collection,
@@ -46,6 +47,42 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     ) => void;
   },
 ) => {
+  // root collection
+  const authorsCollection = collection({
+    name: 'Authors',
+    data: {
+      from: (data: {
+        authorId: string;
+        name: string;
+        registeredAt: Timestamp;
+      }) => ({
+        ...data,
+        registeredAt: data.registeredAt.toDate(),
+      }),
+      to: (data) => data,
+    },
+    id: id('authorId'),
+  });
+
+  // subcollection
+  const postsCollection = collection({
+    name: 'Posts',
+    data: {
+      from: (data: {
+        postId: number;
+        title: string;
+        postedAt: Timestamp;
+        authorId: string;
+      }) => ({
+        ...data,
+        postedAt: data.postedAt.toDate(),
+      }),
+      to: (data) => data,
+    },
+    id: id('postId'),
+    parentPath: parentPath(authorsCollection, 'authorId'),
+  });
+
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
     const setup = (): RepositoryTestEnv<T, Env> => {
       const items = [params.newData(), params.newData(), params.newData()] as [
@@ -195,50 +232,59 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     describe('query', () => {
       const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
 
-      describe('root collection', () => {
-        const repository: Repository<Authors, Env> = createRepository(
-          uniqueCollection(authorsCollection),
-        );
-
-        const expectQuery = async (
-          query: Query<typeof authorsCollection, Env>,
-          expected: Author[],
-        ) => {
-          const result = await repository.list(query);
-          // biome-ignore lint/suspicious/noMisplacedAssertion:
-          expect(result).toStrictEqual(expected);
-        };
-
-        const items: [Author, Author, Author, ...Author[]] = [
-          {
-            authorId: '1',
-            name: 'author1',
-            registeredAt: new Date('2020-02-01'),
-          },
-          {
-            authorId: '2',
-            name: 'author2',
-            registeredAt: new Date('2020-01-01'),
-          },
-          {
-            authorId: '3',
-            name: 'author3',
-            registeredAt: new Date('2020-03-01'),
-          },
-        ];
-
+      const setup = <T extends CollectionSchema, const Items extends Model<T>[]>(params: {
+        collection: T;
+        items: Items;
+      }) => {
+        const repository = createRepository(uniqueCollection(params.collection));
         beforeAll(async () => {
-          await repository.batchSet(items);
+          await repository.batchSet(params.items);
+        });
+        return {
+          repository,
+          items: params.items,
+          expectQuery: async (query: Query<T, Env>, expected: Model<T>[]) => {
+            const result = await repository.list(query);
+            // biome-ignore lint/suspicious/noMisplacedAssertion:
+            expect(result).toStrictEqual(expected);
+          },
+        };
+      };
+
+      describe('root collection', () => {
+        const { repository, expectQuery, items } = setup({
+          collection: authorsCollection,
+          items: [
+            {
+              authorId: '1',
+              name: 'author1',
+              registeredAt: new Date('2020-02-01'),
+            },
+            {
+              authorId: '2',
+              name: 'author2',
+              registeredAt: new Date('2020-01-01'),
+            },
+            {
+              authorId: '3',
+              name: 'author3',
+              registeredAt: new Date('2020-03-01'),
+            },
+          ],
         });
 
         describe('where', () => {
           it('simple', async () => {
-            await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
-            await expectQuery(repository.query({}, where($('name', '!=', 'author1'))), [
+            await expectQuery(repository.query(where($('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query(where($('name', '!=', 'author1'))), [
               items[1],
               items[2],
             ]);
             // TODO for all operators
+          });
+
+          it('specify empty parentId', async () => {
+            await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
           });
 
           it('or', async () => {
@@ -250,10 +296,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               [items[0], items[2]],
             );
 
-            await expectQuery(repository.query({}, where(or())), items);
-            await expectQuery(repository.query({}, where(or($('name', '==', 'author1')))), [
-              items[0],
-            ]);
+            await expectQuery(repository.query(where(or())), items);
+            await expectQuery(repository.query(where(or($('name', '==', 'author1')))), [items[0]]);
           });
 
           it('and', async () => {
@@ -277,10 +321,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               [],
             );
 
-            await expectQuery(repository.query({}, where(and())), items);
-            await expectQuery(repository.query({}, where(and($('name', '==', 'author1')))), [
-              items[0],
-            ]);
+            await expectQuery(repository.query(where(and())), items);
+            await expectQuery(repository.query(where(and($('name', '==', 'author1')))), [items[0]]);
           });
 
           it('complex', async () => {
@@ -306,17 +348,17 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('orderBy', async () => {
-          await expectQuery(repository.query({}, orderBy('registeredAt')), [
+          await expectQuery(repository.query(orderBy('registeredAt')), [
             items[1],
             items[0],
             items[2],
           ]);
-          await expectQuery(repository.query({}, orderBy('registeredAt', 'asc')), [
+          await expectQuery(repository.query(orderBy('registeredAt', 'asc')), [
             items[1],
             items[0],
             items[2],
           ]);
-          await expectQuery(repository.query({}, orderBy('registeredAt', 'desc')), [
+          await expectQuery(repository.query(orderBy('registeredAt', 'desc')), [
             items[2],
             items[0],
             items[1],
@@ -324,18 +366,18 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('limit', async () => {
-          await expectQuery(repository.query({}, limit(1)), [items[0]]);
-          await expectQuery(repository.query({}, limit(2)), [items[0], items[1]]);
-          await expectQuery(repository.query({}, limit(100)), items);
+          await expectQuery(repository.query(limit(1)), [items[0]]);
+          await expectQuery(repository.query(limit(2)), [items[0], items[1]]);
+          await expectQuery(repository.query(limit(100)), items);
         });
 
         it('limitToLast', async () => {
-          await expectQuery(repository.query({}, orderBy('authorId'), limitToLast(1)), [items[2]]);
-          await expectQuery(repository.query({}, orderBy('authorId'), limitToLast(2)), [
+          await expectQuery(repository.query(orderBy('authorId'), limitToLast(1)), [items[2]]);
+          await expectQuery(repository.query(orderBy('authorId'), limitToLast(2)), [
             items[1],
             items[2],
           ]);
-          await expectQuery(repository.query({}, orderBy('authorId'), limitToLast(100)), items);
+          await expectQuery(repository.query(orderBy('authorId'), limitToLast(100)), items);
         });
 
         it('query composition', async () => {
@@ -350,6 +392,48 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           );
         });
       });
+
+      describe('subcollection', () => {
+        const { repository, expectQuery, items } = setup({
+          collection: postsCollection,
+          items: [
+            {
+              postId: 1,
+              title: 'post1',
+              authorId: 'author1',
+              postedAt: new Date('2020-02-01'),
+            },
+            {
+              postId: 2,
+              title: 'post2',
+              authorId: 'author1',
+              postedAt: new Date('2020-01-01'),
+            },
+            {
+              postId: 3,
+              title: 'post3',
+              authorId: 'author2',
+              postedAt: new Date('2020-03-01'),
+            },
+          ],
+        });
+
+        describe('where', () => {
+          it('simple', async () => {
+            await expectQuery(repository.query({ authorId: 'author1' }, orderBy('postedAt')), [
+              items[1],
+              items[0],
+            ]);
+
+            // parentId or query must be at first argument
+            expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
+              ParentId<typeof postsCollection> | Query<typeof postsCollection, Env>
+            >();
+          });
+        });
+
+        // TODO
+      });
     });
   });
 };
@@ -362,50 +446,6 @@ export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> 
   notExistDocId: () => Id<T>;
   sortKey: (id: Id<T>) => string;
 };
-
-/**
- * Root collection
- */
-export const authorsCollection = collection({
-  name: 'Authors',
-  data: {
-    from: (data: {
-      authorId: string;
-      name: string;
-      registeredAt: Timestamp;
-    }) => ({
-      ...data,
-      registeredAt: data.registeredAt.toDate(),
-    }),
-    to: (data) => data,
-  },
-  id: id('authorId'),
-});
-type Authors = typeof authorsCollection;
-type Author = Model<Authors>;
-
-/**
- * Subcollection
- */
-export const postsCollection = collection({
-  name: 'Posts',
-  data: {
-    from: (data: {
-      postId: number;
-      title: string;
-      postedAt: Timestamp;
-      authorId: string;
-    }) => ({
-      ...data,
-      postedAt: data.postedAt.toDate(),
-    }),
-    to: (data) => data,
-  },
-  id: id('postId'),
-  parentPath: parentPath(authorsCollection, 'authorId'),
-});
-type Posts = typeof postsCollection;
-type Post = Model<Posts>;
 
 /**
  * Duplicates a collection config with a unique collection name
