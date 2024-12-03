@@ -10,7 +10,14 @@ import {
   id,
   parentPath,
 } from '../index.js';
-import type { Limit, LimitToLast, OrderBy, Query, Where } from '../query.js';
+import {
+  type Filter,
+  type Limit,
+  type LimitToLast,
+  type OrderBy,
+  type Query,
+  where,
+} from '../query.js';
 import { randomNumber, randomString } from './util.js';
 
 export type RepositoryTestEnv<T extends CollectionSchema, Env extends FirestoreEnvironment> = {
@@ -26,7 +33,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   createRepository: <T extends CollectionSchema>(collection: T) => Repository<T, Env>,
   environment: {
     queryConstraints: {
-      where: Where<Env>;
+      filter: Filter<Env>;
       orderBy: OrderBy<Env>;
       limit: Limit<Env>;
       limitToLast: LimitToLast<Env>;
@@ -184,7 +191,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
+      const { filter, orderBy, limit, limitToLast } = environment.queryConstraints;
 
       describe('root collection', () => {
         const repository: Repository<Authors, Env> = createRepository(
@@ -222,9 +229,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await repository.batchSet(items);
         });
 
-        it('where', async () => {
-          await expectQuery(repository.query({}, where('name', '==', 'author1')), [items[0]]);
-          await expectQuery(repository.query({}, where('name', '!=', 'author1')), [
+        it('filter', async () => {
+          await expectQuery(repository.query({}, filter(where('name', '==', 'author1'))), [
+            items[0],
+          ]);
+          await expectQuery(repository.query({}, filter(where('name', '!=', 'author1'))), [
             items[1],
             items[2],
           ]);

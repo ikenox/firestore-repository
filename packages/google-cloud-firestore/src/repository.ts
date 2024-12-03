@@ -20,12 +20,12 @@ import {
 import type * as base from 'firestore-repository';
 import type {
   FieldPath,
+  Filter,
   Limit,
   LimitToLast,
   OrderBy,
   Query,
   QueryConstraint,
-  Where,
   WhereFilterOp,
 } from 'firestore-repository/query';
 
@@ -215,7 +215,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   // TODO bundle
 }
 
-export const where: Where<Env> =
+export const where: Filter<Env> =
   <T extends CollectionSchema>(
     fieldPath: FieldPath<T>,
     opStr: WhereFilterOp,

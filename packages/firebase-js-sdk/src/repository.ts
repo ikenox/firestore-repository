@@ -34,13 +34,13 @@ import {
 } from 'firestore-repository';
 import type {
   FieldPath,
+  Filter,
+  FilterExpression,
   Limit,
   LimitToLast,
   OrderBy,
   Query,
   QueryConstraint,
-  Where,
-  WhereFilterOp,
 } from 'firestore-repository/query';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
@@ -201,10 +201,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 }
 
-export const where: Where<Env> = <T extends CollectionSchema>(
-  fieldPath: FieldPath<T>,
-  opStr: WhereFilterOp,
-  value: unknown,
+export const filter: Filter<Env> = <T extends CollectionSchema>(
+  filter: FilterExpression<T>,
 ): QueryConstraint<Query<T, Env>> => {
   return (q) => query(q, firestoreWhere(fieldPath, opStr, value));
 };
