@@ -21,13 +21,43 @@ import {
   and,
   or,
 } from '../query.js';
-import { randomNumber, randomString } from './util.js';
+import { randomNumber, uniqueCollection } from './util.js';
 
-export type RepositoryTestEnv<T extends CollectionSchema, Env extends FirestoreEnvironment> = {
-  repository: Repository<T, Env>;
-  items: [Model<T>, Model<T>, Model<T>, ...Model<T>[]];
-  expectDb: (expected: Model<T>[]) => Promise<void>;
-};
+// root collection
+export const authorsCollection = collection({
+  name: 'Authors',
+  data: {
+    from: (data: {
+      authorId: string;
+      name: string;
+      registeredAt: Timestamp;
+    }) => ({
+      ...data,
+      registeredAt: data.registeredAt.toDate(),
+    }),
+    to: (data) => data,
+  },
+  id: id('authorId'),
+});
+
+// subcollection
+export const postsCollection = collection({
+  name: 'Posts',
+  data: {
+    from: (data: {
+      postId: number;
+      title: string;
+      postedAt: Timestamp;
+      authorId: string;
+    }) => ({
+      ...data,
+      postedAt: data.postedAt.toDate(),
+    }),
+    to: (data) => data,
+  },
+  id: id('postId'),
+  parentPath: parentPath(authorsCollection, 'authorId'),
+});
 
 /**
  * List of specifications that repository implementations must satisfy
@@ -47,42 +77,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     ) => void;
   },
 ) => {
-  // root collection
-  const authorsCollection = collection({
-    name: 'Authors',
-    data: {
-      from: (data: {
-        authorId: string;
-        name: string;
-        registeredAt: Timestamp;
-      }) => ({
-        ...data,
-        registeredAt: data.registeredAt.toDate(),
-      }),
-      to: (data) => data,
-    },
-    id: id('authorId'),
-  });
-
-  // subcollection
-  const postsCollection = collection({
-    name: 'Posts',
-    data: {
-      from: (data: {
-        postId: number;
-        title: string;
-        postedAt: Timestamp;
-        authorId: string;
-      }) => ({
-        ...data,
-        postedAt: data.postedAt.toDate(),
-      }),
-      to: (data) => data,
-    },
-    id: id('postId'),
-    parentPath: parentPath(authorsCollection, 'authorId'),
-  });
-
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
     const setup = (): RepositoryTestEnv<T, Env> => {
       const items = [params.newData(), params.newData(), params.newData()] as [
@@ -438,6 +432,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   });
 };
 
+export type RepositoryTestEnv<T extends CollectionSchema, Env extends FirestoreEnvironment> = {
+  repository: Repository<T, Env>;
+  items: [Model<T>, Model<T>, Model<T>, ...Model<T>[]];
+  expectDb: (expected: Model<T>[]) => Promise<void>;
+};
+
 export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> = {
   title: string;
   collection: T;
@@ -446,11 +446,3 @@ export type TestCollectionParams<T extends CollectionSchema = CollectionSchema> 
   notExistDocId: () => Id<T>;
   sortKey: (id: Id<T>) => string;
 };
-
-/**
- * Duplicates a collection config with a unique collection name
- */
-export const uniqueCollection = <T extends CollectionSchema>(collection: T): T => ({
-  ...collection,
-  name: `${collection.name}_${randomString()}`,
-});

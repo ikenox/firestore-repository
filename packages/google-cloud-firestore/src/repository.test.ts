@@ -3,8 +3,8 @@ import type { Model } from 'firestore-repository';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
-  uniqueCollection,
 } from 'firestore-repository/__test__/specification';
+import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Repository, limit, limitToLast, offset, orderBy, where } from './repository.js';
 
