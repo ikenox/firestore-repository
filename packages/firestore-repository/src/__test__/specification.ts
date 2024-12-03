@@ -13,13 +13,17 @@ import {
 } from '../index.js';
 import {
   $,
+  type Aggregate,
   type Limit,
   type LimitToLast,
   type OrderBy,
   type Query,
   type Where,
   and,
+  average,
+  count,
   or,
+  sum,
 } from '../query.js';
 import { randomNumber, uniqueCollection } from './util.js';
 
@@ -30,6 +34,7 @@ export const authorsCollection = collection({
     from: (data: {
       authorId: string;
       name: string;
+      age: number;
       registeredAt: Timestamp;
     }) => ({
       ...data,
@@ -70,6 +75,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       orderBy: OrderBy<Env>;
       limit: Limit<Env>;
       limitToLast: LimitToLast<Env>;
+      aggregate: Aggregate<Env>;
     };
     implementationSpecificTests?: <T extends CollectionSchema>(
       params: TestCollectionParams<T>,
@@ -224,7 +230,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const { where, orderBy, limit, limitToLast } = environment.queryConstraints;
+      const { where, orderBy, limit, limitToLast, aggregate } = environment.queryConstraints;
 
       const setup = <T extends CollectionSchema, const Items extends Model<T>[]>(params: {
         collection: T;
@@ -252,16 +258,19 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             {
               authorId: '1',
               name: 'author1',
+              age: 40,
               registeredAt: new Date('2020-02-01'),
             },
             {
               authorId: '2',
               name: 'author2',
+              age: 90,
               registeredAt: new Date('2020-01-01'),
             },
             {
               authorId: '3',
               name: 'author3',
+              age: 20,
               registeredAt: new Date('2020-03-01'),
             },
           ],
@@ -374,16 +383,24 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(repository.query(orderBy('authorId'), limitToLast(100)), items);
         });
 
-        it('query composition', async () => {
+        it('multiple constraints', async () => {
           await expectQuery(
             repository.query(
-              {},
               where($('name', '!=', 'author1')),
               orderBy('registeredAt', 'desc'),
               limit(1),
             ),
             [items[2]],
           );
+        });
+
+        it('aggregate', async () => {
+          const res = await repository.aggregate(repository.query(), {
+            avgAge: average('age'),
+            sumAge: sum('age'),
+            count: count(),
+          });
+          expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
         });
       });
 

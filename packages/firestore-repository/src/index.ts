@@ -1,4 +1,4 @@
-import type { Query, QueryConstraint } from './query.js';
+import type { AggregateSpec, Aggregated, Query, QueryConstraint } from './query.js';
 
 export const collection = <
   DbModel extends DocumentData = DocumentData,
@@ -129,10 +129,21 @@ export interface Repository<
     error?: (error: Error) => void,
   ) => Unsubscribe;
 
+  /**
+   * Returns a documents list of the specified query
+   */
   list: (query: Query<T, Env>) => Promise<Model<T>[]>;
 
   /**
-   * Listen documents by the specified query
+   * Returns an aggregation of the specified query
+   */
+  aggregate: <T extends CollectionSchema, U extends AggregateSpec<T>>(
+    query: Query<T, Env>,
+    spec: U,
+  ) => Promise<Aggregated<U>>;
+
+  /**
+   * Listen documents of the specified query
    */
   listOnSnapshot: (
     query: Query<T, Env>,

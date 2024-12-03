@@ -20,6 +20,8 @@ import {
 } from 'firestore-repository';
 import type * as base from 'firestore-repository';
 import type {
+  Aggregate,
+  AggregateSpec,
   FieldPath,
   FilterExpression,
   Limit,
@@ -257,12 +259,17 @@ export const limit: Limit<Env> = (limit) => (q) => q.limit(limit);
 
 export const limitToLast: LimitToLast<Env> = (limit) => (q) => q.limitToLast(limit);
 
-export const offset: Offset = (offset) => (q) => q.offset(offset);
-
 /**
  * A query offset constraint
  */
 export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
+
+export const offset: Offset = (offset) => (q) => q.offset(offset);
+
+export const aggregate: Aggregate<Env> = <T extends CollectionSchema, U extends AggregateSpec<T>>(
+  query: Query<T, Env>,
+  spec: U,
+): Query<T, Env> => {};
 
 export class IdGenerator {
   collection: CollectionReference;

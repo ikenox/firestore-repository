@@ -85,14 +85,13 @@ export const and = <T extends CollectionSchema>(...filters: FilterExpression<T>[
 // select
 // aggregate
 
-export type Aggregate<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
-  T extends CollectionSchema,
-  U extends AggregateSpec<T>,
->(
-  query: Query<T, Env>,
-  spec: U,
-) => Query<T, Env>;
-export type AggregateSpec<T extends CollectionSchema> = Record<string, AggregateMethod<T>>;
+export type Aggregated<T extends AggregateSpec> = {
+  [K in keyof T]: number;
+};
+export type AggregateSpec<T extends CollectionSchema = CollectionSchema> = Record<
+  string,
+  AggregateMethod<T>
+>;
 export type AggregateMethod<T extends CollectionSchema> = Count | Sum<T> | Average<T>;
 export type Count = { kind: 'count' };
 export type Sum<T extends CollectionSchema> = { kind: 'sum'; path: FieldPath<T> };
