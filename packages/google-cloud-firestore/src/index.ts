@@ -228,24 +228,22 @@ export class Index<T extends base.CollectionSchema = base.CollectionSchema>
     }
   }
 
-  docRef(id: Id<T>) {
+  protected docRef(id: Id<T>) {
     return this.db.doc(docPath(this.collection, id));
   }
 
-  collectionRef(parentId: ParentId<T>): CollectionReference {
+  protected collectionRef(parentId: ParentId<T>): CollectionReference {
     return this.db.collection(collectionPath(this.collection, parentId));
   }
 
-  fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
+  protected fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
     const data = doc.data();
     return data ? (this.collection.data.from(data) as Model<T>) : undefined;
   }
 
-  toFirestore(data: Model<T>): DbModel<T> {
+  protected toFirestore(data: Model<T>): DbModel<T> {
     return this.collection.data.to(data) as DbModel<T>;
   }
-
-  // TODO bundle
 }
 
 export const where: Where<Env> =

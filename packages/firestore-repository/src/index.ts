@@ -276,6 +276,7 @@ export interface Repository<
   ): Query<T, Env>;
   query(
     // parentId can be omitted on root collection
+    // TODO type information is dropped when calling
     ...constraints: [keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>>[] : never
   ): Query<T, Env>;
 
