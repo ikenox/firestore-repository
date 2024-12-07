@@ -249,16 +249,17 @@ export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U exten
       : never;
 
 export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
+  // TODO accept only possible type for each operands
   '<': T;
   '<=': T;
   '==': T;
   '!=': T;
   '>=': T;
   '>': T;
-  'array-contains': T;
-  in: T;
-  'not-in': T;
-  'array-contains-any': T;
+  'array-contains': T extends (infer A)[] ? A : never;
+  in: T extends (infer A)[] ? A : never;
+  'not-in': T extends (infer A)[] ? A : never;
+  'array-contains-any': T extends (infer A)[] ? A[] : never;
 }[U];
 
 export type WriteModel<T extends DocumentData> = {
