@@ -7,10 +7,12 @@
   "scripts": {
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "emulator:start": "docker compose up -d",
-    "typecheck": "tsc --noEmit",
-    "check": "biome check .",
-    "fix": "biome check --fix"
+    "check": "pnpm run \"/check:.*/\"",
+    "check:type": "tsc --noEmit",
+    "check:biome": "biome check .",
+    "fix": "pnpm run \"/fix:.*/\"",
+    "fix:biome": "biome check --fix",
+    "start-emulator": "docker compose up -d"
   },
   "keywords": [],
   "author": "",
