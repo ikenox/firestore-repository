@@ -262,7 +262,7 @@ const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint 
 };
 
 export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
-  field: FieldPath<T>,
+  field: FieldPath<DbModel<T>>,
   direction?: 'asc' | 'desc',
 ): QueryConstraint<Query<T, Env>> => {
   return (q) => query(q, firestoreOrderBy(field, direction));

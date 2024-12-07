@@ -1,6 +1,7 @@
 import {
   type CollectionSchema,
   type DbModel,
+  type DocumentData,
   type FirestoreEnvironment,
   type MapValue,
   type ValueType,
@@ -24,7 +25,7 @@ export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner']
 export type OrderBy<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
   T extends CollectionSchema,
 >(
-  field: FieldPath<T>,
+  field: FieldPath<DbModel<T>>,
   direction?: 'asc' | 'desc',
 ) => QueryConstraint<Query<T, Env>>;
 
@@ -52,7 +53,7 @@ export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
   | And<T>;
 export type UnaryCondition<T extends CollectionSchema> = {
   kind: 'where';
-  fieldPath: FieldPath<T>;
+  fieldPath: FieldPath<DbModel<T>>;
   opStr: WhereFilterOp;
   value: unknown; // TODO typing
 };
@@ -60,7 +61,7 @@ export type Or<T extends CollectionSchema> = { kind: 'or'; filters: FilterExpres
 export type And<T extends CollectionSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
 
 export const $ = <T extends CollectionSchema>(
-  fieldPath: FieldPath<T>,
+  fieldPath: FieldPath<DbModel<T>>,
   opStr: WhereFilterOp,
   value: unknown,
 ): UnaryCondition<T> => ({ kind: 'where', fieldPath, opStr, value });
@@ -93,14 +94,14 @@ export type AggregateSpec<T extends CollectionSchema = CollectionSchema> = Recor
 >;
 export type AggregateMethod<T extends CollectionSchema> = Count | Sum<T> | Average<T>;
 export type Count = { kind: 'count' };
-export type Sum<T extends CollectionSchema> = { kind: 'sum'; path: FieldPath<T> };
-export type Average<T extends CollectionSchema> = { kind: 'average'; path: FieldPath<T> };
+export type Sum<T extends CollectionSchema> = { kind: 'sum'; path: FieldPath<DbModel<T>> };
+export type Average<T extends CollectionSchema> = { kind: 'average'; path: FieldPath<DbModel<T>> };
 
-export const sum = <T extends CollectionSchema>(path: FieldPath<T>): Sum<T> => ({
+export const sum = <T extends CollectionSchema>(path: FieldPath<DbModel<T>>): Sum<T> => ({
   kind: 'sum',
   path,
 });
-export const average = <T extends CollectionSchema>(path: FieldPath<T>): Average<T> => ({
+export const average = <T extends CollectionSchema>(path: FieldPath<DbModel<T>>): Average<T> => ({
   kind: 'average',
   path,
 });
@@ -108,10 +109,8 @@ export const count = (): Count => ({
   kind: 'count',
 });
 
-export type FieldPath<T extends CollectionSchema = CollectionSchema> =
-  | {
-      [K in keyof DbModel<T> & string]: K | `${K}.${ValueFieldPath<DbModel<T>[K]>}`;
-    }[keyof DbModel<T> & string]
+export type FieldPath<T extends DocumentData = DocumentData> =
+  | { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
   | '__name__';
 
 export type ValueFieldPath<T extends ValueType> = T extends MapValue

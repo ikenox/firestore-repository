@@ -265,7 +265,7 @@ const convertFilterExpression = (expr: FilterExpression): Filter => {
 
 export const orderBy: OrderBy<Env> =
   <T extends CollectionSchema>(
-    field: FieldPath<T>,
+    field: FieldPath<DbModel<T>>,
     direction?: 'asc' | 'desc',
   ): QueryConstraint<Query<T, Env>> =>
   (q) =>
