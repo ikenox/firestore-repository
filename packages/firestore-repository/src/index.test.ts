@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   type DbModel,
   type FieldPath,
+  type FieldValue,
   type Id,
   type MapArray,
   type Model,
@@ -150,6 +151,14 @@ describe('CollectionSchema', () => {
         }>
       >().toEqualTypeOf<'a' | 'a.b' | 'a.c' | 'a.c.d' | 'a.c.e' | '__name__'>();
     });
+  });
+
+  it('FieldValue', () => {
+    type Document = { a: number; b: { c: string; d: { e: Timestamp } } };
+    expectTypeOf<FieldValue<Document, 'a'>>().toEqualTypeOf<number>();
+    expectTypeOf<FieldValue<Document, 'b.c'>>().toEqualTypeOf<string>();
+    expectTypeOf<FieldValue<Document, 'b.d'>>().toEqualTypeOf<{ e: Timestamp }>();
+    expectTypeOf<FieldValue<Document, 'b.d.e'>>().toEqualTypeOf<Timestamp>();
   });
 
   it('docPath', () => {
