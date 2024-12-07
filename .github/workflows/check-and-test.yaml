@@ -35,7 +35,9 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
-      - name: Build firebase emulator docker image
+      - name: Setup docker buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build firebase emulator
         uses: docker/build-push-action@v6
         with:
           context: firebase-emulator
