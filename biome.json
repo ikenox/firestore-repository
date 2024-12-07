@@ -46,7 +46,7 @@
       }
     },
     {
-      "include": ["**/vitest.config.ts"],
+      "include": ["**/vitest.config.ts", "vitest.workspace.ts"],
       "linter": {
         "enabled": true,
         "rules": {
