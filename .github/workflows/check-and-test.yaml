@@ -35,4 +35,12 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
+      - name: Build firebase emulator docker image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: start firebase emulator
+        run: pnpm start-emulator
       - run: pnpm test
