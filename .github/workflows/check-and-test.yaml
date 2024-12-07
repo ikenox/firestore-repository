@@ -46,4 +46,5 @@ jobs:
           load: true
       - name: start firebase emulator
         run: pnpm start-emulator
+      - run: sleep 5
       - run: pnpm test
