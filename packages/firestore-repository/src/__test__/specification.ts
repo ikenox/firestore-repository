@@ -1,10 +1,9 @@
-import { beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   type CollectionSchema,
   type FirestoreEnvironment,
   type Id,
   type Model,
-  type ParentId,
   type Repository,
   type Timestamp,
   collection,
@@ -429,14 +428,18 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               items[1],
               items[0],
             ]);
-
-            // parentId or query must be at first argument
-            expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
-              ParentId<typeof postsCollection> | Query<typeof postsCollection, Env>
-            >();
           });
         });
 
+        describe('collectionGroupQuery', () => {
+          it('simple', async () => {
+            await expectQuery(repository.collectionGroupQuery(), items);
+            await expectQuery(
+              repository.collectionGroupQuery(where($('postedAt', '>', new Date('2020-01-01')))),
+              [items[0], items[2]],
+            );
+          });
+        });
         // TODO
       });
     });
