@@ -237,7 +237,7 @@ export type ValueFieldPath<T extends ValueType> = T extends MapValue
   : never;
 
 export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U extends keyof T
-  ? T[U]
+  ? Exclude<T[U], undefined>
   : U extends '__name__'
     ? string
     : U extends `${infer P}.${infer R}`

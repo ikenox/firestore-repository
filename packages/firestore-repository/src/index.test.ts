@@ -154,11 +154,12 @@ describe('CollectionSchema', () => {
   });
 
   it('FieldValue', () => {
-    type Document = { a: number; b: { c: string; d: { e: Timestamp } } };
+    type Document = { a: number; b: { c: string; d: { e: Timestamp }; optional?: 'foo' | 'bar' } };
     expectTypeOf<FieldValue<Document, 'a'>>().toEqualTypeOf<number>();
     expectTypeOf<FieldValue<Document, 'b.c'>>().toEqualTypeOf<string>();
     expectTypeOf<FieldValue<Document, 'b.d'>>().toEqualTypeOf<{ e: Timestamp }>();
     expectTypeOf<FieldValue<Document, 'b.d.e'>>().toEqualTypeOf<Timestamp>();
+    expectTypeOf<FieldValue<Document, 'b.optional'>>().toEqualTypeOf<'foo' | 'bar'>();
     expectTypeOf<FieldValue<Document, '__name__'>>().toEqualTypeOf<string>();
   });
 

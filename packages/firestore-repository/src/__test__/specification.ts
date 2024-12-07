@@ -32,7 +32,10 @@ export const authorsCollection = collection({
     from: (data: {
       authorId: string;
       name: string;
-      age: number;
+      profile: {
+        age: number;
+        gender?: 'male' | 'female';
+      };
       registeredAt: Timestamp;
     }) => ({
       ...data,
@@ -194,7 +197,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         return {
           authorId: `author${id}`,
           name: `name${id}`,
-          age: randomNumber(),
+          profile: {
+            age: randomNumber(),
+            gender: 'male' as const,
+          },
           registeredAt: new Date(),
         };
       },
@@ -256,19 +262,27 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             {
               authorId: '1',
               name: 'author1',
-              age: 40,
+              profile: {
+                age: 40,
+                gender: 'male',
+              },
               registeredAt: new Date('2020-02-01'),
             },
             {
               authorId: '2',
               name: 'author2',
-              age: 90,
+              profile: {
+                age: 90,
+                gender: 'female',
+              },
               registeredAt: new Date('2020-01-01'),
             },
             {
               authorId: '3',
               name: 'author3',
-              age: 20,
+              profile: {
+                age: 20,
+              },
               registeredAt: new Date('2020-03-01'),
             },
           ],
@@ -276,12 +290,29 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         describe('where', () => {
           it('simple', async () => {
-            await expectQuery(repository.query(where($('name', '==', 'author1'))), [items[0]]);
-            await expectQuery(repository.query(where($('name', '!=', 'author1'))), [
+            await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query({}, where($('name', '!=', 'author1'))), [
               items[1],
               items[2],
             ]);
             // TODO for all operators
+          });
+
+          it('filter by nested field', async () => {
+            await expectQuery(repository.query({}, where($('profile.age', '>=', 40))), [
+              items[0],
+              items[1],
+            ]);
+            await expectQuery(repository.query({}, where($('profile.gender', '==', 'male'))), [
+              items[0],
+            ]);
+          });
+
+          it('filter by map value', async () => {
+            await expectQuery(
+              repository.query({}, where($('profile', '==', { age: 40, gender: 'male' }))),
+              [items[0]],
+            );
           });
 
           it('specify empty parentId explicitly', async () => {
@@ -390,8 +421,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         it('aggregate', async () => {
           const res = await repository.aggregate(repository.query(), {
-            avgAge: average('age'),
-            sumAge: sum('age'),
+            avgAge: average('profile.age'),
+            sumAge: sum('profile.age'),
             count: count(),
           });
           expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
