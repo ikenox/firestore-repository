@@ -210,9 +210,7 @@ export type Unsubscribe = () => void;
 /**
  * Type of firestore document data
  */
-export type DocumentData = {
-  [key: string]: ValueType;
-};
+export type DocumentData = MapValue;
 
 /**
  * Type of firestore field value
@@ -229,12 +227,11 @@ export type ValueType =
 export type Timestamp = { toDate(): Date };
 // export type DocumentReference = sdk.DocumentReference | admin.DocumentReference;
 // export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
-export type MapValue = { [K in string]: ValueType };
+export type MapValue = { [key: string]: ValueType };
 
 export type FieldPath<T extends DocumentData = DocumentData> =
   | { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
   | '__name__';
-
 export type ValueFieldPath<T extends ValueType> = T extends MapValue
   ? { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
   : never;
