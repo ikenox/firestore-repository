@@ -13,7 +13,6 @@ import {
 export type Query<
   T extends CollectionSchema = CollectionSchema,
   Env extends FirestoreEnvironment = FirestoreEnvironment,
-  Projection = T,
 > = {
   [queryTag]: true;
   collection: T;
