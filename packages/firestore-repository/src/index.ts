@@ -153,16 +153,15 @@ export interface Repository<
 
   /**
    * Start a query or chaining another query
-   * TODO improve interface query(parentId).constraint(...)
    */
-  query: (
-    parentIdOrQuery:
-      | ParentId<T>
-      | Query<T, Env>
-      // parentId can be omitted for root collection
-      | ([keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>> : never),
+  query(
+    parentIdOrQuery: ParentId<T> | Query<T, Env>,
     ...constraints: QueryConstraint<Query<T, Env>>[]
-  ) => Query<T, Env>;
+  ): Query<T, Env>;
+  query(
+    // parentId can be omitted on root collection
+    ...constraints: [keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>>[] : [never]
+  ): Query<T, Env>;
 
   /**
    * Start a collection group query

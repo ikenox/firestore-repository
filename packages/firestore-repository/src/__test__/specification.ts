@@ -285,16 +285,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             // TODO for all operators
           });
 
-          it('specify empty parentId', async () => {
+          it('specify empty parentId explicitly', async () => {
             await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
           });
 
           it('or', async () => {
             await expectQuery(
-              repository.query(
-                {},
-                where(or($('name', '==', 'author1'), $('name', '==', 'author3'))),
-              ),
+              repository.query(where(or($('name', '==', 'author1'), $('name', '==', 'author3')))),
               [items[0], items[2]],
             );
 
@@ -305,7 +302,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           it('and', async () => {
             await expectQuery(
               repository.query(
-                {},
                 where(
                   and($('name', '==', 'author1'), $('registeredAt', '==', new Date('2020-02-01'))),
                 ),
@@ -315,7 +311,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
             await expectQuery(
               repository.query(
-                {},
                 where(
                   and($('name', '==', 'author1'), $('registeredAt', '==', new Date('2020-02-02'))),
                 ),
@@ -394,11 +389,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('aggregate', async () => {
-          const res = await repository.aggregate(
-            // TODO cannot omit argument
-            repository.query({}),
-            { avgAge: average('age'), sumAge: sum('age'), count: count() },
-          );
+          const res = await repository.aggregate(repository.query(), {
+            avgAge: average('age'),
+            sumAge: sum('age'),
+            count: count(),
+          });
           expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
         });
       });
