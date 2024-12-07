@@ -6,6 +6,7 @@ import {
   type FilterOperand,
   type Id,
   type MapArray,
+  type MapValue,
   type Model,
   type ParentId,
   type Timestamp,
@@ -150,6 +151,14 @@ describe('FieldPath', () => {
         a: { b: string; c: { d: number; e: { f: string }[] } };
       }>
     >().toEqualTypeOf<'a' | 'a.b' | 'a.c' | 'a.c.d' | 'a.c.e' | '__name__'>();
+  });
+  it('map fields', () => {
+    expectTypeOf<FieldPath>().toEqualTypeOf<string | '__name__'>();
+    expectTypeOf<
+      FieldPath<{
+        a: MapValue;
+      }>
+    >().toEqualTypeOf<'a' | `a.${string}` | '__name__'>();
   });
 });
 
