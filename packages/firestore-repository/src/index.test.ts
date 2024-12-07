@@ -91,40 +91,46 @@ describe('CollectionSchema', () => {
     });
   });
 
-  it('write model', () => {
-    expectTypeOf<WriteValue<string>>().toEqualTypeOf<string>();
-    expectTypeOf<WriteValue<{ a: { b: 123 } }>>().toEqualTypeOf<{ a: { b: 123 } }>();
-    expectTypeOf<WriteValue<Timestamp>>().toEqualTypeOf<Date | Timestamp>();
-    expectTypeOf<WriteValue<{ a: { b: Timestamp } }>>().toEqualTypeOf<{
-      a: { b: Date | Timestamp };
-    }>();
-    // prevent deep type instantiation
-    expectTypeOf<WriteValue<ValueType>>().toEqualTypeOf<WriteValue<ValueType>>();
+  describe('write-related types', () => {
+    it('WriteValue', () => {
+      expectTypeOf<WriteValue<string>>().toEqualTypeOf<string>();
+      expectTypeOf<WriteValue<{ a: { b: 123 } }>>().toEqualTypeOf<{ a: { b: 123 } }>();
+      expectTypeOf<WriteValue<Timestamp>>().toEqualTypeOf<Date | Timestamp>();
+      expectTypeOf<WriteValue<{ a: { b: Timestamp } }>>().toEqualTypeOf<{
+        a: { b: Date | Timestamp };
+      }>();
+      // prevent deep type instantiation
+      expectTypeOf<WriteValue<ValueType>>().toEqualTypeOf<WriteValue<ValueType>>();
+    });
 
-    expectTypeOf<MapArray<[number, Timestamp]>>().toEqualTypeOf<[number, Timestamp | Date]>();
-    expectTypeOf<MapArray<number[]>>().toEqualTypeOf<number[]>();
-    expectTypeOf<MapArray<Timestamp[]>>().toEqualTypeOf<(Timestamp | Date)[]>();
-    expectTypeOf<MapArray<ValueType[]>>().toEqualTypeOf<WriteValue<ValueType>[]>();
+    it('MapArray', () => {
+      expectTypeOf<MapArray<[number, Timestamp]>>().toEqualTypeOf<[number, Timestamp | Date]>();
+      expectTypeOf<MapArray<number[]>>().toEqualTypeOf<number[]>();
+      expectTypeOf<MapArray<Timestamp[]>>().toEqualTypeOf<(Timestamp | Date)[]>();
+      expectTypeOf<MapArray<ValueType[]>>().toEqualTypeOf<WriteValue<ValueType>[]>();
+    });
 
-    expectTypeOf<WriteModel<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
-      a: string;
-      b: Timestamp | Date;
-    }>();
-    expectTypeOf<
-      WriteModel<{
+    it('WriteModel', () => {
+      expectTypeOf<WriteModel<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
         a: string;
-        b: { c: Timestamp; d: string };
+        b: Timestamp | Date;
+      }>();
+      expectTypeOf<
+        WriteModel<{
+          a: string;
+          b: { c: Timestamp; d: string };
+          e: number[];
+          f: { g: Timestamp }[];
+          h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
+        }>
+      >().toEqualTypeOf<{
+        a: string;
+        b: { c: Timestamp | Date; d: string };
         e: number[];
-        f: { g: Timestamp }[];
+        f: { g: Timestamp | Date }[];
         h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
-      }>
-    >().toEqualTypeOf<{
-      a: string;
-      b: { c: Timestamp | Date; d: string };
-      e: number[];
-      f: { g: Timestamp | Date }[];
-      h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
-    }>();
+      }>();
+    });
   });
 
   describe('FieldPath', () => {
