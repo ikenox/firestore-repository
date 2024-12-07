@@ -392,3 +392,10 @@ export type MapArray<T> = T extends [infer A extends ValueType, ...infer B exten
     : T extends (infer A extends ValueType)[]
       ? WriteValue<A>[]
       : never;
+
+/**
+ * A utility method
+ */
+export const assertNever = (x: never): never => {
+  throw new Error(`This code should be unreached but: ${x}`);
+};

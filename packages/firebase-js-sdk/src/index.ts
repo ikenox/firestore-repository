@@ -47,11 +47,11 @@ import {
   type QueryConstraint,
   type Unsubscribe,
   type Where,
+  assertNever,
   collectionPath,
   docPath,
   queryTag,
 } from 'firestore-repository';
-import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
