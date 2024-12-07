@@ -43,7 +43,7 @@ jobs:
           context: firebase-emulator
           push: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
       - name: start firebase emulator
         run: pnpm start-emulator
       - run: pnpm test
