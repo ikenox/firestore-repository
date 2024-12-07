@@ -1,10 +1,4 @@
-import path from 'node:path';
-import { defineProject } from 'vitest/config';
+import { defineProject, mergeConfig } from 'vitest/config';
+import { sharedConfig } from '../../vitest.shared.js';
 
-export default defineProject({
-  test: {
-    alias: {
-      'firestore-repository': path.join(import.meta.dirname, '../firestore-repository/src'),
-    },
-  },
-});
+export default defineProject(mergeConfig(sharedConfig, {}));

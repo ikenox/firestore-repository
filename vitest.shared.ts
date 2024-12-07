@@ -1,6 +1,7 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig({
+export const sharedConfig = defineConfig({
   test: {
     include: ['**/*.test.ts'],
     coverage: {
@@ -14,6 +15,9 @@ export default defineConfig({
       TEST_PROJECT: 'ikenox-sunrise',
       // biome-ignore lint/style/useNamingConvention:
       TEST_DB: 'test-db',
+    },
+    alias: {
+      'firestore-repository': path.join(import.meta.dirname, 'packages/firestore-repository/src'),
     },
   },
 });
