@@ -33,6 +33,7 @@ import type {
   QueryConstraint,
   Where,
 } from 'firestore-repository/query';
+import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
@@ -98,6 +99,8 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
         case 'average':
           aggregateSpec[k] = AggregateField.average(v.path);
           break;
+        default:
+          return assertNever(v);
       }
     }
 

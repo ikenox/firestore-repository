@@ -133,7 +133,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
           aggregateSpec[k] = average(v.path);
           break;
         default:
-          assertNever(v);
+          return assertNever(v);
       }
     }
 
