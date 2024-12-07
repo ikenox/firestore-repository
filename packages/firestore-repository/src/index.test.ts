@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   type DbModel,
+  type FieldPath,
   type Id,
   type MapArray,
   type Model,
@@ -15,7 +16,6 @@ import {
   id,
   parentPath,
 } from './index.js';
-import type { FieldPath } from './query.js';
 
 describe('CollectionSchema', () => {
   // root collection

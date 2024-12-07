@@ -33,6 +33,7 @@ import type * as base from 'firestore-repository';
 import {
   type CollectionSchema,
   type DbModel,
+  type FieldPath,
   type Id,
   type Model,
   type ParentId,
@@ -44,7 +45,6 @@ import {
 import type {
   AggregateSpec,
   Aggregated,
-  FieldPath,
   FilterExpression,
   Limit,
   LimitToLast,

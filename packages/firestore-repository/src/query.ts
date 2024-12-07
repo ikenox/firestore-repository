@@ -1,10 +1,8 @@
 import {
   type CollectionSchema,
   type DbModel,
-  type DocumentData,
+  type FieldPath,
   type FirestoreEnvironment,
-  type MapValue,
-  type ValueType,
   queryTag,
 } from './index.js';
 
@@ -108,14 +106,6 @@ export const average = <T extends CollectionSchema>(path: FieldPath<DbModel<T>>)
 export const count = (): Count => ({
   kind: 'count',
 });
-
-export type FieldPath<T extends DocumentData = DocumentData> =
-  | { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
-  | '__name__';
-
-export type ValueFieldPath<T extends ValueType> = T extends MapValue
-  ? { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
-  : never;
 
 export type WhereFilterOp =
   | '<'

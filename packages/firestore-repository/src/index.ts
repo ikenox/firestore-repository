@@ -231,6 +231,14 @@ export type Timestamp = { toDate(): Date };
 // export type GeoPoint = sdk.GeoPoint | admin.GeoPoint;
 export type MapValue = { [K in string]: ValueType };
 
+export type FieldPath<T extends DocumentData = DocumentData> =
+  | { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
+  | '__name__';
+
+export type ValueFieldPath<T extends ValueType> = T extends MapValue
+  ? { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
+  : never;
+
 export type WriteModel<T extends DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;
 };
