@@ -1,45 +1,63 @@
 import {
-  AggregateField,
   type CollectionReference,
   type DocumentSnapshot,
-  Filter,
   type Firestore,
   type AggregateSpec as FirestoreAggregateSpec,
   type Query as FirestoreQuery,
+  QueryFieldFilterConstraint,
+  type QueryFilterConstraint,
   Transaction,
   type WriteBatch,
-} from '@google-cloud/firestore';
+  and,
+  average,
+  collection,
+  collectionGroup,
+  count,
+  deleteDoc,
+  doc,
+  limit as firestoreLimit,
+  limitToLast as firestoreLimitToLast,
+  orderBy as firestoreOrderBy,
+  where as firestoreWhere,
+  getAggregateFromServer,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  or,
+  query,
+  setDoc,
+  sum,
+  writeBatch,
+} from '@firebase/firestore';
+import type * as base from 'firestore-repository';
 import {
+  type AggregateSpec,
+  type Aggregated,
   type CollectionSchema,
   type DbModel,
   type FieldPath,
+  type FilterExpression,
   type Id,
+  type Limit,
+  type LimitToLast,
   type Model,
+  type OrderBy,
   type ParentId,
+  type Query,
+  type QueryConstraint,
   type Unsubscribe,
+  type Where,
   collectionPath,
   docPath,
   queryTag,
 } from 'firestore-repository';
-import type * as base from 'firestore-repository';
-import type {
-  AggregateSpec,
-  Aggregated,
-  FilterExpression,
-  Limit,
-  LimitToLast,
-  OrderBy,
-  Query,
-  QueryConstraint,
-  Where,
-} from 'firestore-repository/query';
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = base.TransactionOption<Env>;
 export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
-export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
+export class Index<T extends base.CollectionSchema = base.CollectionSchema>
   implements base.Repository<T, Env>
 {
   constructor(
@@ -48,7 +66,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   ) {}
 
   async get(id: Id<T>, options?: TransactionOption): Promise<Model<T> | undefined> {
-    const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : this.docRef(id).get());
+    const doc = await (options?.tx ? options.tx.get(this.docRef(id)) : getDoc(this.docRef(id)));
     return this.fromFirestore(doc);
   }
 
@@ -56,31 +74,44 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     id: Id<T>,
     next: (snapshot: Model<T> | undefined) => void,
     error?: (error: Error) => void,
+    complete?: () => void,
   ): Unsubscribe {
-    return this.docRef(id).onSnapshot((snapshot) => {
-      next(this.fromFirestore(snapshot));
-    }, error);
+    return onSnapshot(this.docRef(id), {
+      next: (doc) => {
+        next(this.fromFirestore(doc));
+      },
+      error: (e) => error?.(e),
+      complete: () => {
+        complete?.();
+      },
+    });
   }
 
-  async list(query: Query<T>): Promise<Model<T>[]> {
-    const { docs } = await (query.inner as CollectionReference).get();
+  async list(query: Query<T, Env>): Promise<Model<T>[]> {
+    const { docs } = await getDocs(query.inner);
     return docs.map(
       (doc) =>
-        // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
+        // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
         this.fromFirestore(doc)!,
     );
   }
 
   listOnSnapshot(
-    query: Query<T>,
+    query: Query<T, Env>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
+    complete?: () => void,
   ): Unsubscribe {
-    // TODO
-    return (query.inner as FirestoreQuery).onSnapshot((snapshot) => {
-      // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
-      next(snapshot.docs.map((doc) => this.fromFirestore(doc)!));
-    }, error);
+    return onSnapshot(query.inner, {
+      next: ({ docs }) => {
+        // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
+        next(docs.map((doc) => this.fromFirestore(doc)!));
+      },
+      error: (e) => error?.(e),
+      complete: () => {
+        complete?.();
+      },
+    });
   }
 
   async aggregate<T extends CollectionSchema, U extends AggregateSpec<T>>(
@@ -91,20 +122,20 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     for (const [k, v] of Object.entries(spec)) {
       switch (v.kind) {
         case 'count':
-          aggregateSpec[k] = AggregateField.count();
+          aggregateSpec[k] = count();
           break;
         case 'sum':
-          aggregateSpec[k] = AggregateField.sum(v.path);
+          aggregateSpec[k] = sum(v.path);
           break;
         case 'average':
-          aggregateSpec[k] = AggregateField.average(v.path);
+          aggregateSpec[k] = average(v.path);
           break;
         default:
           return assertNever(v);
       }
     }
 
-    const res = await query.inner.aggregate(aggregateSpec).get();
+    const res = await getAggregateFromServer(query.inner, aggregateSpec);
     return res.data() as Aggregated<U>;
   }
 
@@ -126,23 +157,12 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   collectionGroupQuery(...constraints: QueryConstraint<Query<T, Env>>[]): Query<T, Env> {
-    const query = this.db.collectionGroup(this.collection.name);
+    const query = collectionGroup(this.db, this.collection.name);
     return {
       [queryTag]: true,
       collection: this.collection,
       inner: constraints?.reduce((q: FirestoreQuery, c) => c(q), query) ?? query,
     };
-  }
-
-  /**
-   * Create a new document
-   * @throws If the document already exists
-   *
-   * TODO: Move to universal Repository interface
-   */
-  async create(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
-    const data = this.toFirestore(doc);
-    await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
 
   async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
@@ -151,24 +171,11 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       ? options.tx instanceof Transaction
         ? options.tx.set(this.docRef(doc), data)
         : options.tx.set(this.docRef(doc), data)
-      : this.docRef(doc).set(data));
+      : setDoc(this.docRef(doc), data));
   }
 
   async delete(id: Id<T>, options?: WriteTransactionOption): Promise<void> {
-    await (options?.tx ? options.tx.delete(this.docRef(id)) : this.docRef(id).delete());
-  }
-
-  /**
-   * Get documents by multiple ID
-   * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
-   */
-  async batchGet(ids: Model<T>[], options?: TransactionOption): Promise<(Model<T> | undefined)[]> {
-    if (ids.length === 0) {
-      return [];
-    }
-    const docRefs = ids.map((id) => this.docRef(id));
-    const docs = await (options?.tx ? options.tx.getAll(...docRefs) : this.db.getAll(...docRefs));
-    return docs.map((doc) => this.fromFirestore(doc));
+    await (options?.tx ? options.tx.delete(this.docRef(id)) : deleteDoc(this.docRef(id)));
   }
 
   async batchSet(docs: Model<T>[], options?: WriteTransactionOption): Promise<void> {
@@ -177,21 +184,6 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       {
         batch: (batch, doc) => batch.set(this.docRef(doc), this.toFirestore(doc)),
         transaction: (tx, doc) => tx.set(this.docRef(doc), this.toFirestore(doc)),
-      },
-      options,
-    );
-  }
-
-  /**
-   * Create multiple documents
-   * The entire operation will fail if one creation fails
-   */
-  async batchCreate(docs: Model<T>[], options?: WriteTransactionOption): Promise<void> {
-    await this.batchWriteOperation(
-      docs,
-      {
-        batch: (batch, doc) => batch.create(this.docRef(doc), this.toFirestore(doc)),
-        transaction: (tx, doc) => tx.create(this.docRef(doc), this.toFirestore(doc)),
       },
       options,
     );
@@ -224,18 +216,18 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
         targets.forEach((target) => runner.batch(tx, target));
       }
     } else {
-      const batch = this.db.batch();
+      const batch = writeBatch(this.db);
       targets.forEach((target) => runner.batch(batch, target));
       await batch.commit();
     }
   }
 
   docRef(id: Id<T>) {
-    return this.db.doc(docPath(this.collection, id));
+    return doc(this.db, docPath(this.collection, id));
   }
 
-  collectionRef(parentId: ParentId<T>): CollectionReference {
-    return this.db.collection(collectionPath(this.collection, parentId));
+  collectionRef(parentId: ParentId<T>) {
+    return collection(this.db, collectionPath(this.collection, parentId));
   }
 
   fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
@@ -246,51 +238,50 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   toFirestore(data: Model<T>): DbModel<T> {
     return this.collection.data.to(data) as DbModel<T>;
   }
-
-  // TODO bundle
 }
 
-export const where: Where<Env> =
-  <T extends CollectionSchema>(filter: FilterExpression<T>): QueryConstraint<Query<T, Env>> =>
-  (q) =>
-    q.where(convertFilterExpression(filter));
+export const where: Where<Env> = <T extends CollectionSchema>(
+  filter: FilterExpression<T>,
+): QueryConstraint<Query<T, Env>> => {
+  const constraint = convertFilterExpression(filter);
+  return (q) =>
+    constraint instanceof QueryFieldFilterConstraint ? query(q, constraint) : query(q, constraint);
+};
 
-const convertFilterExpression = (expr: FilterExpression): Filter => {
+const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint => {
   switch (expr.kind) {
     case 'where':
-      return Filter.where(expr.fieldPath, expr.opStr, expr.value);
+      return firestoreWhere(expr.fieldPath, expr.opStr, expr.value);
     case 'and':
-      return Filter.and(...expr.filters.map(convertFilterExpression));
+      return and(...expr.filters.map(convertFilterExpression));
     case 'or':
-      return Filter.or(...expr.filters.map(convertFilterExpression));
+      return or(...expr.filters.map(convertFilterExpression));
+    default:
+      return assertNever(expr);
   }
 };
 
-export const orderBy: OrderBy<Env> =
-  <T extends CollectionSchema>(
-    field: FieldPath<DbModel<T>>,
-    direction?: 'asc' | 'desc',
-  ): QueryConstraint<Query<T, Env>> =>
-  (q) =>
-    q.orderBy(field, direction);
+export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
+  field: FieldPath<DbModel<T>>,
+  direction?: 'asc' | 'desc',
+): QueryConstraint<Query<T, Env>> => {
+  return (q) => query(q, firestoreOrderBy(field, direction));
+};
 
-export const limit: Limit<Env> = (limit) => (q) => q.limit(limit);
+export const limit: Limit<Env> = (limit) => {
+  return (q) => query(q, firestoreLimit(limit));
+};
 
-export const limitToLast: LimitToLast<Env> = (limit) => (q) => q.limitToLast(limit);
-
-/**
- * A query offset constraint
- */
-export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
-
-export const offset: Offset = (offset) => (q) => q.offset(offset);
+export const limitToLast: LimitToLast<Env> = (limit) => {
+  return (q) => query(q, firestoreLimitToLast(limit));
+};
 
 export class IdGenerator {
   collection: CollectionReference;
   constructor(readonly db: Firestore) {
-    this.collection = this.db.collection('_DUMMY_COLLECTION_FOR_ID_GENERATOR');
+    this.collection = collection(this.db, '_DUMMY_COLLECTION_FOR_ID_GENERATOR');
   }
   generate(): string {
-    return this.collection.doc().id;
+    return doc(this.collection).id;
   }
 }

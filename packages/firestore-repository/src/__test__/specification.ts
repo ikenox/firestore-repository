@@ -1,28 +1,26 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  condition as $,
   type CollectionSchema,
   type FirestoreEnvironment,
   type Id,
-  type Model,
-  type Repository,
-  type Timestamp,
-  collection,
-  id,
-  parentPath,
-} from '../index.js';
-import {
-  $,
   type Limit,
   type LimitToLast,
+  type Model,
   type OrderBy,
   type Query,
+  type Repository,
+  type Timestamp,
   type Where,
   and,
   average,
+  collection,
   count,
+  id,
   or,
+  parentPath,
   sum,
-} from '../query.js';
+} from '../index.js';
 import { randomNumber, uniqueCollection } from './util.js';
 
 // root collection

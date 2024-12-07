@@ -1,5 +1,3 @@
-import type { AggregateSpec, Aggregated, Query, QueryConstraint, WhereFilterOp } from './query.js';
-
 export const collection = <
   DbModel extends DocumentData = DocumentData,
   AppModel extends Record<string, unknown> = Record<string, unknown>,
@@ -106,6 +104,124 @@ export const collectionPath = <T extends CollectionSchema>(schema: T, id: Parent
   return schema.parentPath ? `${schema.parentPath.to(id)}/${schema.name}` : schema.name;
 };
 
+export const queryTag: unique symbol = Symbol();
+
+/**
+ * Query representation
+ */
+export type Query<
+  T extends CollectionSchema = CollectionSchema,
+  Env extends FirestoreEnvironment = FirestoreEnvironment,
+> = {
+  [queryTag]: true;
+  collection: T;
+  inner: Env['query'];
+};
+
+/**
+ * Query constraint
+ */
+export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner'];
+export type OrderBy<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  field: FieldPath<DbModel<T>>,
+  direction?: 'asc' | 'desc',
+) => QueryConstraint<Query<T, Env>>;
+export type Limit<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  limit: number,
+) => QueryConstraint<Query<T, Env>>;
+export type LimitToLast<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  limit: number,
+) => QueryConstraint<Query<T, Env>>;
+export type Where<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
+  T extends CollectionSchema,
+>(
+  filter: FilterExpression<T>,
+) => QueryConstraint<Query<T, Env>>;
+export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
+  | UnaryCondition<T>
+  | Or<T>
+  | And<T>;
+export type UnaryCondition<
+  T extends CollectionSchema,
+  Path extends FieldPath<DbModel<T>> = FieldPath<DbModel<T>>,
+  Op extends WhereFilterOp = WhereFilterOp,
+> = {
+  kind: 'where';
+  fieldPath: Path;
+  opStr: Op;
+  value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>;
+};
+
+// TODO
+// startAt
+// startAfter
+// endBefore
+// endAt
+// findNearest
+// and
+// or
+// select
+// aggregate
+
+export type Or<T extends CollectionSchema> = { kind: 'or'; filters: FilterExpression<T>[] };
+export type And<T extends CollectionSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
+export const condition = <
+  T extends CollectionSchema,
+  Path extends FieldPath<DbModel<T>>,
+  Op extends WhereFilterOp,
+>(
+  fieldPath: Path,
+  opStr: Op,
+  value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>,
+): UnaryCondition<T, Path> => ({ kind: 'where', fieldPath, opStr, value });
+export const or = <T extends CollectionSchema>(...filters: FilterExpression<T>[]): Or<T> => ({
+  kind: 'or',
+  filters,
+});
+export const and = <T extends CollectionSchema>(...filters: FilterExpression<T>[]): And<T> => ({
+  kind: 'and',
+  filters,
+});
+export type Aggregated<T extends AggregateSpec> = {
+  [K in keyof T]: number;
+};
+export type AggregateSpec<T extends CollectionSchema = CollectionSchema> = Record<
+  string,
+  AggregateMethod<T>
+>;
+export type AggregateMethod<T extends CollectionSchema> = Count | Sum<T> | Average<T>;
+export type Count = { kind: 'count' };
+export type Sum<T extends CollectionSchema> = { kind: 'sum'; path: FieldPath<DbModel<T>> };
+export type Average<T extends CollectionSchema> = { kind: 'average'; path: FieldPath<DbModel<T>> };
+export const sum = <T extends CollectionSchema>(path: FieldPath<DbModel<T>>): Sum<T> => ({
+  kind: 'sum',
+  path,
+});
+export const average = <T extends CollectionSchema>(path: FieldPath<DbModel<T>>): Average<T> => ({
+  kind: 'average',
+  path,
+});
+export const count = (): Count => ({
+  kind: 'count',
+});
+export type WhereFilterOp =
+  | '<'
+  | '<='
+  | '=='
+  | '!='
+  | '>='
+  | '>'
+  | 'array-contains'
+  | 'in'
+  | 'not-in'
+  | 'array-contains-any';
+
 /**
  * A universal repository interface
  */
@@ -188,8 +304,6 @@ export interface Repository<
    */
   batchDelete: (ids: Id<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 }
-
-export const queryTag: unique symbol = Symbol();
 
 /**
  * Platform-specific types
