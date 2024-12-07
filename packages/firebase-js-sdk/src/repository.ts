@@ -258,6 +258,8 @@ const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint 
       return and(...expr.filters.map(convertFilterExpression));
     case 'or':
       return or(...expr.filters.map(convertFilterExpression));
+    default:
+      return assertNever(expr);
   }
 };
 
