@@ -12,7 +12,7 @@
     "check:biome": "biome check .",
     "fix": "pnpm run \"/fix:.*/\"",
     "fix:biome": "biome check --fix",
-    "start-emulator": "docker compose up -d"
+    "start-emulator": "docker compose up --build -d"
   },
   "keywords": [],
   "author": "",
