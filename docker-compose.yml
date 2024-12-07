@@ -1,7 +1,7 @@
 services:
   app:
     build:
-      context: ./firestore-emulator
+      context: ./firebase-emulator
     ports:
       - "60000:60000"
       - "60001:60001"

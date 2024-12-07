@@ -38,6 +38,7 @@ jobs:
       - name: Build firebase emulator docker image
         uses: docker/build-push-action@v6
         with:
+          context: firebase-emulator
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
