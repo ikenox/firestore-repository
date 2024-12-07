@@ -37,7 +37,7 @@ export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: Fir
 export type TransactionOption = base.TransactionOption<Env>;
 export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
-export class Index<T extends base.CollectionSchema = base.CollectionSchema>
+export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   implements base.Repository<T, Env>
 {
   constructor(

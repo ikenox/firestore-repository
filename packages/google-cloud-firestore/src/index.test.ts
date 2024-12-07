@@ -6,7 +6,7 @@ import {
 } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Index, limit, limitToLast, offset, orderBy, where } from './index.js';
+import { Repository, limit, limitToLast, offset, orderBy, where } from './index.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -14,7 +14,7 @@ describe('repository', async () => {
     databaseId: process.env['TEST_DB']!,
   });
 
-  defineRepositorySpecificationTests((collection) => new Index(collection, db), {
+  defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
     queryConstraints: {
       where,
       orderBy,
@@ -25,7 +25,7 @@ describe('repository', async () => {
       type Collection = typeof collection;
 
       const { repository: _repo, items, expectDb } = setup();
-      const repository = _repo as Index<Collection>;
+      const repository = _repo as Repository<Collection>;
 
       describe('create', () => {
         it('success', async () => {
@@ -56,7 +56,7 @@ describe('repository', async () => {
   });
 
   describe('query', () => {
-    const repository = new Index(uniqueCollection(authorsCollection), db);
+    const repository = new Repository(uniqueCollection(authorsCollection), db);
     const items = [
       {
         authorId: '1',
