@@ -238,13 +238,15 @@ export type ValueFieldPath<T extends ValueType> = T extends MapValue
 
 export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U extends keyof T
   ? T[U]
-  : U extends `${infer P}.${infer R}`
-    ? P extends keyof T
-      ? T[P] extends MapValue
-        ? FieldValue<T[P], R>
-        : T[P]
-      : never
-    : never;
+  : U extends '__name__'
+    ? string
+    : U extends `${infer P}.${infer R}`
+      ? P extends keyof T
+        ? T[P] extends MapValue
+          ? FieldValue<T[P], R>
+          : T[P]
+        : never
+      : never;
 
 export type WriteModel<T extends DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;

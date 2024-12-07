@@ -379,6 +379,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         it('multiple constraints', async () => {
           await expectQuery(
             repository.query(
+              {},
               where($('name', '!=', 'author1')),
               orderBy('registeredAt', 'desc'),
               limit(1),
