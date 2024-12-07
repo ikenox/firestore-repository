@@ -160,7 +160,7 @@ export interface Repository<
   ): Query<T, Env>;
   query(
     // parentId can be omitted on root collection
-    ...constraints: [keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>>[] : [never]
+    ...constraints: [keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>>[] : never
   ): Query<T, Env>;
 
   /**

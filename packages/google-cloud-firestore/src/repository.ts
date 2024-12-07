@@ -106,28 +106,19 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
   }
 
   query(
-    parentIdOrQuery:
-      | ParentId<T>
-      | Query<T, Env>
-      // parentId can be omitted for root collection
-      | ([keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>> : never),
-    ...constraints: QueryConstraint<Query<T, Env>>[]
+    first?: ParentId<T> | Query<T, Env> | QueryConstraint<Query<T, Env>>,
+    ...rest: QueryConstraint<Query<T, Env>>[]
   ): Query<T, Env> {
-    let allConstraints: QueryConstraint<Query<T, Env>>[];
-    let query: FirestoreQuery;
-    if (typeof parentIdOrQuery === 'function') {
-      // The first argument is QueryConstraint
-      allConstraints = [parentIdOrQuery, ...constraints];
-      query = this.collectionRef({} as ParentId<T>);
-    } else {
-      allConstraints = constraints;
-      query =
-        queryTag in parentIdOrQuery ? parentIdOrQuery.inner : this.collectionRef(parentIdOrQuery);
-    }
+    const [constraints, baseQuery] =
+      first != null
+        ? typeof first === 'function'
+          ? [[first, ...rest], this.collectionRef({} as ParentId<T>)]
+          : [rest, queryTag in first ? first.inner : this.collectionRef(first)]
+        : [[], this.collectionRef({} as ParentId<T>)];
     return {
       [queryTag]: true,
       collection: this.collection,
-      inner: allConstraints?.reduce((q, c) => c(q), query) ?? query,
+      inner: constraints.reduce((q, c) => c(q), baseQuery),
     };
   }
 
