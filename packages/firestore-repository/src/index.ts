@@ -1,4 +1,4 @@
-import type { AggregateSpec, Aggregated, Query, QueryConstraint } from './query.js';
+import type { AggregateSpec, Aggregated, Query, QueryConstraint, WhereFilterOp } from './query.js';
 
 export const collection = <
   DbModel extends DocumentData = DocumentData,
@@ -247,6 +247,19 @@ export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U exten
           : T[P]
         : never
       : never;
+
+export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
+  '<': T;
+  '<=': T;
+  '==': T;
+  '!=': T;
+  '>=': T;
+  '>': T;
+  'array-contains': T;
+  in: T;
+  'not-in': T;
+  'array-contains-any': T;
+}[U];
 
 export type WriteModel<T extends DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;
