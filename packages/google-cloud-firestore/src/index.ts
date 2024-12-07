@@ -261,6 +261,8 @@ const convertFilterExpression = (expr: FilterExpression): Filter => {
       return Filter.and(...expr.filters.map(convertFilterExpression));
     case 'or':
       return Filter.or(...expr.filters.map(convertFilterExpression));
+    default:
+      return assertNever(expr);
   }
 };
 

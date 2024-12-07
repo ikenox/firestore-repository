@@ -44,6 +44,21 @@
           }
         }
       }
+    },
+    {
+      "include": ["**/vitest.config.ts"],
+      "linter": {
+        "enabled": true,
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off",
+            "noDefaultExport": "off"
+          },
+          "correctness": {
+            "noNodejsModules": "off"
+          }
+        }
+      }
     }
   ]
 }
