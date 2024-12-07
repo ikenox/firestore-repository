@@ -3,6 +3,7 @@ import {
   type DbModel,
   type FieldPath,
   type FieldValue,
+  type FilterOperand,
   type FirestoreEnvironment,
   type WriteValue,
   queryTag,
@@ -53,21 +54,26 @@ export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
   | And<T>;
 export type UnaryCondition<
   T extends CollectionSchema,
-  U extends FieldPath<DbModel<T>> = FieldPath<DbModel<T>>,
+  Path extends FieldPath<DbModel<T>> = FieldPath<DbModel<T>>,
+  Op extends WhereFilterOp = WhereFilterOp,
 > = {
   kind: 'where';
-  fieldPath: U;
-  opStr: WhereFilterOp;
-  value: WriteValue<FieldValue<DbModel<T>, U>>;
+  fieldPath: Path;
+  opStr: Op;
+  value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>;
 };
 export type Or<T extends CollectionSchema> = { kind: 'or'; filters: FilterExpression<T>[] };
 export type And<T extends CollectionSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
 
-export const $ = <T extends CollectionSchema, U extends FieldPath<DbModel<T>>>(
-  fieldPath: U,
-  opStr: WhereFilterOp,
-  value: WriteValue<FieldValue<DbModel<T>, U>>,
-): UnaryCondition<T, U> => ({ kind: 'where', fieldPath, opStr, value });
+export const $ = <
+  T extends CollectionSchema,
+  Path extends FieldPath<DbModel<T>>,
+  Op extends WhereFilterOp,
+>(
+  fieldPath: Path,
+  opStr: Op,
+  value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>,
+): UnaryCondition<T, Path> => ({ kind: 'where', fieldPath, opStr, value });
 export const or = <T extends CollectionSchema>(...filters: FilterExpression<T>[]): Or<T> => ({
   kind: 'or',
   filters,

@@ -295,6 +295,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               items[1],
               items[2],
             ]);
+
             // TODO for all operators
           });
 
