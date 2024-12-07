@@ -163,6 +163,10 @@ describe('CollectionSchema', () => {
     expectTypeOf<FieldValue<Document, '__name__'>>().toEqualTypeOf<string>();
   });
 
+  it('filter operand', () => {
+    // TODO
+  });
+
   it('docPath', () => {
     expect(docPath(authorsCollection, { authorId: 'abc' })).toBe('Authors/abc');
     expect(docPath(postsCollection, { postId: 123, authorId: 'abc' })).toBe(
