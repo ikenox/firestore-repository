@@ -303,6 +303,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           >();
         });
 
+        it('query without condition', async () => {
+          await expectQuery(repository.query(), items);
+        });
+
         describe('where', () => {
           it('simple', async () => {
             await expectQuery(repository.query(where($('name', '==', 'author1'))), [items[0]]);
@@ -482,6 +486,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
             ParentId<typeof postsCollection> | Query<typeof postsCollection, Env>
           >();
+        });
+
+        it('query without condition', async () => {
+          await expectQuery(repository.query({ authorId: 'author1' }), [items[0], items[1]]);
         });
 
         describe('where', () => {
