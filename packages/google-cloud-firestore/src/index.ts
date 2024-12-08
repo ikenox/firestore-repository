@@ -24,6 +24,7 @@ import {
   type ParentId,
   type Query,
   type QueryConstraint,
+  type QueryFunction,
   type Unsubscribe,
   type Where,
   assertNever,
@@ -106,10 +107,10 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
     return res.data() as Aggregated<U>;
   }
 
-  query(
+  query: QueryFunction<T, Env> = (
     first?: ParentId<T> | Query<T, Env> | QueryConstraint<Query<T, Env>>,
     ...rest: QueryConstraint<Query<T, Env>>[]
-  ): Query<T, Env> {
+  ): Query<T, Env> => {
     const [constraints, baseQuery] =
       first != null
         ? typeof first === 'function'
@@ -121,7 +122,7 @@ export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
       collection: this.collection,
       inner: constraints.reduce((q, c) => c(q), baseQuery),
     };
-  }
+  };
 
   collectionGroupQuery(...constraints: QueryConstraint<Query<T, Env>>[]): Query<T, Env> {
     const query = this.db.collectionGroup(this.collection.name);

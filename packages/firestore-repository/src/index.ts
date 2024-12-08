@@ -270,15 +270,7 @@ export interface Repository<
   /**
    * Start a query or chaining another query
    */
-  query(
-    parentIdOrQuery: ParentId<T> | Query<T, Env>,
-    ...constraints: QueryConstraint<Query<T, Env>>[]
-  ): Query<T, Env>;
-  query(
-    // parentId can be omitted on root collection
-    // TODO type information is dropped when calling
-    ...constraints: [keyof ParentId<T>] extends [never] ? QueryConstraint<Query<T, Env>>[] : never
-  ): Query<T, Env>;
+  query: QueryFunction<T, Env>;
 
   /**
    * Start a collection group query
@@ -305,6 +297,28 @@ export interface Repository<
    */
   batchDelete: (ids: Id<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 }
+
+export type QueryFunction<T extends CollectionSchema, Env extends FirestoreEnvironment> = [
+  keyof ParentId<T>,
+] extends [never]
+  ? RootCollectionQueryBuilder<T, Env>
+  : SubcollectionQueryBuilder<T, Env>;
+
+export type RootCollectionQueryBuilder<
+  T extends CollectionSchema,
+  Env extends FirestoreEnvironment,
+> = (
+  queryOrConstraint?: Query<T, Env> | QueryConstraint<Query<T, Env>>,
+  ...constraints: QueryConstraint<Query<T, Env>>[]
+) => Query<T, Env>;
+
+export type SubcollectionQueryBuilder<
+  T extends CollectionSchema,
+  Env extends FirestoreEnvironment,
+> = (
+  parentIdOrQuery: ParentId<T> | Query<T, Env>,
+  ...constraints: QueryConstraint<Query<T, Env>>[]
+) => Query<T, Env>;
 
 /**
  * Platform-specific types

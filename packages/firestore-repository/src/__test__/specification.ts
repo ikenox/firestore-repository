@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 import {
   condition as $,
   type CollectionSchema,
@@ -8,7 +8,9 @@ import {
   type LimitToLast,
   type Model,
   type OrderBy,
+  type ParentId,
   type Query,
+  type QueryConstraint,
   type Repository,
   type Timestamp,
   type Where,
@@ -293,34 +295,41 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         describe('where', () => {
           it('simple', async () => {
-            await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
-            await expectQuery(repository.query({}, where($('name', '!=', 'author1'))), [
+            await expectQuery(repository.query(where($('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query(where($('name', '!=', 'author1'))), [
               items[1],
               items[2],
             ]);
+
+            expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
+              | Query<typeof authorsCollection, Env>
+              | QueryConstraint<Query<typeof authorsCollection, Env>>
+              // first argument can be omitted for root collection query
+              | undefined
+            >();
 
             // TODO for all operators
           });
 
           it('filter by nested field', async () => {
-            await expectQuery(repository.query({}, where($('profile.age', '>=', 40))), [
+            await expectQuery(repository.query(where($('profile.age', '>=', 40))), [
               items[0],
               items[1],
             ]);
-            await expectQuery(repository.query({}, where($('profile.gender', '==', 'male'))), [
+            await expectQuery(repository.query(where($('profile.gender', '==', 'male'))), [
               items[0],
             ]);
           });
 
           it('filter by map value', async () => {
             await expectQuery(
-              repository.query({}, where($('profile', '==', { age: 40, gender: 'male' }))),
+              repository.query(where($('profile', '==', { age: 40, gender: 'male' }))),
               [items[0]],
             );
           });
 
           it('specify empty parentId explicitly', async () => {
-            await expectQuery(repository.query({}, where($('name', '==', 'author1'))), [items[0]]);
+            await expectQuery(repository.query(where($('name', '==', 'author1'))), [items[0]]);
           });
 
           it('or', async () => {
@@ -359,7 +368,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           it('complex', async () => {
             await expectQuery(
               repository.query(
-                {},
                 where(
                   or(
                     and(
@@ -394,14 +402,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             items[0],
             items[1],
           ]);
-          await expectQuery(repository.query({}, orderBy('__name__', 'asc')), items);
-          await expectQuery(repository.query({}, orderBy('rank'), orderBy('profile.age')), [
+          await expectQuery(repository.query(orderBy('__name__', 'asc')), items);
+          await expectQuery(repository.query(orderBy('rank'), orderBy('profile.age')), [
             items[0],
             items[2],
             items[1],
           ]);
           await expectQuery(
-            repository.query({}, orderBy('rank', 'desc'), orderBy('profile.age', 'desc')),
+            repository.query(orderBy('rank', 'desc'), orderBy('profile.age', 'desc')),
             [items[1], items[2], items[0]],
           );
         });
@@ -424,7 +432,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         it('multiple constraints', async () => {
           await expectQuery(
             repository.query(
-              {},
               where($('name', '!=', 'author1')),
               orderBy('registeredAt', 'desc'),
               limit(1),
@@ -474,6 +481,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               items[1],
               items[0],
             ]);
+
+            // subcollection query must specify parentId or base query at first argument
+            expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
+              ParentId<typeof postsCollection> | Query<typeof postsCollection, Env>
+            >();
           });
         });
 
