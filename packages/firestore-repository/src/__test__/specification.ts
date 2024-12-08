@@ -307,6 +307,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(repository.query(), items);
         });
 
+        it('extend base query', async () => {
+          const base = repository.query(where($('profile.age', '>=', 40)));
+          await expectQuery(repository.query(base, orderBy('profile.age', 'desc')), [
+            items[1],
+            items[0],
+          ]);
+        });
+
         describe('where', () => {
           it('simple', async () => {
             await expectQuery(repository.query(where($('name', '==', 'author1'))), [items[0]]);
@@ -490,6 +498,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         it('query without condition', async () => {
           await expectQuery(repository.query({ authorId: 'author1' }), [items[0], items[1]]);
+        });
+
+        it('extend base query', async () => {
+          const base = repository.query({ authorId: 'author1' });
+          await expectQuery(repository.query(base, orderBy('postedAt')), [items[1], items[0]]);
         });
 
         describe('where', () => {
