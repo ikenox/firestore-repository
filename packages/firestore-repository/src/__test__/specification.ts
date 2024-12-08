@@ -34,6 +34,7 @@ export const authorsCollection = collection({
         age: number;
         gender?: 'male' | 'female';
       };
+      rank: number;
       registeredAt: Timestamp;
     }) => ({
       ...data,
@@ -199,6 +200,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             age: randomNumber(),
             gender: 'male' as const,
           },
+          rank: randomNumber(),
           registeredAt: new Date(),
         };
       },
@@ -264,6 +266,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 age: 40,
                 gender: 'male',
               },
+              rank: 1,
               registeredAt: new Date('2020-02-01'),
             },
             {
@@ -273,6 +276,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 age: 90,
                 gender: 'female',
               },
+              rank: 2,
               registeredAt: new Date('2020-01-01'),
             },
             {
@@ -281,6 +285,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               profile: {
                 age: 20,
               },
+              rank: 2,
               registeredAt: new Date('2020-03-01'),
             },
           ],
@@ -389,7 +394,16 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             items[0],
             items[1],
           ]);
-          await expectQuery(repository.query(orderBy('__name__', 'asc')), items);
+          await expectQuery(repository.query({}, orderBy('__name__', 'asc')), items);
+          await expectQuery(repository.query({}, orderBy('rank'), orderBy('profile.age')), [
+            items[0],
+            items[2],
+            items[1],
+          ]);
+          await expectQuery(
+            repository.query({}, orderBy('rank', 'desc'), orderBy('profile.age', 'desc')),
+            [items[1], items[2], items[0]],
+          );
         });
 
         it('limit', async () => {
