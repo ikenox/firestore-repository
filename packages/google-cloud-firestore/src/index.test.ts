@@ -62,18 +62,21 @@ describe('repository', async () => {
         authorId: '1',
         name: 'author1',
         profile: { age: 20, gender: 'male' },
+        rank: 1,
         registeredAt: new Date('2020-02-01'),
       },
       {
         authorId: '2',
         name: 'author2',
         profile: { age: 40, gender: 'female' },
+        rank: 1,
         registeredAt: new Date('2020-01-01'),
       },
       {
         authorId: '3',
         name: 'author3',
         profile: { age: 60 },
+        rank: 2,
         registeredAt: new Date('2020-03-01'),
       },
     ] as const satisfies Model<typeof authorsCollection>[];
