@@ -4,26 +4,38 @@ import {
   type Firestore,
   type AggregateSpec as FirestoreAggregateSpec,
   type Query as FirestoreQuery,
+  type QueryConstraint as FirestoreQueryConstraint,
   type QueryFilterConstraint,
   Transaction,
   type WriteBatch,
   and,
   average,
   collection,
+  collectionGroup,
   count,
   deleteDoc,
   doc,
+  query as firestoreQuery,
   where as firestoreWhere,
   getAggregateFromServer,
   getDoc,
   getDocs,
+  limit,
+  limitToLast,
   onSnapshot,
   or,
+  orderBy,
   setDoc,
   sum,
+  where,
   writeBatch,
 } from '@firebase/firestore';
-import type { FilterExpression, Query } from 'firestore-repository/query';
+import {
+  type FilterExpression,
+  type Query,
+  type QueryConstraint,
+  queryConstraintKind,
+} from 'firestore-repository/query';
 import type { AggregateSpec, Aggregated } from 'firestore-repository/repository';
 import type * as repository from 'firestore-repository/repository';
 import {
@@ -207,6 +219,57 @@ const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint 
       return and(...expr.filters.map(convertFilterExpression));
     case 'or':
       return or(...expr.filters.map(convertFilterExpression));
+    default:
+      return assertNever(expr);
+  }
+};
+
+const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
+  // TODO cache
+  const constraints = query.constraints?.map(buildConstraint) ?? [];
+  switch (query.base.kind) {
+    case 'collection':
+      return firestoreQuery(collection(db, query.base.collection.name), ...constraints);
+    case 'collectionGroup':
+      return firestoreQuery(collectionGroup(db, query.base.collection.name), ...constraints);
+    case 'extends':
+      return firestoreQuery(buildQuery(db, query.base.query), ...constraints);
+    default:
+      return assertNever(query.base);
+  }
+};
+
+const buildConstraint = (constraint: QueryConstraint): FirestoreQueryConstraint => {
+  switch (constraint[queryConstraintKind]) {
+    case 'where':
+      switch (constraint.filter.kind) {
+        case 'where':
+          return where(expr.fieldPath, expr.opStr, expr.value);
+        case 'or':
+          return or(...constraint.filter.filters.map(buildFilterExpression));
+        case 'and':
+          return and(...constraint.filter.filters.map(buildFilterExpression));
+      }
+      return buildFilterExpression(constraint.filter);
+    case 'orderBy':
+      return orderBy(constraint.field, constraint.direction);
+    case 'limit':
+      return limit(constraint.limit);
+    case 'limitToLast':
+      return limitToLast(constraint.limit);
+    default:
+      return assertNever(constraint[queryConstraintKind]);
+  }
+};
+
+const buildFilterExpression = (expr: FilterExpression): QueryFilterConstraint => {
+  switch (expr.kind) {
+    case 'where':
+      return where(expr.fieldPath, expr.opStr, expr.value);
+    case 'or':
+      return or(...expr.filters.map(buildFilterExpression));
+    case 'and':
+      return and(...expr.filters.map(buildFilterExpression));
     default:
       return assertNever(expr);
   }

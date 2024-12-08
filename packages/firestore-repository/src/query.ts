@@ -13,7 +13,7 @@ export class Query<T extends CollectionSchema = CollectionSchema> {
       | { kind: 'collection'; collection: T; parentId: ParentId<T> }
       | { kind: 'collectionGroup'; collection: T }
       | { kind: 'extends'; query: Query<T> },
-    constraints?: QueryConstraint<T>[],
+    readonly constraints?: QueryConstraint<T>[],
   ) {}
 }
 
@@ -50,7 +50,7 @@ export const collectionGroupQuery = <T extends CollectionSchema>(
 /**
  * Query constraint
  */
-export type QueryConstraint<T extends CollectionSchema> =
+export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
   | Where<T>
   | OrderBy<T>
   | Limit
