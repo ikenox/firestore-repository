@@ -389,6 +389,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             items[0],
             items[1],
           ]);
+          await expectQuery(repository.query(orderBy('__name__', 'asc')), items);
         });
 
         it('limit', async () => {
