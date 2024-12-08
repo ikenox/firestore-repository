@@ -1,4 +1,4 @@
-import type { CollectionSchema } from '../index.js';
+import type { CollectionSchema } from '../schema.js';
 
 /**
  * Generates random number.

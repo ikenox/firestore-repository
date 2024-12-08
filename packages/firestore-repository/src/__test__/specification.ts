@@ -1,28 +1,26 @@
 import { beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
+import type { Timestamp } from '../document.js';
 import {
   condition as $,
-  type CollectionSchema,
-  type FirestoreEnvironment,
-  type Id,
   type Limit,
   type LimitToLast,
-  type Model,
   type OrderBy,
-  type ParentId,
   type Query,
   type QueryConstraint,
-  type Repository,
-  type Timestamp,
   type Where,
   and,
-  average,
-  collection,
-  count,
-  id,
   or,
+} from '../query.js';
+import { type FirestoreEnvironment, type Repository, average, count, sum } from '../repository.js';
+import {
+  type CollectionSchema,
+  type Id,
+  type Model,
+  type ParentId,
+  collection,
+  id,
   parentPath,
-  sum,
-} from '../index.js';
+} from '../schema.js';
 import { randomNumber, uniqueCollection } from './util.js';
 
 // root collection

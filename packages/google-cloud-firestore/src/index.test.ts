@@ -1,10 +1,10 @@
 import { Firestore } from '@google-cloud/firestore';
-import type { Model } from 'firestore-repository';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
 } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
+import type { Model } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Repository, limit, limitToLast, offset, orderBy, where } from './index.js';
 

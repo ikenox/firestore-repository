@@ -9,37 +9,42 @@ import {
   Transaction,
   type WriteBatch,
 } from '@google-cloud/firestore';
+import type { FieldPath } from 'firestore-repository/document';
 import {
-  type AggregateSpec,
-  type Aggregated,
-  type CollectionSchema,
-  type DbModel,
-  type FieldPath,
   type FilterExpression,
-  type Id,
   type Limit,
   type LimitToLast,
-  type Model,
   type OrderBy,
-  type ParentId,
   type Query,
   type QueryConstraint,
-  type QueryFunction,
-  type Unsubscribe,
   type Where,
-  assertNever,
+  queryTag,
+} from 'firestore-repository/query';
+import type { AggregateSpec, Aggregated, QueryFunction } from 'firestore-repository/repository';
+import type {
+  Repository as Repository1,
+  TransactionOption as TransactionOption1,
+  Unsubscribe,
+  WriteTransactionOption as WriteTransactionOption1,
+} from 'firestore-repository/repository';
+import {
+  type CollectionSchema,
+  type CollectionSchema as CollectionSchema1,
+  type DbModel,
+  type Id,
+  type Model,
+  type ParentId,
   collectionPath,
   docPath,
-  queryTag,
-} from 'firestore-repository';
-import type * as base from 'firestore-repository';
+} from 'firestore-repository/schema';
+import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
-export type TransactionOption = base.TransactionOption<Env>;
-export type WriteTransactionOption = base.WriteTransactionOption<Env>;
+export type TransactionOption = TransactionOption1<Env>;
+export type WriteTransactionOption = WriteTransactionOption1<Env>;
 
-export class Repository<T extends base.CollectionSchema = base.CollectionSchema>
-  implements base.Repository<T, Env>
+export class Repository<T extends CollectionSchema1 = CollectionSchema1>
+  implements Repository1<T, Env>
 {
   constructor(
     readonly collection: T,
