@@ -21,7 +21,7 @@ import {
   queryTag,
 } from 'firestore-repository/query';
 import type { AggregateSpec, Aggregated, QueryFunction } from 'firestore-repository/repository';
-import type * as base from 'firestore-repository/repository';
+import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
   type DbModel,
@@ -34,11 +34,11 @@ import {
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
-export type TransactionOption = base.TransactionOption<Env>;
-export type WriteTransactionOption = base.WriteTransactionOption<Env>;
+export type TransactionOption = repository.TransactionOption<Env>;
+export type WriteTransactionOption = repository.WriteTransactionOption<Env>;
 
 export class Repository<T extends CollectionSchema = CollectionSchema>
-  implements base.Repository<T, Env>
+  implements repository.Repository<T, Env>
 {
   constructor(
     readonly collection: T,
@@ -54,7 +54,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     id: Id<T>,
     next: (snapshot: Model<T> | undefined) => void,
     error?: (error: Error) => void,
-  ): base.Unsubscribe {
+  ): repository.Unsubscribe {
     return this.docRef(id).onSnapshot((snapshot) => {
       next(this.fromFirestore(snapshot));
     }, error);
@@ -73,7 +73,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     query: Query<T>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
-  ): base.Unsubscribe {
+  ): repository.Unsubscribe {
     // TODO
     return (query.inner as FirestoreQuery).onSnapshot((snapshot) => {
       // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
