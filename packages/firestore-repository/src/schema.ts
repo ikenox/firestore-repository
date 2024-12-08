@@ -6,8 +6,14 @@ export const collection = <
   IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
   ParentIdKeys extends (keyof AppModel)[] = [],
 >(
-  schema: CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>,
-) => schema;
+  schema: Omit<
+    CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>,
+    typeof collectionSchemaTag
+  >,
+): CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys> => ({
+  [collectionSchemaTag]: true,
+  ...schema,
+});
 
 export const id = <AppModel extends Record<string, unknown>, IdKey extends keyof AppModel>(
   key: IdKey,
@@ -24,6 +30,7 @@ export const parentPath = <AppModel extends Record<string, unknown>, IdKey exten
   to: (data) => `${parent.name}/${data[key]}`,
 });
 
+export const collectionSchemaTag: unique symbol = Symbol();
 /**
  * A definition of firestore collection
  */
@@ -33,6 +40,7 @@ export type CollectionSchema<
   IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
   ParentIdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
 > = {
+  [collectionSchemaTag]: true;
   name: string;
   data: {
     from(data: DbModel): AppModel;
@@ -111,3 +119,7 @@ export const docPath = <T extends CollectionSchema>(schema: T, id: Id<T>): strin
 export const collectionPath = <T extends CollectionSchema>(schema: T, id: ParentId<T>): string => {
   return schema.parentPath ? `${schema.parentPath.to(id)}/${schema.name}` : schema.name;
 };
+
+export type IsSubCollection<T extends CollectionSchema> = [keyof ParentId<T>] extends [never]
+  ? false
+  : true;

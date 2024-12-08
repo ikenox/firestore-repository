@@ -4,43 +4,27 @@ import {
   type Firestore,
   type AggregateSpec as FirestoreAggregateSpec,
   type Query as FirestoreQuery,
-  QueryFieldFilterConstraint,
   type QueryFilterConstraint,
   Transaction,
   type WriteBatch,
   and,
   average,
   collection,
-  collectionGroup,
   count,
   deleteDoc,
   doc,
-  limit as firestoreLimit,
-  limitToLast as firestoreLimitToLast,
-  orderBy as firestoreOrderBy,
   where as firestoreWhere,
   getAggregateFromServer,
   getDoc,
   getDocs,
   onSnapshot,
   or,
-  query,
   setDoc,
   sum,
   writeBatch,
 } from '@firebase/firestore';
-import type { FieldPath } from 'firestore-repository/document';
-import {
-  type FilterExpression,
-  type Limit,
-  type LimitToLast,
-  type OrderBy,
-  type Query,
-  type QueryConstraint,
-  type Where,
-  queryTag,
-} from 'firestore-repository/query';
-import type { AggregateSpec, Aggregated, QueryFunction } from 'firestore-repository/repository';
+import type { FilterExpression, Query } from 'firestore-repository/query';
+import type { AggregateSpec, Aggregated } from 'firestore-repository/repository';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
@@ -88,7 +72,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
     });
   }
 
-  async list(query: Query<T, Env>): Promise<Model<T>[]> {
+  async list(query: Query<T>): Promise<Model<T>[]> {
     const { docs } = await getDocs(query.inner);
     return docs.map(
       (doc) =>
@@ -98,7 +82,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
   }
 
   listOnSnapshot(
-    query: Query<T, Env>,
+    query: Query<T>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
     complete?: () => void,
@@ -116,7 +100,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
   }
 
   async aggregate<T extends CollectionSchema, U extends AggregateSpec<T>>(
-    query: Query<T, Env>,
+    query: Query<T>,
     spec: U,
   ): Promise<Aggregated<U>> {
     const aggregateSpec: FirestoreAggregateSpec = {};
@@ -138,32 +122,6 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
 
     const res = await getAggregateFromServer(query.inner, aggregateSpec);
     return res.data() as Aggregated<U>;
-  }
-
-  query: QueryFunction<T, Env> = (
-    first?: ParentId<T> | Query<T, Env> | QueryConstraint<Query<T, Env>>,
-    ...rest: QueryConstraint<Query<T, Env>>[]
-  ): Query<T, Env> => {
-    const [constraints, baseQuery] =
-      first != null
-        ? typeof first === 'function'
-          ? [[first, ...rest], this.collectionRef({} as ParentId<T>)]
-          : [rest, queryTag in first ? first.inner : this.collectionRef(first)]
-        : [[], this.collectionRef({} as ParentId<T>)];
-    return {
-      [queryTag]: true,
-      collection: this.collection,
-      inner: constraints.reduce((q, c) => c(q), baseQuery),
-    };
-  };
-
-  collectionGroupQuery(...constraints: QueryConstraint<Query<T, Env>>[]): Query<T, Env> {
-    const query = collectionGroup(this.db, this.collection.name);
-    return {
-      [queryTag]: true,
-      collection: this.collection,
-      inner: constraints?.reduce((q: FirestoreQuery, c) => c(q), query) ?? query,
-    };
   }
 
   async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
@@ -241,14 +199,6 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
   }
 }
 
-export const where: Where<Env> = <T extends CollectionSchema>(
-  filter: FilterExpression<T>,
-): QueryConstraint<Query<T, Env>> => {
-  const constraint = convertFilterExpression(filter);
-  return (q) =>
-    constraint instanceof QueryFieldFilterConstraint ? query(q, constraint) : query(q, constraint);
-};
-
 const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint => {
   switch (expr.kind) {
     case 'where':
@@ -260,21 +210,6 @@ const convertFilterExpression = (expr: FilterExpression): QueryFilterConstraint 
     default:
       return assertNever(expr);
   }
-};
-
-export const orderBy: OrderBy<Env> = <T extends CollectionSchema>(
-  field: FieldPath<DbModel<T>>,
-  direction?: 'asc' | 'desc',
-): QueryConstraint<Query<T, Env>> => {
-  return (q) => query(q, firestoreOrderBy(field, direction));
-};
-
-export const limit: Limit<Env> = (limit) => {
-  return (q) => query(q, firestoreLimit(limit));
-};
-
-export const limitToLast: LimitToLast<Env> = (limit) => {
-  return (q) => query(q, firestoreLimitToLast(limit));
 };
 
 export class IdGenerator {

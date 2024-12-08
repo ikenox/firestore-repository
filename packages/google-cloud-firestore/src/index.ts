@@ -9,18 +9,8 @@ import {
   Transaction,
   type WriteBatch,
 } from '@google-cloud/firestore';
-import type { FieldPath } from 'firestore-repository/document';
-import {
-  type FilterExpression,
-  type Limit,
-  type LimitToLast,
-  type OrderBy,
-  type Query,
-  type QueryConstraint,
-  type Where,
-  queryTag,
-} from 'firestore-repository/query';
-import type { AggregateSpec, Aggregated, QueryFunction } from 'firestore-repository/repository';
+import type { FilterExpression, Query } from 'firestore-repository/query';
+import type { AggregateSpec, Aggregated } from 'firestore-repository/repository';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
@@ -104,32 +94,6 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
 
     const res = await query.inner.aggregate(aggregateSpec).get();
     return res.data() as Aggregated<U>;
-  }
-
-  query: QueryFunction<T, Env> = (
-    first?: ParentId<T> | Query<T, Env> | QueryConstraint<Query<T, Env>>,
-    ...rest: QueryConstraint<Query<T, Env>>[]
-  ): Query<T, Env> => {
-    const [constraints, baseQuery] =
-      first != null
-        ? typeof first === 'function'
-          ? [[first, ...rest], this.collectionRef({} as ParentId<T>)]
-          : [rest, queryTag in first ? first.inner : this.collectionRef(first)]
-        : [[], this.collectionRef({} as ParentId<T>)];
-    return {
-      [queryTag]: true,
-      collection: this.collection,
-      inner: constraints.reduce((q, c) => c(q), baseQuery),
-    };
-  };
-
-  collectionGroupQuery(...constraints: QueryConstraint<Query<T, Env>>[]): Query<T, Env> {
-    const query = this.db.collectionGroup(this.collection.name);
-    return {
-      [queryTag]: true,
-      collection: this.collection,
-      inner: constraints?.reduce((q: FirestoreQuery, c) => c(q), query) ?? query,
-    };
   }
 
   /**
@@ -246,11 +210,6 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 }
 
-export const where: Where<Env> =
-  <T extends CollectionSchema>(filter: FilterExpression<T>): QueryConstraint<Query<T, Env>> =>
-  (q) =>
-    q.where(convertFilterExpression(filter));
-
 const convertFilterExpression = (expr: FilterExpression): Filter => {
   switch (expr.kind) {
     case 'where':
@@ -264,24 +223,13 @@ const convertFilterExpression = (expr: FilterExpression): Filter => {
   }
 };
 
-export const orderBy: OrderBy<Env> =
-  <T extends CollectionSchema>(
-    field: FieldPath<DbModel<T>>,
-    direction?: 'asc' | 'desc',
-  ): QueryConstraint<Query<T, Env>> =>
-  (q) =>
-    q.orderBy(field, direction);
-
-export const limit: Limit<Env> = (limit) => (q) => q.limit(limit);
-
-export const limitToLast: LimitToLast<Env> = (limit) => (q) => q.limitToLast(limit);
-
 /**
  * A query offset constraint
+ * TODO
  */
-export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
-
-export const offset: Offset = (offset) => (q) => q.offset(offset);
+// export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
+//
+// export const offset: Offset = (offset) => (q) => q.offset(offset);
 
 export class IdGenerator {
   collection: CollectionReference;

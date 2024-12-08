@@ -1,46 +1,107 @@
 import type { FieldPath, FieldValue, ValueType, WriteValue } from './document.js';
-import type { FirestoreEnvironment } from './repository.js';
-import type { CollectionSchema, DbModel } from './schema.js';
+import {
+  type CollectionSchema,
+  type DbModel,
+  type IsSubCollection,
+  type ParentId,
+  collectionSchemaTag,
+} from './schema.js';
 
-export const queryTag: unique symbol = Symbol();
+export class Query<T extends CollectionSchema = CollectionSchema> {
+  constructor(
+    readonly base:
+      | { kind: 'collection'; collection: T; parentId: ParentId<T> }
+      | { kind: 'collectionGroup'; collection: T }
+      | { kind: 'extends'; query: Query<T> },
+    constraints?: QueryConstraint<T>[],
+  ) {}
+}
 
-/**
- * Query representation
- */
-export type Query<
-  T extends CollectionSchema = CollectionSchema,
-  Env extends FirestoreEnvironment = FirestoreEnvironment,
-> = {
-  [queryTag]: true;
-  collection: T;
-  inner: Env['query'];
+export const query = <T extends CollectionSchema>(
+  base: (IsSubCollection<T> extends true ? { collection: T; parent: ParentId<T> } : T) | Query<T>,
+  ...constraints: QueryConstraint<T>[]
+): Query<T> => {
+  if (base instanceof Query) {
+    // extends another query
+    return new Query({ kind: 'extends', query: base }, constraints);
+  }
+  if (collectionSchemaTag in base) {
+    // root collection
+    return new Query(
+      { kind: 'collection', collection: base as T, parentId: {} as ParentId<T> },
+      constraints,
+    );
+  }
+  // subcollection
+  return new Query(
+    { kind: 'collection', collection: base.collection, parentId: base.parent },
+    constraints,
+  );
+};
+
+// TODO disable for root collection
+export const collectionGroupQuery = <T extends CollectionSchema>(
+  collection: T,
+  ...constraints: QueryConstraint<T>[]
+): Query<T> => {
+  return new Query({ kind: 'collectionGroup', collection }, constraints);
 };
 
 /**
  * Query constraint
  */
-export type QueryConstraint<T extends Query> = (query: T['inner']) => T['inner'];
-export type OrderBy<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
-  T extends CollectionSchema,
->(
+export type QueryConstraint<T extends CollectionSchema> =
+  | Where<T>
+  | OrderBy<T>
+  | Limit
+  | LimitToLast;
+
+export const queryConstraintKind: unique symbol = Symbol();
+
+export type Where<T extends CollectionSchema> = {
+  [queryConstraintKind]: 'where';
+  filter: FilterExpression<T>;
+};
+export const where = <T extends CollectionSchema>(filter: FilterExpression<T>): Where<T> => ({
+  [queryConstraintKind]: 'where',
+  filter,
+});
+
+export type OrderBy<T extends CollectionSchema> = {
+  [queryConstraintKind]: 'orderBy';
+  field: FieldPath<DbModel<T>>;
+  direction?: 'asc' | 'desc' | undefined;
+};
+export const orderBy = <T extends CollectionSchema>(
   field: FieldPath<DbModel<T>>,
-  direction?: 'asc' | 'desc',
-) => QueryConstraint<Query<T, Env>>;
-export type Limit<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
-  T extends CollectionSchema,
->(
-  limit: number,
-) => QueryConstraint<Query<T, Env>>;
-export type LimitToLast<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
-  T extends CollectionSchema,
->(
-  limit: number,
-) => QueryConstraint<Query<T, Env>>;
-export type Where<Env extends FirestoreEnvironment = FirestoreEnvironment> = <
-  T extends CollectionSchema,
->(
-  filter: FilterExpression<T>,
-) => QueryConstraint<Query<T, Env>>;
+  direction?: 'asc' | 'desc' | undefined,
+): OrderBy<T> => ({ [queryConstraintKind]: 'orderBy', field, direction });
+
+export type Limit = {
+  [queryConstraintKind]: 'limit';
+  limit: number;
+};
+export const limit = (limit: number): Limit => ({ [queryConstraintKind]: 'limit', limit });
+
+export type LimitToLast = {
+  [queryConstraintKind]: 'limitToLast';
+  limit: number;
+};
+export const limitToLast = (limit: number): LimitToLast => ({
+  [queryConstraintKind]: 'limitToLast',
+  limit,
+});
+
+// TODO
+// startAt
+// startAfter
+// endBefore
+// endAt
+// findNearest
+// and
+// or
+// select
+// aggregate
 
 export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
   | UnaryCondition<T>
@@ -56,17 +117,6 @@ export type UnaryCondition<
   opStr: Op;
   value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>;
 };
-
-// TODO
-// startAt
-// startAfter
-// endBefore
-// endAt
-// findNearest
-// and
-// or
-// select
-// aggregate
 
 export const condition = <
   T extends CollectionSchema,

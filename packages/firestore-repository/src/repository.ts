@@ -1,6 +1,6 @@
 import type { FieldPath } from './document.js';
-import type { Query, QueryConstraint } from './query.js';
-import type { CollectionSchema, DbModel, Id, Model, ParentId } from './schema.js';
+import type { Query } from './query.js';
+import type { CollectionSchema, DbModel, Id, Model } from './schema.js';
 
 export type Aggregated<T extends AggregateSpec> = {
   [K in keyof T]: number;
@@ -51,13 +51,13 @@ export interface Repository<
   /**
    * Returns a documents list of the specified query
    */
-  list: (query: Query<T, Env>) => Promise<Model<T>[]>;
+  list: (query: Query<T>) => Promise<Model<T>[]>;
 
   /**
    * Listen documents of the specified query
    */
   listOnSnapshot: (
-    query: Query<T, Env>,
+    query: Query<T>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
   ) => Unsubscribe;
@@ -66,19 +66,9 @@ export interface Repository<
    * Returns an aggregation of the specified query
    */
   aggregate: <T extends CollectionSchema, U extends AggregateSpec<T>>(
-    query: Query<T, Env>,
+    query: Query<T>,
     spec: U,
   ) => Promise<Aggregated<U>>;
-
-  /**
-   * Start a query or chaining another query
-   */
-  query: QueryFunction<T, Env>;
-
-  /**
-   * Start a collection group query
-   */
-  collectionGroupQuery: (...constraints: QueryConstraint<Query<T, Env>>[]) => Query<T, Env>;
 
   /**
    * Create or update
@@ -101,32 +91,12 @@ export interface Repository<
   batchDelete: (ids: Id<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 }
 
-export type QueryFunction<T extends CollectionSchema, Env extends FirestoreEnvironment> = [
-  keyof ParentId<T>,
-] extends [never]
-  ? RootCollectionQueryBuilder<T, Env>
-  : SubcollectionQueryBuilder<T, Env>;
-export type RootCollectionQueryBuilder<
-  T extends CollectionSchema,
-  Env extends FirestoreEnvironment,
-> = (
-  queryOrConstraint?: Query<T, Env> | QueryConstraint<Query<T, Env>>,
-  ...constraints: QueryConstraint<Query<T, Env>>[]
-) => Query<T, Env>;
-export type SubcollectionQueryBuilder<
-  T extends CollectionSchema,
-  Env extends FirestoreEnvironment,
-> = (
-  parentIdOrQuery: ParentId<T> | Query<T, Env>,
-  ...constraints: QueryConstraint<Query<T, Env>>[]
-) => Query<T, Env>;
 /**
  * Platform-specific types
  */
 export type FirestoreEnvironment = {
   transaction: unknown;
   writeBatch: unknown;
-  query: unknown;
 };
 export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };
 export type WriteTransactionOption<T extends FirestoreEnvironment> = {

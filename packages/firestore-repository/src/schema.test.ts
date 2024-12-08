@@ -3,6 +3,7 @@ import type { Timestamp } from './document.js';
 import {
   type DbModel,
   type Id,
+  type IsSubCollection,
   type Model,
   type ParentId,
   collection,
@@ -96,5 +97,10 @@ describe('schema', () => {
   it('collectionPath', () => {
     expect(collectionPath(authorsCollection, {})).toBe('Authors');
     expect(collectionPath(postsCollection, { authorId: 'abc' })).toBe('Authors/abc/Posts');
+  });
+
+  it('IsSubcollection', () => {
+    expectTypeOf<IsSubCollection<Authors>>().toEqualTypeOf<false>();
+    expectTypeOf<IsSubCollection<Posts>>().toEqualTypeOf<true>();
   });
 });
