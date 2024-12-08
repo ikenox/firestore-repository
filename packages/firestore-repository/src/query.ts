@@ -13,13 +13,14 @@ export class Query<T extends CollectionSchema = CollectionSchema> {
       | { kind: 'collection'; collection: T; parentId: ParentId<T> }
       | { kind: 'collectionGroup'; collection: T }
       | { kind: 'extends'; query: Query<T> },
-    readonly constraints?: QueryConstraint<T>[],
+    readonly filterConstraint?: QueryFilterConstraint<T>,
+    readonly constraints?: QueryNonFilterConstraint<T>[],
   ) {}
 }
 
 export const query = <T extends CollectionSchema>(
   base: (IsSubCollection<T> extends true ? { collection: T; parent: ParentId<T> } : T) | Query<T>,
-  ...constraints: QueryConstraint<T>[]
+  ...constraints: QueryNonFilterConstraint<T>[]
 ): Query<T> => {
   if (base instanceof Query) {
     // extends another query
@@ -42,53 +43,57 @@ export const query = <T extends CollectionSchema>(
 // TODO disable for root collection
 export const collectionGroupQuery = <T extends CollectionSchema>(
   collection: T,
-  ...constraints: QueryConstraint<T>[]
+  firstConstraint?: QueryFilterConstraint<T> | QueryNonFilterConstraint<T>,
+  ...constraints: QueryNonFilterConstraint<T>[]
 ): Query<T> => {
   return new Query({ kind: 'collectionGroup', collection }, constraints);
 };
 
+export type QueryFilterConstraint<T extends CollectionSchema = CollectionSchema> = Where<T>;
+
 /**
  * Query constraint
  */
-export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
-  | Where<T>
+export type QueryNonFilterConstraint<T extends CollectionSchema = CollectionSchema> =
   | OrderBy<T>
   | Limit
   | LimitToLast;
 
-export const queryConstraintKind: unique symbol = Symbol();
+export const filterConstraintKind: unique symbol = Symbol();
 
 export type Where<T extends CollectionSchema> = {
-  [queryConstraintKind]: 'where';
+  [filterConstraintKind]: 'where';
   filter: FilterExpression<T>;
 };
 export const where = <T extends CollectionSchema>(filter: FilterExpression<T>): Where<T> => ({
-  [queryConstraintKind]: 'where',
+  [filterConstraintKind]: 'where',
   filter,
 });
 
+export const nonFilterConstraintKind: unique symbol = Symbol();
+
 export type OrderBy<T extends CollectionSchema> = {
-  [queryConstraintKind]: 'orderBy';
+  [nonFilterConstraintKind]: 'orderBy';
   field: FieldPath<DbModel<T>>;
   direction?: 'asc' | 'desc' | undefined;
 };
 export const orderBy = <T extends CollectionSchema>(
   field: FieldPath<DbModel<T>>,
   direction?: 'asc' | 'desc' | undefined,
-): OrderBy<T> => ({ [queryConstraintKind]: 'orderBy', field, direction });
+): OrderBy<T> => ({ [nonFilterConstraintKind]: 'orderBy', field, direction });
 
 export type Limit = {
-  [queryConstraintKind]: 'limit';
+  [nonFilterConstraintKind]: 'limit';
   limit: number;
 };
-export const limit = (limit: number): Limit => ({ [queryConstraintKind]: 'limit', limit });
+export const limit = (limit: number): Limit => ({ [nonFilterConstraintKind]: 'limit', limit });
 
 export type LimitToLast = {
-  [queryConstraintKind]: 'limitToLast';
+  [nonFilterConstraintKind]: 'limitToLast';
   limit: number;
 };
 export const limitToLast = (limit: number): LimitToLast => ({
-  [queryConstraintKind]: 'limitToLast',
+  [nonFilterConstraintKind]: 'limitToLast',
   limit,
 });
 
