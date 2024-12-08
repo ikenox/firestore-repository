@@ -41,12 +41,7 @@ import {
   queryTag,
 } from 'firestore-repository/query';
 import type { AggregateSpec, Aggregated, QueryFunction } from 'firestore-repository/repository';
-import type {
-  Repository as Repository1,
-  TransactionOption as TransactionOption1,
-  Unsubscribe,
-  WriteTransactionOption as WriteTransactionOption1,
-} from 'firestore-repository/repository';
+import type * as base from 'firestore-repository/repository';
 import {
   type CollectionSchema,
   type CollectionSchema as CollectionSchema1,
@@ -60,11 +55,11 @@ import {
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
-export type TransactionOption = TransactionOption1<Env>;
-export type WriteTransactionOption = WriteTransactionOption1<Env>;
+export type TransactionOption = base.TransactionOption<Env>;
+export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
 export class Repository<T extends CollectionSchema1 = CollectionSchema1>
-  implements Repository1<T, Env>
+  implements base.Repository<T, Env>
 {
   constructor(
     readonly collection: T,
@@ -81,7 +76,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
     next: (snapshot: Model<T> | undefined) => void,
     error?: (error: Error) => void,
     complete?: () => void,
-  ): Unsubscribe {
+  ): base.Unsubscribe {
     return onSnapshot(this.docRef(id), {
       next: (doc) => {
         next(this.fromFirestore(doc));
@@ -107,7 +102,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
     complete?: () => void,
-  ): Unsubscribe {
+  ): base.Unsubscribe {
     return onSnapshot(query.inner, {
       next: ({ docs }) => {
         // biome-ignore lint/style/noNonNullAssertion: query result item should not be null

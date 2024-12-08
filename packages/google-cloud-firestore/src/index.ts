@@ -21,15 +21,9 @@ import {
   queryTag,
 } from 'firestore-repository/query';
 import type { AggregateSpec, Aggregated, QueryFunction } from 'firestore-repository/repository';
-import type {
-  Repository as Repository1,
-  TransactionOption as TransactionOption1,
-  Unsubscribe,
-  WriteTransactionOption as WriteTransactionOption1,
-} from 'firestore-repository/repository';
+import type * as base from 'firestore-repository/repository';
 import {
   type CollectionSchema,
-  type CollectionSchema as CollectionSchema1,
   type DbModel,
   type Id,
   type Model,
@@ -40,11 +34,11 @@ import {
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
-export type TransactionOption = TransactionOption1<Env>;
-export type WriteTransactionOption = WriteTransactionOption1<Env>;
+export type TransactionOption = base.TransactionOption<Env>;
+export type WriteTransactionOption = base.WriteTransactionOption<Env>;
 
-export class Repository<T extends CollectionSchema1 = CollectionSchema1>
-  implements Repository1<T, Env>
+export class Repository<T extends CollectionSchema = CollectionSchema>
+  implements base.Repository<T, Env>
 {
   constructor(
     readonly collection: T,
@@ -60,7 +54,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
     id: Id<T>,
     next: (snapshot: Model<T> | undefined) => void,
     error?: (error: Error) => void,
-  ): Unsubscribe {
+  ): base.Unsubscribe {
     return this.docRef(id).onSnapshot((snapshot) => {
       next(this.fromFirestore(snapshot));
     }, error);
@@ -79,7 +73,7 @@ export class Repository<T extends CollectionSchema1 = CollectionSchema1>
     query: Query<T>,
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
-  ): Unsubscribe {
+  ): base.Unsubscribe {
     // TODO
     return (query.inner as FirestoreQuery).onSnapshot((snapshot) => {
       // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
