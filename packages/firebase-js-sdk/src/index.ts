@@ -80,7 +80,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 
   async list(query: Query<T>): Promise<Model<T>[]> {
-    const { docs } = await getDocs(buildQuery(this.db, query));
+    const { docs } = await getDocs(toFirestoreQuery(this.db, query));
     return docs.map(
       (doc) =>
         // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
@@ -94,7 +94,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     error?: (error: Error) => void,
     complete?: () => void,
   ): repository.Unsubscribe {
-    return onSnapshot(buildQuery(this.db, query), {
+    return onSnapshot(toFirestoreQuery(this.db, query), {
       next: ({ docs }) => {
         // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
         next(docs.map((doc) => this.fromFirestore(doc)!));
@@ -127,7 +127,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
       }
     }
 
-    const res = await getAggregateFromServer(buildQuery(this.db, query), aggregateSpec);
+    const res = await getAggregateFromServer(toFirestoreQuery(this.db, query), aggregateSpec);
     return res.data() as Aggregated<U>;
   }
 
@@ -206,7 +206,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 }
 
-const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
+export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery => {
   const { filter, nonFilter } = (query.constraints ?? []).reduce<{
     filter?: QueryFilterConstraint | QueryCompositeFilterConstraint;
     nonFilter: QueryNonFilterConstraint[];
@@ -214,7 +214,7 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
     (acc, constraint) => {
       switch (constraint.kind) {
         case 'where': {
-          const filter = buildFilterConstraint(constraint.filter);
+          const filter = toFirestoreQueryFilterConstraint(constraint.filter);
           acc.filter = acc.filter ? and(acc.filter, filter) : filter;
           break;
         }
@@ -247,7 +247,7 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
       base = collectionGroup(db, query.base.collection.name);
       break;
     case 'extends':
-      base = buildQuery(db, query.base.query);
+      base = toFirestoreQuery(db, query.base.query);
       break;
     default:
       base = assertNever(query.base);
@@ -260,14 +260,16 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
     : firestoreQuery(base, ...nonFilter);
 };
 
-const buildFilterConstraint = (expr: FilterExpression): FirestoreQueryFilterConstraint => {
+const toFirestoreQueryFilterConstraint = (
+  expr: FilterExpression,
+): FirestoreQueryFilterConstraint => {
   switch (expr.kind) {
     case 'where':
       return where(expr.fieldPath, expr.opStr, expr.value);
     case 'or':
-      return or(...expr.filters.map(buildFilterConstraint));
+      return or(...expr.filters.map(toFirestoreQueryFilterConstraint));
     case 'and':
-      return and(...expr.filters.map(buildFilterConstraint));
+      return and(...expr.filters.map(toFirestoreQueryFilterConstraint));
     default:
       return assertNever(expr);
   }

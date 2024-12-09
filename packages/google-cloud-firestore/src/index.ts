@@ -10,6 +10,7 @@ import {
   type WriteBatch,
 } from '@google-cloud/firestore';
 import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
+import type { DocumentData, FieldPath } from 'firestore-repository/document';
 import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
@@ -51,7 +52,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 
   async list(query: Query<T>): Promise<Model<T>[]> {
-    const { docs } = await buildQuery(this.db, query).get();
+    const { docs } = await toFirestoreQuery(this.db, query).get();
     return docs.map(
       (doc) =>
         // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
@@ -64,7 +65,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
   ): repository.Unsubscribe {
-    return buildQuery(this.db, query).onSnapshot((snapshot) => {
+    return toFirestoreQuery(this.db, query).onSnapshot((snapshot) => {
       // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
       next(snapshot.docs.map((doc) => this.fromFirestore(doc)!));
     }, error);
@@ -91,7 +92,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
       }
     }
 
-    const res = await buildQuery(this.db, query).aggregate(aggregateSpec).get();
+    const res = await toFirestoreQuery(this.db, query).aggregate(aggregateSpec).get();
     return res.data() as Aggregated<U>;
   }
 
@@ -210,7 +211,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
 }
 
 // TODO cache query
-const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
+export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery => {
   let base: FirestoreQuery;
   switch (query.base.kind) {
     case 'collection':
@@ -220,7 +221,7 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
       base = db.collectionGroup(query.base.collection.name);
       break;
     case 'extends':
-      base = buildQuery(db, query.base.query);
+      base = toFirestoreQuery(db, query.base.query);
       break;
     default:
       base = assertNever(query.base);
@@ -229,7 +230,7 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
     query.constraints?.reduce((query, constraint) => {
       switch (constraint.kind) {
         case 'where':
-          return query.where(buildFilter(constraint.filter));
+          return query.where(toFirestoreFilter(constraint.filter));
         case 'orderBy':
           return query.orderBy(constraint.field, constraint.direction);
         case 'limit':
@@ -245,14 +246,14 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
   );
 };
 
-const buildFilter = (expr: FilterExpression): Filter => {
+export const toFirestoreFilter = (expr: FilterExpression): Filter => {
   switch (expr.kind) {
     case 'where':
       return Filter.where(expr.fieldPath, expr.opStr, expr.value);
     case 'and':
-      return Filter.and(...expr.filters.map(buildFilter));
+      return Filter.and(...expr.filters.map(toFirestoreFilter));
     case 'or':
-      return Filter.or(...expr.filters.map(buildFilter));
+      return Filter.or(...expr.filters.map(toFirestoreFilter));
     default:
       return assertNever(expr);
   }
@@ -262,6 +263,12 @@ const buildFilter = (expr: FilterExpression): Filter => {
  * A query offset constraint
  */
 export const offset = (offset: number): Offset => ({ kind: 'offset', offset });
+
+export type PickFields<T extends DocumentData, K extends FieldPath<T>> = {
+  [P in K extends `${infer R}.${infer Rest}` ? R : K]: K extends `${infer R}.${infer Rest}`
+    ? { [SubK in Rest]: T[R & keyof T][SubK & keyof T[R & keyof T]] }
+    : T[K & keyof T];
+};
 
 export class IdGenerator {
   collection: CollectionReference;
