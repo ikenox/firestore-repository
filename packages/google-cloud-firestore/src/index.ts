@@ -214,7 +214,7 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
   let base: FirestoreQuery;
   switch (query.base.kind) {
     case 'collection':
-      base = db.collection(query.base.collection.name);
+      base = db.collection(collectionPath(query.base.collection, query.base.parentId));
       break;
     case 'collectionGroup':
       base = db.collectionGroup(query.base.collection.name);
