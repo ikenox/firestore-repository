@@ -214,10 +214,11 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
   }>(
     (acc, constraint) => {
       switch (constraint.kind) {
-        case 'where':
+        case 'where': {
           const filter = buildFilterConstraint(constraint.filter);
           acc.filter = acc.filter ? and(acc.filter, filter) : filter;
           break;
+        }
         case 'orderBy':
           acc.nonFilter.push(orderBy(constraint.field, constraint.direction));
           break;
