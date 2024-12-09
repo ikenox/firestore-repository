@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { average, count, sum } from '../aggregate.js';
 import type { Timestamp } from '../document.js';
 import {
   condition as $,
@@ -12,7 +13,7 @@ import {
   query,
   where,
 } from '../query.js';
-import { type FirestoreEnvironment, type Repository, average, count, sum } from '../repository.js';
+import type { FirestoreEnvironment, Repository } from '../repository.js';
 import {
   type CollectionSchema,
   type Id,

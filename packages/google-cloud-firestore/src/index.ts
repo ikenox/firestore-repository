@@ -9,8 +9,8 @@ import {
   Transaction,
   type WriteBatch,
 } from '@google-cloud/firestore';
+import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
 import type { FilterExpression, Query } from 'firestore-repository/query';
-import type { AggregateSpec, Aggregated } from 'firestore-repository/repository';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
@@ -51,7 +51,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 
   async list(query: Query<T>): Promise<Model<T>[]> {
-    const { docs } = await (query.inner as CollectionReference).get();
+    const { docs } = await buildQuery(this.db, query).get();
     return docs.map(
       (doc) =>
         // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
@@ -64,15 +64,14 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
   ): repository.Unsubscribe {
-    // TODO
-    return (query.inner as FirestoreQuery).onSnapshot((snapshot) => {
+    return buildQuery(this.db, query).onSnapshot((snapshot) => {
       // biome-ignore lint/style/noNonNullAssertion: Query result items should have data
       next(snapshot.docs.map((doc) => this.fromFirestore(doc)!));
     }, error);
   }
 
   async aggregate<T extends CollectionSchema, U extends AggregateSpec<T>>(
-    query: Query<T, Env>,
+    query: Query<T>,
     spec: U,
   ): Promise<Aggregated<U>> {
     const aggregateSpec: FirestoreAggregateSpec = {};
@@ -92,7 +91,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
       }
     }
 
-    const res = await query.inner.aggregate(aggregateSpec).get();
+    const res = await buildQuery(this.db, query).aggregate(aggregateSpec).get();
     return res.data() as Aggregated<U>;
   }
 
@@ -210,14 +209,48 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 }
 
-const convertFilterExpression = (expr: FilterExpression): Filter => {
+// TODO cache query
+const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
+  let base: FirestoreQuery;
+  switch (query.base.kind) {
+    case 'collection':
+      base = db.collection(query.base.collection.name);
+      break;
+    case 'collectionGroup':
+      base = db.collectionGroup(query.base.collection.name);
+      break;
+    case 'extends':
+      base = buildQuery(db, query.base.query);
+      break;
+    default:
+      base = assertNever(query.base);
+  }
+  return (
+    query.constraints?.reduce((query, constraint) => {
+      switch (constraint.kind) {
+        case 'where':
+          return query.where(buildFilter(constraint.filter));
+        case 'orderBy':
+          return query.orderBy(constraint.field, constraint.direction);
+        case 'limit':
+          return query.limit(constraint.limit);
+        case 'limitToLast':
+          return query.limitToLast(constraint.limit);
+        default:
+          return assertNever(constraint);
+      }
+    }, base) ?? base
+  );
+};
+
+const buildFilter = (expr: FilterExpression): Filter => {
   switch (expr.kind) {
     case 'where':
       return Filter.where(expr.fieldPath, expr.opStr, expr.value);
     case 'and':
-      return Filter.and(...expr.filters.map(convertFilterExpression));
+      return Filter.and(...expr.filters.map(buildFilter));
     case 'or':
-      return Filter.or(...expr.filters.map(convertFilterExpression));
+      return Filter.or(...expr.filters.map(buildFilter));
     default:
       return assertNever(expr);
   }
