@@ -54,7 +54,8 @@ export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
   | Where<T>
   | OrderBy<T>
   | Limit
-  | LimitToLast;
+  | LimitToLast
+  | Offset;
 
 export type Where<T extends CollectionSchema> = {
   kind: 'where';
@@ -84,16 +85,15 @@ export const limitToLast = (limit: number): LimitToLast => ({
   limit,
 });
 
+export type Offset = { kind: 'offset'; offset: number };
+
 // TODO
 // startAt
 // startAfter
 // endBefore
 // endAt
 // findNearest
-// and
-// or
 // select
-// aggregate
 
 export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
   | UnaryCondition<T>

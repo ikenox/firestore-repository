@@ -227,6 +227,9 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
         case 'limitToLast':
           acc.nonFilter.push(limitToLast(constraint.limit));
           break;
+        case 'offset':
+          // https://github.com/firebase/firebase-js-sdk/issues/479
+          throw new Error('firestore-js-sdk does not support offset constraint');
         default:
           return assertNever(constraint);
       }

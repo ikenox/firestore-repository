@@ -7,7 +7,7 @@ import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
 import type { Model } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Repository } from './index.js';
+import { Repository, offset } from './index.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -82,7 +82,7 @@ describe('repository', async () => {
 
     it('offset', async () => {
       const [, ...rest] = items;
-      const result = await repository.list(query(offset(1)));
+      const result = await repository.list(query(authorsCollection, offset(1)));
       expect(result).toStrictEqual(rest);
     });
   });

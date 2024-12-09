@@ -10,7 +10,7 @@ import {
   type WriteBatch,
 } from '@google-cloud/firestore';
 import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
-import type { FilterExpression, Query } from 'firestore-repository/query';
+import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
@@ -236,6 +236,8 @@ const buildQuery = (db: Firestore, query: Query): FirestoreQuery => {
           return query.limit(constraint.limit);
         case 'limitToLast':
           return query.limitToLast(constraint.limit);
+        case 'offset':
+          return query.offset(constraint.offset);
         default:
           return assertNever(constraint);
       }
@@ -258,11 +260,8 @@ const buildFilter = (expr: FilterExpression): Filter => {
 
 /**
  * A query offset constraint
- * TODO
  */
-// export type Offset = <T extends CollectionSchema>(limit: number) => QueryConstraint<Query<T, Env>>;
-//
-// export const offset: Offset = (offset) => (q) => q.offset(offset);
+export const offset = (offset: number): Offset => ({ kind: 'offset', offset });
 
 export class IdGenerator {
   collection: CollectionReference;
