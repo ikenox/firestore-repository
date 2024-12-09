@@ -7,7 +7,7 @@ import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
 import type { Model } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Repository, offset } from './index.js';
+import { type Env, Repository, offset } from './index.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -15,7 +15,7 @@ describe('repository', async () => {
     databaseId: process.env['TEST_DB']!,
   });
 
-  defineRepositorySpecificationTests((collection) => new Repository(collection, db), {
+  defineRepositorySpecificationTests<Env>((collection) => new Repository(collection, db), {
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type Collection = typeof collection;
 

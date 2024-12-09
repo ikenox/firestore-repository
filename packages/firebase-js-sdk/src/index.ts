@@ -36,7 +36,6 @@ import type { FilterExpression, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
-  type CollectionSchema as CollectionSchema1,
   type DbModel,
   type Id,
   type Model,
@@ -50,7 +49,7 @@ export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: Fir
 export type TransactionOption = repository.TransactionOption<Env>;
 export type WriteTransactionOption = repository.WriteTransactionOption<Env>;
 
-export class Repository<T extends CollectionSchema1 = CollectionSchema1>
+export class Repository<T extends CollectionSchema = CollectionSchema>
   implements repository.Repository<T, Env>
 {
   constructor(
