@@ -335,10 +335,28 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             );
           });
 
-          it('specify empty parentId explicitly', async () => {
-            await expectQuery(query(repository.collection, where($('name', '==', 'author1'))), [
-              items[0],
-            ]);
+          it('multiple where clause', async () => {
+            await expectQuery(
+              query(
+                repository.collection,
+                where(or($('name', '==', 'author1'), $('name', '==', 'author2'))),
+                where($('rank', '==', 2)),
+              ),
+              [items[1]],
+            );
+          });
+
+          it('both child and parent query has where clause', async () => {
+            await expectQuery(
+              query(
+                query(
+                  repository.collection,
+                  where(or($('name', '==', 'author1'), $('name', '==', 'author2'))),
+                ),
+                where($('rank', '==', 2)),
+              ),
+              [items[1]],
+            );
           });
 
           it('or', async () => {
