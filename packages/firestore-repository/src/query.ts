@@ -123,7 +123,7 @@ export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): End
 });
 
 // TODO add Model<T> as union type
-export type Cursor<T extends CollectionSchema> =
+export type Cursor<_T extends CollectionSchema> =
   // a list of values, that should correspond to the columns specified by orderBy clause
   unknown[];
 
