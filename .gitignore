@@ -1,1 +1,3 @@
 node_modules
+# local private test or debugging purpose
+*.local.test.ts

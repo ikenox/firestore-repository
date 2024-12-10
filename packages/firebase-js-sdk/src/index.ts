@@ -17,6 +17,8 @@ import {
   count,
   deleteDoc,
   doc,
+  endAt,
+  endBefore,
   query as firestoreQuery,
   getAggregateFromServer,
   getDoc,
@@ -27,6 +29,8 @@ import {
   or,
   orderBy,
   setDoc,
+  startAfter,
+  startAt,
   sum,
   where,
   writeBatch,
@@ -230,6 +234,26 @@ export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery =>
         case 'offset':
           // https://github.com/firebase/firebase-js-sdk/issues/479
           throw new Error('firestore-js-sdk does not support offset constraint');
+        case 'startAt': {
+          const { cursor } = constraint;
+          acc.nonFilter.push(startAt(...cursor));
+          break;
+        }
+        case 'startAfter': {
+          const { cursor } = constraint;
+          acc.nonFilter.push(startAfter(...cursor));
+          break;
+        }
+        case 'endAt': {
+          const { cursor } = constraint;
+          acc.nonFilter.push(endAt(...cursor));
+          break;
+        }
+        case 'endBefore': {
+          const { cursor } = constraint;
+          acc.nonFilter.push(endBefore(...cursor));
+          break;
+        }
         default:
           return assertNever(constraint);
       }

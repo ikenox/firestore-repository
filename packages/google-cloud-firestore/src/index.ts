@@ -10,7 +10,6 @@ import {
   type WriteBatch,
 } from '@google-cloud/firestore';
 import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
-import type { DocumentData, FieldPath } from 'firestore-repository/document';
 import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
@@ -227,18 +226,34 @@ export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery =>
       base = assertNever(query.base);
   }
   return (
-    query.constraints?.reduce((query, constraint) => {
+    query.constraints?.reduce((q, constraint) => {
       switch (constraint.kind) {
         case 'where':
-          return query.where(toFirestoreFilter(constraint.filter));
+          return q.where(toFirestoreFilter(constraint.filter));
         case 'orderBy':
-          return query.orderBy(constraint.field, constraint.direction);
+          return q.orderBy(constraint.field, constraint.direction);
         case 'limit':
-          return query.limit(constraint.limit);
+          return q.limit(constraint.limit);
         case 'limitToLast':
-          return query.limitToLast(constraint.limit);
+          return q.limitToLast(constraint.limit);
         case 'offset':
-          return query.offset(constraint.offset);
+          return q.offset(constraint.offset);
+        case 'startAt': {
+          const { cursor } = constraint;
+          return q.startAt(...cursor);
+        }
+        case 'startAfter': {
+          const { cursor } = constraint;
+          return q.startAfter(...cursor);
+        }
+        case 'endAt': {
+          const { cursor } = constraint;
+          return q.endAt(...cursor);
+        }
+        case 'endBefore': {
+          const { cursor } = constraint;
+          return q.endBefore(...cursor);
+        }
         default:
           return assertNever(constraint);
       }
@@ -263,12 +278,6 @@ export const toFirestoreFilter = (expr: FilterExpression): Filter => {
  * A query offset constraint
  */
 export const offset = (offset: number): Offset => ({ kind: 'offset', offset });
-
-export type PickFields<T extends DocumentData, K extends FieldPath<T>> = {
-  [P in K extends `${infer R}.${infer Rest}` ? R : K]: K extends `${infer R}.${infer Rest}`
-    ? { [SubK in Rest]: T[R & keyof T][SubK & keyof T[R & keyof T]] }
-    : T[K & keyof T];
-};
 
 export class IdGenerator {
   collection: CollectionReference;

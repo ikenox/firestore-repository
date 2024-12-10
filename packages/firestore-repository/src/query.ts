@@ -6,6 +6,7 @@ import {
   type ParentId,
   collectionSchemaTag,
 } from './schema.js';
+import { assertNever } from './util.js';
 
 export class Query<T extends CollectionSchema = CollectionSchema> {
   constructor(
@@ -53,6 +54,10 @@ export const collectionGroupQuery = <T extends CollectionSchema>(
 export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
   | Where<T>
   | OrderBy<T>
+  | StartAt<T>
+  | StartAfter<T>
+  | EndAt<T>
+  | EndBefore<T>
   | Limit
   | LimitToLast
   | Offset;
@@ -86,6 +91,41 @@ export const limitToLast = (limit: number): LimitToLast => ({
 });
 
 export type Offset = { kind: 'offset'; offset: number };
+
+export type StartAt<T extends CollectionSchema> = { kind: 'startAt'; cursor: Cursor<T> };
+export const startAt = <T extends CollectionSchema>(...cursor: Cursor<T>): StartAt<T> => ({
+  kind: 'startAt',
+  cursor,
+});
+
+export type StartAfter<T extends CollectionSchema> = {
+  kind: 'startAfter';
+  cursor: Cursor<T>;
+};
+export const startAfter = <T extends CollectionSchema>(...cursor: Cursor<T>): StartAfter<T> => ({
+  kind: 'startAfter',
+  cursor,
+});
+
+export type EndAt<T extends CollectionSchema> = { kind: 'endAt'; cursor: Cursor<T> };
+export const endAt = <T extends CollectionSchema>(...cursor: Cursor<T>): EndAt<T> => ({
+  kind: 'endAt',
+  cursor,
+});
+
+export type EndBefore<T extends CollectionSchema> = {
+  kind: 'endBefore';
+  cursor: Cursor<T>;
+};
+export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): EndBefore<T> => ({
+  kind: 'endBefore',
+  cursor,
+});
+
+// TODO add Model<T> as union type
+export type Cursor<T extends CollectionSchema> =
+  // a list of values, that should correspond to the columns specified by orderBy clause
+  unknown[];
 
 // TODO
 // startAt
@@ -157,3 +197,36 @@ export const and = <T extends CollectionSchema>(...filters: FilterExpression<T>[
   kind: 'and',
   filters,
 });
+
+/**
+ * Extracts orderBy fields from the specified query
+ */
+export const collectOrderByFields = (query: Query): string[] => {
+  const { base, constraints } = query;
+  const orderByFields = constraints?.filter((c) => c.kind === 'orderBy').map((c) => c.field) ?? [];
+  switch (base.kind) {
+    case 'collectionGroup':
+    case 'collection':
+      return orderByFields;
+    case 'extends':
+      return [...collectOrderByFields(base.query), ...orderByFields];
+    default:
+      return assertNever(base);
+  }
+};
+
+/**
+ * Returns collection of the specified query
+ */
+export const getCollection = (query: Query): CollectionSchema => {
+  const { base } = query;
+  switch (base.kind) {
+    case 'collectionGroup':
+    case 'collection':
+      return base.collection;
+    case 'extends':
+      return getCollection(base.query);
+    default:
+      return assertNever(base);
+  }
+};

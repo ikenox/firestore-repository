@@ -1,21 +1,26 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { average, count, sum } from '../aggregate.js';
-import type { Timestamp } from '../document.js';
+import type { FieldPath, Timestamp } from '../document.js';
 import {
   condition as $,
   type Query,
   and,
   collectionGroupQuery,
+  endAt,
+  endBefore,
   limit,
   limitToLast,
   or,
   orderBy,
   query,
+  startAfter,
+  startAt,
   where,
 } from '../query.js';
 import type { FirestoreEnvironment, Repository } from '../repository.js';
 import {
   type CollectionSchema,
+  type DbModel,
   type Id,
   type Model,
   collection,
@@ -470,6 +475,134 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             query(repository.collection, orderBy('authorId'), limitToLast(100)),
             items,
           );
+        });
+
+        const queryCursorTestCases = {
+          id: ['__name__'],
+          single: ['name'],
+          nested: ['profile.age'],
+          multiple: ['rank', 'profile.age'],
+          multipleOrderSingleCursor: ['rank', 'profile.age'],
+        } as const satisfies Record<string, FieldPath<DbModel<typeof repository.collection>>[]>;
+        const defineQueryCursorTests = (
+          cursorFunc: typeof startAt | typeof startAfter | typeof endAt | typeof endBefore,
+          tests: Record<
+            keyof typeof queryCursorTestCases,
+            [unknown[], Model<typeof repository.collection>[]][]
+          >,
+        ) => {
+          describe(cursorFunc.name, () => {
+            for (const [testName, asserts] of Object.entries(tests)) {
+              it(testName, async () => {
+                const orderByConstraints = queryCursorTestCases[
+                  testName as keyof typeof queryCursorTestCases
+                ].map((f) => orderBy<typeof repository.collection>(f));
+
+                for (const [cursorValues, expected] of asserts) {
+                  await expectQuery(
+                    query(
+                      repository.collection,
+                      ...orderByConstraints,
+                      cursorFunc(...cursorValues),
+                    ),
+                    expected,
+                  );
+                }
+              });
+            }
+          });
+        };
+
+        defineQueryCursorTests(startAt, {
+          id: [
+            [['1'], items],
+            [['2'], items.slice(1)],
+          ],
+          single: [
+            [['author1'], items],
+            [['author2'], items.slice(1)],
+          ],
+          nested: [
+            [[40], [items[0], items[1]]],
+            [[41], [items[1]]],
+          ],
+          multiple: [
+            [
+              [2, 20],
+              [items[2], items[1]],
+            ],
+            [[2, 21], [items[1]]],
+          ],
+          multipleOrderSingleCursor: [[[2], [items[2], items[1]]]],
+        });
+
+        defineQueryCursorTests(startAfter, {
+          id: [
+            [['0'], items],
+            [['1'], items.slice(1)],
+          ],
+          single: [
+            [['author1'], items.slice(1)],
+            [['author2'], items.slice(2)],
+          ],
+          nested: [
+            [[39], [items[0], items[1]]],
+            [[40], [items[1]]],
+          ],
+          multiple: [
+            [
+              [2, 19],
+              [items[2], items[1]],
+            ],
+            [[2, 20], [items[1]]],
+          ],
+          multipleOrderSingleCursor: [[[1], [items[2], items[1]]]],
+        });
+
+        defineQueryCursorTests(endAt, {
+          id: [
+            [['1'], [items[0]]],
+            [['2'], [items[0], items[1]]],
+          ],
+          single: [
+            [['author1'], [items[0]]],
+            [['author2'], [items[0], items[1]]],
+          ],
+          nested: [
+            [[39], [items[2]]],
+            [[40], [items[2], items[0]]],
+          ],
+          multiple: [
+            [[2, 19], [items[0]]],
+            [
+              [2, 20],
+              [items[0], items[2]],
+            ],
+          ],
+          multipleOrderSingleCursor: [[[1], [items[0]]]],
+        });
+
+        defineQueryCursorTests(endBefore, {
+          id: [
+            [['2'], [items[0]]],
+            [['3'], [items[0], items[1]]],
+          ],
+          single: [
+            [['author2'], [items[0]]],
+            [['author3'], [items[0], items[1]]],
+          ],
+          nested: [
+            [[40], [items[2]]],
+            [[41], [items[2], items[0]]],
+          ],
+          multiple: [
+            [[2, 20], [items[0]]],
+            [
+              [2, 21],
+              [items[0], items[2]],
+            ],
+          ],
+          multipleOrderSingleCursor: [[[2], [items[0]]]],
         });
 
         it('multiple constraints', async () => {
