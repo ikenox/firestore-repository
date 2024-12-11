@@ -127,14 +127,6 @@ export type Cursor<_T extends CollectionSchema> =
   // a list of values, that should correspond to the columns specified by orderBy clause
   unknown[];
 
-// TODO
-// startAt
-// startAfter
-// endBefore
-// endAt
-// findNearest
-// select
-
 export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
   | UnaryCondition<T>
   | Or<T>
