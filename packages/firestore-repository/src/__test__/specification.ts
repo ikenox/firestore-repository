@@ -27,7 +27,13 @@ import {
   id,
   parentPath,
 } from '../schema.js';
-import { randomNumber, uniqueCollection } from './util.js';
+import {
+  expectArrayEqualsWithoutOrder,
+  randomNumber,
+  randomString,
+  sleep,
+  uniqueCollection,
+} from './util.js';
 
 // root collection
 export const authorsCollection = collection({
@@ -73,15 +79,21 @@ export const postsCollection = collection({
 /**
  * List of specifications that repository implementations must satisfy
  */
-export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironment>(
-  createRepository: <T extends CollectionSchema>(collection: T) => Repository<T, Env>,
-  environment: {
-    implementationSpecificTests?: <T extends CollectionSchema>(
-      params: TestCollectionParams<T>,
-      setup: () => RepositoryTestEnv<T, Env>,
-    ) => void;
-  },
-) => {
+export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironment>({
+  db,
+  createRepository,
+  implementationSpecificTests,
+}: {
+  createRepository: <T extends CollectionSchema>(collection: T) => Repository<T, Env>;
+  db: {
+    writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
+    transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
+  };
+  implementationSpecificTests?: <T extends CollectionSchema>(
+    params: TestCollectionParams<T>,
+    setup: () => RepositoryTestEnv<T, Env>,
+  ) => void;
+}) => {
   const defineTests = <T extends CollectionSchema>(params: TestCollectionParams<T>) => {
     const setup = (): RepositoryTestEnv<T, Env> => {
       const items = [params.newData(), params.newData(), params.newData()] as [
@@ -125,6 +137,87 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         it('not found', async () => {
           expect(await repository.get(params.notExistDocId())).toBeUndefined();
         });
+
+        it('transaction', async () => {
+          const res = await db.transaction(async (tx) => {
+            const item0 = await repository.get(items[0], { tx });
+            const item1 = await repository.get(items[1], { tx });
+            return [item0, item1];
+          });
+          expect(res).toStrictEqual([items[0], items[1]]);
+        });
+      });
+
+      it('getOnSnapshot', async () => {
+        const received: (Model<T> | undefined)[] = [];
+        const unsubscribe = repository.getOnSnapshot(items[0], (snapshot) =>
+          received.push(snapshot),
+        );
+
+        const updated1 = params.mutate(items[0]);
+        const updated2 = params.mutate(items[0]);
+        const updated3 = params.mutate(items[0]);
+
+        await sleep(50);
+        await repository.set(updated1);
+        await sleep(50);
+        await repository.set(updated2);
+        await sleep(50);
+        await repository.delete(updated2);
+        await sleep(50);
+        await repository.set(updated3);
+        await sleep(50);
+        unsubscribe();
+        await repository.set(params.mutate(items[0]));
+        await sleep(50);
+
+        expect(received).toStrictEqual<typeof received>([
+          items[0],
+          updated1,
+          updated2,
+          undefined,
+          updated3,
+        ]);
+      });
+
+      it('list', async () => {
+        const res = await repository.list(collectionGroupQuery(repository.collection));
+        expectArrayEqualsWithoutOrder(res, items);
+      });
+
+      it('listOnSnapshot', async () => {
+        const received: Model<T>[][] = [];
+        const unsubscribe = repository.listOnSnapshot(
+          collectionGroupQuery(repository.collection),
+          (list) => {
+            received.push(list);
+          },
+        );
+
+        const updated0 = params.mutate(items[0]);
+        const updated1 = params.mutate(items[1]);
+        const newItem = params.newData();
+
+        await sleep(50);
+        await repository.set(newItem);
+        await sleep(50);
+        await repository.set(updated0);
+        await sleep(50);
+        await repository.set(updated1);
+        await sleep(50);
+        await repository.delete(updated1);
+        await sleep(50);
+        unsubscribe();
+        await repository.set(params.newData());
+        await sleep(50);
+
+        expect(received).toStrictEqual<typeof received>([
+          items,
+          [...items, newItem],
+          [updated0, items[1], items[2], newItem],
+          [updated0, updated1, items[2], newItem],
+          [updated0, items[2], newItem],
+        ]);
       });
 
       describe('set', () => {
@@ -141,6 +234,88 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await repository.set(updated);
           await expectDb([updated, ...rest]);
         });
+
+        describe('transaction', () => {
+          const updated0 = params.mutate(items[0]);
+          const updated1 = params.mutate(items[1]);
+
+          it('success', async () => {
+            await db.transaction(async (tx) => {
+              await repository.set(updated0, { tx });
+              await repository.set(updated1, { tx });
+            });
+            await expectDb([updated0, updated1, items[2]]);
+          });
+
+          it('abort', async () => {
+            const updated0 = params.mutate(items[0]);
+            const promise = db.transaction(async (tx) => {
+              await repository.set(updated0, { tx });
+              await repository.set(updated1, { tx });
+              throw new Error('abort');
+            });
+            await expect(promise).rejects.toThrowError('abort');
+            await expectDb(items);
+          });
+        });
+
+        it('writeBatch', async () => {
+          const updated0 = params.mutate(items[0]);
+          const updated1 = params.mutate(items[1]);
+
+          const batch = db.writeBatch();
+          await repository.set(updated0, { tx: batch });
+          await repository.set(updated1, { tx: batch });
+          await expectDb(items);
+          await batch.commit();
+          await expectDb([updated0, updated1, items[2]]);
+        });
+      });
+
+      describe('batchSet', () => {
+        const newItem = params.newData();
+        const [target, ...rest] = items;
+        const updated = params.mutate(target);
+
+        it('success', async () => {
+          await repository.batchSet([newItem, updated]);
+          await expectDb([updated, newItem, ...rest]);
+        });
+
+        it('empty', async () => {
+          await repository.batchSet([]);
+          await expectDb(items);
+        });
+
+        describe('transaction', () => {
+          it('success', async () => {
+            await db.transaction(async (tx) => {
+              await repository.batchSet([newItem, updated], { tx });
+            });
+            await expectDb([updated, newItem, ...rest]);
+          });
+
+          it('abort', async () => {
+            const promise = db.transaction(async (tx) => {
+              await repository.batchSet([newItem, updated], { tx });
+              throw new Error('abort');
+            });
+            await expect(promise).rejects.toThrowError('abort');
+            await expectDb(items);
+          });
+        });
+
+        it('writeBatch', async () => {
+          const updated0 = params.mutate(items[0]);
+          const updated1 = params.mutate(items[1]);
+
+          const batch = db.writeBatch();
+          await repository.batchSet([updated0], { tx: batch });
+          await repository.batchSet([updated1, newItem], { tx: batch });
+          await expectDb(items);
+          await batch.commit();
+          await expectDb([updated0, updated1, items[2], newItem]);
+        });
       });
 
       describe('delete', () => {
@@ -154,47 +329,93 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await repository.delete(params.notExistDocId());
           await expectDb(items);
         });
-      });
 
-      describe('batchSet', () => {
-        it('empty', async () => {
-          await repository.batchSet([]);
-          await expectDb(items);
+        describe('transaction', () => {
+          it('success', async () => {
+            await db.transaction(async (tx) => {
+              await repository.delete(items[0], { tx });
+              await repository.delete(items[1], { tx });
+            });
+            await expectDb([items[2]]);
+          });
+
+          it('abort', async () => {
+            const promise = db.transaction(async (tx) => {
+              await repository.delete(items[0], { tx });
+              await repository.delete(items[1], { tx });
+              throw new Error('abort');
+            });
+            await expect(promise).rejects.toThrowError('abort');
+            await expectDb(items);
+          });
         });
-        it('multi', async () => {
-          const [target, ...rest] = items;
-          const updatedItem = params.mutate(target);
-          const newItem = params.newData();
-          await repository.batchSet([newItem, updatedItem]);
-          await expectDb([updatedItem, newItem, ...rest]);
+
+        it('writeBatch', async () => {
+          const batch = db.writeBatch();
+          await repository.delete(items[0], { tx: batch });
+          await repository.delete(items[1], { tx: batch });
+          await expectDb(items);
+          await batch.commit();
+          await expectDb([items[2]]);
         });
       });
 
       describe('batchDelete', () => {
+        const [target1, target2, ...rest] = items;
+
         it('empty', async () => {
           await repository.batchDelete([]);
         });
+
         it('multi', async () => {
-          const [target, ...rest] = items;
-          await repository.batchDelete([target, params.notExistDocId()]);
+          await repository.batchDelete([target1, target2, params.notExistDocId()]);
+          await expectDb(rest);
+        });
+
+        describe('transaction', () => {
+          it('success', async () => {
+            await db.transaction(async (tx) => {
+              await repository.batchDelete([target1, target2, params.notExistDocId()], { tx });
+            });
+            await expectDb(rest);
+          });
+
+          it('abort', async () => {
+            const promise = db.transaction(async (tx) => {
+              await repository.batchDelete([target1, target2, params.notExistDocId()], { tx });
+              throw new Error('abort');
+            });
+            await expect(promise).rejects.toThrowError('abort');
+            await expectDb(items);
+          });
+        });
+
+        it('writeBatch', async () => {
+          const batch = db.writeBatch();
+          await repository.batchDelete([target1], { tx: batch });
+          await repository.batchDelete([target2], { tx: batch });
+          await expectDb(items);
+          await batch.commit();
           await expectDb(rest);
         });
       });
 
-      if (environment.implementationSpecificTests) {
+      if (implementationSpecificTests) {
         describe('implementation-specific tests', () => {
-          environment.implementationSpecificTests?.(params, setup);
+          implementationSpecificTests?.(params, setup);
         });
       }
     });
   };
 
   describe('repository specifications', () => {
+    let baseId = randomNumber();
+
     defineTests({
       title: 'root collection',
       collection: authorsCollection,
       newData: () => {
-        const id = randomNumber();
+        const id = baseId++;
         return {
           authorId: `author${id}`,
           name: `name${id}`,
@@ -208,7 +429,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       },
       mutate: (data) => ({
         ...data,
-        name: `${data.name}_updated`,
+        name: `${data.name}_updated_${randomString()}`,
       }),
       notExistDocId: () => ({ authorId: 'not-exists' }),
       sortKey: (a) => a.authorId,
@@ -218,8 +439,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       title: 'subcollection',
       collection: postsCollection,
       newData: () => {
-        const id = randomNumber();
-        const authorId = randomNumber();
+        const id = baseId++;
+        const authorId = baseId++;
         return {
           postId: id,
           title: `post${id}`,
@@ -229,7 +450,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       },
       mutate: (data) => ({
         ...data,
-        title: `${data.title}_updated`,
+        title: `${data.title}_updated_${randomString()}`,
       }),
       notExistDocId: () => ({ postId: randomNumber(), authorId: 'post0' }),
       sortKey: ({ postId, authorId }) => `${postId}-${authorId}`,

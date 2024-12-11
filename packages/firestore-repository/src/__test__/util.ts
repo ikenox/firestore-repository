@@ -1,3 +1,4 @@
+import { expect } from 'vitest';
 import type { CollectionSchema } from '../schema.js';
 
 /**
@@ -17,3 +18,16 @@ export const uniqueCollection = <T extends CollectionSchema>(collection: T): T =
   ...collection,
   name: `${collection.name}_${randomString()}`,
 });
+
+/**
+ * Sleep during the specified milliseconds
+ */
+export const sleep = (millis: number): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, millis));
+
+export const expectArrayEqualsWithoutOrder = <T>(actual: T[], expected: T[]): void => {
+  // biome-ignore lint/suspicious/noMisplacedAssertion: <explanation>
+  expect(actual.length).toStrictEqual(expected.length);
+  // biome-ignore lint/suspicious/noMisplacedAssertion: <explanation>
+  expect(actual).toStrictEqual(expect.arrayContaining(expected));
+};

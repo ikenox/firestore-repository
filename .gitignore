@@ -1,3 +1,4 @@
 node_modules
+coverate
 # local private test or debugging purpose
 *.local.test.ts

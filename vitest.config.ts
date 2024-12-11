@@ -12,7 +12,7 @@ export default defineConfig({
       // biome-ignore lint/style/useNamingConvention:
       TEST_PROJECT: 'ikenox-sunrise',
       // biome-ignore lint/style/useNamingConvention:
-      TEST_DB: 'test-db',
+      TEST_DB: 'firestore-repository-test-db',
     },
   },
 });

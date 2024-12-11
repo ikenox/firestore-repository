@@ -6,7 +6,6 @@ import {
   type ParentId,
   collectionSchemaTag,
 } from './schema.js';
-import { assertNever } from './util.js';
 
 export class Query<T extends CollectionSchema = CollectionSchema> {
   constructor(
@@ -19,7 +18,10 @@ export class Query<T extends CollectionSchema = CollectionSchema> {
 }
 
 export const query = <T extends CollectionSchema>(
-  base: (IsSubCollection<T> extends true ? { collection: T; parent: ParentId<T> } : T) | Query<T>,
+  base:
+    | (IsSubCollection<T> extends true ? { collection: T; parent: ParentId<T> } : never)
+    | (IsSubCollection<T> extends false ? T : never)
+    | Query<T>,
   ...constraints: QueryConstraint<T>[]
 ): Query<T> => {
   if (base instanceof Query) {
@@ -189,36 +191,3 @@ export const and = <T extends CollectionSchema>(...filters: FilterExpression<T>[
   kind: 'and',
   filters,
 });
-
-/**
- * Extracts orderBy fields from the specified query
- */
-export const collectOrderByFields = (query: Query): string[] => {
-  const { base, constraints } = query;
-  const orderByFields = constraints?.filter((c) => c.kind === 'orderBy').map((c) => c.field) ?? [];
-  switch (base.kind) {
-    case 'collectionGroup':
-    case 'collection':
-      return orderByFields;
-    case 'extends':
-      return [...collectOrderByFields(base.query), ...orderByFields];
-    default:
-      return assertNever(base);
-  }
-};
-
-/**
- * Returns collection of the specified query
- */
-export const getCollection = (query: Query): CollectionSchema => {
-  const { base } = query;
-  switch (base.kind) {
-    case 'collectionGroup':
-    case 'collection':
-      return base.collection;
-    case 'extends':
-      return getCollection(base.query);
-    default:
-      return assertNever(base);
-  }
-};

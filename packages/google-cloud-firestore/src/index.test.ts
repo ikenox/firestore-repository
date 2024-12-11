@@ -15,7 +15,12 @@ describe('repository', async () => {
     databaseId: process.env['TEST_DB']!,
   });
 
-  defineRepositorySpecificationTests<Env>((collection) => new Repository(collection, db), {
+  defineRepositorySpecificationTests<Env>({
+    createRepository: (collection) => new Repository(collection, db),
+    db: {
+      writeBatch: () => db.batch(),
+      transaction: (runner) => db.runTransaction(runner),
+    },
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type Collection = typeof collection;
 
