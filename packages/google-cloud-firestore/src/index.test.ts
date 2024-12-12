@@ -80,6 +80,27 @@ describe('repository', async () => {
           ).toStrictEqual([items[0], items[2], items[1], undefined, items[2]]);
         });
       });
+
+      describe('batchCreate', () => {
+        it('empty', async () => {
+          await repository.batchCreate([]);
+          await expectDb(items);
+        });
+
+        it('not empty', async () => {
+          const newItems = [newData(), newData()];
+          await repository.batchCreate(newItems);
+          await expectDb([...items, ...newItems]);
+        });
+
+        it('already exists', async () => {
+          const newItem = newData();
+          await expect(repository.batchCreate([newItem, items[0]])).rejects.toThrowError(
+            /ALREADY_EXISTS/,
+          );
+          await expectDb(items);
+        });
+      });
     },
   });
 
