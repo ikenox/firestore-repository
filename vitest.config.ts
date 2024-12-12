@@ -5,6 +5,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text'],
+      exclude: ['**/vitest.*.ts', '**/*.local.test.ts'],
     },
     env: {
       // biome-ignore lint/style/useNamingConvention:
