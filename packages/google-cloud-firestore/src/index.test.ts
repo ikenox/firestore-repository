@@ -79,6 +79,16 @@ describe('repository', async () => {
             await repository.batchGet([items[0], items[2], items[1], notExistDocId(), items[2]]),
           ).toStrictEqual([items[0], items[2], items[1], undefined, items[2]]);
         });
+
+        it('transaction', async () => {
+          const res = await db.runTransaction(async (tx) => {
+            return await repository.batchGet(
+              [items[0], items[2], items[1], notExistDocId(), items[2]],
+              { tx },
+            );
+          });
+          expect(res).toStrictEqual([items[0], items[2], items[1], undefined, items[2]]);
+        });
       });
 
       describe('batchCreate', () => {

@@ -1,5 +1,4 @@
 import {
-  type CollectionReference,
   type DocumentSnapshot,
   type Firestore,
   type AggregateSpec as FirestoreAggregateSpec,
@@ -298,13 +297,3 @@ const toFirestoreQueryFilterConstraint = (
       return assertNever(expr);
   }
 };
-
-export class IdGenerator {
-  collection: CollectionReference;
-  constructor(readonly db: Firestore) {
-    this.collection = collection(this.db, '_DUMMY_COLLECTION_FOR_ID_GENERATOR');
-  }
-  generate(): string {
-    return doc(this.collection).id;
-  }
-}
