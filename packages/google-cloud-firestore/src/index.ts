@@ -17,7 +17,6 @@ import {
   type DbModel,
   type Id,
   type Model,
-  type ParentId,
   collectionPath,
   docPath,
 } from 'firestore-repository/schema';
@@ -193,10 +192,6 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
 
   protected docRef(id: Id<T>) {
     return this.db.doc(docPath(this.collection, id));
-  }
-
-  protected collectionRef(parentId: ParentId<T>): CollectionReference {
-    return this.db.collection(collectionPath(this.collection, parentId));
   }
 
   protected fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {

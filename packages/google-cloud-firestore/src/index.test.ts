@@ -39,6 +39,34 @@ describe('repository', async () => {
           await repository.create(newItem);
           await expect(repository.create(newItem)).rejects.toThrowError(/ALREADY_EXISTS/);
         });
+
+        describe('transaction', () => {
+          it('success', async () => {
+            const newItem = newData();
+            await db.runTransaction(async () => {
+              await repository.create(newItem);
+            });
+            await expectDb([newItem, ...items]);
+          });
+          it('abort', async () => {
+            const promise = db.runTransaction(async (tx) => {
+              await repository.create(newData(), { tx });
+              throw new Error('abort');
+            });
+            await expect(promise).rejects.toThrowError('abort');
+            await expectDb(items);
+          });
+        });
+
+        it('writeBatch', async () => {
+          const newItem = newData();
+
+          const batch = db.batch();
+          await repository.set(newItem, { tx: batch });
+          await expectDb(items);
+          await batch.commit();
+          await expectDb([newItem, ...items]);
+        });
       });
 
       describe('batchGet', () => {
