@@ -1,6 +1,5 @@
 import {
   AggregateField,
-  type CollectionReference,
   type DocumentSnapshot,
   Filter,
   type Firestore,
@@ -273,13 +272,3 @@ export const toFirestoreFilter = (expr: FilterExpression): Filter => {
  * A query offset constraint
  */
 export const offset = (offset: number): Offset => ({ kind: 'offset', offset });
-
-export class IdGenerator {
-  collection: CollectionReference;
-  constructor(readonly db: Firestore) {
-    this.collection = this.db.collection('_DUMMY_COLLECTION_FOR_ID_GENERATOR');
-  }
-  generate(): string {
-    return this.collection.doc().id;
-  }
-}
