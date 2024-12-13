@@ -12,7 +12,7 @@ import { type Env, Repository, offset } from './index.js';
 describe('repository', async () => {
   const db = new Firestore({
     projectId: process.env['TEST_PROJECT']!,
-    databaseId: process.env['TEST_DB']!,
+    databaseId: process.env['TEST_DB']! + '-admin',
   });
 
   defineRepositorySpecificationTests<Env>({
