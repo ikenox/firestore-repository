@@ -7,10 +7,6 @@
   "scripts": {
     "build": "rm -rf build/ && tsc -b tsconfig.build.json"
   },
-  "devDependencies": {
-    "@firebase/firestore": "catalog:",
-    "@google-cloud/firestore": "catalog:"
-  },
   "exports": {
     ".": {
       "types": "./src/index.ts",

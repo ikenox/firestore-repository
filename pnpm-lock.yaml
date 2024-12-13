@@ -46,14 +46,7 @@ importers:
         specifier: ^0.10.16
         version: 0.10.16
 
-  packages/firestore-repository:
-    devDependencies:
-      '@firebase/firestore':
-        specifier: 'catalog:'
-        version: 4.7.5(@firebase/app@0.10.16)
-      '@google-cloud/firestore':
-        specifier: 'catalog:'
-        version: 7.10.0
+  packages/firestore-repository: {}
 
   packages/google-cloud-firestore:
     dependencies:

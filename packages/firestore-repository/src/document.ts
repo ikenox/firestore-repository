@@ -1,6 +1,3 @@
-import type * as jsSdk from '@firebase/firestore';
-import type * as admin from '@google-cloud/firestore';
-
 /**
  * Type of firestore document data
  */
@@ -14,19 +11,41 @@ export type ValueType =
   | number
   | string
   | null
+  | ValueType[]
+  | MapValue
   | Timestamp
   | Bytes
   | DocumentReference
   | GeoPoint
-  | VectorValue
-  | ValueType[]
-  | MapValue;
-export type Timestamp = admin.Timestamp | jsSdk.Timestamp;
-export type Bytes = Buffer | jsSdk.Bytes;
-export type DocumentReference = jsSdk.DocumentReference | admin.DocumentReference;
-export type GeoPoint = jsSdk.GeoPoint | admin.GeoPoint;
-export type VectorValue = jsSdk.VectorValue | admin.VectorValue;
+  | VectorValue;
 export type MapValue = { [key: string]: ValueType };
+export type Timestamp = {
+  readonly seconds: number;
+  readonly nanoseconds: number;
+  toDate(): Date;
+  toMillis(): number;
+  isEqual(other: Timestamp): boolean;
+  valueOf(): string;
+};
+export type Bytes =
+  // admin
+  | Buffer
+  // js-sdk
+  | { toUint8Array(): Uint8Array; toBase64(): string };
+export type DocumentReference = {
+  id: string;
+  path: string;
+  withConverter(...args: unknown[]): unknown;
+};
+export type GeoPoint = {
+  latitude: number;
+  longitude: number;
+  isEqual(other: GeoPoint): boolean;
+};
+export type VectorValue = {
+  toArray(): number[];
+  isEqual(other: VectorValue): boolean;
+};
 
 /**
  * Field path of the document
