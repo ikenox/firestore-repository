@@ -1,4 +1,4 @@
-import { Firestore } from '@google-cloud/firestore';
+import { FieldValue, Firestore, GeoPoint, Timestamp } from '@google-cloud/firestore';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
@@ -17,6 +17,13 @@ describe('repository', async () => {
 
   defineRepositorySpecificationTests<Env>({
     createRepository: (collection) => new Repository(collection, db),
+    types: {
+      timestamp: (date) => Timestamp.fromDate(date),
+      geoPoint: (latitude, longitude) => new GeoPoint(latitude, longitude),
+      bytes: (bytes) => Buffer.from(bytes),
+      vector: (value) => FieldValue.vector(value),
+      documentReference: (path) => db.doc(path),
+    },
     db: {
       writeBatch: () => db.batch(),
       transaction: (runner) => db.runTransaction(runner),

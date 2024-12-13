@@ -1,6 +1,13 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { assert, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { average, count, sum } from '../aggregate.js';
-import type { FieldPath, Timestamp } from '../document.js';
+import type {
+  Bytes,
+  DocumentReference,
+  FieldPath,
+  GeoPoint,
+  Timestamp,
+  VectorValue,
+} from '../document.js';
 import {
   condition as $,
   type Query,
@@ -82,12 +89,20 @@ export const postsCollection = collection({
 export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
+  types,
   implementationSpecificTests,
 }: {
   createRepository: <T extends CollectionSchema>(collection: T) => Repository<T, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
+  };
+  types: {
+    timestamp: (date: Date) => Timestamp;
+    geoPoint: (latitude: number, longitude: number) => GeoPoint;
+    bytes: (value: number[]) => Bytes;
+    vector: (values: number[]) => VectorValue;
+    documentReference: (path: string) => DocumentReference;
   };
   implementationSpecificTests?: <T extends CollectionSchema>(
     params: TestCollectionParams<T>,
@@ -931,16 +946,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             id: string;
             array: (string | number)[];
             boolean: boolean;
-            bytes: Uint8Array;
+            bytes: Bytes;
             timestamp: Timestamp;
             number: number;
-            getPoint: 'todo';
+            getPoint: GeoPoint;
             map: { a: number; b: string[] };
-            nan: 'todo';
             null: null;
-            docRef: 'todo';
+            docRef: DocumentReference;
             string: string;
-            vector: 'todo';
+            vector: VectorValue;
           }) {
             return {
               ...data,
@@ -960,19 +974,27 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           id: randomString(),
           array: [1, 2, 'foo', 3, 'bar'],
           boolean: false,
-          bytes: Uint8Array.from([1, 2, 3, 4, 5]),
+          bytes: types.bytes([1, 2, 3, 4, 5]),
           timestamp: new Date(),
           number: randomNumber(),
-          getPoint: 'todo',
+          getPoint: types.geoPoint(12.3, 45.6),
           map: { a: 123, b: ['foo', 'bar'] },
-          nan: 'todo',
           null: null,
-          docRef: 'todo',
+          docRef: types.documentReference('foo/a/bar/b'),
           string: randomString(),
-          vector: 'todo',
+          vector: types.vector([1, 2, 3, 4, 5]),
         };
         await repository.set(value);
-        expect(await repository.get(value)).toStrictEqual(value);
+
+        const dbValue = await repository.get(value);
+        assert(dbValue);
+
+        const { docRef, ...withoutDocRef } = value;
+        const { docRef: dbDocRef, ...dbWithoutDocRef } = dbValue;
+
+        expect(dbWithoutDocRef).toStrictEqual(withoutDocRef);
+        // Some private field values of DocumentReference will be different
+        expect(dbDocRef.path).toStrictEqual(docRef.path);
       });
     });
   });
