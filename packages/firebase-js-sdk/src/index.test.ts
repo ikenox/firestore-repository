@@ -17,7 +17,7 @@ import { type Env, Repository } from './index.js';
 describe('repository', async () => {
   const db = getFirestore(
     initializeApp({ projectId: process.env['TEST_PROJECT']! }),
-    process.env['TEST_DB']! + '-js-sdk',
+    process.env['TEST_DB']!,
   );
 
   const emulatorHost = process.env['FIRESTORE_EMULATOR_HOST'];
