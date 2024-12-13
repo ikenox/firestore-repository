@@ -96,8 +96,6 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   /**
    * Create a new document
    * @throws If the document already exists
-   *
-   * TODO: Move to universal Repository interface
    */
   async create(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);
