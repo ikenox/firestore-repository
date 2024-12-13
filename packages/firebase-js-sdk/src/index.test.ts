@@ -14,7 +14,7 @@ import { defineRepositorySpecificationTests } from 'firestore-repository/__test_
 import { describe } from 'vitest';
 import { type Env, Repository } from './index.js';
 
-describe.skip('repository', async () => {
+describe('repository', async () => {
   const db = getFirestore(
     initializeApp({ projectId: process.env['TEST_PROJECT']! }),
     process.env['TEST_DB']!,

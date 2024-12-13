@@ -940,7 +940,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
     describe('all field types', () => {
       const allFieldTypesCollection = collection({
-        name: 'allFieldTypes',
+        name: `allFieldTypes_${randomString()}`,
         data: {
           from(data: {
             id: string;
