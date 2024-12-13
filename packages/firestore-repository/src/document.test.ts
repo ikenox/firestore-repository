@@ -71,6 +71,38 @@ describe('document', () => {
       f: { g: Timestamp | Date }[];
       h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
     }>();
+
+    expectTypeOf<
+      WriteModel<{
+        id: string;
+        array: (string | number)[];
+        boolean: boolean;
+        bytes: Uint8Array;
+        timestamp: Timestamp;
+        number: number;
+        getPoint: 'todo';
+        map: { a: number; b: string[] };
+        nan: 'todo';
+        null: null;
+        docRef: 'todo';
+        string: string;
+        vector: 'todo';
+      }>
+    >().toEqualTypeOf<{
+      id: string;
+      array: (string | number)[];
+      boolean: boolean;
+      bytes: Uint8Array;
+      timestamp: Timestamp | Date;
+      number: number;
+      getPoint: 'todo';
+      map: { a: number; b: string[] };
+      nan: 'todo';
+      null: null;
+      docRef: 'todo';
+      string: string;
+      vector: 'todo';
+    }>();
   });
 
   it('FieldValue', () => {

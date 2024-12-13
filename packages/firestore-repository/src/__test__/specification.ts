@@ -922,6 +922,59 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         // TODO
       });
     });
+
+    describe('all field types', () => {
+      const allFieldTypesCollection = collection({
+        name: 'allFieldTypes',
+        data: {
+          from(data: {
+            id: string;
+            array: (string | number)[];
+            boolean: boolean;
+            bytes: Uint8Array;
+            timestamp: Timestamp;
+            number: number;
+            getPoint: 'todo';
+            map: { a: number; b: string[] };
+            nan: 'todo';
+            null: null;
+            docRef: 'todo';
+            string: string;
+            vector: 'todo';
+          }) {
+            return {
+              ...data,
+              timestamp: data.timestamp.toDate(),
+            };
+          },
+          to(data) {
+            return data;
+          },
+        },
+        id: id('id'),
+      });
+      const repository = createRepository(allFieldTypesCollection);
+
+      it('set/get', async () => {
+        const value: Model<typeof allFieldTypesCollection> = {
+          id: randomString(),
+          array: [1, 2, 'foo', 3, 'bar'],
+          boolean: false,
+          bytes: Uint8Array.from([1, 2, 3, 4, 5]),
+          timestamp: new Date(),
+          number: randomNumber(),
+          getPoint: 'todo',
+          map: { a: 123, b: ['foo', 'bar'] },
+          nan: 'todo',
+          null: null,
+          docRef: 'todo',
+          string: randomString(),
+          vector: 'todo',
+        };
+        await repository.set(value);
+        expect(await repository.get(value)).toStrictEqual(value);
+      });
+    });
   });
 };
 
