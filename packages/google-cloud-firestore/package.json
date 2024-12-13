@@ -4,7 +4,9 @@
   "description": "",
   "type": "module",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "build": "rm -rf build/ && tsc -b tsconfig.build.json"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -16,7 +18,7 @@
     }
   },
   "dependencies": {
-    "@google-cloud/firestore": "^7.10.0",
+    "@google-cloud/firestore": "catalog:",
     "firestore-repository": "workspace:*"
   },
   "keywords": [],

@@ -4,9 +4,11 @@
   "description": "",
   "type": "module",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "build": "rm -rf build/ && tsc -b tsconfig.build.json"
+  },
   "dependencies": {
-    "@firebase/firestore": "^4.7.5",
+    "@firebase/firestore": "catalog:",
     "firestore-repository": "workspace:*"
   },
   "devDependencies": {
