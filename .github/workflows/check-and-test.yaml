@@ -47,5 +47,5 @@ jobs:
       - name: start firebase emulator
         run: pnpm start-emulator
       - name: Wait firebase emulator is ready
-        run: sleep 3
+        run: sleep 10
       - run: pnpm test

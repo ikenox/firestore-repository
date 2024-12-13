@@ -7,7 +7,6 @@ export default defineConfig({
       reporter: ['text'],
       exclude: ['**/vitest.*.ts', '**/*.local.test.ts', '**/*.test.ts', '**/build/*'],
     },
-    isolate: false,
     env: {
       // biome-ignore lint/style/useNamingConvention:
       FIRESTORE_EMULATOR_HOST: 'localhost:60001',
