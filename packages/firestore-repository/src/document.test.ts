@@ -1,9 +1,13 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
+  Bytes,
+  DocumentReference,
   FieldValue,
+  GeoPoint,
   MapArray,
   Timestamp,
   ValueType,
+  VectorValue,
   WriteModel,
   WriteValue,
 } from './document.js';
@@ -77,31 +81,29 @@ describe('document', () => {
         id: string;
         array: (string | number)[];
         boolean: boolean;
-        bytes: Uint8Array;
+        bytes: Bytes;
         timestamp: Timestamp;
         number: number;
-        getPoint: 'todo';
+        getPoint: GeoPoint;
         map: { a: number; b: string[] };
-        nan: 'todo';
         null: null;
-        docRef: 'todo';
+        docRef: DocumentReference;
         string: string;
-        vector: 'todo';
+        vector: VectorValue;
       }>
     >().toEqualTypeOf<{
       id: string;
       array: (string | number)[];
       boolean: boolean;
-      bytes: Uint8Array;
+      bytes: Bytes;
       timestamp: Timestamp | Date;
       number: number;
-      getPoint: 'todo';
+      getPoint: GeoPoint;
       map: { a: number; b: string[] };
-      nan: 'todo';
       null: null;
-      docRef: 'todo';
+      docRef: DocumentReference;
       string: string;
-      vector: 'todo';
+      vector: VectorValue;
     }>();
   });
 

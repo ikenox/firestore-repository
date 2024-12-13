@@ -16,7 +16,7 @@
     }
   },
   "dependencies": {
-    "@google-cloud/firestore": "^7.10.0",
+    "@google-cloud/firestore": "catalog:",
     "firestore-repository": "workspace:*"
   },
   "keywords": [],

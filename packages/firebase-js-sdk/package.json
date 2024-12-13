@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {},
   "dependencies": {
-    "@firebase/firestore": "^4.7.5",
+    "@firebase/firestore": "catalog:",
     "firestore-repository": "workspace:*"
   },
   "devDependencies": {
