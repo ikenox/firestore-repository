@@ -49,4 +49,4 @@ jobs:
       # The test fails without this sleep
       - name: Wait firebase emulator is ready
         run: sleep 3
-      - run: pnpm test
+      - run: pnpm test -- --bail=1
