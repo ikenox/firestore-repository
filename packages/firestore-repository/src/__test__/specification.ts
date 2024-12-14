@@ -1,4 +1,4 @@
-import { assert, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { assert, beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 import { average, count, sum } from '../aggregate.js';
 import type {
   Bytes,
@@ -854,11 +854,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('aggregate', async () => {
-          const res = await repository.aggregate(query(repository.collection), {
-            avgAge: average('profile.age'),
-            sumAge: sum('profile.age'),
-            count: count(),
+          const res = await repository.aggregate({
+            query: query(repository.collection),
+            spec: {
+              avgAge: average('profile.age'),
+              sumAge: sum('profile.age'),
+              count: count(),
+            },
           });
+          expectTypeOf(res).toEqualTypeOf<{ avgAge: number; sumAge: number; count: number }>();
           expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
         });
       });
