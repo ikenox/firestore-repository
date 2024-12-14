@@ -1,9 +1,6 @@
 {
-  "name": "firestore-repository",
-  "version": "1.0.0",
-  "description": "",
+  "private": true,
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "test": "vitest run --coverage",
     "test:watch": "vitest",
@@ -14,9 +11,6 @@
     "fix:biome": "biome check --fix",
     "start-emulator": "docker compose up --build -d"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@vitest/coverage-v8": "^2.1.6",
