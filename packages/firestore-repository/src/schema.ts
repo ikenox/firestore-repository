@@ -116,10 +116,15 @@ export const docPath = <T extends CollectionSchema>(schema: T, id: Id<T>): strin
 /**
  * Returns a path of the collection
  */
-export const collectionPath = <T extends CollectionSchema>(schema: T, id: ParentId<T>): string => {
-  return schema.parentPath ? `${schema.parentPath.to(id)}/${schema.name}` : schema.name;
+export const collectionPath = <T extends CollectionSchema>(
+  collection: T,
+  id: ParentId<T>,
+): string => {
+  return collection.parentPath
+    ? `${collection.parentPath.to(id)}/${collection.name}`
+    : collection.name;
 };
 
-export type IsSubCollection<T extends CollectionSchema> = [keyof ParentId<T>] extends [never]
-  ? false
-  : true;
+export type IsRootCollection<T extends CollectionSchema> = [keyof ParentId<T>] extends [never]
+  ? true
+  : false;

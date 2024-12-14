@@ -2,7 +2,7 @@ import type { FieldPath, FieldValue, ValueType, WriteValue } from './document.js
 import {
   type CollectionSchema,
   type DbModel,
-  type IsSubCollection,
+  type IsRootCollection,
   type ParentId,
   collectionSchemaTag,
 } from './schema.js';
@@ -17,11 +17,16 @@ export class Query<T extends CollectionSchema = CollectionSchema> {
   ) {}
 }
 
+export type QueryBase<T extends CollectionSchema> =
+  // collection schema, only for root collection
+  | (IsRootCollection<T> extends true ? T : never)
+  // for subcollection
+  | { collection: T; parent: ParentId<T> }
+  // or extends another query
+  | Query<T>;
+
 export const query = <T extends CollectionSchema>(
-  base:
-    | (IsSubCollection<T> extends true ? { collection: T; parent: ParentId<T> } : never)
-    | (IsSubCollection<T> extends false ? T : never)
-    | Query<T>,
+  base: QueryBase<T>,
   ...constraints: QueryConstraint<T>[]
 ): Query<T> => {
   if (base instanceof Query) {
