@@ -72,6 +72,11 @@ export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U exten
         : never
       : never;
 
+/**
+ * `WriteModel` is the type of the data that can be written to firestore, which is a superset of `DocumentData`.
+ * For example, `Date` value can be specified for `Timestamp` field when writing data.
+ * It reduces the redundant type conversion.
+ */
 export type WriteModel<T extends DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;
 };
