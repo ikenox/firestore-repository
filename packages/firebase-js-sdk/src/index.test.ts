@@ -1,8 +1,13 @@
 import { initializeApp } from '@firebase/app';
 import {
+  Bytes,
+  GeoPoint,
+  Timestamp,
   connectFirestoreEmulator,
+  doc,
   getFirestore,
   runTransaction,
+  vector,
   writeBatch,
 } from '@firebase/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
@@ -23,6 +28,13 @@ describe('repository', async () => {
 
   defineRepositorySpecificationTests<Env>({
     createRepository: (collection) => new Repository(collection, db),
+    types: {
+      timestamp: (date) => Timestamp.fromDate(date),
+      geoPoint: (latitude, longitude) => new GeoPoint(latitude, longitude),
+      bytes: (bytes) => Bytes.fromUint8Array(Uint8Array.from(bytes)),
+      vector: (value) => vector(value),
+      documentReference: (path) => doc(db, path),
+    },
     db: {
       writeBatch: () => writeBatch(db),
       transaction: (runner) => runTransaction(db, runner),

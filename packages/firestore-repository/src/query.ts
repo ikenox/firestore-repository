@@ -42,7 +42,6 @@ export const query = <T extends CollectionSchema>(
   );
 };
 
-// TODO disable for root collection
 export const collectionGroupQuery = <T extends CollectionSchema>(
   collection: T,
   ...constraints: QueryConstraint<T>[]
@@ -124,7 +123,6 @@ export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): End
   cursor,
 });
 
-// TODO add Model<T> as union type
 export type Cursor<_T extends CollectionSchema> =
   // a list of values, that should correspond to the columns specified by orderBy clause
   unknown[];
@@ -155,7 +153,6 @@ export const condition = <
 ): UnaryCondition<T, Path> => ({ kind: 'where', fieldPath, opStr, value });
 
 export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
-  // TODO accept only possible type for each operands
   '<': T;
   '<=': T;
   '==': T;

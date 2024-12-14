@@ -8,7 +8,7 @@ import {
   Transaction,
   type WriteBatch,
 } from '@google-cloud/firestore';
-import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
+import type { AggregateQuery, Aggregated } from 'firestore-repository/aggregate';
 import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
@@ -68,12 +68,9 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     }, error);
   }
 
-  async aggregate<T extends CollectionSchema, U extends AggregateSpec<T>>(
-    query: Query<T>,
-    spec: U,
-  ): Promise<Aggregated<U>> {
+  async aggregate<U extends AggregateQuery<T>>(aggregate: U): Promise<Aggregated<U>> {
     const aggregateSpec: FirestoreAggregateSpec = {};
-    for (const [k, v] of Object.entries(spec)) {
+    for (const [k, v] of Object.entries(aggregate.spec)) {
       switch (v.kind) {
         case 'count':
           aggregateSpec[k] = AggregateField.count();
@@ -89,15 +86,13 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
       }
     }
 
-    const res = await toFirestoreQuery(this.db, query).aggregate(aggregateSpec).get();
+    const res = await toFirestoreQuery(this.db, aggregate.query).aggregate(aggregateSpec).get();
     return res.data() as Aggregated<U>;
   }
 
   /**
    * Create a new document
    * @throws If the document already exists
-   *
-   * TODO: Move to universal Repository interface
    */
   async create(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
     const data = this.toFirestore(doc);

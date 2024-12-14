@@ -1,8 +1,14 @@
 import type { FieldPath } from './document.js';
+import type { Query } from './query.js';
 import type { CollectionSchema, DbModel } from './schema.js';
 
-export type Aggregated<T extends AggregateSpec> = {
-  [K in keyof T]: number;
+export type AggregateQuery<T extends CollectionSchema = CollectionSchema> = {
+  query: Query<T>;
+  spec: AggregateSpec<T>;
+};
+
+export type Aggregated<T extends AggregateQuery> = {
+  [K in keyof T['spec']]: number;
 };
 export type AggregateSpec<T extends CollectionSchema = CollectionSchema> = Record<
   string,

@@ -4,6 +4,15 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@firebase/firestore':
+      specifier: ^4.7.5
+      version: 4.7.5
+    '@google-cloud/firestore':
+      specifier: ^7.10.0
+      version: 7.10.0
+
 importers:
 
   .:
@@ -27,7 +36,7 @@ importers:
   packages/firebase-js-sdk:
     dependencies:
       '@firebase/firestore':
-        specifier: ^4.7.5
+        specifier: 'catalog:'
         version: 4.7.5(@firebase/app@0.10.16)
       firestore-repository:
         specifier: workspace:*
@@ -42,7 +51,7 @@ importers:
   packages/google-cloud-firestore:
     dependencies:
       '@google-cloud/firestore':
-        specifier: ^7.10.0
+        specifier: 'catalog:'
         version: 7.10.0
       firestore-repository:
         specifier: workspace:*
