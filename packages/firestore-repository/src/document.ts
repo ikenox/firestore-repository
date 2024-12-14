@@ -56,6 +56,10 @@ export type FieldPath<T extends DocumentData = DocumentData> =
 export type ValueFieldPath<T extends ValueType> = T extends MapValue
   ? { [K in keyof T & string]: K | `${K}.${ValueFieldPath<T[K]>}` }[keyof T & string]
   : never;
+
+/**
+ * Type of the specified field value
+ */
 export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U extends keyof T
   ? Exclude<T[U], undefined>
   : U extends '__name__'
@@ -67,6 +71,7 @@ export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U exten
           : T[P]
         : never
       : never;
+
 export type WriteModel<T extends DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;
 };
