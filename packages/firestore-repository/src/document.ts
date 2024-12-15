@@ -18,7 +18,12 @@ export type ValueType =
   | DocumentReference
   | GeoPoint
   | VectorValue;
+
 export type MapValue = { [key: string]: ValueType };
+
+/**
+ * A common part of firebase-js-sdk and firestore-admin Timestamp class
+ */
 export type Timestamp = {
   readonly seconds: number;
   readonly nanoseconds: number;
@@ -27,21 +32,37 @@ export type Timestamp = {
   isEqual(other: Timestamp): boolean;
   valueOf(): string;
 };
+
+/**
+ * A representation of bytes type
+ */
 export type Bytes =
   // admin
   | Buffer
   // js-sdk
   | { toUint8Array(): Uint8Array; toBase64(): string };
+
+/**
+ * A common part of firebase-js-sdk and firestore-admin DocumentReference class
+ */
 export type DocumentReference = {
   id: string;
   path: string;
   withConverter(...args: unknown[]): unknown;
 };
+
+/**
+ * A common part of firebase-js-sdk and firestore-admin GeoPoint class
+ */
 export type GeoPoint = {
   latitude: number;
   longitude: number;
   isEqual(other: GeoPoint): boolean;
 };
+
+/**
+ * A common part of firebase-js-sdk and firestore-admin VectorValue class
+ */
 export type VectorValue = {
   toArray(): number[];
   isEqual(other: VectorValue): boolean;
