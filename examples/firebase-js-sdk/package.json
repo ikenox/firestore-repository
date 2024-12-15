@@ -1,0 +1,20 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "execute": "node build/main.js"
+  },
+  "dependencies": {
+    "firestore-repository": "workspace:*",
+    "@firestore-repository/firebase-js-sdk": "workspace:*",
+    "@firebase/app": "catalog:",
+    "@firebase/firestore": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  },
+  "author": "Naoto Ikeno",
+  "license": "MIT"
+}

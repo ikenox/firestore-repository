@@ -11,7 +11,7 @@ export default defineConfig({
       // biome-ignore lint/style/useNamingConvention:
       FIRESTORE_EMULATOR_HOST: 'localhost:60001',
       // biome-ignore lint/style/useNamingConvention:
-      TEST_PROJECT: 'ikenox-sunrise',
+      TEST_PROJECT: 'dummy-project',
       // biome-ignore lint/style/useNamingConvention:
       TEST_DB: 'firestore-repository-test-db',
     },

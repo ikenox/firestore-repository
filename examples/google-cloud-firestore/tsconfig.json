@@ -20,6 +20,6 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "noImplicitReturns": true,
-    "noEmit": true
+    "outDir": "${configDir}/build"
   }
 }

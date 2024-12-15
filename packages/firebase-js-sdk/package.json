@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json"
@@ -13,9 +12,23 @@
     "firestore-repository": "workspace:*"
   },
   "devDependencies": {
-    "@firebase/app": "^0.10.16"
+    "@firebase/app": "catalog:"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./build/esm/index.d.ts",
+        "default": "./build/esm/index.js"
+      }
+    },
+    "./*": {
+      "import": {
+        "types": "./build/esm/*.d.ts",
+        "default": "./build/esm/*.js"
+      }
+    }
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "MIT"
 }

@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json"
@@ -23,6 +22,6 @@
     }
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "author": "Naoto Ikeno",
+  "license": "MIT"
 }
