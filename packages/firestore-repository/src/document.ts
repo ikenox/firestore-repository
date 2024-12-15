@@ -38,7 +38,7 @@ export type Timestamp = {
  */
 export type Bytes =
   // admin
-  | Buffer
+  | Uint8Array
   // js-sdk
   | { toUint8Array(): Uint8Array; toBase64(): string };
 

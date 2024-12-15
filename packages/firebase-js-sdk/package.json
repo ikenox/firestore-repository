@@ -5,6 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json"
   },
   "dependencies": {
@@ -13,16 +14,6 @@
   },
   "devDependencies": {
     "@firebase/app": "^0.10.16"
-  },
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./dist/index.js"
-    },
-    "./*": {
-      "types": "./src/*.ts",
-      "default": "./dist/*.js"
-    }
   },
   "keywords": [],
   "author": "",
