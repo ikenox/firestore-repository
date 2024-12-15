@@ -1,7 +1,31 @@
 import { describe, expectTypeOf, it } from 'vitest';
-import type { FilterOperand } from './query.js';
+import { authorsCollection, postsCollection } from './__test__/specification.js';
+import { type FilterOperand, limit, orderBy, query } from './query.js';
 
 describe('query', () => {
+  describe('query function argument', () => {
+    it('root collection', () => {
+      // root collection
+      query(authorsCollection);
+      query(authorsCollection, orderBy('rank'), limit(1));
+      // pass parent id explicitly
+      query({ collection: authorsCollection, parent: {} });
+    });
+
+    it('subcollection', () => {
+      // subcollection
+      // @ts-expect-error cannot pass subcollection directly to first argument
+      query(postsCollection);
+      // instead, pass parent collection and parentId
+      query({ collection: postsCollection, parent: { authorId: '123' } });
+      query(
+        { collection: postsCollection, parent: { authorId: '123' } },
+        orderBy('postedAt'),
+        limit(1),
+      );
+    });
+  });
+
   it('FilterOperand', () => {
     expectTypeOf<FilterOperand<number, '<'>>().toEqualTypeOf<number>();
     expectTypeOf<FilterOperand<number, '<='>>().toEqualTypeOf<number>();

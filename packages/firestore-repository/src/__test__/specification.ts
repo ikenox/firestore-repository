@@ -527,16 +527,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           ],
         });
 
-        it('query function argument', () => {
-          // expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
-          //   // root collection doesn't have parentId so it's no need to be specified as argument
-          //   | Query<typeof authorsCollection, Env>
-          //   | QueryConstraint<Query<typeof authorsCollection, Env>>
-          //   // first argument can be omitted for root collection query
-          //   | undefined
-          // >();
-        });
-
         it('query without condition', async () => {
           await expectQuery(query(repository.collection), items);
         });
@@ -890,13 +880,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               postedAt: new Date('2020-03-01'),
             },
           ],
-        });
-
-        it('query function argument', () => {
-          // subcollection query must specify parentId or base query at first argument
-          // expectTypeOf<Parameters<typeof repository.query>[0]>().toEqualTypeOf<
-          //   ParentId<typeof repository.collection> | Query<typeof repository.collection, Env>
-          // >();
         });
 
         it('query without condition', async () => {
