@@ -195,7 +195,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         unsubscribe();
         await repository.set(params.mutate(items[0]));
         // wait an update that occurs after unsubscribe
-        await sleep(50);
+        await sleep(100);
 
         expect(received).toStrictEqual<typeof received>([
           items[0],
@@ -246,7 +246,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         unsubscribe();
         await repository.set(params.newData());
         // wait an update that occurs after unsubscribe
-        await sleep(50);
+        await sleep(100);
 
         expect(received).toStrictEqual<typeof received>([
           items,
