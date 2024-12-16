@@ -164,26 +164,37 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       it('getOnSnapshot', async () => {
-        const received: (Model<T> | undefined)[] = [];
-        const unsubscribe = repository.getOnSnapshot(items[0], (snapshot) =>
-          received.push(snapshot),
-        );
+        let finish: () => void;
+        const finished = new Promise((resolve) => {
+          finish = () => resolve(null);
+        });
 
         const updated1 = params.mutate(items[0]);
         const updated2 = params.mutate(items[0]);
         const updated3 = params.mutate(items[0]);
+        const operations: (() => Promise<void>)[] = [
+          () => repository.set(updated1),
+          () => repository.set(updated2),
+          () => repository.delete(updated2),
+          () => repository.set(updated3),
+        ];
 
-        await sleep(50);
-        await repository.set(updated1);
-        await sleep(50);
-        await repository.set(updated2);
-        await sleep(50);
-        await repository.delete(updated2);
-        await sleep(50);
-        await repository.set(updated3);
-        await sleep(50);
+        const received: (Model<T> | undefined)[] = [];
+        const unsubscribe = repository.getOnSnapshot(items[0], (snapshot) => {
+          received.push(snapshot);
+          const op = operations.shift();
+          if (op) {
+            op();
+          } else {
+            finish();
+          }
+        });
+
+        await finished;
+
         unsubscribe();
         await repository.set(params.mutate(items[0]));
+        // wait an update that occurs after unsubscribe
         await sleep(50);
 
         expect(received).toStrictEqual<typeof received>([
@@ -201,29 +212,40 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       it('listOnSnapshot', async () => {
+        let finish: () => void;
+        const finished = new Promise((resolve) => {
+          finish = () => resolve(null);
+        });
+
+        const updated0 = params.mutate(items[0]);
+        const updated1 = params.mutate(items[1]);
+        const newItem = params.newData();
+        const operations: (() => Promise<void>)[] = [
+          () => repository.set(newItem),
+          () => repository.set(updated0),
+          () => repository.set(updated1),
+          () => repository.delete(updated1),
+        ];
+
         const received: Model<T>[][] = [];
         const unsubscribe = repository.listOnSnapshot(
           collectionGroupQuery(repository.collection),
           (list) => {
             received.push(list);
+            const op = operations.shift();
+            if (op) {
+              op();
+            } else {
+              finish();
+            }
           },
         );
 
-        const updated0 = params.mutate(items[0]);
-        const updated1 = params.mutate(items[1]);
-        const newItem = params.newData();
+        await finished;
 
-        await sleep(50);
-        await repository.set(newItem);
-        await sleep(50);
-        await repository.set(updated0);
-        await sleep(50);
-        await repository.set(updated1);
-        await sleep(50);
-        await repository.delete(updated1);
-        await sleep(50);
         unsubscribe();
         await repository.set(params.newData());
+        // wait an update that occurs after unsubscribe
         await sleep(50);
 
         expect(received).toStrictEqual<typeof received>([
