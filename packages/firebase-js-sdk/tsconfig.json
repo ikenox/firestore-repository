@@ -1,3 +1,9 @@
 {
-  "extends": "../../tsconfig.json"
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "firestore-repository": ["../firestore-repository/src/index.js"],
+      "firestore-repository/*": ["../firestore-repository/src/*.js"]
+    }
+  }
 }

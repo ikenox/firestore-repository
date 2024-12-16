@@ -5,10 +5,11 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "check": "pnpm run \"/check:.*/\"",
-    "check:type": "tsc --noEmit",
+    "check:type": "pnpm run -r typecheck",
     "check:biome": "biome check .",
     "fix": "pnpm run \"/fix:.*/\"",
     "fix:biome": "biome check --fix",
+    "build": "pnpm run -r build",
     "start-emulator": "docker compose up --build -d"
   },
   "devDependencies": {
@@ -16,6 +17,7 @@
     "@vitest/coverage-v8": "^2.1.6",
     "testcontainers": "^10.14.0",
     "typescript": "^5.7.2",
+    "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^2.1.6"
   },
   "packageManager": "pnpm@9.15.0",
