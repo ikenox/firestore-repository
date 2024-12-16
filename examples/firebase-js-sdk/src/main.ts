@@ -4,7 +4,10 @@ import { Repository } from '@firestore-repository/firebase-js-sdk';
 import { collection, id } from 'firestore-repository/schema';
 
 async function main() {
-  const db = getFirestore(initializeApp({ projectId: 'dummy-project' }), 'example-firebase-js-sdk');
+  const db = getFirestore(
+    initializeApp({ projectId: 'firestore-repository-dummy-project' }),
+    'example-firebase-js-sdk',
+  );
   connectFirestoreEmulator(db, 'localhost', 60001);
 
   const testCollection = collection({

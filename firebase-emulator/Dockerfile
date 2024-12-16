@@ -13,4 +13,4 @@ WORKDIR /
 
 ADD firebase.json .
 
-CMD firebase emulators:start --project dummy-project --import=/data --export-on-exit
+CMD firebase emulators:start --project firestore-repository-dummy-project --import=/data --export-on-exit

@@ -5,7 +5,7 @@ import { collection, id } from 'firestore-repository/schema';
 async function main() {
   process.env['FIRESTORE_EMULATOR_HOST'] = 'localhost:60001';
   const db = new Firestore({
-    projectId: 'dummy-project',
+    projectId: 'firestore-repository-dummy-project',
     databaseId: 'example-google-cloud-firestore',
   });
   const testCollection = collection({
