@@ -1,7 +1,0 @@
-services:
-  app:
-    build:
-      context: ./firebase-emulator
-    ports:
-      - "60000:60000"
-      - "60001:60001"

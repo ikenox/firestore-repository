@@ -10,7 +10,7 @@
     "fix": "pnpm run \"/fix:.*/\"",
     "fix:biome": "biome check --fix",
     "build": "pnpm run -r build",
-    "start-emulator": "docker compose up --build -d"
+    "start-emulator": "docker build firebase-emulator && docker run -p 60000:60000 -p 60001:60001 -d --rm -it $(docker build -q firebase-emulator)"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
