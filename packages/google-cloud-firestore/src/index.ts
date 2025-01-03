@@ -1,5 +1,6 @@
 import {
   AggregateField,
+  type DocumentReference,
   type DocumentSnapshot,
   Filter,
   type Firestore,
@@ -9,11 +10,12 @@ import {
   type WriteBatch,
 } from '@google-cloud/firestore';
 import type { AggregateQuery, Aggregated } from 'firestore-repository/aggregate';
+import type { WriteDocumentData } from 'firestore-repository/document';
 import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
-  type DbModel,
+  type DocPathElement,
   type Id,
   type Model,
   collectionPath,
@@ -95,12 +97,12 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
    * @throws If the document already exists
    */
   async create(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
-    const data = this.toFirestore(doc);
+    const data = this.toFirestoreData(doc);
     await (options?.tx ? options.tx.create(this.docRef(doc), data) : this.docRef(doc).create(data));
   }
 
   async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
-    const data = this.toFirestore(doc);
+    const data = this.toFirestoreData(doc);
     await (options?.tx
       ? options.tx instanceof Transaction
         ? options.tx.set(this.docRef(doc), data)
@@ -116,7 +118,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
    * Get documents by multiple ID
    * example: [{id:1},{id:2},{id:5},{id:1}] -> [doc1,doc2,undefined,doc1]
    */
-  async batchGet(ids: Model<T>[], options?: TransactionOption): Promise<(Model<T> | undefined)[]> {
+  async batchGet(ids: Id<T>[], options?: TransactionOption): Promise<(Model<T> | undefined)[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -129,8 +131,8 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     await this.batchWriteOperation(
       docs,
       {
-        batch: (batch, doc) => batch.set(this.docRef(doc), this.toFirestore(doc)),
-        transaction: (tx, doc) => tx.set(this.docRef(doc), this.toFirestore(doc)),
+        batch: (batch, doc) => batch.set(this.docRef(doc), this.toFirestoreData(doc)),
+        transaction: (tx, doc) => tx.set(this.docRef(doc), this.toFirestoreData(doc)),
       },
       options,
     );
@@ -144,8 +146,8 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     await this.batchWriteOperation(
       docs,
       {
-        batch: (batch, doc) => batch.create(this.docRef(doc), this.toFirestore(doc)),
-        transaction: (tx, doc) => tx.create(this.docRef(doc), this.toFirestore(doc)),
+        batch: (batch, doc) => batch.create(this.docRef(doc), this.toFirestoreData(doc)),
+        transaction: (tx, doc) => tx.create(this.docRef(doc), this.toFirestoreData(doc)),
       },
       options,
     );
@@ -190,13 +192,33 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
 
   protected fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
     const data = doc.data();
-    return data ? (this.collection.data.from(data) as Model<T>) : undefined;
+    const [id, ...parentPath] = docPathElements(doc.ref);
+    return data
+      ? ({
+          ...this.collection.data.from(data),
+          ...this.collection.collectionPath.from(parentPath),
+          ...this.collection.id.from(id.id),
+        } as Model<T>)
+      : undefined;
   }
 
-  protected toFirestore(data: Model<T>): DbModel<T> {
-    return this.collection.data.to(data) as DbModel<T>;
+  protected toFirestoreData(data: Model<T>): WriteDocumentData {
+    return this.collection.data.to(data);
   }
 }
+
+/**
+ * Obtain document path elements from DocumentReference
+ */
+export const docPathElements = (doc: DocumentReference): [DocPathElement, ...DocPathElement[]] => {
+  const parentPath: DocPathElement[] = [];
+  let cursor = doc.parent.parent;
+  while (cursor) {
+    parentPath.push({ id: cursor.id, collection: cursor.parent.id });
+    cursor = cursor.parent.parent;
+  }
+  return [{ collection: doc.parent.id, id: doc.id }, ...parentPath];
+};
 
 // TODO cache query
 export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery => {

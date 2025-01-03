@@ -3,82 +3,135 @@ import type { DocumentData, WriteModel } from './document.js';
 export const collection = <
   DbModel extends DocumentData = DocumentData,
   AppModel extends Record<string, unknown> = Record<string, unknown>,
-  IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
-  ParentIdKeys extends (keyof AppModel)[] = [],
+  Id extends Record<string, unknown> = Record<string, unknown>,
+  CollectionPath extends Record<string, unknown> = Record<string, unknown>,
 >(
-  schema: Omit<
-    CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys>,
-    typeof collectionSchemaTag
-  >,
-): CollectionSchema<DbModel, AppModel, IdKeys, ParentIdKeys> => ({
+  schema: Omit<CollectionSchema<DbModel, AppModel, Id, CollectionPath>, typeof collectionSchemaTag>,
+): CollectionSchema<DbModel, AppModel, Id, CollectionPath> => ({
   [collectionSchemaTag]: true,
   ...schema,
 });
 
-export const id = <AppModel extends Record<string, unknown>, IdKey extends keyof AppModel>(
-  key: IdKey,
-): IdSchema<AppModel, [IdKey]> => ({
-  keys: [key],
-  to: (data) => `${data[key]}`,
+export const id = <T extends string>(name: T): IdConverter<Record<T, string>> => ({
+  from: (id) => {
+    return { [name]: id } as Record<T, string>;
+  },
+  to: (id) => id[name],
 });
 
-export const parentPath = <AppModel extends Record<string, unknown>, IdKey extends keyof AppModel>(
-  parent: CollectionSchema,
-  key: IdKey,
-): ParentPathSchema<AppModel, [IdKey]> => ({
-  keys: [key],
-  to: (data) => `${parent.name}/${data[key]}`,
+export const numberId = <T extends string>(name: T): IdConverter<Record<T, number>> => ({
+  from: (id) => {
+    const numberId = Number(id);
+    return { [name]: numberId } as Record<T, number>;
+  },
+  to: (id) => id[name].toString(),
 });
+
+export const coercible = <DbModel extends DocumentData, AppModel extends WriteModel<DbModel>>(
+  from: (data: DbModel) => AppModel,
+): DataConverter<DbModel, AppModel> => {
+  return {
+    from: (data) => from(data),
+    to: (data) => data,
+  };
+};
+
+export const rootCollectionPath: CollectionPathConverter<Record<never, never>> = {
+  from: () => ({}),
+  to: () => undefined,
+};
+
+export const subCollectionPath = <T extends CollectionSchema>(
+  parent: T,
+): CollectionPathConverter<Id<T>> => {
+  return {
+    from: ([id, ...parentPath]) => {
+      if (!id) {
+        // TODO include more detail of the error
+        throw new Error('document has no parent reference');
+      }
+      return {
+        ...parent.id.from(id.id),
+        ...parent.collectionPath.from(parentPath),
+      } as Id<T>;
+    },
+    to: (id) => docPath(parent, id),
+  };
+};
 
 export const collectionSchemaTag: unique symbol = Symbol();
+
 /**
  * A definition of firestore collection
  */
 export type CollectionSchema<
   DbModel extends DocumentData = DocumentData,
   AppModel extends Record<string, unknown> = Record<string, unknown>,
-  IdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
-  ParentIdKeys extends (keyof AppModel)[] = (keyof AppModel)[],
+  Id extends Record<string, unknown> = Record<string, unknown>,
+  CollectionPath extends Record<string, unknown> = Record<string, unknown>,
 > = {
   [collectionSchemaTag]: true;
   name: string;
-  data: {
-    from(data: DbModel): AppModel;
-    to(data: NoInfer<AppModel>): WriteModel<NoInfer<DbModel>>;
-  };
-  id: IdSchema<NoInfer<AppModel>, IdKeys>;
-  parentPath?: ParentPathSchema<NoInfer<AppModel>, ParentIdKeys> | undefined;
+  data: DataConverter<DbModel, AppModel>;
+  id: IdConverter<Id>;
+  collectionPath: CollectionPathConverter<CollectionPath>;
 };
 
-export type IdSchema<
-  AppModel extends Record<string, unknown>,
-  IdKeys extends (keyof AppModel)[],
+export type DataConverter<
+  DbModel extends DocumentData = DocumentData,
+  AppModel extends Record<string, unknown> = Record<string, unknown>,
 > = {
-  keys: IdKeys;
-  to(id: Pick<AppModel, IdKeys[number]>): string;
+  from(data: DbModel): AppModel;
+  to(data: AppModel): WriteModel<DbModel>;
+};
+export type IdConverter<Id> = {
+  from(id: string): Id;
+  to(id: Id): string;
+};
+export type CollectionPathConverter<CollectionPath> = {
+  from(id: DocPathElement[]): CollectionPath;
+  to(id: CollectionPath): string | undefined;
 };
 
-export type ParentPathSchema<
-  AppModel extends Record<string, unknown>,
-  ParentIdKeys extends (keyof AppModel)[],
-> = { keys: ParentIdKeys; to(id: Pick<AppModel, ParentIdKeys[number]>): string };
+/**
+ * An element of the document path.
+ * For example, 'User/123/Posts/456' is parsed to [{collection: 'User', id: 123}, {collection: 'Posts', id: '456'}]
+ */
+export type DocPathElement = {
+  /**
+   * Collection name
+   */
+  collection: string;
+  /**
+   * Document ID
+   */
+  id: string;
+};
 
+export type Prettify<T> = { [K in keyof T]: T[K] } & {};
+
+/**
+ * A full id of the document, including parent document id
+ */
 export type Id<T extends CollectionSchema> = T extends CollectionSchema<
   DocumentData,
-  infer AppModel,
-  infer IdKeys,
-  infer ParentIdKeys
+  infer _AppModel,
+  infer Id,
+  infer CollectionPath
 >
-  ? Pick<AppModel, IdKeys[number] | ParentIdKeys[number]>
+  ? Prettify<Id & CollectionPath>
   : never;
 
+/**
+ * A parent document id of the specified subcollection
+ */
 export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
   DocumentData,
-  infer AppModel,
+  infer _AppModel,
   infer _IdKeys,
-  infer ParentIdKeys
+  infer CollectionPath
 >
-  ? Pick<AppModel, ParentIdKeys[number]>
+  ? CollectionPath
   : never;
 
 /**
@@ -87,10 +140,10 @@ export type ParentId<T extends CollectionSchema> = T extends CollectionSchema<
 export type Model<T extends CollectionSchema> = T extends CollectionSchema<
   DocumentData,
   infer AppModel,
-  infer _IdKeys,
-  infer _ParentIdKeys
+  infer Id,
+  infer CollectionPath
 >
-  ? AppModel
+  ? Prettify<AppModel & Id & CollectionPath>
   : never;
 
 /**
@@ -106,23 +159,23 @@ export type DbModel<T extends CollectionSchema> = T extends CollectionSchema<
   : never;
 
 /**
- * Returns a path of the document
+ * Returns a fully-qualified path of the document
  */
-export const docPath = <T extends CollectionSchema>(schema: T, id: Id<T>): string => {
-  const docId = schema.id.to(id);
-  return `${collectionPath(schema, id)}/${docId}`;
+export const docPath = <T extends CollectionSchema>(collection: T, id: Id<T>): string => {
+  const collectionPath = collection.collectionPath.to(id);
+  const docPath = `${collection.name}/${collection.id.to(id)}`;
+  return collectionPath ? `${collectionPath}/${docPath}` : docPath;
 };
 
 /**
- * Returns a path of the collection
+ * Returns a fully-qualified path of the collection
  */
 export const collectionPath = <T extends CollectionSchema>(
   collection: T,
   id: ParentId<T>,
 ): string => {
-  return collection.parentPath
-    ? `${collection.parentPath.to(id)}/${collection.name}`
-    : collection.name;
+  const collectionPath = collection.collectionPath.to(id);
+  return collectionPath ? `${collectionPath}/${collection.name}` : collection.name;
 };
 
 export type IsRootCollection<T extends CollectionSchema> = [keyof ParentId<T>] extends [never]

@@ -1,4 +1,5 @@
 import {
+  type DocumentReference,
   type DocumentSnapshot,
   type Firestore,
   type AggregateSpec as FirestoreAggregateSpec,
@@ -35,11 +36,12 @@ import {
   writeBatch,
 } from '@firebase/firestore';
 import type { AggregateQuery, Aggregated } from 'firestore-repository/aggregate';
+import type { WriteDocumentData } from 'firestore-repository/document';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
-  type DbModel,
+  type DocPathElement,
   type Id,
   type Model,
   type ParentId,
@@ -135,7 +137,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
   }
 
   async set(doc: Model<T>, options?: WriteTransactionOption): Promise<void> {
-    const data = this.toFirestore(doc);
+    const data = this.toFirestoreData(doc);
     await (options?.tx
       ? options.tx instanceof Transaction
         ? options.tx.set(this.docRef(doc), data)
@@ -151,8 +153,8 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     await this.batchWriteOperation(
       docs,
       {
-        batch: (batch, doc) => batch.set(this.docRef(doc), this.toFirestore(doc)),
-        transaction: (tx, doc) => tx.set(this.docRef(doc), this.toFirestore(doc)),
+        batch: (batch, doc) => batch.set(this.docRef(doc), this.toFirestoreData(doc)),
+        transaction: (tx, doc) => tx.set(this.docRef(doc), this.toFirestoreData(doc)),
       },
       options,
     );
@@ -201,13 +203,33 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
 
   protected fromFirestore(doc: DocumentSnapshot): Model<T> | undefined {
     const data = doc.data();
-    return data ? (this.collection.data.from(data) as Model<T>) : undefined;
+    const [id, ...parentPath] = docPathElements(doc.ref);
+    return data
+      ? ({
+          ...this.collection.data.from(data),
+          ...this.collection.collectionPath.from(parentPath),
+          ...this.collection.id.from(id.id),
+        } as Model<T>)
+      : undefined;
   }
 
-  protected toFirestore(data: Model<T>): DbModel<T> {
-    return this.collection.data.to(data) as DbModel<T>;
+  protected toFirestoreData(data: Model<T>): WriteDocumentData {
+    return this.collection.data.to(data);
   }
 }
+
+/**
+ * Obtain document path elements from DocumentReference
+ */
+export const docPathElements = (doc: DocumentReference): [DocPathElement, ...DocPathElement[]] => {
+  const parentPath: DocPathElement[] = [];
+  let cursor = doc.parent.parent;
+  while (cursor) {
+    parentPath.push({ id: cursor.id, collection: cursor.parent.id });
+    cursor = cursor.parent.parent;
+  }
+  return [{ collection: doc.parent.id, id: doc.id }, ...parentPath];
+};
 
 export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery => {
   const { filter, nonFilter } = (query.constraints ?? []).reduce<{

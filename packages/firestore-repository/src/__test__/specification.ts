@@ -30,9 +30,12 @@ import {
   type DbModel,
   type Id,
   type Model,
+  coercible,
   collection,
   id,
-  parentPath,
+  numberId,
+  rootCollectionPath,
+  subCollectionPath,
 } from '../schema.js';
 import {
   expectArrayEqualsWithoutOrder,
@@ -45,9 +48,8 @@ import {
 // root collection
 export const authorsCollection = collection({
   name: 'Authors',
-  data: {
-    from: (data: {
-      authorId: string;
+  data: coercible(
+    (data: {
       name: string;
       profile: {
         age: number;
@@ -59,28 +61,26 @@ export const authorsCollection = collection({
       ...data,
       registeredAt: data.registeredAt.toDate(),
     }),
-    to: (data) => data,
-  },
+  ),
   id: id('authorId'),
+  collectionPath: rootCollectionPath,
 });
 
 // subcollection
 export const postsCollection = collection({
   name: 'Posts',
-  data: {
-    from: (data: {
-      postId: number;
+  data: coercible(
+    (data: {
+      authorId: string;
       title: string;
       postedAt: Timestamp;
-      authorId: string;
     }) => ({
       ...data,
       postedAt: data.postedAt.toDate(),
     }),
-    to: (data) => data,
-  },
-  id: id('postId'),
-  parentPath: parentPath(authorsCollection, 'authorId'),
+  ),
+  id: numberId('postId'),
+  collectionPath: subCollectionPath(authorsCollection),
 });
 
 /**
@@ -712,17 +712,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('limitToLast', async () => {
-          await expectQuery(query(repository.collection, orderBy('authorId'), limitToLast(1)), [
+          await expectQuery(query(repository.collection, orderBy('name'), limitToLast(1)), [
             items[2],
           ]);
-          await expectQuery(query(repository.collection, orderBy('authorId'), limitToLast(2)), [
+          await expectQuery(query(repository.collection, orderBy('name'), limitToLast(2)), [
             items[1],
             items[2],
           ]);
-          await expectQuery(
-            query(repository.collection, orderBy('authorId'), limitToLast(100)),
-            items,
-          );
+          await expectQuery(query(repository.collection, orderBy('name'), limitToLast(100)), items);
         });
 
         const queryCursorTestCases = {
@@ -949,10 +946,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
     describe('all field types', () => {
       const allFieldTypesCollection = collection({
-        name: `allFieldTypes_${randomString()}`,
-        data: {
-          from(data: {
-            id: string;
+        name: `AllFieldTypes_${randomString()}`,
+        id: id('id'),
+        data: coercible(
+          (data: {
             array: (string | number)[];
             boolean: boolean;
             bytes: Bytes;
@@ -964,17 +961,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             docRef: DocumentReference;
             string: string;
             vector: VectorValue;
-          }) {
+          }) => {
             return {
               ...data,
               timestamp: data.timestamp.toDate(),
             };
           },
-          to(data) {
-            return data;
-          },
-        },
-        id: id('id'),
+        ),
+        collectionPath: rootCollectionPath,
       });
       const repository = createRepository(allFieldTypesCollection);
 
