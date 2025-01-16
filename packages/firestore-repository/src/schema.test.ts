@@ -6,47 +6,45 @@ import {
   type IsRootCollection,
   type Model,
   type ParentId,
+  coercible,
   collection,
   collectionPath,
   docPath,
   id,
-  parentPath,
+  rootCollectionPath,
+  subCollectionPath,
 } from './schema.js';
 
 // root collection
 const authorsCollection = collection({
   name: 'Authors',
-  data: {
-    from: (data: {
-      authorId: string;
+  collectionPath: rootCollectionPath,
+  id: id('authorId'),
+  data: coercible(
+    (data: {
       name: string;
       registeredAt: Timestamp;
     }) => ({
       ...data,
       registeredAt: data.registeredAt.toDate(),
     }),
-    to: (data) => data,
-  },
-  id: id('authorId'),
+  ),
 });
 
 // subcollection
 const postsCollection = collection({
   name: 'Posts',
-  data: {
-    from: (data: {
-      postId: number;
+  collectionPath: subCollectionPath(authorsCollection),
+  id: id('postId'),
+  data: coercible(
+    (data: {
       title: string;
       postedAt: Timestamp;
-      authorId: string;
     }) => ({
       ...data,
       postedAt: data.postedAt.toDate(),
     }),
-    to: (data) => data,
-  },
-  id: id('postId'),
-  parentPath: parentPath(authorsCollection, 'authorId'),
+  ),
 });
 
 type Authors = typeof authorsCollection;
@@ -63,24 +61,21 @@ describe('schema', () => {
         registeredAt: Date;
       }>();
       expectTypeOf<DbModel<Authors>>().toEqualTypeOf<{
-        authorId: string;
         name: string;
         registeredAt: Timestamp;
       }>();
     });
 
     it('subcollection', () => {
-      expectTypeOf<Id<Posts>>().toEqualTypeOf<{ postId: number; authorId: string }>();
+      expectTypeOf<Id<Posts>>().toEqualTypeOf<{ postId: string; authorId: string }>();
       expectTypeOf<ParentId<Posts>>().toEqualTypeOf<{ authorId: string }>();
       expectTypeOf<Model<Posts>>().toEqualTypeOf<{
-        postId: number;
+        postId: string;
         authorId: string;
         title: string;
         postedAt: Date;
       }>();
       expectTypeOf<DbModel<Posts>>().toEqualTypeOf<{
-        postId: number;
-        authorId: string;
         title: string;
         postedAt: Timestamp;
       }>();
@@ -89,7 +84,7 @@ describe('schema', () => {
 
   it('docPath', () => {
     expect(docPath(authorsCollection, { authorId: 'abc' })).toBe('Authors/abc');
-    expect(docPath(postsCollection, { postId: 123, authorId: 'abc' })).toBe(
+    expect(docPath(postsCollection, { postId: '123', authorId: 'abc' })).toBe(
       'Authors/abc/Posts/123',
     );
   });

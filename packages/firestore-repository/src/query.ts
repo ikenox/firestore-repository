@@ -36,7 +36,7 @@ export const query = <T extends CollectionSchema>(
   if (collectionSchemaTag in base) {
     // root collection
     return new Query(
-      { kind: 'collection', collection: base as T, parentId: {} as ParentId<T> },
+      { kind: 'collection', collection: base, parentId: {} as ParentId<T> },
       constraints,
     );
   }

@@ -1,7 +1,7 @@
 import { initializeApp } from '@firebase/app';
 import { connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
 import { Repository } from '@firestore-repository/firebase-js-sdk';
-import { collection, id } from 'firestore-repository/schema';
+import { coercible, collection, id, rootCollectionPath } from 'firestore-repository/schema';
 
 async function main() {
   const db = getFirestore(
@@ -12,14 +12,9 @@ async function main() {
 
   const testCollection = collection({
     name: 'TestCollection',
-    data: {
-      from: (data: {
-        id: string;
-        value: number;
-      }) => data,
-      to: (data) => data,
-    },
+    data: coercible((data: { value: number }) => data),
     id: id('id'),
+    collectionPath: rootCollectionPath,
   });
   const repository = new Repository(testCollection, db);
 

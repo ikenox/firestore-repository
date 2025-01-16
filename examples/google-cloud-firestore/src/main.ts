@@ -1,6 +1,6 @@
 import { Repository } from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
-import { collection, id } from 'firestore-repository/schema';
+import { coercible, collection, id, rootCollectionPath } from 'firestore-repository/schema';
 
 async function main() {
   process.env['FIRESTORE_EMULATOR_HOST'] = 'localhost:60001';
@@ -10,14 +10,9 @@ async function main() {
   });
   const testCollection = collection({
     name: 'TestCollection',
-    data: {
-      from: (data: {
-        id: string;
-        value: number;
-      }) => data,
-      to: (data) => data,
-    },
+    data: coercible((data: { value: number }) => data),
     id: id('id'),
+    collectionPath: rootCollectionPath,
   });
   const repository = new Repository(testCollection, db);
 
