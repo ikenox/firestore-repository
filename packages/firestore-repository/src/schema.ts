@@ -79,15 +79,13 @@ export const numberId = <T extends string>(fieldName: T): IdConverter<Record<T, 
 });
 
 /**
+ * Defines both of firestore data schema and app model at once to the extent that implicit conversion is possible.
  * Normally it's needed to define two-way conversion between firestore and app model, but if the app
  * model keeps a firestore-compatible data format, you can use this method that requires only one-way
  * definition. The app model should be the same form of the firestore document schema.
  * A common use-case is just converting firestore Timestamp value to Date value.
  */
-export const coercible = <
-  DbModel extends DocumentData,
-  AppModel extends WriteDocumentData<DbModel>,
->(
+export const implicit = <DbModel extends DocumentData, AppModel extends WriteDocumentData<DbModel>>(
   from: (data: DbModel) => AppModel,
 ): DataConverter<DbModel, AppModel> => {
   return {

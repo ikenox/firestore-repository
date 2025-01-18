@@ -1,6 +1,6 @@
 import { Repository } from '@firestore-repository/google-cloud-firestore';
 import { Firestore, type Timestamp } from '@google-cloud/firestore';
-import { coercible, id, rootCollection } from 'firestore-repository/schema';
+import { id, implicit, rootCollection } from 'firestore-repository/schema';
 
 async function main() {
   process.env['FIRESTORE_EMULATOR_HOST'] = 'localhost:60001';
@@ -30,7 +30,7 @@ async function main() {
 const authors = rootCollection({
   name: 'Authors',
   id: id('id'),
-  data: coercible(
+  data: implicit(
     (data: {
       name: string;
       profile: {

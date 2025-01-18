@@ -6,11 +6,11 @@ import {
   type IsRootCollection,
   type Model,
   type ParentId,
-  coercible,
   collection,
   collectionPath,
   docPath,
   id,
+  implicit,
   rootCollectionPath,
   subCollectionPath,
 } from './schema.js';
@@ -20,7 +20,7 @@ const authorsCollection = collection({
   name: 'Authors',
   collectionPath: rootCollectionPath,
   id: id('authorId'),
-  data: coercible(
+  data: implicit(
     (data: {
       name: string;
       registeredAt: Timestamp;
@@ -36,7 +36,7 @@ const postsCollection = collection({
   name: 'Posts',
   collectionPath: subCollectionPath(authorsCollection),
   id: id('postId'),
-  data: coercible(
+  data: implicit(
     (data: {
       title: string;
       postedAt: Timestamp;
