@@ -1,7 +1,12 @@
 {
   "name": "firestore-repository",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
+  "homepage": "https://github.com/ikenox/firestore-repository",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ikenox/firestore-repository.git"
+  },
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -21,7 +26,7 @@
       }
     }
   },
-  "keywords": [],
-  "author": "Naoto Ikeno",
+  "keywords": ["firestore", "orm", "database", "repository", "firebase"],
+  "author": "Naoto Ikeno <ikenox@gmail.com>",
   "license": "MIT"
 }

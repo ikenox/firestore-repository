@@ -63,6 +63,18 @@
           }
         }
       }
+    },
+    {
+      "include": ["examples/**/*.ts"],
+      "linter": {
+        "enabled": true,
+        "rules": {
+          "suspicious": {
+            "noConsole": "off",
+            "noConsoleLog": "off"
+          }
+        }
+      }
     }
   ]
 }

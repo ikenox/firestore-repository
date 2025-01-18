@@ -1,5 +1,6 @@
 import { Repository } from '@firestore-repository/google-cloud-firestore';
 import { Firestore, type Timestamp } from '@google-cloud/firestore';
+import { condition as $, limit, query, where } from 'firestore-repository/query';
 import { id, implicit, rootCollection } from 'firestore-repository/schema';
 
 async function main() {
@@ -12,7 +13,7 @@ async function main() {
   const repository = new Repository(authors, db);
 
   await repository.set({
-    id: 'author1',
+    authorId: 'author1',
     name: 'John Doe',
     profile: {
       age: 42,
@@ -22,14 +23,23 @@ async function main() {
     registeredAt: new Date(),
   });
 
-  const doc = await repository.get({ id: 'author1' });
-  // biome-ignore lint/suspicious/noConsole:
-  console.info(doc);
+  const doc = await repository.get({ authorId: 'author1' });
+  console.log(doc);
+
+  const docs = await repository.list(query(authors, where($('profile.age', '>=', 20)), limit(10)));
+  console.log(docs);
+
+  repository.listOnSnapshot(
+    query(authors, where($('tag', 'array-contains', 'new')), limit(10)),
+    (docs) => {
+      console.log(docs);
+    },
+  );
 }
 
 const authors = rootCollection({
   name: 'Authors',
-  id: id('id'),
+  id: id('authorId'),
   data: implicit(
     (data: {
       name: string;
