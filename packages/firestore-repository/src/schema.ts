@@ -1,5 +1,8 @@
 import type { DocumentData, WriteModel } from './document.js';
 
+/**
+ * Defines a collection schema.
+ */
 export const collection = <
   DbModel extends DocumentData = DocumentData,
   AppModel extends Record<string, unknown> = Record<string, unknown>,
@@ -12,21 +15,33 @@ export const collection = <
   ...schema,
 });
 
-export const id = <T extends string>(name: T): IdConverter<Record<T, string>> => ({
+/**
+ * A shorthand utility to define simple id field, that just maps a document id into single field of the model.
+ */
+export const id = <T extends string>(fieldName: T): IdConverter<Record<T, string>> => ({
   from: (id) => {
-    return { [name]: id } as Record<T, string>;
+    return { [fieldName]: id } as Record<T, string>;
   },
-  to: (id) => id[name],
+  to: (id) => id[fieldName],
 });
 
-export const numberId = <T extends string>(name: T): IdConverter<Record<T, number>> => ({
+/**
+ * A shorthand utility to define simple id field, that just converts a document id into number and maps it into single field of the model.
+ */
+export const numberId = <T extends string>(fieldName: T): IdConverter<Record<T, number>> => ({
   from: (id) => {
     const numberId = Number(id);
-    return { [name]: numberId } as Record<T, number>;
+    return { [fieldName]: numberId } as Record<T, number>;
   },
-  to: (id) => id[name].toString(),
+  to: (id) => id[fieldName].toString(),
 });
 
+/**
+ * Normally it's needed to define two-way conversion between firestore and app model, but if the app
+ * model keeps a firestore-compatible data format, you can use this method that requires only one-way
+ * definition. The app model should be the same form of the firestore document schema.
+ * A common use-case is just converting firestore Timestamp value to Date value.
+ */
 export const coercible = <DbModel extends DocumentData, AppModel extends WriteModel<DbModel>>(
   from: (data: DbModel) => AppModel,
 ): DataConverter<DbModel, AppModel> => {
@@ -36,11 +51,17 @@ export const coercible = <DbModel extends DocumentData, AppModel extends WriteMo
   };
 };
 
+/**
+ * A root collection path definition.
+ */
 export const rootCollectionPath: CollectionPathConverter<Record<never, never>> = {
   from: () => ({}),
   to: () => undefined,
 };
 
+/**
+ * A subcollection path definition.
+ */
 export const subCollectionPath = <T extends CollectionSchema>(
   parent: T,
 ): CollectionPathConverter<Id<T>> => {
@@ -78,6 +99,9 @@ export type CollectionSchema<
   collectionPath: CollectionPathConverter<CollectionPath>;
 };
 
+/**
+ * A data converter for the document data part
+ */
 export type DataConverter<
   DbModel extends DocumentData = DocumentData,
   AppModel extends Record<string, unknown> = Record<string, unknown>,
@@ -85,10 +109,18 @@ export type DataConverter<
   from(data: DbModel): AppModel;
   to(data: AppModel): WriteModel<DbModel>;
 };
+
+/**
+ * A data converter for the document id part
+ */
 export type IdConverter<Id> = {
   from(id: string): Id;
   to(id: Id): string;
 };
+
+/**
+ * A data converter for the document parent path part
+ */
 export type CollectionPathConverter<CollectionPath> = {
   from(id: DocPathElement[]): CollectionPath;
   to(id: CollectionPath): string | undefined;

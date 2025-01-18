@@ -49,6 +49,8 @@ import {
 // root collection
 export const authorsCollection = collection({
   name: 'Authors',
+  id: id('authorId'),
+  collectionPath: rootCollectionPath,
   data: coercible(
     (data: {
       name: string;
@@ -64,13 +66,13 @@ export const authorsCollection = collection({
       registeredAt: data.registeredAt.toDate(),
     }),
   ),
-  id: id('authorId'),
-  collectionPath: rootCollectionPath,
 });
 
 // subcollection
 export const postsCollection = collection({
   name: 'Posts',
+  id: numberId('postId'),
+  collectionPath: subCollectionPath(authorsCollection),
   data: coercible(
     (data: {
       authorId: string;
@@ -81,8 +83,6 @@ export const postsCollection = collection({
       postedAt: data.postedAt.toDate(),
     }),
   ),
-  id: numberId('postId'),
-  collectionPath: subCollectionPath(authorsCollection),
 });
 
 /**
