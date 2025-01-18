@@ -31,9 +31,9 @@ import {
   type DbModel,
   type Id,
   type Model,
-  coercible,
   collection,
   id,
+  implicit,
   numberId,
   rootCollection,
   rootCollectionPath,
@@ -53,7 +53,7 @@ import {
 export const authorsCollection = rootCollection({
   name: 'Authors',
   id: id('authorId'),
-  data: coercible(
+  data: implicit(
     (data: {
       name: string;
       profile: {
@@ -77,7 +77,7 @@ export const postsCollection = subCollection(
   {
     name: 'Posts',
     id: numberId('postId'),
-    data: coercible(
+    data: implicit(
       (data: {
         authorId: string;
         title: string;
@@ -977,7 +977,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       const allFieldTypesCollection = collection({
         name: `AllFieldTypes_${randomString()}`,
         id: id('id'),
-        data: coercible(
+        data: implicit(
           (data: {
             array: (string | number)[];
             boolean: boolean;

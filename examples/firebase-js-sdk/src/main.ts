@@ -2,7 +2,7 @@ import { initializeApp } from '@firebase/app';
 import { connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
 import { Repository } from '@firestore-repository/firebase-js-sdk';
 import type { Timestamp } from 'firestore-repository/document';
-import { coercible, id, rootCollection } from 'firestore-repository/schema';
+import { id, implicit, rootCollection } from 'firestore-repository/schema';
 
 async function main() {
   const db = getFirestore(
@@ -32,7 +32,7 @@ async function main() {
 const authors = rootCollection({
   name: 'Authors',
   id: id('id'),
-  data: coercible(
+  data: implicit(
     (data: {
       name: string;
       profile: {
