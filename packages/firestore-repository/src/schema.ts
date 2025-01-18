@@ -1,4 +1,4 @@
-import type { DocumentData, WriteModel } from './document.js';
+import type { DocumentData, WriteDocumentData } from './document.js';
 
 /**
  * A utility method to define a root collection schema.
@@ -10,7 +10,7 @@ export const rootCollection = <
 >(
   schema: Omit<
     CollectionSchema<DbModel, AppModel, AppModelId>,
-    typeof collectionSchemaTag | 'collectionPath'
+    typeof collectionSchemaBrand | 'collectionPath'
   >,
 ): CollectionSchema<DbModel, AppModel, AppModelId, Record<never, never>> =>
   collection({
@@ -29,7 +29,7 @@ export const subCollection = <
 >(
   schema: Omit<
     CollectionSchema<DbModel, AppModel, AppModelId>,
-    typeof collectionSchemaTag | 'collectionPath'
+    typeof collectionSchemaBrand | 'collectionPath'
   >,
   parent: Parent,
 ): CollectionSchema<DbModel, AppModel, AppModelId, Id<Parent>> =>
@@ -48,9 +48,12 @@ export const collection = <
   Id extends Record<string, unknown> = Record<string, unknown>,
   CollectionPath extends Record<string, unknown> = Record<string, unknown>,
 >(
-  schema: Omit<CollectionSchema<DbModel, AppModel, Id, CollectionPath>, typeof collectionSchemaTag>,
+  schema: Omit<
+    CollectionSchema<DbModel, AppModel, Id, CollectionPath>,
+    typeof collectionSchemaBrand
+  >,
 ): CollectionSchema<DbModel, AppModel, Id, CollectionPath> => ({
-  [collectionSchemaTag]: true,
+  [collectionSchemaBrand]: true,
   ...schema,
 });
 
@@ -81,7 +84,10 @@ export const numberId = <T extends string>(fieldName: T): IdConverter<Record<T, 
  * definition. The app model should be the same form of the firestore document schema.
  * A common use-case is just converting firestore Timestamp value to Date value.
  */
-export const coercible = <DbModel extends DocumentData, AppModel extends WriteModel<DbModel>>(
+export const coercible = <
+  DbModel extends DocumentData,
+  AppModel extends WriteDocumentData<DbModel>,
+>(
   from: (data: DbModel) => AppModel,
 ): DataConverter<DbModel, AppModel> => {
   return {
@@ -120,7 +126,7 @@ export const subCollectionPath = <T extends CollectionSchema>(
   };
 };
 
-export const collectionSchemaTag: unique symbol = Symbol();
+export const collectionSchemaBrand: unique symbol = Symbol();
 
 /**
  * A definition of firestore collection
@@ -131,7 +137,7 @@ export type CollectionSchema<
   Id extends Record<string, unknown> = Record<string, unknown>,
   CollectionPath extends Record<string, unknown> = Record<string, unknown>,
 > = {
-  [collectionSchemaTag]: true;
+  [collectionSchemaBrand]: unknown;
   name: string;
   data: DataConverter<DbModel, AppModel>;
   id: IdConverter<Id>;
@@ -146,7 +152,7 @@ export type DataConverter<
   AppModel extends Record<string, unknown> = Record<string, unknown>,
 > = {
   from(data: DbModel): AppModel;
-  to(data: AppModel): WriteModel<DbModel>;
+  to(data: AppModel): WriteDocumentData<DbModel>;
 };
 
 /**
@@ -250,6 +256,9 @@ export const collectionPath = <T extends CollectionSchema>(
   return collectionPath ? `${collectionPath}/${collection.name}` : collection.name;
 };
 
+/**
+ * Checks if the collection is a root collection
+ */
 export type IsRootCollection<T extends CollectionSchema> = [keyof ParentId<T>] extends [never]
   ? true
   : false;

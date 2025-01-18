@@ -1,14 +1,18 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
+  ArrayRemove,
+  ArrayUnion,
   Bytes,
   DocumentReference,
   FieldValue,
   GeoPoint,
-  MapArray,
+  Increment,
+  MapArrayToWriteValue,
+  ServerTimestamp,
   Timestamp,
   ValueType,
   VectorValue,
-  WriteModel,
+  WriteDocumentData,
   WriteValue,
 } from './document.js';
 import type { FieldPath, MapValue } from './document.js';
@@ -40,28 +44,46 @@ describe('document', () => {
   it('WriteValue', () => {
     expectTypeOf<WriteValue<string>>().toEqualTypeOf<string>();
     expectTypeOf<WriteValue<{ a: { b: 123 } }>>().toEqualTypeOf<{ a: { b: 123 } }>();
-    expectTypeOf<WriteValue<Timestamp>>().toEqualTypeOf<Date | Timestamp>();
+    expectTypeOf<WriteValue<Timestamp>>().toEqualTypeOf<Date | Timestamp | ServerTimestamp>();
     expectTypeOf<WriteValue<{ a: { b: Timestamp } }>>().toEqualTypeOf<{
-      a: { b: Date | Timestamp };
+      a: { b: Date | Timestamp | ServerTimestamp };
     }>();
     // prevent deep type instantiation
     expectTypeOf<WriteValue<ValueType>>().toEqualTypeOf<WriteValue<ValueType>>();
+
+    // special values
+    expectTypeOf<WriteValue<Timestamp>>().toEqualTypeOf<Date | Timestamp | ServerTimestamp>();
+    expectTypeOf<WriteValue<number>>().toEqualTypeOf<number | Increment>();
+    expectTypeOf<WriteValue<string[]>>().toEqualTypeOf<string[] | ArrayUnion | ArrayRemove>();
+    // union
+    expectTypeOf<WriteValue<number | string>>().toEqualTypeOf<number | string | Increment>();
+    expectTypeOf<WriteValue<string[] | string>>().toEqualTypeOf<
+      string[] | string | ArrayUnion | ArrayRemove
+    >();
+    // cannot increment literal type field
+    expectTypeOf<WriteValue<123>>().toEqualTypeOf<123>();
+    // cannot remove/add an element to tuple type field
+    expectTypeOf<WriteValue<[string, string]>>().toEqualTypeOf<[string, string]>();
   });
 
-  it('MapArray', () => {
-    expectTypeOf<MapArray<[number, Timestamp]>>().toEqualTypeOf<[number, Timestamp | Date]>();
-    expectTypeOf<MapArray<number[]>>().toEqualTypeOf<number[]>();
-    expectTypeOf<MapArray<Timestamp[]>>().toEqualTypeOf<(Timestamp | Date)[]>();
-    expectTypeOf<MapArray<ValueType[]>>().toEqualTypeOf<WriteValue<ValueType>[]>();
+  it('MapArrayToWriteValue', () => {
+    expectTypeOf<MapArrayToWriteValue<[number, Timestamp]>>().toEqualTypeOf<
+      [number | Increment, Timestamp | Date | ServerTimestamp]
+    >();
+    expectTypeOf<MapArrayToWriteValue<number[]>>().toEqualTypeOf<(number | Increment)[]>();
+    expectTypeOf<MapArrayToWriteValue<Timestamp[]>>().toEqualTypeOf<
+      (Timestamp | Date | ServerTimestamp)[]
+    >();
+    expectTypeOf<MapArrayToWriteValue<ValueType[]>>().toEqualTypeOf<WriteValue<ValueType>[]>();
   });
 
-  it('WriteModel', () => {
-    expectTypeOf<WriteModel<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
+  it('WriteDocumentData', () => {
+    expectTypeOf<WriteDocumentData<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
       a: string;
-      b: Timestamp | Date;
+      b: Timestamp | Date | ServerTimestamp;
     }>();
     expectTypeOf<
-      WriteModel<{
+      WriteDocumentData<{
         a: string;
         b: { c: Timestamp; d: string };
         e: number[];
@@ -70,14 +92,14 @@ describe('document', () => {
       }>
     >().toEqualTypeOf<{
       a: string;
-      b: { c: Timestamp | Date; d: string };
-      e: number[];
-      f: { g: Timestamp | Date }[];
-      h: { i: 'foo'; j: string } | { i: 'bar'; j: number };
+      b: { c: Timestamp | Date | ServerTimestamp; d: string };
+      e: (number | Increment)[] | ArrayUnion | ArrayRemove;
+      f: { g: Timestamp | Date | ServerTimestamp }[] | ArrayUnion | ArrayRemove;
+      h: { i: 'foo'; j: string } | { i: 'bar'; j: number | Increment };
     }>();
 
     expectTypeOf<
-      WriteModel<{
+      WriteDocumentData<{
         id: string;
         array: (string | number)[];
         boolean: boolean;
@@ -93,13 +115,13 @@ describe('document', () => {
       }>
     >().toEqualTypeOf<{
       id: string;
-      array: (string | number)[];
+      array: (string | number | Increment)[] | ArrayUnion | ArrayRemove;
       boolean: boolean;
       bytes: Bytes;
-      timestamp: Timestamp | Date;
-      number: number;
+      timestamp: Timestamp | Date | ServerTimestamp;
+      number: number | Increment;
       getPoint: GeoPoint;
-      map: { a: number; b: string[] };
+      map: { a: number | Increment; b: string[] | ArrayUnion | ArrayRemove };
       null: null;
       docRef: DocumentReference;
       string: string;
