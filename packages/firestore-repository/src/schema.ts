@@ -47,8 +47,9 @@ export const subCollectionPath = <T extends CollectionSchema>(
   return {
     from: ([id, ...parentPath]) => {
       if (!id) {
-        // TODO include more detail of the error
-        throw new Error('document has no parent reference');
+        throw new Error(
+          `Document has no parent reference. This document is expected to have a reference to parent document of ${parent.name} collection`,
+        );
       }
       return {
         ...parent.id.from(id.id),

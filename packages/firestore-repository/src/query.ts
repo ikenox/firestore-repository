@@ -147,9 +147,12 @@ export type UnaryCondition<
   value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>;
 };
 
+/**
+ * Returns a single filter condition
+ */
 export const condition = <
-  T extends CollectionSchema,
   Path extends FieldPath<DbModel<T>>,
+  T extends CollectionSchema,
   Op extends WhereFilterOp,
 >(
   fieldPath: Path,
@@ -164,9 +167,9 @@ export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
   '!=': T;
   '>=': T;
   '>': T;
+  in: T[];
+  'not-in': T[];
   'array-contains': T extends (infer A)[] ? A : never;
-  in: T extends (infer A)[] ? A : never;
-  'not-in': T extends (infer A)[] ? A : never;
   'array-contains-any': T extends (infer A)[] ? A[] : never;
 }[U];
 

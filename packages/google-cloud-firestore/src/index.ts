@@ -220,7 +220,7 @@ export const docPathElements = (doc: DocumentReference): [DocPathElement, ...Doc
   return [{ collection: doc.parent.id, id: doc.id }, ...parentPath];
 };
 
-// TODO cache query
+// OPTIMIZE: cache query
 export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery => {
   let base: FirestoreQuery;
   switch (query.base.kind) {

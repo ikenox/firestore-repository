@@ -11,6 +11,7 @@ import type {
 import {
   condition as $,
   type Query,
+  type Where,
   and,
   collectionGroupQuery,
   endAt,
@@ -56,6 +57,7 @@ export const authorsCollection = collection({
         gender?: 'male' | 'female';
       };
       rank: number;
+      tag: string[];
       registeredAt: Timestamp;
     }) => ({
       ...data,
@@ -461,6 +463,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             gender: 'male' as const,
           },
           rank: randomNumber(),
+          tag: [],
           registeredAt: new Date(),
         };
       },
@@ -525,6 +528,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 gender: 'male',
               },
               rank: 1,
+              tag: ['a', 'b'],
               registeredAt: new Date('2020-02-01'),
             },
             {
@@ -535,6 +539,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 gender: 'female',
               },
               rank: 2,
+              tag: ['b', 'c'],
               registeredAt: new Date('2020-01-01'),
             },
             {
@@ -544,9 +549,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 age: 20,
               },
               rank: 2,
+              tag: ['c', 'd'],
               registeredAt: new Date('2020-03-01'),
             },
-          ],
+          ] as const satisfies Model<typeof authorsCollection>[],
         });
 
         it('query without condition', async () => {
@@ -559,15 +565,33 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         describe('where', () => {
-          it('simple', async () => {
-            await expectQuery(query(repository.collection, where($('name', '==', 'author1'))), [
-              items[0],
-            ]);
-            await expectQuery(query(repository.collection, where($('name', '!=', 'author1'))), [
-              items[1],
-              items[2],
-            ]);
-            // TODO for all operators
+          describe('operators', () => {
+            const tests: Record<
+              string,
+              [
+                condition: Where<typeof authorsCollection>,
+                expected: Model<typeof authorsCollection>[],
+              ]
+            > = {
+              '==': [where($('name', '==', 'author1')), [items[0]]],
+              '!=': [where($('name', '!=', 'author1')), [items[1], items[2]]],
+              '<': [where($('profile.age', '<', 40)), [items[2]]],
+              '<=': [where($('profile.age', '<=', 40)), [items[2], items[0]]],
+              '>': [where($('profile.age', '>', 40)), [items[1]]],
+              '>=': [where($('profile.age', '>=', 40)), [items[0], items[1]]],
+              in: [where($('name', 'in', ['author1', 'author2'])), [items[0], items[1]]],
+              'not-in': [where($('name', 'not-in', ['author1', 'author2'])), [items[2]]],
+              'array-contains': [where($('tag', 'array-contains', 'b')), [items[0], items[1]]],
+              'array-contains-any': [
+                where($('tag', 'array-contains-any', ['a', 'd'])),
+                [items[0], items[2]],
+              ],
+            };
+            for (const [title, [condition, expected]] of Object.entries(tests)) {
+              it(title, async () => {
+                await expectQuery(query(repository.collection, condition), expected);
+              });
+            }
           });
 
           it('filter by nested field', async () => {
@@ -940,7 +964,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             );
           });
         });
-        // TODO
       });
     });
 
