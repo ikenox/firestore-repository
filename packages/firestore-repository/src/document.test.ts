@@ -8,7 +8,7 @@ import type {
   Timestamp,
   ValueType,
   VectorValue,
-  WriteModel,
+  WriteDocumentData,
   WriteValue,
 } from './document.js';
 import type { FieldPath, MapValue } from './document.js';
@@ -55,13 +55,13 @@ describe('document', () => {
     expectTypeOf<MapArray<ValueType[]>>().toEqualTypeOf<WriteValue<ValueType>[]>();
   });
 
-  it('WriteModel', () => {
-    expectTypeOf<WriteModel<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
+  it('WriteDocumentData', () => {
+    expectTypeOf<WriteDocumentData<{ a: string; b: Timestamp }>>().toEqualTypeOf<{
       a: string;
       b: Timestamp | Date;
     }>();
     expectTypeOf<
-      WriteModel<{
+      WriteDocumentData<{
         a: string;
         b: { c: Timestamp; d: string };
         e: number[];
@@ -77,7 +77,7 @@ describe('document', () => {
     }>();
 
     expectTypeOf<
-      WriteModel<{
+      WriteDocumentData<{
         id: string;
         array: (string | number)[];
         boolean: boolean;

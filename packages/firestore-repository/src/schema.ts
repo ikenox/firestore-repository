@@ -1,4 +1,4 @@
-import type { DocumentData, WriteModel } from './document.js';
+import type { DocumentData, WriteDocumentData } from './document.js';
 
 /**
  * A utility method to define a root collection schema.
@@ -81,7 +81,10 @@ export const numberId = <T extends string>(fieldName: T): IdConverter<Record<T, 
  * definition. The app model should be the same form of the firestore document schema.
  * A common use-case is just converting firestore Timestamp value to Date value.
  */
-export const coercible = <DbModel extends DocumentData, AppModel extends WriteModel<DbModel>>(
+export const coercible = <
+  DbModel extends DocumentData,
+  AppModel extends WriteDocumentData<DbModel>,
+>(
   from: (data: DbModel) => AppModel,
 ): DataConverter<DbModel, AppModel> => {
   return {
@@ -146,7 +149,7 @@ export type DataConverter<
   AppModel extends Record<string, unknown> = Record<string, unknown>,
 > = {
   from(data: DbModel): AppModel;
-  to(data: AppModel): WriteModel<DbModel>;
+  to(data: AppModel): WriteDocumentData<DbModel>;
 };
 
 /**
