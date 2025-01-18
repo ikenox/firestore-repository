@@ -34,8 +34,8 @@ describe('query', () => {
     expectTypeOf<FilterOperand<number, '>='>>().toEqualTypeOf<number>();
     expectTypeOf<FilterOperand<number, '>'>>().toEqualTypeOf<number>();
     // cannot apply array operator for non-array value
-    expectTypeOf<FilterOperand<number, 'in'>>().toEqualTypeOf<never>();
-    expectTypeOf<FilterOperand<number, 'not-in'>>().toEqualTypeOf<never>();
+    expectTypeOf<FilterOperand<number, 'in'>>().toEqualTypeOf<number[]>();
+    expectTypeOf<FilterOperand<number, 'not-in'>>().toEqualTypeOf<number[]>();
     expectTypeOf<FilterOperand<number, 'array-contains'>>().toEqualTypeOf<never>();
     expectTypeOf<FilterOperand<number, 'array-contains-any'>>().toEqualTypeOf<never>();
 
@@ -46,17 +46,15 @@ describe('query', () => {
     // array
     expectTypeOf<FilterOperand<string[], '=='>>().toEqualTypeOf<string[]>();
     expectTypeOf<FilterOperand<string[], '!='>>().toEqualTypeOf<string[]>();
-    expectTypeOf<FilterOperand<string[], 'in'>>().toEqualTypeOf<string>();
-    expectTypeOf<FilterOperand<string[], 'not-in'>>().toEqualTypeOf<string>();
     expectTypeOf<FilterOperand<string[], 'array-contains'>>().toEqualTypeOf<string>();
     expectTypeOf<FilterOperand<string[], 'array-contains-any'>>().toEqualTypeOf<string[]>();
 
     // tuple
     expectTypeOf<FilterOperand<[number, 'a' | 'b'], '=='>>().toEqualTypeOf<[number, 'a' | 'b']>();
     expectTypeOf<FilterOperand<[number, 'a' | 'b'], '!='>>().toEqualTypeOf<[number, 'a' | 'b']>();
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'in'>>().toEqualTypeOf<number | 'a' | 'b'>();
+    expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'in'>>().toEqualTypeOf<[number, 'a' | 'b'][]>();
     expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'not-in'>>().toEqualTypeOf<
-      number | 'a' | 'b'
+      [number, 'a' | 'b'][]
     >();
     expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'array-contains'>>().toEqualTypeOf<
       number | 'a' | 'b'

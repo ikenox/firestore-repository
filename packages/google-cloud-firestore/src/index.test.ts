@@ -129,6 +129,7 @@ describe('repository', async () => {
         name: 'author1',
         profile: { age: 20, gender: 'male' },
         rank: 1,
+        tag: ['a', 'b'],
         registeredAt: new Date('2020-02-01'),
       },
       {
@@ -136,6 +137,7 @@ describe('repository', async () => {
         name: 'author2',
         profile: { age: 40, gender: 'female' },
         rank: 1,
+        tag: ['b', 'c'],
         registeredAt: new Date('2020-01-01'),
       },
       {
@@ -143,6 +145,7 @@ describe('repository', async () => {
         name: 'author3',
         profile: { age: 60 },
         rank: 2,
+        tag: ['c', 'd'],
         registeredAt: new Date('2020-03-01'),
       },
     ] as const satisfies Model<typeof authorsCollection>[];
