@@ -23,5 +23,7 @@
   "packageManager": "pnpm@10.0.0",
   "engines": {
     "node": "22.11.0"
-  }
+  },
+  "author": "Naoto Ikeno",
+  "license": "MIT"
 }

@@ -15,6 +15,6 @@
   "devDependencies": {
     "@types/node": "catalog:"
   },
-  "author": "Naoto Ikeno",
+  "author": "Naoto Ikeno <ikenox@gmail.com>",
   "license": "MIT"
 }
