@@ -1,7 +1,7 @@
 import type { DocumentData, WriteModel } from './document.js';
 
 /**
- * Defines a root collection schema.
+ * A utility method to define a root collection schema.
  */
 export const rootCollection = <
   DbModel extends DocumentData,
@@ -18,6 +18,9 @@ export const rootCollection = <
     ...schema,
   });
 
+/**
+ * A utility method to define a subcollection schema.
+ */
 export const subCollection = <
   DbModel extends DocumentData,
   AppModel extends Record<string, unknown>,

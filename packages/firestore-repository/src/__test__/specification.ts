@@ -47,7 +47,9 @@ import {
   uniqueCollection,
 } from './util.js';
 
-// root collection
+/**
+ * A root collection for test
+ */
 export const authorsCollection = rootCollection({
   name: 'Authors',
   id: id('authorId'),
@@ -68,7 +70,9 @@ export const authorsCollection = rootCollection({
   ),
 });
 
-// subcollection
+/**
+ * A subcollection for test
+ */
 export const postsCollection = subCollection(
   {
     name: 'Posts',
