@@ -1,7 +1,43 @@
 import type { DocumentData, WriteModel } from './document.js';
 
 /**
- * Defines a collection schema.
+ * Defines a root collection schema.
+ */
+export const rootCollection = <
+  DbModel extends DocumentData,
+  AppModel extends Record<string, unknown>,
+  AppModelId extends Record<string, unknown>,
+>(
+  schema: Omit<
+    CollectionSchema<DbModel, AppModel, AppModelId>,
+    typeof collectionSchemaTag | 'collectionPath'
+  >,
+): CollectionSchema<DbModel, AppModel, AppModelId, Record<never, never>> =>
+  collection({
+    collectionPath: rootCollectionPath,
+    ...schema,
+  });
+
+export const subCollection = <
+  DbModel extends DocumentData,
+  AppModel extends Record<string, unknown>,
+  AppModelId extends Record<string, unknown>,
+  Parent extends CollectionSchema,
+>(
+  schema: Omit<
+    CollectionSchema<DbModel, AppModel, AppModelId>,
+    typeof collectionSchemaTag | 'collectionPath'
+  >,
+  parent: Parent,
+): CollectionSchema<DbModel, AppModel, AppModelId, Id<Parent>> =>
+  collection({
+    collectionPath: subCollectionPath(parent),
+    ...schema,
+  });
+
+/**
+ * A base method of defining a collection schema.
+ * Normally it's useful to use `rootCollection` or `subCollection` method instead.
  */
 export const collection = <
   DbModel extends DocumentData = DocumentData,

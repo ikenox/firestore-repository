@@ -35,8 +35,9 @@ import {
   collection,
   id,
   numberId,
+  rootCollection,
   rootCollectionPath,
-  subCollectionPath,
+  subCollection,
 } from '../schema.js';
 import {
   expectArrayEqualsWithoutOrder,
@@ -47,10 +48,9 @@ import {
 } from './util.js';
 
 // root collection
-export const authorsCollection = collection({
+export const authorsCollection = rootCollection({
   name: 'Authors',
   id: id('authorId'),
-  collectionPath: rootCollectionPath,
   data: coercible(
     (data: {
       name: string;
@@ -69,21 +69,23 @@ export const authorsCollection = collection({
 });
 
 // subcollection
-export const postsCollection = collection({
-  name: 'Posts',
-  id: numberId('postId'),
-  collectionPath: subCollectionPath(authorsCollection),
-  data: coercible(
-    (data: {
-      authorId: string;
-      title: string;
-      postedAt: Timestamp;
-    }) => ({
-      ...data,
-      postedAt: data.postedAt.toDate(),
-    }),
-  ),
-});
+export const postsCollection = subCollection(
+  {
+    name: 'Posts',
+    id: numberId('postId'),
+    data: coercible(
+      (data: {
+        authorId: string;
+        title: string;
+        postedAt: Timestamp;
+      }) => ({
+        ...data,
+        postedAt: data.postedAt.toDate(),
+      }),
+    ),
+  },
+  authorsCollection,
+);
 
 /**
  * List of specifications that repository implementations must satisfy
