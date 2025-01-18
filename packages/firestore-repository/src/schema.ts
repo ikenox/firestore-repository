@@ -256,6 +256,9 @@ export const collectionPath = <T extends CollectionSchema>(
   return collectionPath ? `${collectionPath}/${collection.name}` : collection.name;
 };
 
+/**
+ * Checks if the collection is a root collection
+ */
 export type IsRootCollection<T extends CollectionSchema> = [keyof ParentId<T>] extends [never]
   ? true
   : false;

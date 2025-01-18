@@ -71,21 +71,37 @@ export type VectorValue = {
 };
 
 export const serverTimestampBrand: unique symbol = Symbol();
+
+/**
+ * A write-only value that is replaced with current time on the server-side
+ */
 export type ServerTimestamp = {
   [serverTimestampBrand]: unknown;
 };
 
 export const incrementBrand: unique symbol = Symbol();
+
+/**
+ * A write-only value that increments the specified field value
+ */
 export type Increment = {
   [incrementBrand]: unknown;
 };
 
 export const arrayUnionBrand: unique symbol = Symbol();
+
+/**
+ * A write-only value that appends the specified items into the array field
+ */
 export type ArrayUnion = {
   [arrayUnionBrand]: unknown;
 };
 
 export const arrayRemoveBrand: unique symbol = Symbol();
+
+/**
+ * A write-only value that removes the specified items from the array field
+ */
 export type ArrayRemove = {
   [arrayRemoveBrand]: unknown;
 };

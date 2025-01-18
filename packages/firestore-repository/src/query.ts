@@ -7,6 +7,9 @@ import {
   collectionSchemaBrand,
 } from './schema.js';
 
+/**
+ * An universal query definition
+ */
 export class Query<T extends CollectionSchema = CollectionSchema> {
   constructor(
     readonly base:
@@ -17,14 +20,26 @@ export class Query<T extends CollectionSchema = CollectionSchema> {
   ) {}
 }
 
+/**
+ * A starting point to build a new query
+ */
 export type QueryBase<T extends CollectionSchema> =
-  // collection schema, only for root collection
+  /**
+   * Target root collection to query
+   */
   | (IsRootCollection<T> extends true ? T : never)
-  // for subcollection
+  /**
+   * Target subcollection to query
+   */
   | { collection: T; parent: ParentId<T> }
-  // or extends another query
+  /**
+   * Extends another query
+   */
   | Query<T>;
 
+/**
+ * Builds a new query
+ */
 export const query = <T extends CollectionSchema>(
   base: QueryBase<T>,
   ...constraints: QueryConstraint<T>[]
@@ -47,6 +62,9 @@ export const query = <T extends CollectionSchema>(
   );
 };
 
+/**
+ * Builds a new collection group query
+ */
 export const collectionGroupQuery = <T extends CollectionSchema>(
   collection: T,
   ...constraints: QueryConstraint<T>[]
@@ -128,14 +146,22 @@ export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): End
   cursor,
 });
 
-export type Cursor<_T extends CollectionSchema> =
-  // a list of values, that should correspond to the columns specified by orderBy clause
-  unknown[];
+/**
+ * A list of values that should correspond to the columns specified by orderBy clause
+ */
+export type Cursor<_T extends CollectionSchema> = unknown[];
 
+/**
+ * An expression of query filter condition
+ */
 export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
   | UnaryCondition<T>
   | Or<T>
   | And<T>;
+
+/**
+ * A single filter condition with a field path, operator, and value
+ */
 export type UnaryCondition<
   T extends CollectionSchema,
   Path extends FieldPath<DbModel<T>> = FieldPath<DbModel<T>>,
@@ -160,6 +186,9 @@ export const condition = <
   value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>,
 ): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
 
+/**
+ * An operand type of the filter condition operator
+ */
 export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
   '<': T;
   '<=': T;
@@ -173,6 +202,9 @@ export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
   'array-contains-any': T extends (infer A)[] ? A[] : never;
 }[U];
 
+/**
+ * An operator of the filter condition
+ */
 export type WhereFilterOp =
   | '<'
   | '<='
