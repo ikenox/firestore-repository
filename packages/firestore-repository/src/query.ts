@@ -4,7 +4,7 @@ import {
   type DbModel,
   type IsRootCollection,
   type ParentId,
-  collectionSchemaTag,
+  collectionSchemaBrand,
 } from './schema.js';
 
 export class Query<T extends CollectionSchema = CollectionSchema> {
@@ -33,7 +33,7 @@ export const query = <T extends CollectionSchema>(
     // extends another query
     return new Query({ kind: 'extends', query: base }, constraints);
   }
-  if (collectionSchemaTag in base) {
+  if (collectionSchemaBrand in base) {
     // root collection
     return new Query(
       { kind: 'collection', collection: base, parentId: {} as ParentId<T> },
@@ -151,14 +151,14 @@ export type UnaryCondition<
  * Returns a single filter condition
  */
 export const condition = <
-  Path extends FieldPath<DbModel<T>>,
   T extends CollectionSchema,
+  Path extends FieldPath<DbModel<T>>,
   Op extends WhereFilterOp,
 >(
   fieldPath: Path,
   opStr: Op,
   value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>,
-): UnaryCondition<T, Path> => ({ kind: 'where', fieldPath, opStr, value });
+): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
 
 export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {
   '<': T;

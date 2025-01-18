@@ -1,7 +1,9 @@
+import type { Equal } from './util.js';
+
 /**
  * Type of firestore document data
  */
-export type DocumentData = MapValue;
+export type DocumentData = { [key: string]: ValueType };
 
 /**
  * Type of firestore field value
@@ -68,6 +70,26 @@ export type VectorValue = {
   isEqual(other: VectorValue): boolean;
 };
 
+export const serverTimestampBrand: unique symbol = Symbol();
+export type ServerTimestamp = {
+  [serverTimestampBrand]: unknown;
+};
+
+export const incrementBrand: unique symbol = Symbol();
+export type Increment = {
+  [incrementBrand]: unknown;
+};
+
+export const arrayUnionBrand: unique symbol = Symbol();
+export type ArrayUnion = {
+  [arrayUnionBrand]: unknown;
+};
+
+export const arrayRemoveBrand: unique symbol = Symbol();
+export type ArrayRemove = {
+  [arrayRemoveBrand]: unknown;
+};
+
 /**
  * Field path of the document
  */
@@ -101,15 +123,32 @@ export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U exten
 export type WriteDocumentData<T extends DocumentData = DocumentData> = {
   [K in keyof T]: WriteValue<T[K]>;
 };
+
+/**
+ * Obtains writable value for a field of the specified value type
+ */
 export type WriteValue<T extends ValueType> =
-  | (T extends Timestamp ? Date | Timestamp : never)
+  | (T extends Timestamp ? Date | Timestamp | ServerTimestamp : never)
   | (T extends MapValue ? { [K in keyof T]: WriteValue<T[K]> } : never)
-  | (T extends ValueType[] ? MapArray<T> : never)
+  | (T extends ValueType[] ? MapArrayToWriteValue<T> : never)
+  | (T extends ValueType[]
+      ? Equal<T['length'], number> extends true
+        ? ArrayUnion | ArrayRemove
+        : never
+      : never)
+  | (T extends number ? (Equal<T, number> extends true ? Increment : never) : never)
   | (T extends number | string | null | boolean | Bytes | DocumentReference | GeoPoint | VectorValue
       ? T
       : never);
-export type MapArray<T> = T extends [infer A extends ValueType, ...infer B extends ValueType[]]
-  ? [WriteValue<A>, ...MapArray<B>]
+
+/**
+ * Map `[ValueType1, ValueType2, ...]` into `[WriteValue1, WriteValue1, ...]` at type-level
+ */
+export type MapArrayToWriteValue<T extends ValueType[]> = T extends [
+  infer A extends ValueType,
+  ...infer B extends ValueType[],
+]
+  ? [WriteValue<A>, ...MapArrayToWriteValue<B>]
   : T extends []
     ? []
     : T extends (infer A extends ValueType)[]

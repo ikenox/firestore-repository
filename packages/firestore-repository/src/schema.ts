@@ -10,7 +10,7 @@ export const rootCollection = <
 >(
   schema: Omit<
     CollectionSchema<DbModel, AppModel, AppModelId>,
-    typeof collectionSchemaTag | 'collectionPath'
+    typeof collectionSchemaBrand | 'collectionPath'
   >,
 ): CollectionSchema<DbModel, AppModel, AppModelId, Record<never, never>> =>
   collection({
@@ -29,7 +29,7 @@ export const subCollection = <
 >(
   schema: Omit<
     CollectionSchema<DbModel, AppModel, AppModelId>,
-    typeof collectionSchemaTag | 'collectionPath'
+    typeof collectionSchemaBrand | 'collectionPath'
   >,
   parent: Parent,
 ): CollectionSchema<DbModel, AppModel, AppModelId, Id<Parent>> =>
@@ -48,9 +48,12 @@ export const collection = <
   Id extends Record<string, unknown> = Record<string, unknown>,
   CollectionPath extends Record<string, unknown> = Record<string, unknown>,
 >(
-  schema: Omit<CollectionSchema<DbModel, AppModel, Id, CollectionPath>, typeof collectionSchemaTag>,
+  schema: Omit<
+    CollectionSchema<DbModel, AppModel, Id, CollectionPath>,
+    typeof collectionSchemaBrand
+  >,
 ): CollectionSchema<DbModel, AppModel, Id, CollectionPath> => ({
-  [collectionSchemaTag]: true,
+  [collectionSchemaBrand]: true,
   ...schema,
 });
 
@@ -123,7 +126,7 @@ export const subCollectionPath = <T extends CollectionSchema>(
   };
 };
 
-export const collectionSchemaTag: unique symbol = Symbol();
+export const collectionSchemaBrand: unique symbol = Symbol();
 
 /**
  * A definition of firestore collection
@@ -134,7 +137,7 @@ export type CollectionSchema<
   Id extends Record<string, unknown> = Record<string, unknown>,
   CollectionPath extends Record<string, unknown> = Record<string, unknown>,
 > = {
-  [collectionSchemaTag]: true;
+  [collectionSchemaBrand]: unknown;
   name: string;
   data: DataConverter<DbModel, AppModel>;
   id: IdConverter<Id>;
