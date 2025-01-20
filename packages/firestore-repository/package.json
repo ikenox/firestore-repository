@@ -30,5 +30,8 @@
   "files": ["build"],
   "keywords": ["firestore", "orm", "database", "repository", "firebase"],
   "author": "Naoto Ikeno <ikenox@gmail.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

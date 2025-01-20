@@ -42,5 +42,8 @@
     "google-cloud"
   ],
   "author": "Naoto Ikeno <ikenox@gmail.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }
