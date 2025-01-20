@@ -10,7 +10,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "rm -rf build/ && tsc -b tsconfig.build.json"
+    "build": "rm -rf build/ && tsc -b tsconfig.build.json",
+    "prepublishOnly": "pnpm build && cp ../../README.md ./"
   },
   "dependencies": {
     "@google-cloud/firestore": "catalog:",
