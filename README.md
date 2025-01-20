@@ -40,7 +40,7 @@ const db = new Firestore();
 const repository = new Repository(authors, db);
 
 // For web frontend
-import🗄️  { getFirestore } from '@firebase/firestore';
+import { getFirestore } from '@firebase/firestore';
 import { Repository } from '@firestore-repository/firebase-js-sdk';
 const db = getFirestore();
 const repository = new Repository(authors, db);
