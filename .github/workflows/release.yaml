@@ -1,0 +1,44 @@
+name: release
+run-name: release
+on:
+  workflow_dispatch:
+    inputs:
+      firestore-repository:
+        required: true
+        type: boolean
+      firebase-js-sdk:
+        required: true
+        type: boolean
+      google-cloud-firestore:
+        required: true
+        type: boolean
+jobs:
+  relesae:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 10.0.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - run: pnpm run build
+      - run: pnpm publish packages/firestore-repository
+        if: ${{ inputs.firestore-repository }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: pnpm publish packages/firebase-js-sdk
+        if: ${{ inputs.firebase-js-sdk }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: pnpm publish packages/google-cloud-firestore
+        if: ${{ inputs.google-cloud-firestore }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
