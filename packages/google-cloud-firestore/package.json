@@ -31,7 +31,7 @@
       }
     }
   },
-  "files": ["build"],
+  "files": ["build", "!**/*.tsbuildinfo"],
   "keywords": [
     "firestore",
     "orm",
