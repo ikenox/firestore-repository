@@ -15,13 +15,13 @@ A minimum and universal Firestore ORM (Repository Pattern) for TypeScript
 
 ## Installation
 
-### For backend (with `@google-cloud/firestore` or `firebase-admin`)
+### For backend (with [`@google-cloud/firestore`](https://www.npmjs.com/package/@google-cloud/firestore))
 
 ```shell
 npm install firestore-repository @firestore-repository/google-cloud-firestore 
 ````
 
-### For web frontend (with `firebase-js-sdk`)
+### For web frontend (with [`@firebase/firestore`](https://www.npmjs.com/package/@firebase/firestore))
 
 ```shell
 npm install firestore-repository @firestore-repository/firebase-js-sdk
@@ -30,40 +30,36 @@ npm install firestore-repository @firestore-repository/firebase-js-sdk
 ## Basic usage
 
 ```ts
-import { id, implicit, rootCollection } from 'firestore-repository/schema';
-import { condition as $, limit, query, where } from 'firestore-repository/query';
+import {mapTo, data, rootCollection} from 'firestore-repository/schema';
+import {condition as $, limit, query, where} from 'firestore-repository/query';
 
 // For backend
-import { Firestore } from '@google-cloud/firestore';
-import { Repository } from '@firestore-repository/google-cloud-firestore';
+import {Firestore} from '@google-cloud/firestore';
+import {Repository} from '@firestore-repository/google-cloud-firestore';
+
 const db = new Firestore();
-const repository = new Repository(authors, db);
 
 // For web frontend
-import { getFirestore } from '@firebase/firestore';
-import { Repository } from '@firestore-repository/firebase-js-sdk';
+import {getFirestore} from '@firebase/firestore';
+import {Repository} from '@firestore-repository/firebase-js-sdk';
+
 const db = getFirestore();
-const repository = new Repository(authors, db);
 
 // define a collection
 const authors = rootCollection({
   name: 'Authors',
-  id: id('authorId'),
-  data: implicit(
-    (data: {
-      name: string;
-      profile: {
-        age: number;
-        gender?: 'male' | 'female';
-      };
-      tag: string[];
-      registeredAt: Timestamp;
-    }) => ({
-      ...data,
-      registeredAt: data.registeredAt.toDate(),
-    }),
-  ),
+  id: mapTo('authorId'),
+  data: data<{
+    name: string;
+    profile: {
+      age: number;
+      gender?: 'male' | 'female';
+    };
+    tag: string[];
+  }>(),
 });
+
+const repository = new Repository(authors, db);
 
 // set
 await repository.set({
@@ -74,11 +70,10 @@ await repository.set({
     gender: 'male',
   },
   tag: ['new'],
-  registeredAt: new Date(),
 });
 
 // get
-const doc = await repository.get({ authorId: 'author1' });
+const doc = await repository.get({authorId: 'author1'});
 console.info(doc);
 
 // query snapshot
@@ -88,5 +83,7 @@ console.log(docs);
 
 // listen query
 const q2 = query(authors, where($('tag', 'array-contains', 'new')), limit(10));
-repository.listOnSnapshot(q2, (docs) => { console.log(docs); });
+repository.listOnSnapshot(q2, (docs) => {
+  console.log(docs);
+});
 ```
