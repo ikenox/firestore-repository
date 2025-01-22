@@ -9,8 +9,8 @@ import {
   collection,
   collectionPath,
   docPath,
-  id,
   implicit,
+  mapTo,
   rootCollectionPath,
   subCollectionPath,
 } from './schema.js';
@@ -19,7 +19,7 @@ import {
 const authorsCollection = collection({
   name: 'Authors',
   collectionPath: rootCollectionPath,
-  id: id('authorId'),
+  id: mapTo('authorId'),
   data: implicit(
     (data: {
       name: string;
@@ -35,7 +35,7 @@ const authorsCollection = collection({
 const postsCollection = collection({
   name: 'Posts',
   collectionPath: subCollectionPath(authorsCollection),
-  id: id('postId'),
+  id: mapTo('postId'),
   data: implicit(
     (data: {
       title: string;

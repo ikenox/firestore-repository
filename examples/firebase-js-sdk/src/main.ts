@@ -3,7 +3,7 @@ import { connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
 import { Repository } from '@firestore-repository/firebase-js-sdk';
 import type { Timestamp } from 'firestore-repository/document';
 import { condition as $, limit, query, where } from 'firestore-repository/query';
-import { id, implicit, rootCollection } from 'firestore-repository/schema';
+import { implicit, mapTo, rootCollection } from 'firestore-repository/schema';
 
 async function main() {
   const db = getFirestore(
@@ -41,7 +41,7 @@ async function main() {
 
 const authors = rootCollection({
   name: 'Authors',
-  id: id('authorId'),
+  id: mapTo('authorId'),
   data: implicit(
     (data: {
       name: string;

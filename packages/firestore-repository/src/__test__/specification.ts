@@ -32,8 +32,9 @@ import {
   type Id,
   type Model,
   collection,
-  id,
+  data,
   implicit,
+  mapTo,
   numberId,
   rootCollection,
   rootCollectionPath,
@@ -52,22 +53,16 @@ import {
  */
 export const authorsCollection = rootCollection({
   name: 'Authors',
-  id: id('authorId'),
-  data: implicit(
-    (data: {
-      name: string;
-      profile: {
-        age: number;
-        gender?: 'male' | 'female';
-      };
-      rank: number;
-      tag: string[];
-      registeredAt: Timestamp;
-    }) => ({
-      ...data,
-      registeredAt: data.registeredAt.toDate(),
-    }),
-  ),
+  id: mapTo('authorId'),
+  data: data<{
+    name: string;
+    profile: {
+      age: number;
+      gender?: 'male' | 'female';
+    };
+    rank: number;
+    tag: string[];
+  }>(),
 });
 
 /**
@@ -470,7 +465,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           },
           rank: randomNumber(),
           tag: [],
-          registeredAt: new Date(),
         };
       },
       mutate: (data) => ({
@@ -535,7 +529,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               },
               rank: 1,
               tag: ['a', 'b'],
-              registeredAt: new Date('2020-02-01'),
             },
             {
               authorId: '2',
@@ -546,7 +539,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               },
               rank: 2,
               tag: ['b', 'c'],
-              registeredAt: new Date('2020-01-01'),
             },
             {
               authorId: '3',
@@ -556,7 +548,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               },
               rank: 2,
               tag: ['c', 'd'],
-              registeredAt: new Date('2020-03-01'),
             },
           ] as const satisfies Model<typeof authorsCollection>[],
         });
@@ -661,9 +652,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 repository.collection,
-                where(
-                  and($('name', '==', 'author1'), $('registeredAt', '==', new Date('2020-02-01'))),
-                ),
+                where(and($('name', '==', 'author1'), $('profile.age', '==', 40))),
               ),
               [items[0]],
             );
@@ -671,9 +660,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 repository.collection,
-                where(
-                  and($('name', '==', 'author1'), $('registeredAt', '==', new Date('2020-02-02'))),
-                ),
+                where(and($('name', '==', 'author1'), $('profile.age', '==', 41))),
               ),
               [],
             );
@@ -691,14 +678,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 repository.collection,
                 where(
                   or(
-                    and(
-                      $('name', '==', 'author1'),
-                      $('registeredAt', '==', new Date('2020-02-01')),
-                    ),
-                    and(
-                      $('name', '==', 'author2'),
-                      $('registeredAt', '==', new Date('2020-01-01')),
-                    ),
+                    and($('name', '==', 'author1'), $('profile.age', '==', 40)),
+                    and($('name', '==', 'author2'), $('profile.age', '==', 90)),
                   ),
                 ),
               ),
@@ -708,20 +689,20 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('orderBy', async () => {
-          await expectQuery(query(repository.collection, orderBy('registeredAt')), [
-            items[1],
-            items[0],
+          await expectQuery(query(repository.collection, orderBy('profile.age')), [
             items[2],
+            items[0],
+            items[1],
           ]);
-          await expectQuery(query(repository.collection, orderBy('registeredAt', 'asc')), [
-            items[1],
-            items[0],
+          await expectQuery(query(repository.collection, orderBy('profile.age', 'asc')), [
             items[2],
+            items[0],
+            items[1],
           ]);
-          await expectQuery(query(repository.collection, orderBy('registeredAt', 'desc')), [
-            items[2],
-            items[0],
+          await expectQuery(query(repository.collection, orderBy('profile.age', 'desc')), [
             items[1],
+            items[0],
+            items[2],
           ]);
           await expectQuery(query(repository.collection, orderBy('__name__', 'asc')), items);
           await expectQuery(query(repository.collection, orderBy('rank'), orderBy('profile.age')), [
@@ -885,10 +866,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             query(
               repository.collection,
               where($('name', '!=', 'author1')),
-              orderBy('registeredAt', 'desc'),
+              orderBy('profile.age', 'desc'),
               limit(1),
             ),
-            [items[2]],
+            [items[1]],
           );
         });
 
@@ -976,7 +957,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     describe('all field types', () => {
       const allFieldTypesCollection = collection({
         name: `AllFieldTypes_${randomString()}`,
-        id: id('id'),
+        id: mapTo('id'),
         data: implicit(
           (data: {
             array: (string | number)[];
