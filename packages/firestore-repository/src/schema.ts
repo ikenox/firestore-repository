@@ -60,7 +60,7 @@ export const collection = <
 /**
  * A shorthand utility to define simple id field, that just maps a document id into single field of the model.
  */
-export const id = <T extends string>(fieldName: T): IdConverter<Record<T, string>> => ({
+export const mapTo = <T extends string>(fieldName: T): IdConverter<Record<T, string>> => ({
   from: (id) => {
     return { [fieldName]: id } as Record<T, string>;
   },
@@ -76,6 +76,15 @@ export const numberId = <T extends string>(fieldName: T): IdConverter<Record<T, 
     return { [fieldName]: numberId } as Record<T, number>;
   },
   to: (id) => id[fieldName].toString(),
+});
+
+/**
+ * A most simple data converter that does nothing.
+ */
+export const data = <DbModel extends DocumentData>(): DataConverter<DbModel, DbModel> => ({
+  from: (data: DbModel): DbModel => data,
+  // FIXME return value should be valid without type assertion
+  to: (data: DbModel): WriteDocumentData<DbModel> => data as WriteDocumentData<DbModel>,
 });
 
 /**

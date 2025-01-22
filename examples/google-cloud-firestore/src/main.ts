@@ -1,7 +1,7 @@
 import { Repository } from '@firestore-repository/google-cloud-firestore';
 import { Firestore, type Timestamp } from '@google-cloud/firestore';
 import { condition as $, limit, query, where } from 'firestore-repository/query';
-import { id, implicit, rootCollection } from 'firestore-repository/schema';
+import { implicit, mapTo, rootCollection } from 'firestore-repository/schema';
 
 async function main() {
   process.env['FIRESTORE_EMULATOR_HOST'] = 'localhost:60001';
@@ -39,7 +39,7 @@ async function main() {
 
 const authors = rootCollection({
   name: 'Authors',
-  id: id('authorId'),
+  id: mapTo('authorId'),
   data: implicit(
     (data: {
       name: string;

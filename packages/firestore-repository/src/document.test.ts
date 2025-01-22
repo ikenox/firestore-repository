@@ -3,6 +3,7 @@ import type {
   ArrayRemove,
   ArrayUnion,
   Bytes,
+  DocumentData,
   DocumentReference,
   FieldValue,
   GeoPoint,
@@ -127,6 +128,13 @@ describe('document', () => {
       string: string;
       vector: VectorValue;
     }>();
+
+    // Test general compatibility between WriteDocumentData and DocumentData
+    expectTypeOf<DocumentData>().toMatchTypeOf<WriteDocumentData>();
+    (<_T extends DocumentData>() => {
+      // FIXME this assertion should be passed
+      // expectTypeOf<T>().toMatchTypeOf<WriteDocumentData<T>>();
+    })();
   });
 
   it('FieldValue', () => {
