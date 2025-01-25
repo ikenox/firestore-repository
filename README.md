@@ -189,12 +189,12 @@ await runTransaction(async (tx) => {
     await repository.batchSet([
       { ...doc, userId: 'user2' },
       { ...doc, userId: 'user3' },
-    ]);
+    ], { tx });
   }
 
   // Delete
   await repository.delete({ userId: 'user4' }, { tx });
-  await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }]);
+  await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], { tx });
 });
 ```
 
