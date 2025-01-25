@@ -45,7 +45,7 @@ const db = getFirestore();
 
 // define a collection
 const users = rootCollection({
-  name: 'Authors',
+  name: 'Users',
   id: mapTo('userId'),
   data: data<{
     name: string;
@@ -57,7 +57,7 @@ const users = rootCollection({
   }>(),
 });
 
-const repository = new Repository(authors, db);
+const repository = new Repository(users, db);
 
 // set
 await repository.set({
@@ -127,8 +127,13 @@ await repository.batchSet([
 // delete
 await repository.batchDelete([{ userId: 'user1' }, { userId: 'user2' }]);
 
-// mix multiple different operations
+// Include multiple different operations in a batch
+// For backend
 const batch = db.writeBatch();
+// For web frontend
+import { writeBatch } from '@firebase/firestore';
+const batch = writeBatch();
+
 await repository.set(
     {
       userId: 'user3',
@@ -148,6 +153,7 @@ await repository.delete({ userId: 'user4' }, { tx: batch });
 await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
   tx: batch,
 });
+
 await batch.commit();
 ```
 
