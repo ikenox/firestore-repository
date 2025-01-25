@@ -1011,6 +1011,142 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
     });
   });
+
+  describe('example code for README.md', () => {
+    const console = {
+      log: (_arg: unknown) => {
+        /*no-op*/
+      },
+    };
+
+    // define a collection
+    const users = rootCollection({
+      name: 'Authors',
+      id: mapTo('userId'),
+      data: data<{
+        name: string;
+        profile: {
+          age: number;
+          gender?: 'male' | 'female';
+        };
+        tag: string[];
+      }>(),
+    });
+
+    const repository = createRepository(users);
+
+    it('basic usage', async () => {
+      // set
+      await repository.set({
+        userId: 'user1',
+        name: 'John Doe',
+        profile: {
+          age: 42,
+          gender: 'male',
+        },
+        tag: ['new'],
+      });
+
+      // get
+      const doc = await repository.get({ userId: 'user1' });
+      console.log(doc);
+
+      // delete
+      await repository.delete({ userId: 'user2' });
+
+      // query
+      const q1 = query(users, where($('profile.age', '>=', 20)), limit(10));
+      const docs = await repository.list(q1);
+      console.log(docs);
+
+      // listen document
+      repository.getOnSnapshot({ userId: 'user1' }, (doc) => {
+        console.log(doc);
+      });
+
+      // listen query
+      const q2 = query(users, where($('tag', 'array-contains', 'new')), limit(10));
+      repository.listOnSnapshot(q2, (docs) => {
+        console.log(docs);
+      });
+
+      // aggregate
+      const result = await repository.aggregate({
+        query: query(users, where($('profile.age', '>=', 20)), limit(10)),
+        spec: {
+          avgAge: average('profile.age'),
+          sumAge: sum('profile.age'),
+          count: count(),
+        },
+      });
+      console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
+    });
+
+    it('batch operation', async () => {
+      // set
+      await repository.batchSet([
+        {
+          userId: 'user1',
+          name: 'Alice',
+          profile: { age: 30, gender: 'female' },
+          tag: ['new'],
+        },
+        {
+          userId: 'user2',
+          name: 'Bob',
+          profile: { age: 20, gender: 'male' },
+          tag: [],
+        },
+      ]);
+
+      // delete
+      await repository.batchDelete([{ userId: 'user1' }, { userId: 'user2' }]);
+
+      // mix multiple operations
+      const batch = db.writeBatch();
+      await repository.set(
+        {
+          userId: 'user3',
+          name: 'Bob',
+          profile: { age: 20, gender: 'male' },
+          tag: [],
+        },
+        { tx: batch },
+      );
+      await repository.batchSet(
+        [
+          // ...
+        ],
+        { tx: batch },
+      );
+      await repository.delete({ userId: 'user4' }, { tx: batch });
+      await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
+        tx: batch,
+      });
+      await batch.commit();
+    });
+
+    it('transaction', async () => {
+      await db.transaction(async (tx) => {
+        // get
+        const doc = await repository.get({ userId: 'user1' }, { tx });
+
+        if (doc) {
+          doc.tag = [...doc.tag, 'new-tag'];
+          // set
+          await repository.set(doc, { tx });
+          await repository.batchSet([
+            { ...doc, userId: 'user2' },
+            { ...doc, userId: 'user3' },
+          ]);
+        }
+
+        // delete
+        await repository.delete({ userId: 'user4' }, { tx });
+        await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }]);
+      });
+    });
+  });
 };
 
 export type RepositoryTestEnv<T extends CollectionSchema, Env extends FirestoreEnvironment> = {
