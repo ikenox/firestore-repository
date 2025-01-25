@@ -9,7 +9,8 @@ A minimum and universal Firestore ORM (Repository Pattern) for TypeScript
 ## Features
 
 - 🚀 **Minimum**: Only a few straightforward interfaces and classes. You can easily start to use it immediately without learning a lot of things.
-- 🌐 **Unopinionated**: This library does not introduce any additional concepts, and respects an interface of the official Firestore client library.
+- 🌐 **Universal**: You can share most code, including schema and query definitions, between backend and frontend.
+- 🤝 **Unopinionated**: This library does not introduce any additional concepts, and respects vocabulary of the official Firestore client library.
 - ✅ **Type-safe**: This library provides the type-safe interface. It also covers the untyped parts of the official Firestore library.
 - 🗄️ **Repository Pattern**: A simple and consistent way to access Firestore data.
 
