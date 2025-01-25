@@ -1135,15 +1135,18 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           doc.tag = [...doc.tag, 'new-tag'];
           // set
           await repository.set(doc, { tx });
-          await repository.batchSet([
-            { ...doc, userId: 'user2' },
-            { ...doc, userId: 'user3' },
-          ]);
+          await repository.batchSet(
+            [
+              { ...doc, userId: 'user2' },
+              { ...doc, userId: 'user3' },
+            ],
+            { tx },
+          );
         }
 
         // delete
         await repository.delete({ userId: 'user4' }, { tx });
-        await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }]);
+        await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], { tx });
       });
     });
   });
