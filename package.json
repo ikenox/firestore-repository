@@ -15,7 +15,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@vitest/coverage-v8": "^2.1.6",
-    "testcontainers": "^10.14.0",
+    "testcontainers": "^10.17.1",
     "typescript": "^5.7.2",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^2.1.6"
