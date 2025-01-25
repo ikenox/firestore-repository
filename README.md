@@ -27,7 +27,7 @@ npm install firestore-repository @firestore-repository/google-cloud-firestore
 npm install firestore-repository @firestore-repository/firebase-js-sdk
 ```
 
-## Basic usage
+## Usage
 
 ### Define a collection and its repository
 
@@ -61,11 +61,10 @@ const users = rootCollection({
 const repository = new Repository(users, db);
 ```
 
-### Operations for a single document
-
-#### Set a document
+### Basic operations for a single document
 
 ```ts
+// Set a document
 await repository.set({
   userId: 'user1',
   name: 'John Doe',
@@ -75,54 +74,37 @@ await repository.set({
   },
   tag: ['new'],
 });
-```
 
-#### Get a document
-
-```ts
+// Get a document
 const doc = await repository.get({ userId: 'user1' });
-```
 
-#### Listen a document
-
-```ts
+// Listen a document
 repository.getOnSnapshot({ userId: 'user1' }, (doc) => {
   console.log(doc);
 });
-```
 
-#### Delete a document
-```ts
+// Delete a document
 await repository.delete({ userId: 'user2' });
 ```
 
 ### Query
 
-#### Define a query
-
 ```ts
 import { condition as $, limit, query, where } from 'firestore-repository/query';
+
+// Define a query
 const query1 = query(users, where($('profile.age', '>=', 20)), limit(10));
-```
 
-#### Execute the query
-
-```ts
+// List documents
 const docs = await repository.list(query1);
 console.log(docs);
-```
 
-#### Listen the query
-
-```ts
+// Listen documents
 repository.listOnSnapshot(query1, (docs) => {
   console.log(docs);
 });
-```
 
-#### Aggregate
-
-```ts
+// Aggregate
 const result = await repository.aggregate({
   query: query1,
   spec: {
@@ -136,15 +118,11 @@ console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
 
 ### Batch operations
 
-#### batchGet (backend only)
-
 ```ts
+// Get multiple documents (backend only)
 const users = await repository.batchGet([{ userId: 'user1' }, { userId: 'user2' }]);
-```
 
-#### batchSet
-
-```ts
+// Set multiple documents
 await repository.batchSet([
   {
     userId: 'user1',
@@ -159,11 +137,8 @@ await repository.batchSet([
     tag: [],
   },
 ]);
-```
 
-#### batchDelete
-
-```ts
+// Delete multiple documents
 await repository.batchDelete([{ userId: 'user1' }, { userId: 'user2' }]);
 ```
 
@@ -203,12 +178,12 @@ import { runTransaction } from '@firebase/firestore';
 
 // Or, please use db.runTransaction for backend
 await runTransaction(async (tx) => {
-  // get
+  // Get
   const doc = await repository.get({ userId: 'user1' }, { tx });
   
   if (doc) {
     doc.tag = [...doc.tag, 'new-tag'];
-    // set
+    // Set
     await repository.set(doc, { tx });
     await repository.batchSet([
       { ...doc, userId: 'user2' },
@@ -216,7 +191,7 @@ await runTransaction(async (tx) => {
     ]);
   }
 
-  // delete
+  // Delete
   await repository.delete({ userId: 'user4' }, { tx });
   await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }]);
 });
