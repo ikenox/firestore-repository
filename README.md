@@ -30,25 +30,23 @@ npm install firestore-repository @firestore-repository/firebase-js-sdk
 ## Basic usage
 
 ```ts
-import {mapTo, data, rootCollection} from 'firestore-repository/schema';
-import {condition as $, limit, query, where} from 'firestore-repository/query';
+import { mapTo, data, rootCollection } from 'firestore-repository/schema';
+import { condition as $, limit, query, where } from 'firestore-repository/query';
 
 // For backend
-import {Firestore} from '@google-cloud/firestore';
-import {Repository} from '@firestore-repository/google-cloud-firestore';
-
+import { Firestore } from '@google-cloud/firestore';
+import { Repository } from '@firestore-repository/google-cloud-firestore';
 const db = new Firestore();
 
 // For web frontend
-import {getFirestore} from '@firebase/firestore';
-import {Repository} from '@firestore-repository/firebase-js-sdk';
-
+import { getFirestore } from '@firebase/firestore';
+import { Repository } from '@firestore-repository/firebase-js-sdk';
 const db = getFirestore();
 
 // define a collection
-const authors = rootCollection({
+const users = rootCollection({
   name: 'Authors',
-  id: mapTo('authorId'),
+  id: mapTo('userId'),
   data: data<{
     name: string;
     profile: {
@@ -63,7 +61,7 @@ const repository = new Repository(authors, db);
 
 // set
 await repository.set({
-  authorId: 'author1',
+  userId: 'user1',
   name: 'John Doe',
   profile: {
     age: 42,
@@ -73,17 +71,110 @@ await repository.set({
 });
 
 // get
-const doc = await repository.get({authorId: 'author1'});
-console.info(doc);
+const doc = await repository.get({ userId: 'user1' });
+console.log(doc);
 
-// query snapshot
-const q1 = query(authors, where($('profile.age', '>=', 20)), limit(10));
+// delete
+await repository.delete({ userId: 'user2' });
+
+// query
+const q1 = query(users, where($('profile.age', '>=', 20)), limit(10));
 const docs = await repository.list(q1);
 console.log(docs);
 
+// listen document
+repository.getOnSnapshot({ userId: 'user1' }, (doc) => {
+  console.log(doc);
+});
+
 // listen query
-const q2 = query(authors, where($('tag', 'array-contains', 'new')), limit(10));
+const q2 = query(users, where($('tag', 'array-contains', 'new')), limit(10));
 repository.listOnSnapshot(q2, (docs) => {
   console.log(docs);
 });
+
+// aggregate
+const result = await repository.aggregate({
+  query: query(users, where($('profile.age', '>=', 20)), limit(10)),
+  spec: {
+    avgAge: average('profile.age'),
+    sumAge: sum('profile.age'),
+    count: count(),
+  },
+});
+console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
 ```
+
+### Batch operations
+
+```ts
+// set
+await repository.batchSet([
+  {
+    userId: 'user1',
+    name: 'Alice',
+    profile: { age: 30, gender: 'female' },
+    tag: ['new'],
+  },
+  {
+    userId: 'user2',
+    name: 'Bob',
+    profile: { age: 20, gender: 'male' },
+    tag: [],
+  },
+]);
+
+// delete
+await repository.batchDelete([{ userId: 'user1' }, { userId: 'user2' }]);
+
+// mix multiple different operations
+const batch = db.writeBatch();
+await repository.set(
+    {
+      userId: 'user3',
+      name: 'Bob',
+      profile: { age: 20, gender: 'male' },
+      tag: [],
+    },
+    { tx: batch },
+);
+await repository.batchSet(
+    [
+      // ...
+    ],
+    { tx: batch },
+);
+await repository.delete({ userId: 'user4' }, { tx: batch });
+await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
+  tx: batch,
+});
+await batch.commit();
+```
+
+### Transaction
+
+```ts
+// For web frontend
+import { runTransaction } from '@firebase/firestore';
+
+// Or db.runTransaction for backend
+await runTransaction(async (tx) => {
+  // get
+  const doc = await repository.get({ userId: 'user1' }, { tx });
+  
+  if (doc) {
+    doc.tag = [...doc.tag, 'new-tag'];
+    // set
+    await repository.set(doc, { tx });
+    await repository.batchSet([
+      { ...doc, userId: 'user2' },
+      { ...doc, userId: 'user3' },
+    ]);
+  }
+
+  // delete
+  await repository.delete({ userId: 'user4' }, { tx });
+  await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }]);
+});
+```
+
