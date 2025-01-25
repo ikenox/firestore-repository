@@ -29,9 +29,10 @@ npm install firestore-repository @firestore-repository/firebase-js-sdk
 
 ## Basic usage
 
+### Define a collection and its repository
+
 ```ts
 import { mapTo, data, rootCollection } from 'firestore-repository/schema';
-import { condition as $, limit, query, where } from 'firestore-repository/query';
 
 // For backend
 import { Firestore } from '@google-cloud/firestore';
@@ -58,8 +59,13 @@ const users = rootCollection({
 });
 
 const repository = new Repository(users, db);
+```
 
-// set
+### Operations for a single document
+
+#### Set a document
+
+```ts
 await repository.set({
   userId: 'user1',
   name: 'John Doe',
@@ -69,33 +75,56 @@ await repository.set({
   },
   tag: ['new'],
 });
+```
 
-// get
+#### Get a document
+
+```ts
 const doc = await repository.get({ userId: 'user1' });
-console.log(doc);
+```
 
-// delete
-await repository.delete({ userId: 'user2' });
+#### Listen a document
 
-// query
-const q1 = query(users, where($('profile.age', '>=', 20)), limit(10));
-const docs = await repository.list(q1);
-console.log(docs);
-
-// listen document
+```ts
 repository.getOnSnapshot({ userId: 'user1' }, (doc) => {
   console.log(doc);
 });
+```
 
-// listen query
-const q2 = query(users, where($('tag', 'array-contains', 'new')), limit(10));
-repository.listOnSnapshot(q2, (docs) => {
+#### Delete a document
+```ts
+await repository.delete({ userId: 'user2' });
+```
+
+### Query
+
+#### Define a query
+
+```ts
+import { condition as $, limit, query, where } from 'firestore-repository/query';
+const query1 = query(users, where($('profile.age', '>=', 20)), limit(10));
+```
+
+#### Execute the query
+
+```ts
+const docs = await repository.list(query1);
+console.log(docs);
+```
+
+#### Listen the query
+
+```ts
+repository.listOnSnapshot(query1, (docs) => {
   console.log(docs);
 });
+```
 
-// aggregate
+#### Aggregate
+
+```ts
 const result = await repository.aggregate({
-  query: query(users, where($('profile.age', '>=', 20)), limit(10)),
+  query: query1,
   spec: {
     avgAge: average('profile.age'),
     sumAge: sum('profile.age'),
@@ -107,8 +136,15 @@ console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
 
 ### Batch operations
 
+#### batchGet (backend only)
+
 ```ts
-// set
+const users = await repository.batchGet([{ userId: 'user1' }, { userId: 'user2' }]);
+```
+
+#### batchSet
+
+```ts
 await repository.batchSet([
   {
     userId: 'user1',
@@ -123,11 +159,17 @@ await repository.batchSet([
     tag: [],
   },
 ]);
+```
 
-// delete
+#### batchDelete
+
+```ts
 await repository.batchDelete([{ userId: 'user1' }, { userId: 'user2' }]);
+```
 
-// Include multiple different operations in a batch
+#### Include multiple different operations in a batch
+
+```ts
 // For backend
 const batch = db.writeBatch();
 // For web frontend
@@ -143,11 +185,7 @@ await repository.set(
     },
     { tx: batch },
 );
-await repository.batchSet(
-    [
-      // ...
-    ],
-    { tx: batch },
+await repository.batchSet([ /* ... */ ], { tx: batch },
 );
 await repository.delete({ userId: 'user4' }, { tx: batch });
 await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
@@ -163,7 +201,7 @@ await batch.commit();
 // For web frontend
 import { runTransaction } from '@firebase/firestore';
 
-// Or db.runTransaction for backend
+// Or, please use db.runTransaction for backend
 await runTransaction(async (tx) => {
   // get
   const doc = await repository.get({ userId: 'user1' }, { tx });
