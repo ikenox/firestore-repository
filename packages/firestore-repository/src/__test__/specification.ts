@@ -590,6 +590,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             }
           });
 
+          it('filter by id', async () => {
+            await expectQuery(query(repository.collection, $('__name__', '==', '1')), [items[0]]);
+            await expectQuery(query(repository.collection, $('__name__', '==', '2')), [items[1]]);
+          });
+
           it('filter by nested field', async () => {
             await expectQuery(query(repository.collection, $('profile.age', '>=', 40)), [
               items[0],
