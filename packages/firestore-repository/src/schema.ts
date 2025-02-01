@@ -146,8 +146,8 @@ export type CollectionSchema<
 > = {
   [collectionSchemaBrand]: unknown;
   name: string;
-  data: DataConverter<DbModel, AppModel>;
   id: IdConverter<Id>;
+  data: DataConverter<DbModel, AppModel>;
   collectionPath: CollectionPathConverter<CollectionPath>;
 };
 
