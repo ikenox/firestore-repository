@@ -1,6 +1,6 @@
 {
   "name": "@firestore-repository/firebase-js-sdk",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
   "homepage": "https://github.com/ikenox/firestore-repository",
   "repository": {
@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "dependencies": {
     "@firebase/firestore": "catalog:",
