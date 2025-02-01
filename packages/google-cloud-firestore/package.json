@@ -1,6 +1,6 @@
 {
   "name": "@firestore-repository/google-cloud-firestore",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
   "homepage": "https://github.com/ikenox/firestore-repository",
   "repository": {
