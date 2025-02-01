@@ -94,7 +94,7 @@ await repository.delete({ userId: 'user2' });
 import { condition as $, limit, query, where } from 'firestore-repository/query';
 
 // Define a query
-const q = query(users, where($('profile.age', '>=', 20)), limit(10));
+const q = query(users, $('profile.age', '>=', 20), limit(10));
 
 // List documents
 const docs = await repository.list(q);

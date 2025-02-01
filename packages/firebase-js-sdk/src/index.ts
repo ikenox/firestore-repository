@@ -235,8 +235,10 @@ export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery =>
   }>(
     (acc, constraint) => {
       switch (constraint.kind) {
-        case 'where': {
-          const filter = toFirestoreQueryFilterConstraint(constraint.filter);
+        case 'where':
+        case 'and':
+        case 'or': {
+          const filter = toFirestoreQueryFilterConstraint(constraint);
           acc.filter = acc.filter ? and(acc.filter, filter) : filter;
           break;
         }
