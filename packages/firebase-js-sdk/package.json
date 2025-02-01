@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "dependencies": {
     "@firebase/firestore": "catalog:",

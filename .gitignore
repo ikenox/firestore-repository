@@ -1,5 +1,9 @@
 node_modules
 coverage
 build
+
+# README.md will be cloned from repository root on publish
+packages/**/README.md
+
 # local private test or debugging purpose
 *.local.test.ts
