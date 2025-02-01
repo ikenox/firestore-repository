@@ -240,7 +240,9 @@ export const toFirestoreQuery = (db: Firestore, query: Query): FirestoreQuery =>
     query.constraints?.reduce((q, constraint) => {
       switch (constraint.kind) {
         case 'where':
-          return q.where(toFirestoreFilter(constraint.filter));
+        case 'or':
+        case 'and':
+          return q.where(toFirestoreFilter(constraint));
         case 'orderBy':
           return q.orderBy(constraint.field, constraint.direction);
         case 'limit':

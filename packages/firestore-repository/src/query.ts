@@ -76,7 +76,7 @@ export const collectionGroupQuery = <T extends CollectionSchema>(
  * Query constraint
  */
 export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
-  | Where<T>
+  | FilterExpression<T>
   | OrderBy<T>
   | StartAt<T>
   | StartAfter<T>
@@ -85,15 +85,6 @@ export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
   | Limit
   | LimitToLast
   | Offset;
-
-export type Where<T extends CollectionSchema> = {
-  kind: 'where';
-  filter: FilterExpression<T>;
-};
-export const where = <T extends CollectionSchema>(filter: FilterExpression<T>): Where<T> => ({
-  kind: 'where',
-  filter,
-});
 
 export type OrderBy<T extends CollectionSchema> = {
   kind: 'orderBy';

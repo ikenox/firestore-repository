@@ -2,7 +2,7 @@ import { initializeApp } from '@firebase/app';
 import { connectFirestoreEmulator, getFirestore } from '@firebase/firestore';
 import { Repository } from '@firestore-repository/firebase-js-sdk';
 import type { Timestamp } from 'firestore-repository/document';
-import { condition as $, limit, query, where } from 'firestore-repository/query';
+import { condition as $, limit, query } from 'firestore-repository/query';
 import { implicit, mapTo, rootCollection } from 'firestore-repository/schema';
 
 async function main() {
@@ -28,11 +28,11 @@ async function main() {
   const doc = await repository.get({ authorId: 'author1' });
   console.log(doc);
 
-  const docs = await repository.list(query(authors, where($('profile.age', '>=', 20)), limit(10)));
+  const docs = await repository.list(query(authors, $('profile.age', '>=', 20), limit(10)));
   console.log(docs);
 
   repository.listOnSnapshot(
-    query(authors, where($('tag', 'array-contains', 'new')), limit(10)),
+    query(authors, $('tag', 'array-contains', 'new'), limit(10)),
     (docs) => {
       console.log(docs);
     },
