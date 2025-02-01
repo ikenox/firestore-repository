@@ -94,25 +94,22 @@ await repository.delete({ userId: 'user2' });
 import { condition as $, limit, query, where } from 'firestore-repository/query';
 
 // Define a query
-const query1 = query(users, where($('profile.age', '>=', 20)), limit(10));
+const q = query(users, where($('profile.age', '>=', 20)), limit(10));
 
 // List documents
-const docs = await repository.list(query1);
+const docs = await repository.list(q);
 console.log(docs);
 
 // Listen documents
-repository.listOnSnapshot(query1, (docs) => {
+repository.listOnSnapshot(q, (docs) => {
   console.log(docs);
 });
 
 // Aggregate
-const result = await repository.aggregate({
-  query: query1,
-  spec: {
-    avgAge: average('profile.age'),
-    sumAge: sum('profile.age'),
-    count: count(),
-  },
+const result = await repository.aggregate(q, {
+  avgAge: average('profile.age'),
+  sumAge: sum('profile.age'),
+  count: count(),
 });
 console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
 ```

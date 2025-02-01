@@ -874,13 +874,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('aggregate', async () => {
-          const res = await repository.aggregate({
-            query: query(repository.collection),
-            spec: {
-              avgAge: average('profile.age'),
-              sumAge: sum('profile.age'),
-              count: count(),
-            },
+          const res = await repository.aggregate(query(repository.collection), {
+            avgAge: average('profile.age'),
+            sumAge: sum('profile.age'),
+            count: count(),
           });
           expectTypeOf(res).toEqualTypeOf<{ avgAge: number; sumAge: number; count: number }>();
           expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
@@ -1055,8 +1052,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       await repository.delete({ userId: 'user2' });
 
       // query
-      const q1 = query(users, where($('profile.age', '>=', 20)), limit(10));
-      const docs = await repository.list(q1);
+      const q = query(users, where($('profile.age', '>=', 20)), limit(10));
+      const docs = await repository.list(q);
       console.log(docs);
 
       // listen document
@@ -1065,19 +1062,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       // listen query
-      const q2 = query(users, where($('tag', 'array-contains', 'new')), limit(10));
-      repository.listOnSnapshot(q2, (docs) => {
+      repository.listOnSnapshot(q, (docs) => {
         console.log(docs);
       });
 
       // aggregate
-      const result = await repository.aggregate({
-        query: query(users, where($('profile.age', '>=', 20)), limit(10)),
-        spec: {
-          avgAge: average('profile.age'),
-          sumAge: sum('profile.age'),
-          count: count(),
-        },
+      const result = await repository.aggregate(q, {
+        avgAge: average('profile.age'),
+        sumAge: sum('profile.age'),
+        count: count(),
       });
       console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
     });
