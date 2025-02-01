@@ -9,7 +9,7 @@ import {
   Transaction,
   type WriteBatch,
 } from '@google-cloud/firestore';
-import type { AggregateQuery, Aggregated } from 'firestore-repository/aggregate';
+import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
 import type { WriteDocumentData } from 'firestore-repository/document';
 import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
@@ -70,9 +70,9 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     }, error);
   }
 
-  async aggregate<U extends AggregateQuery<T>>(aggregate: U): Promise<Aggregated<U>> {
+  async aggregate<U extends AggregateSpec<T>>(query: Query<T>, spec: U): Promise<Aggregated<U>> {
     const aggregateSpec: FirestoreAggregateSpec = {};
-    for (const [k, v] of Object.entries(aggregate.spec)) {
+    for (const [k, v] of Object.entries(spec)) {
       switch (v.kind) {
         case 'count':
           aggregateSpec[k] = AggregateField.count();
@@ -88,7 +88,7 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
       }
     }
 
-    const res = await toFirestoreQuery(this.db, aggregate.query).aggregate(aggregateSpec).get();
+    const res = await toFirestoreQuery(this.db, query).aggregate(aggregateSpec).get();
     return res.data() as Aggregated<U>;
   }
 

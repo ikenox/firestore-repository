@@ -1,4 +1,4 @@
-import type { AggregateQuery, Aggregated } from './aggregate.js';
+import type { AggregateSpec, Aggregated } from './aggregate.js';
 import type { Query } from './query.js';
 import type { CollectionSchema, Id, Model } from './schema.js';
 
@@ -42,7 +42,7 @@ export interface Repository<
   /**
    * Returns an aggregation of the specified query
    */
-  aggregate: <U extends AggregateQuery<T>>(aggregate: U) => Promise<Aggregated<U>>;
+  aggregate: <U extends AggregateSpec<T>>(query: Query<T>, spec: U) => Promise<Aggregated<U>>;
 
   /**
    * Create or update
