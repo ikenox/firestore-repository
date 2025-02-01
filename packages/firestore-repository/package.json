@@ -1,6 +1,6 @@
 {
   "name": "firestore-repository",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
   "homepage": "https://github.com/ikenox/firestore-repository",
   "repository": {
