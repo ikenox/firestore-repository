@@ -1067,7 +1067,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       await repository.delete({ userId: 'user2' });
 
       // query
-      const q = query(users, $('profile.age', '>=', 20), limit(10));
+      const q = query(
+        users,
+        $('profile.age', '>=', 20),
+        $('profile.gender', '==', 'male'),
+        limit(10),
+      );
       const docs = await repository.list(q);
       console.log(docs);
 
