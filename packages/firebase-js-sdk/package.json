@@ -1,6 +1,6 @@
 {
   "name": "@firestore-repository/firebase-js-sdk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
   "homepage": "https://github.com/ikenox/firestore-repository",
   "repository": {
