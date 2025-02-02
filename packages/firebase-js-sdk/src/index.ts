@@ -8,7 +8,6 @@ import {
   QueryCompositeFilterConstraint,
   type QueryFilterConstraint,
   type QueryNonFilterConstraint,
-  type QuerySnapshot,
   Transaction,
   type WriteBatch,
   and,
@@ -40,7 +39,6 @@ import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
 import type { WriteDocumentData } from 'firestore-repository/document';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
-import type { QueryResultMetadata } from 'firestore-repository/repository';
 import {
   type CollectionSchema,
   type DocPathElement,
@@ -50,13 +48,9 @@ import {
   collectionPath,
   docPath,
 } from 'firestore-repository/schema';
-import { addQueryResultMetadata, assertNever } from 'firestore-repository/util';
+import { assertNever } from 'firestore-repository/util';
 
-export type Env = {
-  transaction: Transaction;
-  writeBatch: WriteBatch;
-  querySnapshot: QuerySnapshot;
-};
+export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 export type TransactionOption = repository.TransactionOption<Env>;
 export type WriteTransactionOption = repository.WriteTransactionOption<Env>;
 
@@ -90,24 +84,25 @@ export class Repository<T extends CollectionSchema = CollectionSchema>
     });
   }
 
-  async list(query: Query<T>): Promise<Model<T>[] & QueryResultMetadata<Env>> {
-    const snapshot = await getDocs(toFirestoreQuery(this.db, query));
-    // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
-    const docs = snapshot.docs.map((doc) => this.fromFirestore(doc)!);
-    return addQueryResultMetadata<typeof docs, Env>(docs, snapshot);
+  async list(query: Query<T>): Promise<Model<T>[]> {
+    const { docs } = await getDocs(toFirestoreQuery(this.db, query));
+    return docs.map(
+      (doc) =>
+        // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
+        this.fromFirestore(doc)!,
+    );
   }
 
   listOnSnapshot(
     query: Query<T>,
-    next: (snapshot: Model<T>[] & QueryResultMetadata<Env>) => void,
+    next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
     complete?: () => void,
   ): repository.Unsubscribe {
     return onSnapshot(toFirestoreQuery(this.db, query), {
-      next: (snapshot) => {
+      next: ({ docs }) => {
         // biome-ignore lint/style/noNonNullAssertion: query result item should not be null
-        const docs = snapshot.docs.map((doc) => this.fromFirestore(doc)!);
-        next(addQueryResultMetadata<typeof docs, Env>(docs, snapshot));
+        next(docs.map((doc) => this.fromFirestore(doc)!));
       },
       error: (e) => error?.(e),
       complete: () => {

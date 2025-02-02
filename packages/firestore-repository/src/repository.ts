@@ -28,14 +28,14 @@ export interface Repository<
   /**
    * Returns a documents list of the specified query
    */
-  list: (query: Query<T>) => Promise<Model<T>[] & QueryResultMetadata<Env>>;
+  list: (query: Query<T>) => Promise<Model<T>[]>;
 
   /**
    * Listen documents of the specified query
    */
   listOnSnapshot: (
     query: Query<T>,
-    next: (snapshot: Model<T>[] & QueryResultMetadata<Env>) => void,
+    next: (snapshot: Model<T>[]) => void,
     error?: (error: Error) => void,
   ) => Unsubscribe;
 
@@ -71,16 +71,9 @@ export interface Repository<
 export type FirestoreEnvironment = {
   transaction: unknown;
   writeBatch: unknown;
-  querySnapshot: unknown;
 };
 export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };
 export type WriteTransactionOption<T extends FirestoreEnvironment> = {
   tx?: T['transaction'] | T['writeBatch'];
 };
-
 export type Unsubscribe = () => void;
-
-export const rawQuerySnapshot: unique symbol = Symbol();
-export type QueryResultMetadata<T extends FirestoreEnvironment> = {
-  [rawQuerySnapshot]: T['querySnapshot'];
-};
