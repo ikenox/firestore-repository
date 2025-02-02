@@ -163,8 +163,7 @@ await repository.set(
     },
     { tx: batch },
 );
-await repository.batchSet([ /* ... */ ], { tx: batch },
-);
+await repository.batchSet([ /* ... */ ], { tx: batch });
 await repository.delete({ userId: 'user4' }, { tx: batch });
 await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
   tx: batch,
