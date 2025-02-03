@@ -4,7 +4,7 @@
 
 # firestore-repository
 
-A minimum and universal Firestore ORM (Repository Pattern) for TypeScript
+A minimum and universal Firestore client (Repository Pattern) for TypeScript
 
 ## Features
 
