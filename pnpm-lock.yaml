@@ -16,8 +16,8 @@ catalogs:
       specifier: ^7.10.0
       version: 7.10.0
     '@types/node':
-      specifier: ^22.10.2
-      version: 22.10.2
+      specifier: ^22.13.1
+      version: 22.13.1
 
 importers:
 
@@ -59,7 +59,7 @@ importers:
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
-        version: 22.10.2
+        version: 22.13.1
 
   examples/google-cloud-firestore:
     dependencies:
@@ -550,14 +550,8 @@ packages:
   '@types/node@18.19.75':
     resolution: {integrity: sha512-UIksWtThob6ZVSyxcOqCLOUNg/dyO1Qvx4McgeuhrEtHTLFTf7BBhEazaE4K806FGTPtzd/2sE90qn4fVr7cyw==}
 
-  '@types/node@22.10.2':
-    resolution: {integrity: sha512-Xxr6BBRCAOQixvonOye19wnzyDiUtTeqldOOmj3CkeblonbccA12PFwlufvRdrpjXxqnmUaeiU5EOA+7s5diUQ==}
-
   '@types/node@22.13.1':
     resolution: {integrity: sha512-jK8uzQlrvXqEU91UxiK5J7pKHyzgnI1Qnl0QDHIgVGuolJhRb9EEl28Cj9b3rGR8B2lhFCtvIm5os8lFnO/1Ew==}
-
-  '@types/node@22.9.0':
-    resolution: {integrity: sha512-vuyHg81vvWA1Z1ELfvLko2c8f34gyA0zaic0+Rllc5lbCnbSyuvb2Oxpm6TAUAC/2xZN3QGqxBNggD1nNR2AfQ==}
 
   '@types/request@2.48.12':
     resolution: {integrity: sha512-G3sY+NpsA9jnwm0ixhAFQSJ3Q9JkpLZpJbI3GMv0mIAT0y3mRabYeINzal5WOChIiaTEGQYlHOKgkaM9EisWHw==}
@@ -1339,9 +1333,6 @@ packages:
   undici-types@5.26.5:
     resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
 
-  undici-types@6.19.8:
-    resolution: {integrity: sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw==}
-
   undici-types@6.20.0:
     resolution: {integrity: sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==}
 
@@ -1665,7 +1656,7 @@ snapshots:
   '@grpc/grpc-js@1.9.15':
     dependencies:
       '@grpc/proto-loader': 0.7.13
-      '@types/node': 22.13.0
+      '@types/node': 22.13.1
 
   '@grpc/proto-loader@0.7.13':
     dependencies:
@@ -1809,17 +1800,9 @@ snapshots:
     dependencies:
       undici-types: 5.26.5
 
-  '@types/node@22.10.2':
-    dependencies:
-      undici-types: 6.20.0
-
   '@types/node@22.13.1':
     dependencies:
       undici-types: 6.20.0
-
-  '@types/node@22.9.0':
-    dependencies:
-      undici-types: 6.19.8
 
   '@types/request@2.48.12':
     dependencies:
@@ -2479,7 +2462,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
-      '@types/node': 22.9.0
+      '@types/node': 22.13.1
       long: 5.2.3
 
   pump@3.0.2:
@@ -2738,8 +2721,6 @@ snapshots:
   typescript@5.7.3: {}
 
   undici-types@5.26.5: {}
-
-  undici-types@6.19.8: {}
 
   undici-types@6.20.0: {}
 
