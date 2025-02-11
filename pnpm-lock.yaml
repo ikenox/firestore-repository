@@ -10,8 +10,8 @@ catalogs:
       specifier: ^1.9.4
       version: 1.9.4
     '@firebase/app':
-      specifier: ^0.10.16
-      version: 0.10.16
+      specifier: ^0.11.0
+      version: 0.11.0
     '@firebase/firestore':
       specifier: ^4.7.7
       version: 4.7.7
@@ -64,10 +64,10 @@ importers:
     dependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.10.16
+        version: 0.11.0
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.7(@firebase/app@0.10.16)
+        version: 4.7.7(@firebase/app@0.11.0)
       '@firestore-repository/firebase-js-sdk':
         specifier: workspace:*
         version: link:../../packages/firebase-js-sdk
@@ -95,14 +95,14 @@ importers:
     dependencies:
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.7(@firebase/app@0.10.16)
+        version: 4.7.7(@firebase/app@0.11.0)
       firestore-repository:
         specifier: workspace:*
         version: link:../firestore-repository
     devDependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.10.16
+        version: 0.11.0
 
   packages/firestore-repository: {}
 
@@ -339,12 +339,8 @@ packages:
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
 
-  '@firebase/app@0.10.16':
-    resolution: {integrity: sha512-SUati2qH48gvVGnSsqMkZr1Iq7No52a3tJQ4itboSTM89Erezmw3v1RsfVymrDze9+KiOLmBpvLNKSvheITFjg==}
-    engines: {node: '>=18.0.0'}
-
-  '@firebase/component@0.6.11':
-    resolution: {integrity: sha512-eQbeCgPukLgsKD0Kw5wQgsMDX5LeoI1MIrziNDjmc6XDq5ZQnuUymANQgAb2wp1tSF9zDSXyxJmIUXaKgN58Ug==}
+  '@firebase/app@0.11.0':
+    resolution: {integrity: sha512-FaPl2RB2iClQK4IIAN4ruhzyGNRcvAwXk0Ltqdt55RiTmQ4aM2EAJicgI8QNQd2JIkeCT1K8JKsEba3T1/J7FA==}
     engines: {node: '>=18.0.0'}
 
   '@firebase/component@0.6.12':
@@ -359,10 +355,6 @@ packages:
 
   '@firebase/logger@0.4.4':
     resolution: {integrity: sha512-mH0PEh1zoXGnaR8gD1DeGeNZtWFKbnz9hDO91dIml3iou1gpOnLqXQ2dJfB71dj6dpmUjcQ6phY3ZZJbjErr9g==}
-    engines: {node: '>=18.0.0'}
-
-  '@firebase/util@1.10.2':
-    resolution: {integrity: sha512-qnSHIoE9FK+HYnNhTI8q14evyqbc/vHRivfB4TgCIUOl4tosmKSQlp7ltymOlMP4xVIJTg5wrkfcZ60X4nUf7Q==}
     engines: {node: '>=18.0.0'}
 
   '@firebase/util@1.10.3':
@@ -1603,17 +1595,12 @@ snapshots:
 
   '@fastify/busboy@2.1.1': {}
 
-  '@firebase/app@0.10.16':
+  '@firebase/app@0.11.0':
     dependencies:
-      '@firebase/component': 0.6.11
+      '@firebase/component': 0.6.12
       '@firebase/logger': 0.4.4
-      '@firebase/util': 1.10.2
+      '@firebase/util': 1.10.3
       idb: 7.1.1
-      tslib: 2.8.1
-
-  '@firebase/component@0.6.11':
-    dependencies:
-      '@firebase/util': 1.10.2
       tslib: 2.8.1
 
   '@firebase/component@0.6.12':
@@ -1621,9 +1608,9 @@ snapshots:
       '@firebase/util': 1.10.3
       tslib: 2.8.1
 
-  '@firebase/firestore@4.7.7(@firebase/app@0.10.16)':
+  '@firebase/firestore@4.7.7(@firebase/app@0.11.0)':
     dependencies:
-      '@firebase/app': 0.10.16
+      '@firebase/app': 0.11.0
       '@firebase/component': 0.6.12
       '@firebase/logger': 0.4.4
       '@firebase/util': 1.10.3
@@ -1633,10 +1620,6 @@ snapshots:
       tslib: 2.8.1
 
   '@firebase/logger@0.4.4':
-    dependencies:
-      tslib: 2.8.1
-
-  '@firebase/util@1.10.2':
     dependencies:
       tslib: 2.8.1
 
