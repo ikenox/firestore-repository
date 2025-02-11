@@ -16,8 +16,8 @@ catalogs:
       specifier: ^4.7.7
       version: 4.7.7
     '@google-cloud/firestore':
-      specifier: ^7.10.0
-      version: 7.10.0
+      specifier: ^7.11.0
+      version: 7.11.0
     '@types/node':
       specifier: 22.13.1
       version: 22.13.1
@@ -86,7 +86,7 @@ importers:
         version: link:../../packages/google-cloud-firestore
       '@google-cloud/firestore':
         specifier: 'catalog:'
-        version: 7.10.0
+        version: 7.11.0
       firestore-repository:
         specifier: workspace:*
         version: link:../../packages/firestore-repository
@@ -110,7 +110,7 @@ importers:
     dependencies:
       '@google-cloud/firestore':
         specifier: 'catalog:'
-        version: 7.10.0
+        version: 7.11.0
       firestore-repository:
         specifier: workspace:*
         version: link:../firestore-repository
@@ -372,8 +372,8 @@ packages:
   '@firebase/webchannel-wrapper@1.0.3':
     resolution: {integrity: sha512-2xCRM9q9FlzGZCdgDMJwc0gyUkWFtkosy7Xxr6sFgQwn+wMNIWd7xIvYNauU1r64B5L5rsGKy/n9TKJ0aAFeqQ==}
 
-  '@google-cloud/firestore@7.10.0':
-    resolution: {integrity: sha512-VFNhdHvfnmqcHHs6YhmSNHHxQqaaD64GwiL0c+e1qz85S8SWZPC2XFRf8p9yHRTF40Kow424s1KBU9f0fdQa+Q==}
+  '@google-cloud/firestore@7.11.0':
+    resolution: {integrity: sha512-88uZ+jLsp1aVMj7gh3EKYH1aulTAMFAp8sH/v5a9w8q8iqSG27RiWLoxSAFr/XocZ9hGiWH1kEnBw+zl3xAgNA==}
     engines: {node: '>=14.0.0'}
 
   '@grpc/grpc-js@1.12.2':
@@ -1646,7 +1646,7 @@ snapshots:
 
   '@firebase/webchannel-wrapper@1.0.3': {}
 
-  '@google-cloud/firestore@7.10.0':
+  '@google-cloud/firestore@7.11.0':
     dependencies:
       '@opentelemetry/api': 1.9.0
       fast-deep-equal: 3.1.3
