@@ -20,9 +20,9 @@
     "vite-tsconfig-paths": "catalog:",
     "vitest": "catalog:"
   },
-  "packageManager": "pnpm@10.0.0",
+  "packageManager": "pnpm@10.3.0",
   "engines": {
-    "node": "22.11.0"
+    "node": "22.13.1"
   },
   "author": "Naoto Ikeno",
   "license": "MIT"
