@@ -13,8 +13,8 @@ catalogs:
       specifier: ^0.11.0
       version: 0.11.0
     '@firebase/firestore':
-      specifier: ^4.7.7
-      version: 4.7.7
+      specifier: ^4.7.8
+      version: 4.7.8
     '@google-cloud/firestore':
       specifier: ^7.11.0
       version: 7.11.0
@@ -67,7 +67,7 @@ importers:
         version: 0.11.0
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.7(@firebase/app@0.11.0)
+        version: 4.7.8(@firebase/app@0.11.0)
       '@firestore-repository/firebase-js-sdk':
         specifier: workspace:*
         version: link:../../packages/firebase-js-sdk
@@ -95,7 +95,7 @@ importers:
     dependencies:
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.7(@firebase/app@0.11.0)
+        version: 4.7.8(@firebase/app@0.11.0)
       firestore-repository:
         specifier: workspace:*
         version: link:../firestore-repository
@@ -347,8 +347,8 @@ packages:
     resolution: {integrity: sha512-YnxqjtohLbnb7raXt2YuA44cC1wA9GiehM/cmxrsoxKlFxBLy2V0OkRSj9gpngAE0UoJ421Wlav9ycO7lTPAUw==}
     engines: {node: '>=18.0.0'}
 
-  '@firebase/firestore@4.7.7':
-    resolution: {integrity: sha512-DDYBjqSyd2vD3SjfRqI2Q9Ua1N0URP+1P0/SnNdVSp0/S5mkbaklIX/eU+199ze0XXnC61RYLqi6KYTYtGoz2A==}
+  '@firebase/firestore@4.7.8':
+    resolution: {integrity: sha512-eDvVJ/I5vSmIdGmLHJAK1OcviigIxjjia6i5/AkMFq6vZMt7CBXA0B5Xz9pGRCZ7WewFcsCbK1ZUQoYJ91+Cew==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@firebase/app': 0.x
@@ -1608,7 +1608,7 @@ snapshots:
       '@firebase/util': 1.10.3
       tslib: 2.8.1
 
-  '@firebase/firestore@4.7.7(@firebase/app@0.11.0)':
+  '@firebase/firestore@4.7.8(@firebase/app@0.11.0)':
     dependencies:
       '@firebase/app': 0.11.0
       '@firebase/component': 0.6.12
