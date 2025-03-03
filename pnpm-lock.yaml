@@ -28,8 +28,8 @@ catalogs:
       specifier: ^10.18.0
       version: 10.18.0
     typescript:
-      specifier: ^5.7.3
-      version: 5.7.3
+      specifier: ^5.8.2
+      version: 5.8.2
     vite-tsconfig-paths:
       specifier: ^5.1.4
       version: 5.1.4
@@ -52,10 +52,10 @@ importers:
         version: 10.18.0
       typescript:
         specifier: 'catalog:'
-        version: 5.7.3
+        version: 5.8.2
       vite-tsconfig-paths:
         specifier: 'catalog:'
-        version: 5.1.4(typescript@5.7.3)(vite@5.4.11(@types/node@22.13.5))
+        version: 5.1.4(typescript@5.8.2)(vite@5.4.11(@types/node@22.13.5))
       vitest:
         specifier: 'catalog:'
         version: 2.1.6(@types/node@22.13.5)
@@ -1329,8 +1329,8 @@ packages:
   tweetnacl@0.14.5:
     resolution: {integrity: sha512-KXXFFdAbFXY4geFIwoyNK+f5Z1b7swfXABfL7HXCmoIWMKU3dmS26672A4EeQtDzLKy7SXmfBu51JolvEKwtGA==}
 
-  typescript@5.7.3:
-    resolution: {integrity: sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw==}
+  typescript@5.8.2:
+    resolution: {integrity: sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -2705,15 +2705,15 @@ snapshots:
 
   tr46@0.0.3: {}
 
-  tsconfck@3.1.4(typescript@5.7.3):
+  tsconfck@3.1.4(typescript@5.8.2):
     optionalDependencies:
-      typescript: 5.7.3
+      typescript: 5.8.2
 
   tslib@2.8.1: {}
 
   tweetnacl@0.14.5: {}
 
-  typescript@5.7.3: {}
+  typescript@5.8.2: {}
 
   undici-types@5.26.5: {}
 
@@ -2745,11 +2745,11 @@ snapshots:
       - supports-color
       - terser
 
-  vite-tsconfig-paths@5.1.4(typescript@5.7.3)(vite@5.4.11(@types/node@22.13.5)):
+  vite-tsconfig-paths@5.1.4(typescript@5.8.2)(vite@5.4.11(@types/node@22.13.5)):
     dependencies:
       debug: 4.4.0
       globrex: 0.1.2
-      tsconfck: 3.1.4(typescript@5.7.3)
+      tsconfck: 3.1.4(typescript@5.8.2)
     optionalDependencies:
       vite: 5.4.11(@types/node@22.13.5)
     transitivePeerDependencies:
