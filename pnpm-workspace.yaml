@@ -5,7 +5,7 @@ catalog:
   "@firebase/app": ^0.11.2
   "@firebase/firestore": ^4.7.9
   "@google-cloud/firestore": ^7.11.0
-  "@types/node": 22.13.9
+  "@types/node": 22.13.10
   "@biomejs/biome": ^1.9.4
   "@vitest/coverage-v8": ^2.1.6
   "testcontainers": ^10.18.0
