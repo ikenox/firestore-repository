@@ -2,7 +2,7 @@ packages:
   - 'packages/*'
   - 'examples/*'
 catalog:
-  "@firebase/app": ^0.11.2
+  "@firebase/app": ^0.11.3
   "@firebase/firestore": ^4.7.9
   "@google-cloud/firestore": ^7.11.0
   "@types/node": 22.13.10
