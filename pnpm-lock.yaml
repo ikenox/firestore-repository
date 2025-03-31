@@ -10,8 +10,8 @@ catalogs:
       specifier: ^1.9.4
       version: 1.9.4
     '@firebase/app':
-      specifier: ^0.11.2
-      version: 0.11.2
+      specifier: ^0.11.4
+      version: 0.11.4
     '@firebase/firestore':
       specifier: ^4.7.9
       version: 4.7.9
@@ -64,10 +64,10 @@ importers:
     dependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.11.2
+        version: 0.11.4
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.9(@firebase/app@0.11.2)
+        version: 4.7.9(@firebase/app@0.11.4)
       '@firestore-repository/firebase-js-sdk':
         specifier: workspace:*
         version: link:../../packages/firebase-js-sdk
@@ -95,14 +95,14 @@ importers:
     dependencies:
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.9(@firebase/app@0.11.2)
+        version: 4.7.9(@firebase/app@0.11.4)
       firestore-repository:
         specifier: workspace:*
         version: link:../firestore-repository
     devDependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.11.2
+        version: 0.11.4
 
   packages/firestore-repository: {}
 
@@ -339,8 +339,8 @@ packages:
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
 
-  '@firebase/app@0.11.2':
-    resolution: {integrity: sha512-bFee0hPJZBzNtiizRxdgsu8C9DW3mn1y0OJJ4zHQsccjDYzGOfvN0G3CMGyBIiwNctsFpQa8orbp2IKywoUeqA==}
+  '@firebase/app@0.11.4':
+    resolution: {integrity: sha512-GPREsZjfSaHzwyC6cI/Cqvzf6zxqMzya+25tSpUstdqC2w0IdfxEfOMjfdW7bDfVEf4Rb4Nb6gfoOAgVSp4c4g==}
     engines: {node: '>=18.0.0'}
 
   '@firebase/component@0.6.13':
@@ -1598,7 +1598,7 @@ snapshots:
 
   '@fastify/busboy@2.1.1': {}
 
-  '@firebase/app@0.11.2':
+  '@firebase/app@0.11.4':
     dependencies:
       '@firebase/component': 0.6.13
       '@firebase/logger': 0.4.4
@@ -1611,9 +1611,9 @@ snapshots:
       '@firebase/util': 1.11.0
       tslib: 2.8.1
 
-  '@firebase/firestore@4.7.9(@firebase/app@0.11.2)':
+  '@firebase/firestore@4.7.9(@firebase/app@0.11.4)':
     dependencies:
-      '@firebase/app': 0.11.2
+      '@firebase/app': 0.11.4
       '@firebase/component': 0.6.13
       '@firebase/logger': 0.4.4
       '@firebase/util': 1.11.0
