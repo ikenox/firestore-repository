@@ -19,8 +19,8 @@ catalogs:
       specifier: ^7.11.0
       version: 7.11.0
     '@types/node':
-      specifier: 22.14.1
-      version: 22.14.1
+      specifier: 22.13.10
+      version: 22.13.10
     '@vitest/coverage-v8':
       specifier: ^2.1.6
       version: 2.1.6
@@ -28,8 +28,8 @@ catalogs:
       specifier: ^10.20.0
       version: 10.20.0
     typescript:
-      specifier: ^5.8.2
-      version: 5.8.2
+      specifier: ^5.8.3
+      version: 5.8.3
     vite-tsconfig-paths:
       specifier: ^5.1.4
       version: 5.1.4
@@ -52,10 +52,10 @@ importers:
         version: 10.20.0
       typescript:
         specifier: 'catalog:'
-        version: 5.8.2
+        version: 5.8.3
       vite-tsconfig-paths:
         specifier: 'catalog:'
-        version: 5.1.4(typescript@5.8.2)(vite@5.4.11(@types/node@22.14.1))
+        version: 5.1.4(typescript@5.8.3)(vite@5.4.11(@types/node@22.14.1))
       vitest:
         specifier: 'catalog:'
         version: 2.1.6(@types/node@22.14.1)
@@ -77,7 +77,7 @@ importers:
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
-        version: 22.14.1
+        version: 22.13.10
 
   examples/google-cloud-firestore:
     dependencies:
@@ -1329,8 +1329,8 @@ packages:
   tweetnacl@0.14.5:
     resolution: {integrity: sha512-KXXFFdAbFXY4geFIwoyNK+f5Z1b7swfXABfL7HXCmoIWMKU3dmS26672A4EeQtDzLKy7SXmfBu51JolvEKwtGA==}
 
-  typescript@5.8.2:
-    resolution: {integrity: sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==}
+  typescript@5.8.3:
+    resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -1781,13 +1781,13 @@ snapshots:
 
   '@types/docker-modem@3.0.6':
     dependencies:
-      '@types/node': 22.13.10
+      '@types/node': 22.14.1
       '@types/ssh2': 1.15.4
 
   '@types/dockerode@3.3.34':
     dependencies:
       '@types/docker-modem': 3.0.6
-      '@types/node': 22.13.10
+      '@types/node': 22.14.1
       '@types/ssh2': 1.15.4
 
   '@types/estree@1.0.6': {}
@@ -1809,17 +1809,17 @@ snapshots:
   '@types/request@2.48.12':
     dependencies:
       '@types/caseless': 0.12.5
-      '@types/node': 22.13.10
+      '@types/node': 22.14.1
       '@types/tough-cookie': 4.0.5
       form-data: 2.5.2
 
   '@types/ssh2-streams@0.1.12':
     dependencies:
-      '@types/node': 22.13.10
+      '@types/node': 22.14.1
 
   '@types/ssh2@0.5.52':
     dependencies:
-      '@types/node': 22.13.10
+      '@types/node': 22.14.1
       '@types/ssh2-streams': 0.1.12
 
   '@types/ssh2@1.15.4':
@@ -2460,7 +2460,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
-      '@types/node': 22.13.10
+      '@types/node': 22.14.1
       long: 5.2.3
 
   pump@3.0.2:
@@ -2708,15 +2708,15 @@ snapshots:
 
   tr46@0.0.3: {}
 
-  tsconfck@3.1.4(typescript@5.8.2):
+  tsconfck@3.1.4(typescript@5.8.3):
     optionalDependencies:
-      typescript: 5.8.2
+      typescript: 5.8.3
 
   tslib@2.8.1: {}
 
   tweetnacl@0.14.5: {}
 
-  typescript@5.8.2: {}
+  typescript@5.8.3: {}
 
   undici-types@5.26.5: {}
 
@@ -2750,11 +2750,11 @@ snapshots:
       - supports-color
       - terser
 
-  vite-tsconfig-paths@5.1.4(typescript@5.8.2)(vite@5.4.11(@types/node@22.14.1)):
+  vite-tsconfig-paths@5.1.4(typescript@5.8.3)(vite@5.4.11(@types/node@22.14.1)):
     dependencies:
       debug: 4.4.0
       globrex: 0.1.2
-      tsconfck: 3.1.4(typescript@5.8.2)
+      tsconfck: 3.1.4(typescript@5.8.3)
     optionalDependencies:
       vite: 5.4.11(@types/node@22.14.1)
     transitivePeerDependencies:
