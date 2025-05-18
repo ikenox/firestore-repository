@@ -39,10 +39,10 @@ export type Timestamp = {
  * A representation of bytes type
  */
 export type Bytes =
-  // admin
-  | Uint8Array
-  // js-sdk
-  | { toUint8Array(): Uint8Array; toBase64(): string };
+  // @google-cloud/firestore
+  | { write(string: string, encoding?: unknown): number }
+  // @firebase/firestore
+  | { toBase64(): string; toUint8Array(): Uint8Array };
 
 /**
  * A common part of firebase-js-sdk and firestore-admin DocumentReference class
