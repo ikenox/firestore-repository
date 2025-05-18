@@ -179,7 +179,7 @@ await batch.commit();
 import { runTransaction } from '@firebase/firestore';
 
 // Or, please use db.runTransaction for backend
-await runTransaction(async (tx) => {
+await runTransaction(db, async (tx) => {
   // Get
   const doc = await repository.get({ userId: 'user1' }, { tx });
   
