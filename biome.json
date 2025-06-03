@@ -50,7 +50,7 @@
       }
     },
     {
-      "include": ["**/vitest.config.ts", "vitest.shared.ts", "vitest.workspace.ts"],
+      "include": ["**/vitest.config.ts", "vitest.shared.ts"],
       "linter": {
         "enabled": true,
         "rules": {
