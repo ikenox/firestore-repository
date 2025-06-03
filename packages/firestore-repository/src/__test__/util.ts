@@ -29,5 +29,5 @@ export const expectArrayEqualsWithoutOrder = <T>(actual: T[], expected: T[]): vo
   // biome-ignore lint/suspicious/noMisplacedAssertion: <explanation>
   expect(actual.length).toStrictEqual(expected.length);
   // biome-ignore lint/suspicious/noMisplacedAssertion: <explanation>
-  expect(actual).toStrictEqual(expect.arrayContaining(expected));
+  expect(actual).toStrictEqual(expect.arrayContaining(expected as unknown[]));
 };

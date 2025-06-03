@@ -148,7 +148,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       describe('get', () => {
         it('exists', async () => {
-          expect(await repository.get(items[0])).toStrictEqual(items[0]);
+          expect(await repository.get(items[0])).toStrictEqual(items[0] as unknown);
         });
 
         it('not found', async () => {
