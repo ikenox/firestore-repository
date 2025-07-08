@@ -7,7 +7,7 @@ import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
 import type { Model } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { type Env, Repository, offset } from './index.js';
+import { type Env, offset, Repository } from './index.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -24,10 +24,7 @@ describe('repository', async () => {
       vector: (value) => FieldValue.vector(value),
       documentReference: (path) => db.doc(path),
     },
-    db: {
-      writeBatch: () => db.batch(),
-      transaction: (runner) => db.runTransaction(runner),
-    },
+    db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type Collection = typeof collection;
 
@@ -138,13 +135,7 @@ describe('repository', async () => {
         rank: 1,
         tag: ['b', 'c'],
       },
-      {
-        authorId: '3',
-        name: 'author3',
-        profile: { age: 60 },
-        rank: 2,
-        tag: ['c', 'd'],
-      },
+      { authorId: '3', name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] },
     ] as const satisfies Model<typeof authorsCollection>[];
 
     beforeAll(async () => {

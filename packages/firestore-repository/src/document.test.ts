@@ -5,10 +5,12 @@ import type {
   Bytes,
   DocumentData,
   DocumentReference,
+  FieldPath,
   FieldValue,
   GeoPoint,
   Increment,
   MapArrayToWriteValue,
+  MapValue,
   ServerTimestamp,
   Timestamp,
   ValueType,
@@ -16,24 +18,17 @@ import type {
   WriteDocumentData,
   WriteValue,
 } from './document.js';
-import type { FieldPath, MapValue } from './document.js';
 
 describe('document', () => {
   describe('FieldPath', () => {
     it('simple', () => {
-      expectTypeOf<
-        FieldPath<{
-          a: number;
-          b: string;
-          c: string[];
-        }>
-      >().toEqualTypeOf<'a' | 'b' | 'c' | '__name__'>();
+      expectTypeOf<FieldPath<{ a: number; b: string; c: string[] }>>().toEqualTypeOf<
+        'a' | 'b' | 'c' | '__name__'
+      >();
     });
     it('complex', () => {
       expectTypeOf<
-        FieldPath<{
-          a: { b: string; c: { d: number; e: { f: string }[] } };
-        }>
+        FieldPath<{ a: { b: string; c: { d: number; e: { f: string }[] } } }>
       >().toEqualTypeOf<'a' | 'a.b' | 'a.c' | 'a.c.d' | 'a.c.e' | '__name__'>();
     });
     it('map fields', () => {

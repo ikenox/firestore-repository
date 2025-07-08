@@ -1,80 +1,38 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "vcs": {
-    "enabled": true,
-    "clientKind": "git",
-    "useIgnoreFile": true
-  },
-  "organizeImports": {
-    "enabled": true
-  },
+  "$schema": "https://biomejs.dev/schemas/2.1.0/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
     "rules": {
-      "all": true,
-      "complexity": {
-        "useLiteralKeys": "off",
-        "noForEach": "off"
-      },
-      "style": {
-        "noParameterProperties": "off"
-      },
-      "correctness": {
-        "noUndeclaredDependencies": "off"
-      }
+      "complexity": { "useLiteralKeys": "off", "noForEach": "off" },
+      "style": { "noParameterProperties": "off" },
+      "correctness": { "noUndeclaredDependencies": "off" }
     }
   },
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
-    "lineWidth": 100
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "single"
-    }
-  },
+  "formatter": { "enabled": true, "indentStyle": "space", "lineWidth": 100, "expand": "never" },
+  "javascript": { "formatter": { "quoteStyle": "single" } },
   "overrides": [
     {
-      "include": ["**/*.test.ts"],
+      "includes": ["**/*.test.ts"],
+      "linter": {
+        "enabled": true,
+        "rules": { "style": { "noNonNullAssertion": "off" }, "performance": {} }
+      }
+    },
+    {
+      "includes": ["**/vitest.config.ts", "vitest.shared.ts"],
       "linter": {
         "enabled": true,
         "rules": {
-          "style": {
-            "noNonNullAssertion": "off"
-          },
-          "performance": {
-            "all": false
-          }
+          "style": { "noNonNullAssertion": "off", "noDefaultExport": "off" },
+          "correctness": { "noNodejsModules": "off" }
         }
       }
     },
     {
-      "include": ["**/vitest.config.ts", "vitest.shared.ts"],
-      "linter": {
-        "enabled": true,
-        "rules": {
-          "style": {
-            "noNonNullAssertion": "off",
-            "noDefaultExport": "off"
-          },
-          "correctness": {
-            "noNodejsModules": "off"
-          }
-        }
-      }
-    },
-    {
-      "include": ["examples/**/*.ts"],
-      "linter": {
-        "enabled": true,
-        "rules": {
-          "suspicious": {
-            "noConsole": "off",
-            "noConsoleLog": "off"
-          }
-        }
-      }
+      "includes": ["examples/**/*.ts"],
+      "linter": { "enabled": true, "rules": { "suspicious": { "noConsole": "off" } } }
     }
   ]
 }

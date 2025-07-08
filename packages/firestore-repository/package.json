@@ -3,10 +3,7 @@
   "version": "0.4.2",
   "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
   "homepage": "https://github.com/ikenox/firestore-repository",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ikenox/firestore-repository.git"
-  },
+  "repository": { "type": "git", "url": "https://github.com/ikenox/firestore-repository.git" },
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,24 +11,12 @@
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "exports": {
-    ".": {
-      "import": {
-        "types": "./build/esm/index.d.ts",
-        "default": "./build/esm/index.js"
-      }
-    },
-    "./*": {
-      "import": {
-        "types": "./build/esm/*.d.ts",
-        "default": "./build/esm/*.js"
-      }
-    }
+    ".": { "import": { "types": "./build/esm/index.d.ts", "default": "./build/esm/index.js" } },
+    "./*": { "import": { "types": "./build/esm/*.d.ts", "default": "./build/esm/*.js" } }
   },
   "files": ["build", "!**/*.tsbuildinfo"],
   "keywords": ["firestore", "orm", "database", "repository", "firebase"],
   "author": "Naoto Ikeno <ikenox@gmail.com>",
   "license": "MIT",
-  "publishConfig": {
-    "access": "public"
-  }
+  "publishConfig": { "access": "public" }
 }

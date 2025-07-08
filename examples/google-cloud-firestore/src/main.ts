@@ -15,10 +15,7 @@ async function main() {
   await repository.set({
     authorId: 'author1',
     name: 'John Doe',
-    profile: {
-      age: 42,
-      gender: 'male',
-    },
+    profile: { age: 42, gender: 'male' },
     tag: ['new'],
     registeredAt: new Date(),
   });
@@ -43,18 +40,11 @@ const authors = rootCollection({
   data: implicit(
     (data: {
       name: string;
-      profile: {
-        age: number;
-        gender?: 'male' | 'female';
-      };
+      profile: { age: number; gender?: 'male' | 'female' };
       tag: string[];
       registeredAt: Timestamp;
-    }) => ({
-      ...data,
-      registeredAt: data.registeredAt.toDate(),
-    }),
+    }) => ({ ...data, registeredAt: data.registeredAt.toDate() }),
   ),
 });
 
-// biome-ignore lint/complexity/noVoid: <explanation>
 void main().then(() => process.exit(0));

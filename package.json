@@ -21,9 +21,7 @@
     "vitest": "catalog:"
   },
   "packageManager": "pnpm@10.3.0",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "author": "Naoto Ikeno",
   "license": "MIT"
 }

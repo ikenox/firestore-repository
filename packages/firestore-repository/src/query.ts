@@ -1,10 +1,10 @@
 import type { FieldPath, FieldValue, ValueType, WriteValue } from './document.js';
 import {
   type CollectionSchema,
+  collectionSchemaBrand,
   type DbModel,
   type IsRootCollection,
   type ParentId,
-  collectionSchemaBrand,
 } from './schema.js';
 
 /**
@@ -100,10 +100,7 @@ export type Limit = { kind: 'limit'; limit: number };
 export const limit = (limit: number): Limit => ({ kind: 'limit', limit });
 
 export type LimitToLast = { kind: 'limitToLast'; limit: number };
-export const limitToLast = (limit: number): LimitToLast => ({
-  kind: 'limitToLast',
-  limit,
-});
+export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast', limit });
 
 export type Offset = { kind: 'offset'; offset: number };
 
@@ -113,10 +110,7 @@ export const startAt = <T extends CollectionSchema>(...cursor: Cursor<T>): Start
   cursor,
 });
 
-export type StartAfter<T extends CollectionSchema> = {
-  kind: 'startAfter';
-  cursor: Cursor<T>;
-};
+export type StartAfter<T extends CollectionSchema> = { kind: 'startAfter'; cursor: Cursor<T> };
 export const startAfter = <T extends CollectionSchema>(...cursor: Cursor<T>): StartAfter<T> => ({
   kind: 'startAfter',
   cursor,
@@ -128,10 +122,7 @@ export const endAt = <T extends CollectionSchema>(...cursor: Cursor<T>): EndAt<T
   cursor,
 });
 
-export type EndBefore<T extends CollectionSchema> = {
-  kind: 'endBefore';
-  cursor: Cursor<T>;
-};
+export type EndBefore<T extends CollectionSchema> = { kind: 'endBefore'; cursor: Cursor<T> };
 export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): EndBefore<T> => ({
   kind: 'endBefore',
   cursor,

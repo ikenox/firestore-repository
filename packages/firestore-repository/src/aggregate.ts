@@ -20,6 +20,4 @@ export const average = <T extends CollectionSchema>(path: FieldPath<DbModel<T>>)
   kind: 'average',
   path,
 });
-export const count = (): Count => ({
-  kind: 'count',
-});
+export const count = (): Count => ({ kind: 'count' });

@@ -1,4 +1,4 @@
-import type { AggregateSpec, Aggregated } from './aggregate.js';
+import type { Aggregated, AggregateSpec } from './aggregate.js';
 import type { Query } from './query.js';
 import type { CollectionSchema, Id, Model } from './schema.js';
 
@@ -68,10 +68,7 @@ export interface Repository<
 /**
  * Platform-specific types
  */
-export type FirestoreEnvironment = {
-  transaction: unknown;
-  writeBatch: unknown;
-};
+export type FirestoreEnvironment = { transaction: unknown; writeBatch: unknown };
 export type TransactionOption<T extends FirestoreEnvironment> = { tx?: T['transaction'] };
 export type WriteTransactionOption<T extends FirestoreEnvironment> = {
   tx?: T['transaction'] | T['writeBatch'];
