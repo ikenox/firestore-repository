@@ -9,7 +9,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         name: Install pnpm
         with:
-          version: 10.3.0
           run_install: false
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -27,7 +26,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         name: Install pnpm
         with:
-          version: 10.3.0
           run_install: false
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -48,5 +46,5 @@ jobs:
       - name: start firebase emulator
         run: pnpm start-emulator
       - name: Wait firebase emulator is ready
-        run: sleep 10
+        run: timeout 15 bash -c 'until echo > /dev/tcp/localhost/60001; do sleep 0.5; done'
       - run: pnpm test

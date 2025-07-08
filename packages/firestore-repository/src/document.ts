@@ -3,7 +3,7 @@ import type { Equal } from './util.js';
 /**
  * Type of firestore document data
  */
-export type DocumentData = { [key: string]: ValueType };
+export type DocumentData = MapValue;
 
 /**
  * Type of firestore field value
@@ -23,68 +23,55 @@ export type ValueType =
 
 export type MapValue = { [key: string]: ValueType };
 
+export const timestampBrand: unique symbol = Symbol();
+export const bytesBrand: unique symbol = Symbol();
+export const docRefBrand: unique symbol = Symbol();
+export const getPointBrand: unique symbol = Symbol();
+export const vectorValueBrand: unique symbol = Symbol();
+export const serverTimestampBrand: unique symbol = Symbol();
+export const incrementBrand: unique symbol = Symbol();
+export const arrayUnionBrand: unique symbol = Symbol();
+export const arrayRemoveBrand: unique symbol = Symbol();
+
 /**
  * A common part of firebase-js-sdk and firestore-admin Timestamp class
  */
-export type Timestamp = {
-  readonly seconds: number;
-  readonly nanoseconds: number;
-  toDate(): Date;
-  toMillis(): number;
-  isEqual(other: Timestamp): boolean;
-  valueOf(): string;
-};
+export type Timestamp = { [timestampBrand]: unknown };
 
 /**
  * A representation of bytes type
  */
-export type Bytes =
-  // @google-cloud/firestore
-  | { write(string: string, encoding?: unknown): number }
-  // @firebase/firestore
-  | { toBase64(): string; toUint8Array(): Uint8Array };
+export type Bytes = { [bytesBrand]: unknown };
 
 /**
  * A common part of firebase-js-sdk and firestore-admin DocumentReference class
  */
-export type DocumentReference = {
-  id: string;
-  path: string;
-  withConverter(...args: unknown[]): unknown;
-};
+export type DocumentReference = { [docRefBrand]: unknown };
 
 /**
  * A common part of firebase-js-sdk and firestore-admin GeoPoint class
  */
-export type GeoPoint = { latitude: number; longitude: number; isEqual(other: GeoPoint): boolean };
+export type GeoPoint = { [getPointBrand]: unknown };
 
 /**
  * A common part of firebase-js-sdk and firestore-admin VectorValue class
  */
-export type VectorValue = { toArray(): number[]; isEqual(other: VectorValue): boolean };
-
-export const serverTimestampBrand: unique symbol = Symbol();
+export type VectorValue = { [vectorValueBrand]: unknown };
 
 /**
  * A write-only value that is replaced with current time on the server-side
  */
 export type ServerTimestamp = { [serverTimestampBrand]: unknown };
 
-export const incrementBrand: unique symbol = Symbol();
-
 /**
  * A write-only value that increments the specified field value
  */
 export type Increment = { [incrementBrand]: unknown };
 
-export const arrayUnionBrand: unique symbol = Symbol();
-
 /**
  * A write-only value that appends the specified items into the array field
  */
 export type ArrayUnion = { [arrayUnionBrand]: unknown };
-
-export const arrayRemoveBrand: unique symbol = Symbol();
 
 /**
  * A write-only value that removes the specified items from the array field
@@ -121,26 +108,25 @@ export type FieldValue<T extends DocumentData, U extends FieldPath<T>> = U exten
  * For example, `Date` value can be placed on `Timestamp` field when writing the document data.
  * It's reduces boilerplate code of type conversion.
  */
-export type WriteDocumentData<T extends DocumentData = DocumentData> = {
-  [K in keyof T]: WriteValue<T[K]>;
-};
+export type WriteDocumentData<T extends DocumentData = DocumentData> = WriteValue<T>;
 
 /**
  * Obtains writable value for a field of the specified value type
  */
-export type WriteValue<T extends ValueType> =
-  | (T extends Timestamp ? Date | Timestamp | ServerTimestamp : never)
-  | (T extends MapValue ? { [K in keyof T]: WriteValue<T[K]> } : never)
-  | (T extends ValueType[] ? MapArrayToWriteValue<T> : never)
-  | (T extends ValueType[]
-      ? Equal<T['length'], number> extends true
-        ? ArrayUnion | ArrayRemove
-        : never
-      : never)
-  | (T extends number ? (Equal<T, number> extends true ? Increment : never) : never)
-  | (T extends number | string | null | boolean | Bytes | DocumentReference | GeoPoint | VectorValue
-      ? T
-      : never);
+export type WriteValue<T extends ValueType> = T extends Timestamp
+  ? Date | Timestamp | ServerTimestamp
+  : T extends Bytes | DocumentReference | GeoPoint | VectorValue
+    ? T
+    :
+        | (T extends MapValue ? { [K in keyof T]: WriteValue<T[K]> } : never)
+        | (T extends ValueType[] ? MapArrayToWriteValue<T> : never)
+        | (T extends ValueType[]
+            ? Equal<T['length'], number> extends true
+              ? ArrayUnion | ArrayRemove
+              : never
+            : never)
+        | (T extends number ? (Equal<T, number> extends true ? Increment : never) : never)
+        | (T extends number | string | null | boolean ? T : never);
 
 /**
  * Map `[ValueType1, ValueType2, ...]` into `[WriteValue1, WriteValue1, ...]` at type-level

@@ -5,31 +5,34 @@ import {
 } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
-import type { Model } from 'firestore-repository/schema';
+import type { Doc } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { type Env, offset, Repository } from './index.js';
+import { type Env, type GoogleCloudFirestoreRepository, newRepository } from './index.js';
+import { offset } from './query.js';
+import { wrap } from './value.js';
 
 describe('repository', async () => {
   const db = new Firestore({
-    projectId: process.env['TEST_PROJECT']!,
-    databaseId: process.env['TEST_DB']!,
+    projectId: process.env['FIRESTORE_TEST_PROJECT']!,
+    databaseId: process.env['FIRESTORE_TEST_DB']!,
   });
 
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) => new Repository(collection, db),
+    createRepository: (collection) => newRepository(collection, db),
     types: {
-      timestamp: (date) => Timestamp.fromDate(date),
-      geoPoint: (latitude, longitude) => new GeoPoint(latitude, longitude),
-      bytes: (bytes) => Buffer.from(bytes),
-      vector: (value) => FieldValue.vector(value),
-      documentReference: (path) => db.doc(path),
+      timestamp: (date) => wrap(Timestamp.fromDate(date)),
+      geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
+      bytes: (bytes) => wrap(Buffer.from(bytes)),
+      vector: (value) => wrap(FieldValue.vector(value)),
+      documentReference: (path) => wrap(db.doc(path)),
     },
     db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
-      type Collection = typeof collection;
+      type TestCollection = typeof collection;
 
       const { repository: _repo, items, expectDb } = setup();
-      const repository = _repo as Repository<Collection>;
+      // biome-ignore lint/plugin/no-type-assertion: cannot infer generic type
+      const repository = _repo as GoogleCloudFirestoreRepository<TestCollection>;
 
       describe('create', () => {
         it('success', async () => {
@@ -119,24 +122,18 @@ describe('repository', async () => {
   });
 
   describe('query', () => {
-    const repository = new Repository(uniqueCollection(authorsCollection), db);
+    const repository = newRepository(uniqueCollection(authorsCollection), db);
     const items = [
       {
-        authorId: '1',
-        name: 'author1',
-        profile: { age: 20, gender: 'male' },
-        rank: 1,
-        tag: ['a', 'b'],
+        id: '1',
+        data: { name: 'author1', profile: { age: 20, gender: 'male' }, rank: 1, tag: ['a', 'b'] },
       },
       {
-        authorId: '2',
-        name: 'author2',
-        profile: { age: 40, gender: 'female' },
-        rank: 1,
-        tag: ['b', 'c'],
+        id: '2',
+        data: { name: 'author2', profile: { age: 40, gender: 'female' }, rank: 1, tag: ['b', 'c'] },
       },
-      { authorId: '3', name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] },
-    ] as const satisfies Model<typeof authorsCollection>[];
+      { id: '3', data: { name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] } },
+    ] as const satisfies Doc<typeof authorsCollection>[];
 
     beforeAll(async () => {
       await repository.batchSet(items);
@@ -144,7 +141,7 @@ describe('repository', async () => {
 
     it('offset', async () => {
       const [, ...rest] = items;
-      const result = await repository.list(query(repository.collection, offset(1)));
+      const result = await repository.list(query({ collection: repository.collection }, offset(1)));
       expect(result).toStrictEqual(rest);
     });
   });

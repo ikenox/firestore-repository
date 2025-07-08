@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": ["Bash(pnpm test:*)", "Bash(pnpm check:*)", "Bash(pnpm fix:*)", "Bash(pnpm build:*)"],
+    "deny": []
+  },
+  "enabledMcpjsonServers": [],
+  "enabledPlugins": { "typescript-lsp@claude-plugins-official": true }
+}

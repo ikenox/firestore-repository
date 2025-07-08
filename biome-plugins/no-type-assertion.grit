@@ -1,0 +1,5 @@
+`$expr as $type` as $assertion where {
+  ! $type <: "const",
+  ! $type <: "unknown",
+  register_diagnostic(span=$assertion, message="Type assertion is not allowed. Only 'as const' and 'as unknown' are permitted.")
+}

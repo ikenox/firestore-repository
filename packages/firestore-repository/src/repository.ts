@@ -1,12 +1,12 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
 import type { Query } from './query.js';
-import type { CollectionSchema, Id, Model } from './schema.js';
+import type { Collection, Doc, DocRef, DocToWrite } from './schema.js';
 
 /**
  * A universal repository interface
  */
 export interface Repository<
-  T extends CollectionSchema = CollectionSchema,
+  T extends Collection = Collection,
   Env extends FirestoreEnvironment = FirestoreEnvironment,
 > {
   collection: T;
@@ -14,28 +14,28 @@ export interface Repository<
   /**
    * Get single document by ID
    */
-  get: (id: Id<T>, options?: TransactionOption<Env>) => Promise<Model<T> | undefined>;
+  get: (ref: DocRef<T>, options?: TransactionOption<Env>) => Promise<Doc<T> | undefined>;
 
   /**
    * Listen single document
    */
   getOnSnapshot: (
-    id: Id<T>,
-    next: (snapshot: Model<T> | undefined) => void,
+    ref: DocRef<T>,
+    next: (snapshot: Doc<T> | undefined) => void,
     error?: (error: Error) => void,
   ) => Unsubscribe;
 
   /**
    * Returns a documents list of the specified query
    */
-  list: (query: Query<T>) => Promise<Model<T>[]>;
+  list: (query: Query<T>) => Promise<Doc<T>[]>;
 
   /**
    * Listen documents of the specified query
    */
   listOnSnapshot: (
     query: Query<T>,
-    next: (snapshot: Model<T>[]) => void,
+    next: (snapshot: Doc<T>[]) => void,
     error?: (error: Error) => void,
   ) => Unsubscribe;
 
@@ -47,22 +47,22 @@ export interface Repository<
   /**
    * Create or update
    */
-  set: (doc: Model<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
+  set: (doc: DocToWrite<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
 
   /**
    * Delete a document by ID
    */
-  delete: (id: Id<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
+  delete: (ref: DocRef<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
 
   /**
    * Create or update multiple documents
    */
-  batchSet: (docs: Model<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
+  batchSet: (docs: DocToWrite<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 
   /**
    * Delete documents by multiple ID
    */
-  batchDelete: (ids: Id<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
+  batchDelete: (refs: DocRef<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
 }
 
 /**

@@ -125,11 +125,13 @@ describe('document', () => {
     }>();
 
     // Test general compatibility between WriteDocumentData and DocumentData
-    expectTypeOf<DocumentData>().toMatchTypeOf<WriteDocumentData>();
-    (<_T extends DocumentData>() => {
-      // FIXME this assertion should be passed
-      // expectTypeOf<T>().toMatchTypeOf<WriteDocumentData<T>>();
-    })();
+    expectTypeOf<DocumentData>().toExtend<WriteDocumentData>();
+    // FIXME: This test is not working as expected, it should be fixed in the future
+    // (<T extends DocumentData>() => {
+    //   const a: T = {} as T;
+    //   const b: WriteDocumentData<T> = a;
+    //   expectTypeOf<T>().toExtend<WriteDocumentData<T>>();
+    // })();
   });
 
   it('FieldValue', () => {
