@@ -1,16 +1,16 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { Timestamp } from './document.js';
 import {
-  type DbModel,
-  type Id,
-  type IsRootCollection,
-  type Model,
-  type ParentId,
   collection,
   collectionPath,
+  type DbModel,
   docPath,
+  type Id,
+  type IsRootCollection,
   implicit,
+  type Model,
   mapTo,
+  type ParentId,
   rootCollectionPath,
   subCollectionPath,
 } from './schema.js';
@@ -20,15 +20,10 @@ const authorsCollection = collection({
   name: 'Authors',
   collectionPath: rootCollectionPath,
   id: mapTo('authorId'),
-  data: implicit(
-    (data: {
-      name: string;
-      registeredAt: Timestamp;
-    }) => ({
-      ...data,
-      registeredAt: data.registeredAt.toDate(),
-    }),
-  ),
+  data: implicit((data: { name: string; registeredAt: Timestamp }) => ({
+    ...data,
+    registeredAt: data.registeredAt.toDate(),
+  })),
 });
 
 // subcollection
@@ -36,15 +31,10 @@ const postsCollection = collection({
   name: 'Posts',
   collectionPath: subCollectionPath(authorsCollection),
   id: mapTo('postId'),
-  data: implicit(
-    (data: {
-      title: string;
-      postedAt: Timestamp;
-    }) => ({
-      ...data,
-      postedAt: data.postedAt.toDate(),
-    }),
-  ),
+  data: implicit((data: { title: string; postedAt: Timestamp }) => ({
+    ...data,
+    postedAt: data.postedAt.toDate(),
+  })),
 });
 
 type Authors = typeof authorsCollection;
@@ -60,10 +50,7 @@ describe('schema', () => {
         name: string;
         registeredAt: Date;
       }>();
-      expectTypeOf<DbModel<Authors>>().toEqualTypeOf<{
-        name: string;
-        registeredAt: Timestamp;
-      }>();
+      expectTypeOf<DbModel<Authors>>().toEqualTypeOf<{ name: string; registeredAt: Timestamp }>();
     });
 
     it('subcollection', () => {
@@ -75,10 +62,7 @@ describe('schema', () => {
         title: string;
         postedAt: Date;
       }>();
-      expectTypeOf<DbModel<Posts>>().toEqualTypeOf<{
-        title: string;
-        postedAt: Timestamp;
-      }>();
+      expectTypeOf<DbModel<Posts>>().toEqualTypeOf<{ title: string; postedAt: Timestamp }>();
     });
   });
 

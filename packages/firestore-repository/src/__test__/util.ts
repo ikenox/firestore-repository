@@ -26,8 +26,6 @@ export const sleep = (millis: number): Promise<void> =>
   new Promise<void>((resolve) => setTimeout(resolve, millis));
 
 export const expectArrayEqualsWithoutOrder = <T>(actual: T[], expected: T[]): void => {
-  // biome-ignore lint/suspicious/noMisplacedAssertion: <explanation>
   expect(actual.length).toStrictEqual(expected.length);
-  // biome-ignore lint/suspicious/noMisplacedAssertion: <explanation>
   expect(actual).toStrictEqual(expect.arrayContaining(expected as unknown[]));
 };

@@ -13,10 +13,7 @@ export const rootCollection = <
     typeof collectionSchemaBrand | 'collectionPath'
   >,
 ): CollectionSchema<DbModel, AppModel, AppModelId, Record<never, never>> =>
-  collection({
-    collectionPath: rootCollectionPath,
-    ...schema,
-  });
+  collection({ collectionPath: rootCollectionPath, ...schema });
 
 /**
  * A utility method to define a subcollection schema.
@@ -33,10 +30,7 @@ export const subCollection = <
   >,
   parent: Parent,
 ): CollectionSchema<DbModel, AppModel, AppModelId, Id<Parent>> =>
-  collection({
-    collectionPath: subCollectionPath(parent),
-    ...schema,
-  });
+  collection({ collectionPath: subCollectionPath(parent), ...schema });
 
 /**
  * A base method of defining a collection schema.
@@ -97,10 +91,7 @@ export const data = <DbModel extends DocumentData>(): DataConverter<DbModel, DbM
 export const implicit = <DbModel extends DocumentData, AppModel extends WriteDocumentData<DbModel>>(
   from: (data: DbModel) => AppModel,
 ): DataConverter<DbModel, AppModel> => {
-  return {
-    from: (data) => from(data),
-    to: (data) => data,
-  };
+  return { from: (data) => from(data), to: (data) => data };
 };
 
 /**
@@ -124,10 +115,7 @@ export const subCollectionPath = <T extends CollectionSchema>(
           `Document has no parent reference. This document is expected to have a reference to parent document of ${parent.name} collection`,
         );
       }
-      return {
-        ...parent.id.from(id.id),
-        ...parent.collectionPath.from(parentPath),
-      } as Id<T>;
+      return { ...parent.id.from(id.id), ...parent.collectionPath.from(parentPath) } as Id<T>;
     },
     to: (id) => docPath(parent, id),
   };
@@ -157,18 +145,12 @@ export type CollectionSchema<
 export type DataConverter<
   DbModel extends DocumentData = DocumentData,
   AppModel extends Record<string, unknown> = Record<string, unknown>,
-> = {
-  from(data: DbModel): AppModel;
-  to(data: AppModel): WriteDocumentData<DbModel>;
-};
+> = { from(data: DbModel): AppModel; to(data: AppModel): WriteDocumentData<DbModel> };
 
 /**
  * A data converter for the document id part
  */
-export type IdConverter<Id> = {
-  from(id: string): Id;
-  to(id: Id): string;
-};
+export type IdConverter<Id> = { from(id: string): Id; to(id: Id): string };
 
 /**
  * A data converter for the document parent path part

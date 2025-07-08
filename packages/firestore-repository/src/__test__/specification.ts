@@ -10,16 +10,16 @@ import type {
 } from '../document.js';
 import {
   condition as $,
-  type FilterExpression,
-  type Query,
   and,
   collectionGroupQuery,
   endAt,
   endBefore,
+  type FilterExpression,
   limit,
   limitToLast,
   or,
   orderBy,
+  type Query,
   query,
   startAfter,
   startAt,
@@ -27,12 +27,12 @@ import {
 import type { FirestoreEnvironment, Repository } from '../repository.js';
 import {
   type CollectionSchema,
-  type DbModel,
-  type Id,
-  type Model,
   collection,
+  type DbModel,
   data,
+  type Id,
   implicit,
+  type Model,
   mapTo,
   numberId,
   rootCollection,
@@ -55,10 +55,7 @@ export const authorsCollection = rootCollection({
   id: mapTo('authorId'),
   data: data<{
     name: string;
-    profile: {
-      age: number;
-      gender?: 'male' | 'female';
-    };
+    profile: { age: number; gender?: 'male' | 'female' };
     rank: number;
     tag: string[];
   }>(),
@@ -71,16 +68,10 @@ export const postsCollection = subCollection(
   {
     name: 'Posts',
     id: numberId('postId'),
-    data: implicit(
-      (data: {
-        authorId: string;
-        title: string;
-        postedAt: Timestamp;
-      }) => ({
-        ...data,
-        postedAt: data.postedAt.toDate(),
-      }),
-    ),
+    data: implicit((data: { authorId: string; title: string; postedAt: Timestamp }) => ({
+      ...data,
+      postedAt: data.postedAt.toDate(),
+    })),
   },
   authorsCollection,
 );
@@ -133,7 +124,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           const items = (await repository.list(
             collectionGroupQuery(repository.collection),
           )) as Model<T>[];
-          // biome-ignore lint/suspicious/noMisplacedAssertion:
           expect(
             items.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
           ).toStrictEqual(
@@ -458,18 +448,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         return {
           authorId: `author${id}`,
           name: `name${id}`,
-          profile: {
-            age: randomNumber(),
-            gender: 'male' as const,
-          },
+          profile: { age: randomNumber(), gender: 'male' as const },
           rank: randomNumber(),
           tag: [],
         };
       },
-      mutate: (data) => ({
-        ...data,
-        name: `${data.name}_updated_${randomString()}`,
-      }),
+      mutate: (data) => ({ ...data, name: `${data.name}_updated_${randomString()}` }),
       notExistDocId: () => ({ authorId: 'not-exists' }),
       sortKey: (a) => a.authorId,
     });
@@ -487,10 +471,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           postedAt: new Date(),
         };
       },
-      mutate: (data) => ({
-        ...data,
-        title: `${data.title}_updated_${randomString()}`,
-      }),
+      mutate: (data) => ({ ...data, title: `${data.title}_updated_${randomString()}` }),
       notExistDocId: () => ({ postId: randomNumber(), authorId: 'post0' }),
       sortKey: ({ postId, authorId }) => `${postId}-${authorId}`,
     });
@@ -509,7 +490,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           items: params.items,
           expectQuery: async (query: Query<T>, expected: Model<T>[]) => {
             const result = await repository.list(query);
-            // biome-ignore lint/suspicious/noMisplacedAssertion:
             expect(result).toStrictEqual(expected);
           },
         };
@@ -522,32 +502,18 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             {
               authorId: '1',
               name: 'author1',
-              profile: {
-                age: 40,
-                gender: 'male',
-              },
+              profile: { age: 40, gender: 'male' },
               rank: 1,
               tag: ['a', 'b'],
             },
             {
               authorId: '2',
               name: 'author2',
-              profile: {
-                age: 90,
-                gender: 'female',
-              },
+              profile: { age: 90, gender: 'female' },
               rank: 2,
               tag: ['b', 'c'],
             },
-            {
-              authorId: '3',
-              name: 'author3',
-              profile: {
-                age: 20,
-              },
-              rank: 2,
-              tag: ['c', 'd'],
-            },
+            { authorId: '3', name: 'author3', profile: { age: 20 }, rank: 2, tag: ['c', 'd'] },
           ] as const satisfies Model<typeof authorsCollection>[],
         });
 
@@ -908,24 +874,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const { repository, expectQuery, items } = setup({
           collection: postsCollection,
           items: [
-            {
-              postId: 1,
-              title: 'post1',
-              authorId: 'author1',
-              postedAt: new Date('2020-02-01'),
-            },
-            {
-              postId: 2,
-              title: 'post2',
-              authorId: 'author1',
-              postedAt: new Date('2020-01-01'),
-            },
-            {
-              postId: 3,
-              title: 'post3',
-              authorId: 'author2',
-              postedAt: new Date('2020-03-01'),
-            },
+            { postId: 1, title: 'post1', authorId: 'author1', postedAt: new Date('2020-02-01') },
+            { postId: 2, title: 'post2', authorId: 'author1', postedAt: new Date('2020-01-01') },
+            { postId: 3, title: 'post3', authorId: 'author2', postedAt: new Date('2020-03-01') },
           ],
         });
 
@@ -989,10 +940,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             string: string;
             vector: VectorValue;
           }) => {
-            return {
-              ...data,
-              timestamp: data.timestamp.toDate(),
-            };
+            return { ...data, timestamp: data.timestamp.toDate() };
           },
         ),
         collectionPath: rootCollectionPath,
@@ -1042,10 +990,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       id: mapTo('userId'),
       data: data<{
         name: string;
-        profile: {
-          age: number;
-          gender?: 'male' | 'female';
-        };
+        profile: { age: number; gender?: 'male' | 'female' };
         tag: string[];
       }>(),
     });
@@ -1057,10 +1002,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       await repository.set({
         userId: 'user1',
         name: 'John Doe',
-        profile: {
-          age: 42,
-          gender: 'male',
-        },
+        profile: { age: 42, gender: 'male' },
         tag: ['new'],
       });
 
@@ -1103,18 +1045,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     it('batch operation', async () => {
       // set
       await repository.batchSet([
-        {
-          userId: 'user1',
-          name: 'Alice',
-          profile: { age: 30, gender: 'female' },
-          tag: ['new'],
-        },
-        {
-          userId: 'user2',
-          name: 'Bob',
-          profile: { age: 20, gender: 'male' },
-          tag: [],
-        },
+        { userId: 'user1', name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] },
+        { userId: 'user2', name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] },
       ]);
 
       // delete
@@ -1123,12 +1055,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       // mix multiple operations
       const batch = db.writeBatch();
       await repository.set(
-        {
-          userId: 'user3',
-          name: 'Bob',
-          profile: { age: 20, gender: 'male' },
-          tag: [],
-        },
+        { userId: 'user3', name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] },
         { tx: batch },
       );
       await repository.batchSet(
@@ -1138,9 +1065,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         { tx: batch },
       );
       await repository.delete({ userId: 'user4' }, { tx: batch });
-      await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
-        tx: batch,
-      });
+      await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], { tx: batch });
       await batch.commit();
     });
 

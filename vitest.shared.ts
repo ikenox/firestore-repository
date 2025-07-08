@@ -3,9 +3,5 @@ import { defineConfig } from 'vitest/config';
 
 export const sharedConfig = defineConfig({
   plugins: [tsconfigPaths()],
-  test: {
-    include: ['**/*.test.ts'],
-    hookTimeout: 5000,
-    testTimeout: 5000,
-  },
+  test: { include: ['**/*.test.ts'], hookTimeout: 5000, testTimeout: 5000 },
 });

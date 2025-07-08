@@ -1,24 +1,19 @@
 import {
-  type DocumentReference,
-  type DocumentSnapshot,
-  type Firestore,
-  type AggregateSpec as FirestoreAggregateSpec,
-  type Query as FirestoreQuery,
-  type QueryFilterConstraint as FirestoreQueryFilterConstraint,
-  QueryCompositeFilterConstraint,
-  type QueryFilterConstraint,
-  type QueryNonFilterConstraint,
-  Transaction,
-  type WriteBatch,
   and,
   average,
   collection,
   collectionGroup,
   count,
+  type DocumentReference,
+  type DocumentSnapshot,
   deleteDoc,
   doc,
   endAt,
   endBefore,
+  type Firestore,
+  type AggregateSpec as FirestoreAggregateSpec,
+  type Query as FirestoreQuery,
+  type QueryFilterConstraint as FirestoreQueryFilterConstraint,
   query as firestoreQuery,
   getAggregateFromServer,
   getDoc,
@@ -28,25 +23,30 @@ import {
   onSnapshot,
   or,
   orderBy,
+  QueryCompositeFilterConstraint,
+  type QueryFilterConstraint,
+  type QueryNonFilterConstraint,
   setDoc,
   startAfter,
   startAt,
   sum,
+  Transaction,
+  type WriteBatch,
   where,
   writeBatch,
 } from '@firebase/firestore';
-import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
+import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import type { WriteDocumentData } from 'firestore-repository/document';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
+  collectionPath,
   type DocPathElement,
+  docPath,
   type Id,
   type Model,
   type ParentId,
-  collectionPath,
-  docPath,
 } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 

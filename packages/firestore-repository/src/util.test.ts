@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { type Equal, assertNever } from './util.js';
+import { assertNever, type Equal } from './util.js';
 
 describe('util', () => {
   it('assertNever', () => {

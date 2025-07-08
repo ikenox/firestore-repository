@@ -9,17 +9,17 @@ import {
   Transaction,
   type WriteBatch,
 } from '@google-cloud/firestore';
-import type { AggregateSpec, Aggregated } from 'firestore-repository/aggregate';
+import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import type { WriteDocumentData } from 'firestore-repository/document';
 import type { FilterExpression, Offset, Query } from 'firestore-repository/query';
 import type * as repository from 'firestore-repository/repository';
 import {
   type CollectionSchema,
+  collectionPath,
   type DocPathElement,
+  docPath,
   type Id,
   type Model,
-  collectionPath,
-  docPath,
 } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 

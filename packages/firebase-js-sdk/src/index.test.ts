@@ -1,12 +1,12 @@
 import { initializeApp } from '@firebase/app';
 import {
   Bytes,
-  GeoPoint,
-  Timestamp,
   connectFirestoreEmulator,
   doc,
+  GeoPoint,
   getFirestore,
   runTransaction,
+  Timestamp,
   vector,
   writeBatch,
 } from '@firebase/firestore';
@@ -35,9 +35,6 @@ describe('repository', async () => {
       vector: (value) => vector(value),
       documentReference: (path) => doc(db, path),
     },
-    db: {
-      writeBatch: () => writeBatch(db),
-      transaction: (runner) => runTransaction(db, runner),
-    },
+    db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
   });
 });
