@@ -3,16 +3,16 @@ packages:
   - 'examples/*'
 catalog:
   # runtime
-  "@types/node": 20.0.0
-  "typescript": ^5.8.2
+  "@types/node": 25.0.2
+  "typescript": ^5.9.3
   # google cloud
-  "@firebase/app": ^0.12.3
-  "@firebase/firestore": ^4.7.14
-  "@google-cloud/firestore": ^7.11.1
+  "@firebase/app": ^0.14.6
+  "@firebase/firestore": ^4.9.2
+  "@google-cloud/firestore": ^8.0.0
   # linter / formatter
-  "@biomejs/biome": ^2.0.0
+  "@biomejs/biome": ^2.3.9
   # testing
-  "vitest": ^3.2.0
-  "@vitest/coverage-v8": ^3.2.0
-  "vite-tsconfig-paths": ^5.1.4
-  "testcontainers": ^10.26.0
+  "vitest": ^4.0.15
+  "@vitest/coverage-v8": ^4.0.15
+  "vite-tsconfig-paths": ^6.0.1
+  "testcontainers": ^11.10.0
