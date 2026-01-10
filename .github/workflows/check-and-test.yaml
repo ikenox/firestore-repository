@@ -46,5 +46,5 @@ jobs:
       - name: start firebase emulator
         run: pnpm start-emulator
       - name: Wait firebase emulator is ready
-        run: timeout 15 bash -c 'until echo > /dev/tcp/localhost/60001; do sleep 0.5; done'
+        run: timeout 15 bash -c 'until nc -z localhost 60001; do sleep 0.5; done'
       - run: pnpm test
