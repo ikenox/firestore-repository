@@ -17,7 +17,7 @@ async function main() {
   );
   connectFirestoreEmulator(db, 'localhost', 60001);
 
-  const repository = newRepository(authors, db);
+  const repository = newRepository(db, authors);
 
   await repository.set({
     id: 'author1',
