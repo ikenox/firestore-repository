@@ -12,9 +12,9 @@ export const documentPath = <T extends Collection>(collection: T, doc: DocRef<T>
  */
 export const collectionPath = <T extends Collection>(
   collection: T,
-  parentDoc: T['parent'],
+  parentDoc: DocRef<T['parent']> | undefined,
 ): string => {
-  return collection.parent
+  return parentDoc
     ? `${documentPath(collection.parent, parentDoc)}/${collection.name}`
     : collection.name;
 };
