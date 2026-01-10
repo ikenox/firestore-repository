@@ -7,3 +7,5 @@ packages/**/README.md
 
 # local private test or debugging purpose
 *.local.test.ts
+
+.claude/settings.local.json

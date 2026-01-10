@@ -14,10 +14,5 @@ export default defineConfig({
         'examples/**',
       ],
     },
-    env: {
-      FIRESTORE_EMULATOR_HOST: 'localhost:60001',
-      TEST_PROJECT: 'firestore-repository-dummy-project',
-      TEST_DB: 'firestore-repository-test-db',
-    },
   },
 });

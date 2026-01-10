@@ -12,12 +12,13 @@ import {
 } from '@firebase/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { describe } from 'vitest';
-import { type Env, Repository } from './index.js';
+import { type Env, newRepository } from './index.js';
+import { wrap } from './value.js';
 
 describe('repository', async () => {
   const db = getFirestore(
-    initializeApp({ projectId: process.env['TEST_PROJECT']! }),
-    process.env['TEST_DB']!,
+    initializeApp({ projectId: process.env['FIRESTORE_TEST_PROJECT']! }),
+    process.env['FIRESTORE_TEST_DB']!,
   );
 
   const emulatorHost = process.env['FIRESTORE_EMULATOR_HOST'];
@@ -27,13 +28,13 @@ describe('repository', async () => {
   }
 
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) => new Repository(collection, db),
+    createRepository: (collection) => newRepository(collection, db),
     types: {
-      timestamp: (date) => Timestamp.fromDate(date),
-      geoPoint: (latitude, longitude) => new GeoPoint(latitude, longitude),
-      bytes: (bytes) => Bytes.fromUint8Array(Uint8Array.from(bytes)),
-      vector: (value) => vector(value),
-      documentReference: (path) => doc(db, path),
+      timestamp: (date) => wrap(Timestamp.fromDate(date)),
+      geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
+      bytes: (bytes) => wrap(Bytes.fromUint8Array(Uint8Array.from(bytes))),
+      vector: (value) => wrap(vector(value)),
+      documentReference: (path) => wrap(doc(db, path)),
     },
     db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
   });

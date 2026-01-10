@@ -1,81 +1,63 @@
 import type { FieldPath, FieldValue, ValueType, WriteValue } from './document.js';
-import {
-  type CollectionSchema,
-  collectionSchemaBrand,
-  type DbModel,
-  type IsRootCollection,
-  type ParentId,
-} from './schema.js';
+import type { Collection, DocData, DocRef } from './schema.js';
 
 /**
  * An universal query definition
  */
-export class Query<T extends CollectionSchema = CollectionSchema> {
-  constructor(
-    readonly base:
-      | { kind: 'collection'; collection: T; parentId: ParentId<T> }
-      | { kind: 'collectionGroup'; collection: T }
-      | { kind: 'extends'; query: Query<T> },
-    readonly constraints?: QueryConstraint<T>[],
-  ) {}
-}
+export type Query<T extends Collection = Collection> = {
+  base: QueryBase<T>;
+  constraints?: QueryConstraint<T>[] | undefined;
+};
 
 /**
  * A starting point to build a new query
  */
-export type QueryBase<T extends CollectionSchema> =
+export type QueryBase<T extends Collection> =
   /**
-   * Target root collection to query
+   * Target collection to query
    */
-  | (IsRootCollection<T> extends true ? T : never)
+  | (T['parent'] extends Collection
+      ? // subcollection
+        {
+          collection: T;
+          parent: DocRef<T['parent']>;
+          /**
+           * Enables collection group query
+           */
+          group?: false;
+        }
+      : // root collection
+        {
+          collection: T;
+          parent?: undefined;
+          /**
+           * Enables collection group query
+           */
+          group?: false;
+        })
   /**
-   * Target subcollection to query
+   * Collection group query
    */
-  | { collection: T; parent: ParentId<T> }
+  | { collection: T; parent?: undefined; group: true }
   /**
    * Extends another query
    */
-  | Query<T>;
+  | { extends: Query<T> };
 
 /**
  * Builds a new query
  */
-export const query = <T extends CollectionSchema>(
+export const query = <T extends Collection>(
   base: QueryBase<T>,
   ...constraints: QueryConstraint<T>[]
 ): Query<T> => {
-  if (base instanceof Query) {
-    // extends another query
-    return new Query({ kind: 'extends', query: base }, constraints);
-  }
-  if (collectionSchemaBrand in base) {
-    // root collection
-    return new Query(
-      { kind: 'collection', collection: base, parentId: {} as ParentId<T> },
-      constraints,
-    );
-  }
-  // subcollection
-  return new Query(
-    { kind: 'collection', collection: base.collection, parentId: base.parent },
-    constraints,
-  );
-};
-
-/**
- * Builds a new collection group query
- */
-export const collectionGroupQuery = <T extends CollectionSchema>(
-  collection: T,
-  ...constraints: QueryConstraint<T>[]
-): Query<T> => {
-  return new Query({ kind: 'collectionGroup', collection }, constraints);
+  return { base, constraints };
 };
 
 /**
  * Query constraint
  */
-export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
+export type QueryConstraint<T extends Collection = Collection> =
   | FilterExpression<T>
   | OrderBy<T>
   | StartAt<T>
@@ -86,13 +68,13 @@ export type QueryConstraint<T extends CollectionSchema = CollectionSchema> =
   | LimitToLast
   | Offset;
 
-export type OrderBy<T extends CollectionSchema> = {
+export type OrderBy<T extends Collection> = {
   kind: 'orderBy';
-  field: FieldPath<DbModel<T>>;
+  field: FieldPath<DocData<T>>;
   direction?: 'asc' | 'desc' | undefined;
 };
-export const orderBy = <T extends CollectionSchema>(
-  field: FieldPath<DbModel<T>>,
+export const orderBy = <T extends Collection>(
+  field: FieldPath<DocData<T>>,
   direction?: 'asc' | 'desc' | undefined,
 ): OrderBy<T> => ({ kind: 'orderBy', field, direction });
 
@@ -104,26 +86,26 @@ export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast
 
 export type Offset = { kind: 'offset'; offset: number };
 
-export type StartAt<T extends CollectionSchema> = { kind: 'startAt'; cursor: Cursor<T> };
-export const startAt = <T extends CollectionSchema>(...cursor: Cursor<T>): StartAt<T> => ({
+export type StartAt<T extends Collection> = { kind: 'startAt'; cursor: Cursor<T> };
+export const startAt = <T extends Collection>(...cursor: Cursor<T>): StartAt<T> => ({
   kind: 'startAt',
   cursor,
 });
 
-export type StartAfter<T extends CollectionSchema> = { kind: 'startAfter'; cursor: Cursor<T> };
-export const startAfter = <T extends CollectionSchema>(...cursor: Cursor<T>): StartAfter<T> => ({
+export type StartAfter<T extends Collection> = { kind: 'startAfter'; cursor: Cursor<T> };
+export const startAfter = <T extends Collection>(...cursor: Cursor<T>): StartAfter<T> => ({
   kind: 'startAfter',
   cursor,
 });
 
-export type EndAt<T extends CollectionSchema> = { kind: 'endAt'; cursor: Cursor<T> };
-export const endAt = <T extends CollectionSchema>(...cursor: Cursor<T>): EndAt<T> => ({
+export type EndAt<T extends Collection> = { kind: 'endAt'; cursor: Cursor<T> };
+export const endAt = <T extends Collection>(...cursor: Cursor<T>): EndAt<T> => ({
   kind: 'endAt',
   cursor,
 });
 
-export type EndBefore<T extends CollectionSchema> = { kind: 'endBefore'; cursor: Cursor<T> };
-export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): EndBefore<T> => ({
+export type EndBefore<T extends Collection> = { kind: 'endBefore'; cursor: Cursor<T> };
+export const endBefore = <T extends Collection>(...cursor: Cursor<T>): EndBefore<T> => ({
   kind: 'endBefore',
   cursor,
 });
@@ -131,12 +113,12 @@ export const endBefore = <T extends CollectionSchema>(...cursor: Cursor<T>): End
 /**
  * A list of values that should correspond to the columns specified by orderBy clause
  */
-export type Cursor<_T extends CollectionSchema> = unknown[];
+export type Cursor<_T extends Collection> = unknown[];
 
 /**
  * An expression of query filter condition
  */
-export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
+export type FilterExpression<T extends Collection = Collection> =
   | UnaryCondition<T>
   | Or<T>
   | And<T>;
@@ -145,27 +127,27 @@ export type FilterExpression<T extends CollectionSchema = CollectionSchema> =
  * A single filter condition with a field path, operator, and value
  */
 export type UnaryCondition<
-  T extends CollectionSchema,
-  Path extends FieldPath<DbModel<T>> = FieldPath<DbModel<T>>,
+  T extends Collection,
+  Path extends FieldPath<DocData<T>> = FieldPath<DocData<T>>,
   Op extends WhereFilterOp = WhereFilterOp,
 > = {
   kind: 'where';
   fieldPath: Path;
   opStr: Op;
-  value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>;
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, Op>>;
 };
 
 /**
  * Returns a single filter condition
  */
 export const condition = <
-  T extends CollectionSchema,
-  Path extends FieldPath<DbModel<T>>,
+  T extends Collection,
+  Path extends FieldPath<DocData<T>>,
   Op extends WhereFilterOp,
 >(
   fieldPath: Path,
   opStr: Op,
-  value: WriteValue<FilterOperand<FieldValue<DbModel<T>, Path>, Op>>,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, Op>>,
 ): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
 
 /**
@@ -199,14 +181,14 @@ export type WhereFilterOp =
   | 'not-in'
   | 'array-contains-any';
 
-export type Or<T extends CollectionSchema> = { kind: 'or'; filters: FilterExpression<T>[] };
-export type And<T extends CollectionSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
+export type Or<T extends Collection> = { kind: 'or'; filters: FilterExpression<T>[] };
+export type And<T extends Collection> = { kind: 'and'; filters: FilterExpression<T>[] };
 
-export const or = <T extends CollectionSchema>(...filters: FilterExpression<T>[]): Or<T> => ({
+export const or = <T extends Collection>(...filters: FilterExpression<T>[]): Or<T> => ({
   kind: 'or',
   filters,
 });
-export const and = <T extends CollectionSchema>(...filters: FilterExpression<T>[]): And<T> => ({
+export const and = <T extends Collection>(...filters: FilterExpression<T>[]): And<T> => ({
   kind: 'and',
   filters,
 });

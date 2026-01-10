@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import type { CollectionSchema } from '../schema.js';
+import type { Collection } from '../schema.js';
 
 /**
  * Generates random number.
@@ -14,7 +14,7 @@ export const randomString = () => Math.random().toString(36).slice(2);
 /**
  * Duplicates a collection config with a unique collection name
  */
-export const uniqueCollection = <T extends CollectionSchema>(collection: T): T => ({
+export const uniqueCollection = <T extends Collection>(collection: T): T => ({
   ...collection,
   name: `${collection.name}_${randomString()}`,
 });
@@ -27,5 +27,6 @@ export const sleep = (millis: number): Promise<void> =>
 
 export const expectArrayEqualsWithoutOrder = <T>(actual: T[], expected: T[]): void => {
   expect(actual.length).toStrictEqual(expected.length);
-  expect(actual).toStrictEqual(expect.arrayContaining(expected as unknown[]));
+  // @ts-expect-error
+  expect(actual).toStrictEqual(expect.arrayContaining(expected));
 };
