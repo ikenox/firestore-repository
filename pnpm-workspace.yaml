@@ -3,16 +3,16 @@ packages:
   - examples/*
 
 catalog:
-  '@biomejs/biome': ^2.3.8
+  '@biomejs/biome': ^2.3.11
   '@firebase/app': ^0.12.3
   '@firebase/firestore': ^4.7.14
   '@google-cloud/firestore': ^7.11.1
   '@types/node': 20.0.0
-  '@vitest/coverage-v8': ^3.2.4
-  testcontainers: ^10.28.0
+  '@vitest/coverage-v8': ^4.0.17
+  testcontainers: ^11.11.0
   typescript: ^5.9.3
-  vite-tsconfig-paths: ^5.1.4
-  vitest: ^3.2.4
+  vite-tsconfig-paths: ^6.0.4
+  vitest: ^4.0.17
 
 minimumReleaseAge: 10080
 
