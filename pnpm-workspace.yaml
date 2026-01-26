@@ -9,7 +9,7 @@ catalog:
   '@google-cloud/firestore': ^7.11.1
   '@types/node': 20.0.0
   '@vitest/coverage-v8': ^3.2.4
-  testcontainers: ^10.28.0
+  testcontainers: ^11.11.0
   typescript: ^5.9.3
   vite-tsconfig-paths: ^5.1.4
   vitest: ^3.2.4
