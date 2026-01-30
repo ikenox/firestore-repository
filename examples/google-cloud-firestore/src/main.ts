@@ -10,7 +10,7 @@ async function main() {
     databaseId: 'example-google-cloud-firestore',
   });
 
-  const repository = newRepository(authors, db);
+  const repository = newRepository(db, authors);
 
   await repository.set({
     id: 'author1',

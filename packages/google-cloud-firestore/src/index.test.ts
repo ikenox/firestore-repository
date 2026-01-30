@@ -5,6 +5,7 @@ import {
 } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
+import type { PlainModel } from 'firestore-repository/repository';
 import type { Doc } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { type Env, type GoogleCloudFirestoreRepository, newRepository } from './index.js';
@@ -18,7 +19,7 @@ describe('repository', async () => {
   });
 
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) => newRepository(collection, db),
+    createRepository: (collection) => newRepository(db, collection),
     types: {
       timestamp: (date) => wrap(Timestamp.fromDate(date)),
       geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
@@ -32,7 +33,10 @@ describe('repository', async () => {
 
       const { repository: _repo, items, expectDb } = setup();
       // biome-ignore lint/plugin/no-type-assertion: cannot infer generic type
-      const repository = _repo as GoogleCloudFirestoreRepository<TestCollection>;
+      const repository = _repo as GoogleCloudFirestoreRepository<
+        TestCollection,
+        PlainModel<TestCollection>
+      >;
 
       describe('create', () => {
         it('success', async () => {
@@ -122,7 +126,8 @@ describe('repository', async () => {
   });
 
   describe('query', () => {
-    const repository = newRepository(uniqueCollection(authorsCollection), db);
+    const coll = uniqueCollection(authorsCollection);
+    const repository = newRepository(db, coll);
     const items = [
       {
         id: '1',

@@ -23,7 +23,7 @@ import {
   startAfter,
   startAt,
 } from '../query.js';
-import type { FirestoreEnvironment, Repository } from '../repository.js';
+import type { FirestoreEnvironment, PlainRepository } from '../repository.js';
 import {
   type Collection,
   type Doc,
@@ -71,7 +71,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   types,
   implementationSpecificTests,
 }: {
-  createRepository: <T extends Collection>(collection: T) => Repository<T, Env>;
+  createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
@@ -97,7 +97,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       ];
 
       // Use a new repository instance with unique collection for each test
-      let currentRepository: Repository<T, Env>;
+      let currentRepository: PlainRepository<T, Env>;
       beforeEach(async () => {
         currentRepository = createRepository(uniqueCollection(params.collection));
         await currentRepository.batchSet(items);
@@ -113,7 +113,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             return currentRepository[prop as keyof typeof currentRepository];
           },
         },
-      ) as Repository<T, Env>;
+      ) as PlainRepository<T, Env>;
 
       return {
         repository,
@@ -1147,7 +1147,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 };
 
 export type RepositoryTestEnv<T extends Collection, Env extends FirestoreEnvironment> = {
-  repository: Repository<T, Env>;
+  repository: PlainRepository<T, Env>;
   items: [Doc<T>, Doc<T>, Doc<T>, ...Doc<T>[]];
   expectDb: (expected: Doc<T>[]) => Promise<void>;
 };

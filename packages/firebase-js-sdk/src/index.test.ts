@@ -28,7 +28,7 @@ describe('repository', async () => {
   }
 
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) => newRepository(collection, db),
+    createRepository: (collection) => newRepository(db, collection),
     types: {
       timestamp: (date) => wrap(Timestamp.fromDate(date)),
       geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),

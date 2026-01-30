@@ -3,13 +3,17 @@ import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
-import type {
-  Repository,
-  TransactionOption,
-  Unsubscribe,
-  WriteTransactionOption,
+import {
+  type AppModel,
+  type Mapper,
+  type PlainModel,
+  plainMapper,
+  type Repository,
+  type TransactionOption,
+  type Unsubscribe,
+  type WriteTransactionOption,
 } from 'firestore-repository/repository';
-import type { Collection, Doc, DocData, DocRef, DocToWrite } from 'firestore-repository/schema';
+import type { Collection, Doc, DocData, DocRef } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = {
@@ -18,31 +22,39 @@ export type Env = {
   query: firestore.Query;
 };
 
-export interface GoogleCloudFirestoreRepository<T extends Collection> extends Repository<T, Env> {
+export interface GoogleCloudFirestoreRepository<T extends Collection, Model extends AppModel>
+  extends Repository<T, Model, Env> {
   /**
    * Create a new document
    * @throws If the document already exists
    */
-  create: (docToWrite: DocToWrite<T>, options?: WriteTransactionOption<Env>) => Promise<void>;
+  create: (docToWrite: Model['write'], options?: WriteTransactionOption<Env>) => Promise<void>;
   /**
    * Create multiple documents
    * The entire operation will fail if one creation fails
    */
-  batchCreate: (docs: DocToWrite<T>[], options?: WriteTransactionOption<Env>) => Promise<void>;
+  batchCreate: (docs: Model['write'][], options?: WriteTransactionOption<Env>) => Promise<void>;
   /**
    * Get documents by multiple IDs
    * example: [{id:1}, {id:2}, {id:5}, {id:1}] -> [doc1, doc2, undefined, doc1]
    */
   batchGet: (
-    refs: DocRef<T>[],
+    refs: Model['id'][],
     options?: TransactionOption<Env>,
-  ) => Promise<(Doc<T> | undefined)[]>;
+  ) => Promise<(Model['read'] | undefined)[]>;
 }
 
 export const newRepository = <T extends Collection>(
-  collection: T,
   db: firestore.Firestore,
-): GoogleCloudFirestoreRepository<T> => {
+  collection: T,
+): GoogleCloudFirestoreRepository<T, PlainModel<T>> =>
+  newRepositoryWithMapper(db, collection, plainMapper(collection));
+
+export const newRepositoryWithMapper = <T extends Collection, Model extends AppModel>(
+  db: firestore.Firestore,
+  collection: T,
+  mapper: Mapper<T, Model>,
+): GoogleCloudFirestoreRepository<T, Model> => {
   const { toFirestore, fromFirestore, batchWriteOperation } = buildFirestoreUtilities(
     db,
     collection,
@@ -51,37 +63,47 @@ export const newRepository = <T extends Collection>(
   return {
     collection,
 
-    get: async (ref: DocRef<T>, options?: TransactionOption<Env>): Promise<Doc<T> | undefined> => {
-      const docRef = toFirestore.docRef(ref);
+    get: async (
+      ref: Model['id'],
+      options?: TransactionOption<Env>,
+    ): Promise<Model['read'] | undefined> => {
+      const docRef = toFirestore.docRef(mapper.toDocRef(ref));
       const documentSnapshot = await (options?.tx ? options.tx.get(docRef) : docRef.get());
-      return fromFirestore.document(documentSnapshot);
+      const doc = fromFirestore.document(documentSnapshot);
+      if (!doc) {
+        return undefined;
+      }
+      return mapper.fromFirestore(doc);
     },
 
     getOnSnapshot: (
-      ref: DocRef<T>,
-      next: (snapshot: Doc<T> | undefined) => void,
+      ref: Model['id'],
+      next: (snapshot: Model['read'] | undefined) => void,
       error?: (error: Error) => void,
     ): Unsubscribe => {
-      const docRef = toFirestore.docRef(ref);
+      const docRef = toFirestore.docRef(mapper.toDocRef(ref));
       return docRef.onSnapshot((snapshot) => {
-        next(fromFirestore.document(snapshot));
+        const doc = fromFirestore.document(snapshot);
+        next(doc ? mapper.fromFirestore(doc) : undefined);
       }, error);
     },
 
-    list: async (query: Query<T>): Promise<Doc<T>[]> => {
+    list: async (query: Query<T>): Promise<Model['read'][]> => {
       const firestoreQuery = toFirestore.query(query);
       const { docs } = await firestoreQuery.get();
-      return docs.map(fromFirestore.documentMustExist);
+      return docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
     },
 
     listOnSnapshot: (
       query: Query<T>,
-      next: (snapshot: Doc<T>[]) => void,
+      next: (snapshot: Model['read'][]) => void,
       error?: (error: Error) => void,
     ): Unsubscribe => {
       const firestoreQuery = toFirestore.query(query);
       return firestoreQuery.onSnapshot((snapshot) => {
-        next(snapshot.docs.map((doc) => fromFirestore.documentMustExist(doc)));
+        next(
+          snapshot.docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
+        );
       }, error);
     },
 
@@ -112,20 +134,16 @@ export const newRepository = <T extends Collection>(
       return res.data() as Aggregated<U>;
     },
 
-    create: async (
-      docToWrite: DocToWrite<T>,
-      options?: WriteTransactionOption<Env>,
-    ): Promise<void> => {
+    create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
+      const docToWrite = mapper.toFirestore(model);
       const docRef = toFirestore.docRef(docToWrite);
       await (options?.tx
         ? options.tx.create(docRef, docToWrite.data)
         : docRef.create(docToWrite.data));
     },
 
-    set: async (
-      docToWrite: DocToWrite<T>,
-      options?: WriteTransactionOption<Env>,
-    ): Promise<void> => {
+    set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
+      const docToWrite = mapper.toFirestore(model);
       const docRef = toFirestore.docRef(docToWrite);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -134,29 +152,31 @@ export const newRepository = <T extends Collection>(
         : docRef.set(docToWrite.data));
     },
 
-    delete: async (ref: DocRef<T>, options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docRef = toFirestore.docRef(ref);
+    delete: async (ref: Model['id'], options?: WriteTransactionOption<Env>): Promise<void> => {
+      const docRef = toFirestore.docRef(mapper.toDocRef(ref));
       await (options?.tx ? options.tx.delete(docRef) : docRef.delete());
     },
 
     batchGet: async (
-      refs: DocRef<T>[],
+      refs: Model['id'][],
       options?: TransactionOption<Env>,
-    ): Promise<(Doc<T> | undefined)[]> => {
+    ): Promise<(Model['read'] | undefined)[]> => {
       if (refs.length === 0) {
         return [];
       }
-      const docRefs = refs.map((ref) => toFirestore.docRef(ref));
+      const docRefs = refs.map((ref) => toFirestore.docRef(mapper.toDocRef(ref)));
       const docs = await (options?.tx ? options.tx.getAll(...docRefs) : db.getAll(...docRefs));
       return docs.map((doc) => {
-        return fromFirestore.document(doc);
+        const d = fromFirestore.document(doc);
+        return d ? mapper.fromFirestore(d) : undefined;
       });
     },
 
     batchSet: async (
-      docs: DocToWrite<T>[],
+      models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
+      const docs = models.map(mapper.toFirestore);
       await batchWriteOperation(
         docs,
         {
@@ -168,9 +188,10 @@ export const newRepository = <T extends Collection>(
     },
 
     batchCreate: async (
-      docs: DocToWrite<T>[],
+      models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
+      const docs = models.map(mapper.toFirestore);
       await batchWriteOperation(
         docs,
         {
@@ -182,11 +203,12 @@ export const newRepository = <T extends Collection>(
     },
 
     batchDelete: async (
-      refs: DocRef<T>[],
+      refs: Model['id'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
+      const docRefs = refs.map(mapper.toDocRef);
       await batchWriteOperation(
-        refs,
+        docRefs,
         {
           batch: (batch, ref) => batch.delete(toFirestore.docRef(ref)),
           transaction: (tx, ref) => tx.delete(toFirestore.docRef(ref)),

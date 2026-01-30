@@ -32,6 +32,7 @@ export type DocToWrite<T extends Collection> = DocRef<T> & {
 
 export type DocData<T extends Collection> = T extends Collection<infer Data> ? Data : never;
 
+// TODO: DocRef can be just an array of string id
 export type DocRef<T extends Collection = Collection> = T['parent'] extends Collection
   ? { id: string; parent: DocRef<T['parent']> }
   : { id: string; parent?: undefined };
