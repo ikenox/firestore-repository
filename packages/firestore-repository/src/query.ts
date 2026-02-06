@@ -1,5 +1,5 @@
 import type { FieldPath, FieldValue, ValueType, WriteValue } from './document.js';
-import type { Collection, DocData, DocRef } from './schema.js';
+import type { Collection, DocData, ParentDocRef } from './schema.js';
 
 /**
  * An universal query definition
@@ -16,29 +16,29 @@ export type QueryBase<T extends Collection> =
   /**
    * Target collection to query
    */
-  | (T['parent'] extends Collection
-      ? // subcollection
-        {
-          collection: T;
-          parent: DocRef<T['parent']>;
-          /**
-           * Enables collection group query
-           */
-          group?: false;
-        }
-      : // root collection
-        {
-          collection: T;
-          parent?: undefined;
-          /**
-           * Enables collection group query
-           */
-          group?: false;
-        })
+  | { collection: T; parent: ParentDocRef<T>; group?: false }
   /**
    * Collection group query
    */
-  | { collection: T; parent?: undefined; group: true }
+  | { collection: T; group: true }
+  /**
+   * Extends another query
+   */
+  | { extends: Query<T> };
+
+export type QueryBaseInput<T extends Collection = Collection> =
+  /**
+   * Target collection to query
+   */
+  | (T['parent']['length'] extends 0
+      ? // Root Collection
+        { collection: T; group?: false; parent?: ParentDocRef<T> }
+      : // Subcollection
+        { collection: T; group?: false; parent: ParentDocRef<T> })
+  /**
+   * Collection group query
+   */
+  | { collection: T; group: true }
   /**
    * Extends another query
    */
@@ -48,10 +48,14 @@ export type QueryBase<T extends Collection> =
  * Builds a new query
  */
 export const query = <T extends Collection>(
-  base: QueryBase<T>,
+  base: QueryBaseInput<T>,
   ...constraints: QueryConstraint<T>[]
 ): Query<T> => {
-  return { base, constraints };
+  if ('extends' in base || base.group) {
+    return { base, constraints };
+  }
+  // biome-ignore lint/plugin/no-type-assertion: schema without validation
+  return { base: { ...base, parent: base.parent ?? ([] as ParentDocRef<T>) }, constraints };
 };
 
 /**

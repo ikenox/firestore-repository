@@ -1,10 +1,18 @@
-import type { Collection, DocRef } from './schema.js';
+import type { Collection, DocRef, ParentDocRef } from './schema.js';
 
 /**
  * Returns a fully-qualified path of the document
  */
-export const documentPath = <T extends Collection>(collection: T, doc: DocRef<T>): string => {
-  return `${collectionPath(collection, doc.parent)}/${doc.id}`;
+export const documentPath = <T extends Collection>(collection: T, docRef: DocRef<T>): string => {
+  let path = '';
+
+  // parent document path
+  for (let i = 0; i < collection.parent.length; i++) {
+    path += `${collection.parent[i]}/${docRef[i]}/`;
+  }
+
+  path += `${collection.name}/${docRef.at(-1)}`;
+  return path;
 };
 
 /**
@@ -12,9 +20,15 @@ export const documentPath = <T extends Collection>(collection: T, doc: DocRef<T>
  */
 export const collectionPath = <T extends Collection>(
   collection: T,
-  parentDoc: DocRef<T['parent']> | undefined,
+  parentDocRef: ParentDocRef<T>,
 ): string => {
-  return parentDoc
-    ? `${documentPath(collection.parent, parentDoc)}/${collection.name}`
-    : collection.name;
+  let path = '';
+
+  // parent document path
+  for (let i = 0; i < collection.parent.length; i++) {
+    path += `${collection.parent[i]}/${parentDocRef[i]}/`;
+  }
+
+  path += collection.name;
+  return path;
 };

@@ -1,41 +1,46 @@
 import type { DocumentData, WriteDocumentData } from './document.js';
+import type { ToStringTuple } from './util.js';
 
 /**
  * A definition of firestore collection
  */
 export type Collection<
   Data extends DocumentData = DocumentData,
-  // biome-ignore lint/suspicious/noExplicitAny: avoid circular reference
-  Parent extends Collection | undefined = any,
+  Parent extends string[] = string[],
 > = { name: string; data: DocDataSchema<Data>; parent: Parent };
 
 export const rootCollection = <Data extends DocumentData>(params: {
   name: string;
   data: DocDataSchema<Data>;
-}): Collection<Data, undefined> => ({ ...params, parent: undefined });
+}): Collection<Data, []> => ({ ...params, parent: [] });
 
-export const subCollection = <Data extends DocumentData, Parent extends Collection>(params: {
+export const subCollection = <Data extends DocumentData, const Parent extends string[]>(params: {
   name: string;
   data: DocDataSchema<Data>;
   parent: Parent;
-}): Collection<Data, Parent> => params;
+}): Collection<Data, Parent> => {
+  if (params.parent.length === 0) {
+    throw new Error('parent must be a non-empty array');
+  }
+  return params;
+};
 
 export type DocDataSchema<T extends DocumentData = DocumentData> = {
   validate: (data: unknown) => T;
 };
 
-export type Doc<T extends Collection = Collection> = DocRef<T> & { data: DocData<T> };
+export type Doc<T extends Collection = Collection> = { ref: DocRef<T>; data: DocData<T> };
 
-export type DocToWrite<T extends Collection> = DocRef<T> & {
+export type DocToWrite<T extends Collection> = {
+  ref: DocRef<T>;
   data: DocData<T> | WriteDocumentData<DocData<T>>;
 };
 
 export type DocData<T extends Collection> = T extends Collection<infer Data> ? Data : never;
 
-// TODO: DocRef can be just an array of string id
-export type DocRef<T extends Collection = Collection> = T['parent'] extends Collection
-  ? { id: string; parent: DocRef<T['parent']> }
-  : { id: string; parent?: undefined };
+export type DocRef<T extends Collection> = [...ParentDocRef<T>, string];
+
+export type ParentDocRef<T extends Collection> = ToStringTuple<T['parent']>;
 
 export const schemaWithoutValidation = <T extends DocumentData>(): DocDataSchema<T> => ({
   // biome-ignore lint/plugin/no-type-assertion: schema without validation

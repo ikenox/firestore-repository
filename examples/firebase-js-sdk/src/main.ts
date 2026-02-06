@@ -20,7 +20,7 @@ async function main() {
   const repository = newRepository(db, authors);
 
   await repository.set({
-    id: 'author1',
+    ref: ['author1'],
     data: {
       name: 'John Doe',
       profile: { age: 42, gender: 'male' },
@@ -29,7 +29,7 @@ async function main() {
     },
   });
 
-  const doc = await repository.get({ id: 'author1' });
+  const doc = await repository.get(['author1']);
   console.log(doc);
 
   const docs = await repository.list(

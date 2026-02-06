@@ -6,19 +6,22 @@ describe('query', () => {
   describe('query function argument', () => {
     it('root collection', () => {
       query({ collection: authorsCollection });
-      query({ collection: authorsCollection, parent: undefined });
       query({ collection: authorsCollection, group: false });
       query({ collection: authorsCollection }, orderBy('rank'), limit(1));
 
       // collection group
       query({ collection: authorsCollection, group: true });
-      query({ collection: authorsCollection, group: true, parent: undefined });
+      query({ collection: authorsCollection, group: true });
       query({ collection: authorsCollection, group: true }, orderBy('rank'), limit(1));
     });
 
     it('subcollection', () => {
-      query({ collection: postsCollection, parent: { id: '123' } });
-      query({ collection: postsCollection, parent: { id: '123' } }, orderBy('postedAt'), limit(1));
+      query({ collection: postsCollection, parent: ['123'] as const });
+      query(
+        { collection: postsCollection, parent: ['123'] as const },
+        orderBy('postedAt'),
+        limit(1),
+      );
       // @ts-expect-error parent is required for subcollection
       query({ collection: postsCollection });
       // @ts-expect-error parent is required for subcollection
@@ -26,7 +29,7 @@ describe('query', () => {
 
       // collection group
       query({ collection: postsCollection, group: true });
-      query({ collection: postsCollection, group: true, parent: undefined });
+      query({ collection: postsCollection, group: true });
       query({ collection: postsCollection, group: true }, orderBy('postedAt'), limit(1));
     });
   });

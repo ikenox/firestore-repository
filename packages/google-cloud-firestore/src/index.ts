@@ -136,7 +136,7 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
 
     create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite);
+      const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx.create(docRef, docToWrite.data)
         : docRef.create(docToWrite.data));
@@ -144,7 +144,7 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite);
+      const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx instanceof Transaction
           ? options.tx.set(docRef, docToWrite.data)
@@ -180,8 +180,8 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
       await batchWriteOperation(
         docs,
         {
-          batch: (batch, doc) => batch.set(toFirestore.docRef(doc), doc.data),
-          transaction: (tx, doc) => tx.set(toFirestore.docRef(doc), doc.data),
+          batch: (batch, doc) => batch.set(toFirestore.docRef(doc.ref), doc.data),
+          transaction: (tx, doc) => tx.set(toFirestore.docRef(doc.ref), doc.data),
         },
         options,
       );
@@ -195,8 +195,8 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
       await batchWriteOperation(
         docs,
         {
-          batch: (batch, doc) => batch.create(toFirestore.docRef(doc), doc.data),
-          transaction: (tx, doc) => tx.create(toFirestore.docRef(doc), doc.data),
+          batch: (batch, doc) => batch.create(toFirestore.docRef(doc.ref), doc.data),
+          transaction: (tx, doc) => tx.create(toFirestore.docRef(doc.ref), doc.data),
         },
         options,
       );
@@ -290,7 +290,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
       if (!data) {
         throw new Error('document must exist');
       }
-      return { ...fromFirestore.docRef(document.ref), data };
+      return { ref: fromFirestore.docRef(document.ref), data };
     },
     document: (document: firestore.DocumentSnapshot): Doc<T> | undefined => {
       if (!document.exists) {
@@ -299,13 +299,15 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
       return fromFirestore.documentMustExist(document);
     },
     docRef: (ref: firestore.DocumentReference): DocRef<T> => {
-      const collection = ref.parent;
+      const docRef: string[] = [];
+
+      let currentRef: firestore.DocumentReference | null = ref;
+      while (currentRef != null) {
+        docRef.push(currentRef.id);
+        currentRef = currentRef.parent.parent;
+      }
       // biome-ignore lint/plugin/no-type-assertion: cannot infer type here
-      return (
-        collection.parent
-          ? { id: ref.id, parent: fromFirestore.docRef(collection.parent) }
-          : { id: ref.id }
-      ) as DocRef<T>;
+      return docRef.reverse() as DocRef<T>;
     },
   };
   const batchWriteOperation = async <U>(

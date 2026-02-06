@@ -87,14 +87,20 @@ describe('repository', async () => {
 
         it('not empty', async () => {
           expect(
-            await repository.batchGet([items[0], items[2], items[1], notExistDocId(), items[2]]),
+            await repository.batchGet([
+              items[0].ref,
+              items[2].ref,
+              items[1].ref,
+              notExistDocId(),
+              items[2].ref,
+            ]),
           ).toStrictEqual([items[0], items[2], items[1], undefined, items[2]]);
         });
 
         it('transaction', async () => {
           const res = await db.runTransaction(async (tx) => {
             return await repository.batchGet(
-              [items[0], items[2], items[1], notExistDocId(), items[2]],
+              [items[0].ref, items[2].ref, items[1].ref, notExistDocId(), items[2].ref],
               { tx },
             );
           });
@@ -130,14 +136,14 @@ describe('repository', async () => {
     const repository = newRepository(db, coll);
     const items = [
       {
-        id: '1',
+        ref: ['1'],
         data: { name: 'author1', profile: { age: 20, gender: 'male' }, rank: 1, tag: ['a', 'b'] },
       },
       {
-        id: '2',
+        ref: ['2'],
         data: { name: 'author2', profile: { age: 40, gender: 'female' }, rank: 1, tag: ['b', 'c'] },
       },
-      { id: '3', data: { name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] } },
+      { ref: ['3'], data: { name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] } },
     ] as const satisfies Doc<typeof authorsCollection>[];
 
     beforeAll(async () => {
