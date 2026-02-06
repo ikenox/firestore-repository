@@ -11,3 +11,11 @@ export const assertNever = (x: never): never => {
  */
 export type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
+
+/**
+ * Converts a tuple type to a tuple of strings with the same length
+ * @example ['a', 'b'] -> [string, string]
+ */
+export type ToStringTuple<T extends readonly unknown[]> = {
+  [K in keyof T]: string;
+};

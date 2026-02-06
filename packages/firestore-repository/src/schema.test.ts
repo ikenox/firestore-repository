@@ -19,13 +19,13 @@ describe('schema', () => {
   const postsCollection = subCollection({
     name: 'Posts',
     data: schemaWithoutValidation<{ title: string; postedAt: Timestamp }>(),
-    parent: authorsCollection,
+    parent: ['Authors'],
   });
 
   const commentsCollection = subCollection({
     name: 'Comments',
     data: schemaWithoutValidation<{ content: string; commentedAt: Timestamp }>(),
-    parent: postsCollection,
+    parent: ['Authors', 'Posts'],
   });
 
   type AuthorsCollection = typeof authorsCollection;
@@ -33,17 +33,15 @@ describe('schema', () => {
   type CommentsCollection = typeof commentsCollection;
 
   it('Doc', () => {
-    expectTypeOf<Doc<AuthorsCollection>>().toMatchTypeOf<{
-      id: string;
-      parent?: undefined;
+    expectTypeOf<Doc<AuthorsCollection>>().toEqualTypeOf<{
+      ref: [string];
       data: { name: string; registeredAt: Timestamp };
     }>();
   });
 
   it('DocToWrite', () => {
     expectTypeOf<DocToWrite<AuthorsCollection>>().toMatchTypeOf<{
-      id: string;
-      parent?: undefined;
+      ref: [string];
       data: { name: string; registeredAt: Timestamp | Date | ServerTimestamp };
     }>();
 
@@ -52,44 +50,14 @@ describe('schema', () => {
     expectTypeOf<Doc<CommentsCollection>>().toExtend<DocToWrite<CommentsCollection>>();
     (<T extends Collection>() => {
       // check type compatibility
-      let a!: Doc<T>;
-      const _b: DocToWrite<T> = a;
-      // FIXME this assertion should be passed
-      // expectTypeOf<Doc<T>>().toExtend<DocToWrite<T>>();
+      expectTypeOf<Doc<T>>().toExtend<DocToWrite<T>>();
     })();
   });
 
   it('DocRef', () => {
-    expectTypeOf<DocRef<AuthorsCollection>>().toEqualTypeOf<{ id: string; parent?: undefined }>();
-    expectTypeOf<DocRef<PostsCollection>>().toEqualTypeOf<{
-      id: string;
-      parent: { id: string; parent?: undefined };
-    }>();
-    expectTypeOf<DocRef<CommentsCollection>>().toEqualTypeOf<{
-      id: string;
-      parent: { id: string; parent: { id: string; parent?: undefined } };
-    }>();
-
-    expectTypeOf<Doc<AuthorsCollection>>().toExtend<DocRef<AuthorsCollection>>();
-    expectTypeOf<Doc<PostsCollection>>().toExtend<DocRef<PostsCollection>>();
-    expectTypeOf<Doc<CommentsCollection>>().toExtend<DocRef<CommentsCollection>>();
-    (<T extends Collection>() => {
-      // check type compatibility
-      let a!: Doc<T>;
-      const _b: DocRef<T> = a;
-      // FIXME this assertion should be passed
-      // expectTypeOf<Doc<T>>().toExtend<DocRef<T>>();
-    })();
-
-    expectTypeOf<DocToWrite<AuthorsCollection>>().toExtend<DocRef<AuthorsCollection>>();
-    expectTypeOf<DocToWrite<PostsCollection>>().toExtend<DocRef<PostsCollection>>();
-    expectTypeOf<DocToWrite<CommentsCollection>>().toExtend<DocRef<CommentsCollection>>();
-    (<T extends Collection>() => {
-      // check type compatibility
-      let a!: DocToWrite<T>;
-      const _b: DocRef<T> = a;
-      // FIXME this assertion should be passed
-      // expectTypeOf<DocToWrite<T>>().toExtend<DocRef<T>>();
-    })();
+    expectTypeOf<DocRef<AuthorsCollection>>().toEqualTypeOf<[string]>();
+    expectTypeOf<DocRef<PostsCollection>>().toEqualTypeOf<[string, string]>();
+    expectTypeOf<DocRef<CommentsCollection>>().toEqualTypeOf<[string, string, string]>();
+    expectTypeOf<DocRef<Collection>>().toEqualTypeOf<string[]>();
   });
 });

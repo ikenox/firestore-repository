@@ -148,7 +148,7 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite);
+      const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx instanceof Transaction
           ? options.tx.set(docRef, docToWrite.data)
@@ -169,8 +169,8 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
       await batchWriteOperation(
         docs,
         {
-          batch: (batch, d) => batch.set(toFirestore.docRef(d), d.data),
-          transaction: (tx, d) => tx.set(toFirestore.docRef(d), d.data),
+          batch: (batch, d) => batch.set(toFirestore.docRef(d.ref), d.data),
+          transaction: (tx, d) => tx.set(toFirestore.docRef(d.ref), d.data),
         },
         options,
       );
@@ -291,7 +291,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
       if (!data) {
         throw new Error('document must exist');
       }
-      return { ...fromFirestore.docRef(document.ref), data };
+      return { ref: fromFirestore.docRef(document.ref), data };
     },
     document: (document: DocumentSnapshot): Doc<T> | undefined => {
       if (!document.exists()) {
@@ -300,13 +300,15 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
       return fromFirestore.documentMustExist(document);
     },
     docRef: (ref: DocumentReference): DocRef<T> => {
-      const parentCollection = ref.parent;
+      const docRef: string[] = [];
+
+      let currentRef: DocumentReference | null = ref;
+      while (currentRef != null) {
+        docRef.push(currentRef.id);
+        currentRef = currentRef.parent.parent;
+      }
       // biome-ignore lint/plugin/no-type-assertion: cannot infer type here
-      return (
-        parentCollection.parent
-          ? { id: ref.id, parent: fromFirestore.docRef(parentCollection.parent) }
-          : { id: ref.id }
-      ) as DocRef<T>;
+      return docRef.reverse() as DocRef<T>;
     },
   };
 
