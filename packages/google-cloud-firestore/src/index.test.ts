@@ -5,10 +5,10 @@ import {
 } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
-import type { PlainModel } from 'firestore-repository/repository';
+import { type PlainModel, plainMapper } from 'firestore-repository/repository';
 import type { Doc } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { type Env, type GoogleCloudFirestoreRepository, newRepository } from './index.js';
+import { type Env, type GoogleCloudFirestoreRepository, newRepositoryWithMapper } from './index.js';
 import { offset } from './query.js';
 import { wrap } from './value.js';
 
@@ -19,7 +19,8 @@ describe('repository', async () => {
   });
 
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) => newRepository(db, collection),
+    createRepository: (collection) =>
+      newRepositoryWithMapper(db, collection, plainMapper(collection)),
     types: {
       timestamp: (date) => wrap(Timestamp.fromDate(date)),
       geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
@@ -133,7 +134,7 @@ describe('repository', async () => {
 
   describe('query', () => {
     const coll = uniqueCollection(authorsCollection);
-    const repository = newRepository(db, coll);
+    const repository = newRepositoryWithMapper(db, coll, plainMapper(coll));
     const items = [
       {
         ref: ['1'],

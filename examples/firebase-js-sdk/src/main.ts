@@ -4,7 +4,7 @@ import {
   Timestamp as FirebaseTimestamp,
   getFirestore,
 } from '@firebase/firestore';
-import { newRepository } from '@firestore-repository/firebase-js-sdk';
+import { newRootCollectionRepository } from '@firestore-repository/firebase-js-sdk';
 import { wrap } from '@firestore-repository/firebase-js-sdk/value';
 import type { Timestamp } from 'firestore-repository/document';
 import { condition as $, limit, query } from 'firestore-repository/query';
@@ -17,7 +17,7 @@ async function main() {
   );
   connectFirestoreEmulator(db, 'localhost', 60001);
 
-  const repository = newRepository(db, authors);
+  const repository = newRootCollectionRepository(db, authors);
 
   await repository.set({
     ref: ['author1'],
@@ -29,7 +29,7 @@ async function main() {
     },
   });
 
-  const doc = await repository.get(['author1']);
+  const doc = await repository.get('author1');
   console.log(doc);
 
   const docs = await repository.list(

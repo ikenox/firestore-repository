@@ -1,6 +1,6 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
 import type { Query } from './query.js';
-import type { Collection, Doc, DocRef, DocToWrite } from './schema.js';
+import type { Collection, Doc, DocRef, DocToWrite, RootCollection } from './schema.js';
 
 /**
  * A universal repository interface
@@ -66,30 +66,13 @@ export interface Repository<
   batchDelete: (refs: Model['id'][], options?: WriteTransactionOption<Env>) => Promise<void>;
 }
 
-export type PlainRepository<
-  T extends Collection = Collection,
-  Env extends FirestoreEnvironment = FirestoreEnvironment,
-> = Repository<T, { id: DocRef<T>; read: Doc<T>; write: DocToWrite<T> }, Env>;
-
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
   fromFirestore: (doc: Doc<T>) => Model['read'];
   toFirestore: (model: Model['write']) => DocToWrite<T>;
 };
 
-export const plainMapper = <T extends Collection>(_collection: T): Mapper<T, PlainModel<T>> => ({
-  toDocRef: (id) => id,
-  fromFirestore: (doc) => doc,
-  toFirestore: (model) => model,
-});
-
 export type AppModel<Id = unknown, R = unknown, W extends R = R> = { id: Id; read: R; write: W };
-
-export type PlainModel<T extends Collection> = {
-  id: DocRef<T>;
-  write: DocToWrite<T>;
-  read: Doc<T>;
-};
 
 /**
  * Platform-specific types
@@ -101,3 +84,35 @@ export type WriteTransactionOption<T extends FirestoreEnvironment> = {
   tx?: T['transaction'] | T['writeBatch'];
 };
 export type Unsubscribe = () => void;
+
+export type PlainRepository<
+  T extends Collection = Collection,
+  Env extends FirestoreEnvironment = FirestoreEnvironment,
+> = Repository<T, PlainModel<T>, Env>;
+
+export type PlainModel<T extends Collection> = {
+  id: DocRef<T>;
+  write: DocToWrite<T>;
+  read: Doc<T>;
+};
+
+export type RootCollectionPlainModel<T extends Collection> = {
+  id: string;
+  write: DocToWrite<T>;
+  read: Doc<T>;
+};
+
+export const plainMapper = <T extends Collection>(_collection: T): Mapper<T, PlainModel<T>> => ({
+  toDocRef: (id) => id,
+  fromFirestore: (doc) => doc,
+  toFirestore: (model) => model,
+});
+
+export const rootCollectionPlainMapper = <T extends RootCollection>(
+  _collection: T,
+): Mapper<T, RootCollectionPlainModel<T>> => ({
+  // biome-ignore lint/plugin/no-type-assertion: type system doesn't expand DocRef<T> into [string]
+  toDocRef: (id) => [id] as unknown as DocRef<T>,
+  fromFirestore: (doc) => doc,
+  toFirestore: (model) => model,
+});

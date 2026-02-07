@@ -1,4 +1,4 @@
-import { newRepository } from '@firestore-repository/google-cloud-firestore';
+import { newRootCollectionRepository } from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
 import { condition as $, limit, query } from 'firestore-repository/query';
 import { rootCollection } from 'firestore-repository/schema';
@@ -10,14 +10,14 @@ async function main() {
     databaseId: 'example-google-cloud-firestore',
   });
 
-  const repository = newRepository(db, authors);
+  const repository = newRootCollectionRepository(db, authors);
 
   await repository.set({
     ref: ['author1'],
     data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
   });
 
-  const doc = await repository.get(['author1']);
+  const doc = await repository.get('author1');
   console.log(doc);
 
   const docs = await repository.list(
