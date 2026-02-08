@@ -9,11 +9,20 @@ import {
   type PlainModel,
   plainMapper,
   type Repository,
+  type RootCollectionPlainModel,
+  rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
-import type { Collection, Doc, DocData, DocRef } from 'firestore-repository/schema';
+import type {
+  Collection,
+  Doc,
+  DocData,
+  DocRef,
+  RootCollection,
+  SubCollection,
+} from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = {
@@ -44,10 +53,16 @@ export interface GoogleCloudFirestoreRepository<T extends Collection, Model exte
   ) => Promise<(Model['read'] | undefined)[]>;
 }
 
-export const newRepository = <T extends Collection>(
+export const newRootCollectionRepository = <T extends RootCollection>(
   db: firestore.Firestore,
   collection: T,
-): GoogleCloudFirestoreRepository<T, PlainModel<T>> =>
+): Repository<T, RootCollectionPlainModel<T>, Env> =>
+  newRepositoryWithMapper(db, collection, rootCollectionPlainMapper(collection));
+
+export const newSubcollectionRepository = <T extends SubCollection>(
+  db: firestore.Firestore,
+  collection: T,
+): Repository<T, PlainModel<T>, Env> =>
   newRepositoryWithMapper(db, collection, plainMapper(collection));
 
 export const newRepositoryWithMapper = <T extends Collection, Model extends AppModel>(

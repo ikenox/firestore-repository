@@ -44,16 +44,31 @@ import {
   type PlainModel,
   plainMapper,
   type Repository,
+  type RootCollectionPlainModel,
+  rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
-import type { Collection, Doc, DocData, DocRef } from 'firestore-repository/schema';
+import type {
+  Collection,
+  Doc,
+  DocData,
+  DocRef,
+  RootCollection,
+  SubCollection,
+} from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 
-export const newRepository = <T extends Collection>(
+export const newRootCollectionRepository = <T extends RootCollection>(
+  db: Firestore,
+  collection: T,
+): Repository<T, RootCollectionPlainModel<T>, Env> =>
+  newRepositoryWithMapper(db, collection, rootCollectionPlainMapper(collection));
+
+export const newSubcollectionRepository = <T extends SubCollection>(
   db: Firestore,
   collection: T,
 ): Repository<T, PlainModel<T>, Env> =>

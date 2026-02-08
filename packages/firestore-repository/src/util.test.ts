@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { assertNever, type Equal } from './util.js';
+import { assertNever, type Equal, type ToStringTuple } from './util.js';
 
 describe('util', () => {
   it('assertNever', () => {
@@ -11,5 +11,15 @@ describe('util', () => {
     expectTypeOf<Equal<number, number>>().toEqualTypeOf<true>();
     expectTypeOf<Equal<number, 123>>().toEqualTypeOf<false>();
     expectTypeOf<Equal<number, number | string>>().toEqualTypeOf<false>();
+  });
+
+  it('ToStringTuple', () => {
+    expectTypeOf<ToStringTuple<[]>>().toEqualTypeOf<[]>();
+    expectTypeOf<ToStringTuple<[number]>>().toEqualTypeOf<[string]>();
+    expectTypeOf<ToStringTuple<[number, boolean]>>().toEqualTypeOf<[string, string]>();
+    expectTypeOf<ToStringTuple<[boolean, symbol, never, 'a']>>().toEqualTypeOf<
+      [string, string, string, string]
+    >();
+    expectTypeOf<ToStringTuple<number[]>>().toEqualTypeOf<string[]>();
   });
 });

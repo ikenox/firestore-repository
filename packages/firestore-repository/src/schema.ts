@@ -9,19 +9,26 @@ export type Collection<
   Parent extends string[] = string[],
 > = { name: string; data: DocDataSchema<Data>; parent: Parent };
 
+export type RootCollection<Data extends DocumentData = DocumentData> = Collection<Data, []>;
+
+export type SubCollection<
+  Data extends DocumentData = DocumentData,
+  Parent extends [...string[], string] = [...string[], string],
+> = Collection<Data, Parent>;
+
 export const rootCollection = <Data extends DocumentData>(params: {
   name: string;
   data: DocDataSchema<Data>;
 }): Collection<Data, []> => ({ ...params, parent: [] });
 
-export const subCollection = <Data extends DocumentData, const Parent extends string[]>(params: {
+export const subCollection = <
+  Data extends DocumentData,
+  const Parent extends [...string[], string],
+>(params: {
   name: string;
   data: DocDataSchema<Data>;
   parent: Parent;
-}): Collection<Data, Parent> => {
-  if (params.parent.length === 0) {
-    throw new Error('parent must be a non-empty array');
-  }
+}): SubCollection<Data, Parent> => {
   return params;
 };
 

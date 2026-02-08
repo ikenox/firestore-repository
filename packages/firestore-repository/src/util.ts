@@ -16,6 +16,6 @@ export type Equal<X, Y> =
  * Converts a tuple type to a tuple of strings with the same length
  * @example ['a', 'b'] -> [string, string]
  */
-export type ToStringTuple<T extends readonly unknown[]> = {
+export type ToStringTuple<T extends unknown[]> = {
   [K in keyof T]: string;
 };
