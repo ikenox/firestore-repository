@@ -4,6 +4,7 @@
     "lib": ["ESNext", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "customConditions": ["@firestore-repository/source"],
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
