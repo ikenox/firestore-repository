@@ -1,8 +1,8 @@
-import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
 
 export const sharedConfig = defineConfig({
-  plugins: [tsconfigPaths()],
+  resolve: { conditions: ['@firestore-repository/source'] },
+  environments: { ssr: { resolve: { conditions: ['@firestore-repository/source'] } } },
   test: {
     include: ['**/*.test.ts'],
     hookTimeout: 5000,

@@ -11,8 +11,14 @@
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "exports": {
-    ".": { "import": { "types": "./build/esm/index.d.ts", "default": "./build/esm/index.js" } },
-    "./*": { "import": { "types": "./build/esm/*.d.ts", "default": "./build/esm/*.js" } }
+    ".": {
+      "@firestore-repository/source": "./src/index.ts",
+      "import": { "types": "./build/esm/index.d.ts", "default": "./build/esm/index.js" }
+    },
+    "./*": {
+      "@firestore-repository/source": "./src/*.ts",
+      "import": { "types": "./build/esm/*.d.ts", "default": "./build/esm/*.js" }
+    }
   },
   "files": ["build", "!**/*.tsbuildinfo"],
   "keywords": ["firestore", "orm", "database", "repository", "firebase"],
