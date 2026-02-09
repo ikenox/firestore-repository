@@ -119,9 +119,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         repository,
         items,
         expectDb: async (expected: Doc<T>[]) => {
-          const items = await currentRepository.list(
-            query({ collection: currentRepository.collection, group: true }),
-          );
+          const items = (
+            await currentRepository.list(
+              query({ collection: currentRepository.collection, group: true }),
+            )
+          ).toArray();
           expect(
             items.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
           ).toStrictEqual(
@@ -197,9 +199,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       it('list', async () => {
-        const res = await repository.list(
-          query({ collection: repository.collection, group: true }),
-        );
+        const res = (
+          await repository.list(query({ collection: repository.collection, group: true }))
+        ).toArray();
         expectArrayEqualsWithoutOrder(res, items);
       });
 
@@ -499,7 +501,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           repository,
           items: params.items,
           expectQuery: async (query: Query<T>, expected: Doc<T>[]) => {
-            const result = await repository.list(query);
+            const result = (await repository.list(query)).toArray();
             expect(result).toStrictEqual(expected);
           },
         };

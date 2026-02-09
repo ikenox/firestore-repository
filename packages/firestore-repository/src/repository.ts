@@ -29,7 +29,7 @@ export interface Repository<
   /**
    * Returns a documents list of the specified query
    */
-  list: (query: Query<T>) => Promise<Model['read'][]>;
+  list: (query: Query<T>) => Promise<IteratorObject<Model['read']>>;
 
   /**
    * Listen documents of the specified query
