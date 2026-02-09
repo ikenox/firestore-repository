@@ -153,7 +153,9 @@ describe('repository', async () => {
 
     it('offset', async () => {
       const [, ...rest] = items;
-      const result = await repository.list(query({ collection: repository.collection }, offset(1)));
+      const result = (
+        await repository.list(query({ collection: repository.collection }, offset(1)))
+      ).toArray();
       expect(result).toStrictEqual(rest);
     });
   });

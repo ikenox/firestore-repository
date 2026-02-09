@@ -20,9 +20,9 @@ async function main() {
   const doc = await repository.get('author1');
   console.log(doc);
 
-  const docs = await repository.list(
-    query({ collection: authors }, $('profile.age', '>=', 20), limit(10)),
-  );
+  const docs = (
+    await repository.list(query({ collection: authors }, $('profile.age', '>=', 20), limit(10)))
+  ).toArray();
   console.log(docs);
 
   repository.listOnSnapshot(
