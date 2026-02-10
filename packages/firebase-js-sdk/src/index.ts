@@ -60,20 +60,24 @@ import type {
 } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
+/** Platform-specific environment types for Firebase JS SDK */
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
 
+/** Creates a repository for a root collection using plain document types */
 export const newRootCollectionRepository = <T extends RootCollection>(
   db: Firestore,
   collection: T,
 ): Repository<T, RootCollectionPlainModel<T>, Env> =>
   newRepositoryWithMapper(db, collection, rootCollectionPlainMapper(collection));
 
+/** Creates a repository for a subcollection using plain document types */
 export const newSubcollectionRepository = <T extends SubCollection>(
   db: Firestore,
   collection: T,
 ): Repository<T, PlainModel<T>, Env> =>
   newRepositoryWithMapper(db, collection, plainMapper(collection));
 
+/** Creates a repository with a custom mapper for transforming between Firestore documents and application models */
 export const newRepositoryWithMapper = <T extends Collection, Model extends AppModel>(
   db: Firestore,
   collection: T,

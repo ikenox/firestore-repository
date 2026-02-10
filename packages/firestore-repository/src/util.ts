@@ -1,13 +1,13 @@
 /**
- * Receives and returns `never` value
- * This is mainly used for exhaustiveness check of a switch statement
+ * Receives and returns a `never` value.
+ * This is mainly used for exhaustiveness checking in switch statements.
  */
 export const assertNever = (x: never): never => {
   throw new Error(`Unreachable code reached with: ${x}`);
 };
 
 /**
- * Check type-level equality
+ * Checks type-level equality
  */
 export type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
