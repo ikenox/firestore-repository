@@ -1,4 +1,5 @@
 import { assert, beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
+
 import { average, count, sum } from '../aggregate.js';
 import type {
   Bytes,
@@ -104,12 +105,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       // Create a proxy that always delegates to the current repository instance
-      // biome-ignore lint/plugin/no-type-assertion: proxy delegates to the current repository instance
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- proxy delegates to the current repository instance
       const repository = new Proxy(
         {},
         {
           get: (_, prop) => {
-            // biome-ignore lint/plugin/no-type-assertion: proxy handler
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- proxy handler
             return currentRepository[prop as keyof typeof currentRepository];
           },
         },
@@ -780,7 +781,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             for (const [testName, asserts] of Object.entries(tests)) {
               it(testName, async () => {
                 const orderByConstraints = queryCursorTestCases[
-                  // biome-ignore lint/plugin/no-type-assertion: Object.entries loses type information of object keys
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Object.entries loses type information of object keys
                   testName as keyof typeof queryCursorTestCases
                 ].map((f) => orderBy<typeof repository.collection>(f));
 

@@ -1,12 +1,16 @@
 {
   "private": true,
-  "type": "module",
-  "scripts": { "typecheck": "tsc --noEmit", "build": "tsc", "execute": "node build/main.js" },
-  "dependencies": {
-    "firestore-repository": "workspace:*",
-    "@firestore-repository/google-cloud-firestore": "workspace:*",
-    "@google-cloud/firestore": "catalog:"
-  },
+  "license": "MIT",
   "author": "Naoto Ikeno <ikenox@gmail.com>",
-  "license": "MIT"
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "build": "tsc",
+    "execute": "node build/main.js"
+  },
+  "dependencies": {
+    "@firestore-repository/google-cloud-firestore": "workspace:*",
+    "@google-cloud/firestore": "catalog:",
+    "firestore-repository": "workspace:*"
+  }
 }

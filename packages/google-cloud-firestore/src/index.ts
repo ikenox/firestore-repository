@@ -31,8 +31,10 @@ export type Env = {
   query: firestore.Query;
 };
 
-export interface GoogleCloudFirestoreRepository<T extends Collection, Model extends AppModel>
-  extends Repository<T, Model, Env> {
+export interface GoogleCloudFirestoreRepository<
+  T extends Collection,
+  Model extends AppModel,
+> extends Repository<T, Model, Env> {
   /**
    * Create a new document
    * @throws If the document already exists
@@ -145,7 +147,7 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
 
       const firestoreQuery = toFirestore.query(query);
       const res = await firestoreQuery.aggregate(aggregateSpec).get();
-      // biome-ignore lint/plugin/no-type-assertion: there is no way to infer correct type
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- there is no way to infer correct type
       return res.data() as Aggregated<U>;
     },
 
@@ -300,7 +302,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
   };
   const fromFirestore = {
     documentMustExist: (document: firestore.DocumentSnapshot): Doc<T> => {
-      // biome-ignore lint/plugin/no-type-assertion: cannot infer type here
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
       const data = document.data() as DocData<T> | undefined;
       if (!data) {
         throw new Error('document must exist');
@@ -321,7 +323,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
         docRef.push(currentRef.id);
         currentRef = currentRef.parent.parent;
       }
-      // biome-ignore lint/plugin/no-type-assertion: cannot infer type here
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
       return docRef.reverse() as DocRef<T>;
     },
   };

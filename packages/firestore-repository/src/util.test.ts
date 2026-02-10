@@ -1,9 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
+
 import { assertNever, type Equal, type ToStringTuple } from './util.js';
 
 describe('util', () => {
   it('assertNever', () => {
-    // biome-ignore lint/plugin/no-type-assertion: testing assertNever requires casting to never
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- testing assertNever requires casting to never
     expect(() => assertNever(123 as never)).toThrowError('Unreachable code reached with: 123');
   });
 

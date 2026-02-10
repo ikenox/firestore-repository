@@ -111,7 +111,7 @@ export const plainMapper = <T extends Collection>(_collection: T): Mapper<T, Pla
 export const rootCollectionPlainMapper = <T extends RootCollection>(
   _collection: T,
 ): Mapper<T, RootCollectionPlainModel<T>> => ({
-  // biome-ignore lint/plugin/no-type-assertion: type system doesn't expand DocRef<T> into [string]
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- type system doesn't expand DocRef<T> into [string]
   toDocRef: (id) => [id] as unknown as DocRef<T>,
   fromFirestore: (doc) => doc,
   toFirestore: (model) => model,
