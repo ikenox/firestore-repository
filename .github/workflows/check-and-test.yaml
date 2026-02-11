@@ -21,6 +21,8 @@ jobs:
       - run: pnpm check
   test:
     runs-on: ubuntu-latest
+    env:
+      FIRESTORE_EMULATOR_VERSION: 1.19.8
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -34,18 +36,28 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
-      - name: Setup docker buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Build firebase emulator
-        uses: docker/build-push-action@v6
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          context: firebase-emulator
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
-          load: true
-      - name: start firebase emulator
-        run: pnpm start-emulator
-      - name: Wait firebase emulator is ready
+          distribution: temurin
+          java-version: '21'
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firestore-emulator-v${{ env.FIRESTORE_EMULATOR_VERSION }}
+      - name: Download Firestore emulator
+        run: |
+          JAR=~/.cache/firebase/emulators/cloud-firestore-emulator-v${FIRESTORE_EMULATOR_VERSION}.jar
+          if [ ! -f "$JAR" ]; then
+            mkdir -p ~/.cache/firebase/emulators
+            curl -o "$JAR" https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v${FIRESTORE_EMULATOR_VERSION}.jar
+          fi
+      - name: Start Firestore emulator
+        run: |
+          java -jar ~/.cache/firebase/emulators/cloud-firestore-emulator-v${FIRESTORE_EMULATOR_VERSION}.jar \
+            --host=0.0.0.0 --port=60001 &
+      - name: Wait for emulator
         run: |
           timeout 15 bash -c 'until nc -z localhost 60001; do sleep 0.5; done'
           # Wait a bit more as the emulator is often not fully ready even after port is listening
