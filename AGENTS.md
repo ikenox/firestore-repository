@@ -15,8 +15,5 @@
 ## Workflow
 
 - When starting work on a new task in a new session, create a git worktree under `.worktree/` and switch to it before making changes. Choose an appropriate worktree/branch name based on the task description.
-
-## Coding Guidelines
-
-- Use `const` instead of `let` for variable declarations
-- Always ensure static checks and tests pass before completing any task
+- Before completing a task, run `pnpm check` to ensure static checks (type checking, linting, formatting) pass.
+- Before completing a task, run `pnpm test` to ensure all tests pass.
