@@ -1,7 +1,7 @@
 import type { Collection, DocRef, ParentDocRef } from './schema.js';
 
 /**
- * Returns a fully-qualified path of the document
+ * Returns the fully-qualified path of a document
  */
 export const documentPath = <T extends Collection>(collection: T, docRef: DocRef<T>): string => {
   let path = '';
@@ -16,7 +16,7 @@ export const documentPath = <T extends Collection>(collection: T, docRef: DocRef
 };
 
 /**
- * Returns a fully-qualified path of the collection
+ * Returns the fully-qualified path of a collection
  */
 export const collectionPath = <T extends Collection>(
   collection: T,

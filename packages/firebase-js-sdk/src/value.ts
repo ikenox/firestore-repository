@@ -7,6 +7,7 @@ import type {
   VectorValue,
 } from 'firestore-repository/document';
 
+/** Wraps a Firebase JS SDK value type into its platform-agnostic branded type */
 export function wrap(v: firestore.Timestamp): Timestamp;
 export function wrap(v: firestore.GeoPoint): GeoPoint;
 export function wrap(v: firestore.DocumentReference): DocumentReference;
@@ -24,6 +25,7 @@ export function wrap(
   return v;
 }
 
+/** Unwraps a platform-agnostic branded type back into its Firebase JS SDK value type */
 export function unwrap(v: Timestamp): firestore.Timestamp;
 export function unwrap(v: GeoPoint): firestore.GeoPoint;
 export function unwrap(v: DocumentReference): firestore.DocumentReference;

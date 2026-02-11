@@ -9,3 +9,5 @@ packages/**/README.md
 *.local.test.ts
 
 .claude/settings.local.json
+
+.worktree

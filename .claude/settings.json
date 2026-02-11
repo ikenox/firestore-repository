@@ -1,6 +1,17 @@
 {
   "permissions": {
-    "allow": ["Bash(pnpm test:*)", "Bash(pnpm check:*)", "Bash(pnpm fix:*)", "Bash(pnpm build:*)"],
+    "allow": [
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git status:*)",
+      "Bash(pnpm check:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm fix:*)",
+      "Bash(pnpm build:*)"
+    ],
     "deny": []
   },
   "enabledMcpjsonServers": [],

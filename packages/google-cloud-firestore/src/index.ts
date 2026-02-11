@@ -25,29 +25,31 @@ import type {
 } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
+/** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
   transaction: firestore.Transaction;
   writeBatch: firestore.WriteBatch;
   query: firestore.Query;
 };
 
+/** Extended repository interface for Google Cloud Firestore with additional methods (create, batchCreate, batchGet) */
 export interface GoogleCloudFirestoreRepository<
   T extends Collection,
   Model extends AppModel,
 > extends Repository<T, Model, Env> {
   /**
-   * Create a new document
+   * Creates a new document
    * @throws If the document already exists
    */
   create: (docToWrite: Model['write'], options?: WriteTransactionOption<Env>) => Promise<void>;
   /**
-   * Create multiple documents
-   * The entire operation will fail if one creation fails
+   * Creates multiple documents.
+   * The entire operation fails if any creation fails.
    */
   batchCreate: (docs: Model['write'][], options?: WriteTransactionOption<Env>) => Promise<void>;
   /**
-   * Get documents by multiple IDs
-   * example: [{id:1}, {id:2}, {id:5}, {id:1}] -> [doc1, doc2, undefined, doc1]
+   * Gets multiple documents by their IDs.
+   * @example [{id:1}, {id:2}, {id:5}, {id:1}] -> [doc1, doc2, undefined, doc1]
    */
   batchGet: (
     refs: Model['id'][],
@@ -55,18 +57,21 @@ export interface GoogleCloudFirestoreRepository<
   ) => Promise<(Model['read'] | undefined)[]>;
 }
 
+/** Creates a repository for a root collection using plain document types */
 export const newRootCollectionRepository = <T extends RootCollection>(
   db: firestore.Firestore,
   collection: T,
 ): Repository<T, RootCollectionPlainModel<T>, Env> =>
   newRepositoryWithMapper(db, collection, rootCollectionPlainMapper(collection));
 
+/** Creates a repository for a subcollection using plain document types */
 export const newSubcollectionRepository = <T extends SubCollection>(
   db: firestore.Firestore,
   collection: T,
 ): Repository<T, PlainModel<T>, Env> =>
   newRepositoryWithMapper(db, collection, plainMapper(collection));
 
+/** Creates a repository with a custom mapper for transforming between Firestore documents and application models */
 export const newRepositoryWithMapper = <T extends Collection, Model extends AppModel>(
   db: firestore.Firestore,
   collection: T,
