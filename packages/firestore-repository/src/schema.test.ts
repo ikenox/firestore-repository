@@ -1,4 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest';
+
 import type { ServerTimestamp, Timestamp } from './document.js';
 import {
   type Collection,

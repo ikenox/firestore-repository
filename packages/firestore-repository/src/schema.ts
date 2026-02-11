@@ -61,6 +61,6 @@ export type ParentDocRef<T extends Collection> = ToStringTuple<T['parent']>;
 
 /** Creates a schema that skips validation and passes through data as-is */
 export const schemaWithoutValidation = <T extends DocumentData>(): DocDataSchema<T> => ({
-  // biome-ignore lint/plugin/no-type-assertion: schema without validation
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- schema without validation
   validate: (data) => data as T,
 });

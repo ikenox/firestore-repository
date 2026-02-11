@@ -8,6 +8,7 @@ import { query } from 'firestore-repository/query';
 import { type PlainModel, plainMapper } from 'firestore-repository/repository';
 import type { Doc } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
+
 import { type Env, type GoogleCloudFirestoreRepository, newRepositoryWithMapper } from './index.js';
 import { offset } from './query.js';
 import { wrap } from './value.js';
@@ -33,7 +34,7 @@ describe('repository', async () => {
       type TestCollection = typeof collection;
 
       const { repository: _repo, items, expectDb } = setup();
-      // biome-ignore lint/plugin/no-type-assertion: cannot infer generic type
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer generic type
       const repository = _repo as GoogleCloudFirestoreRepository<
         TestCollection,
         PlainModel<TestCollection>

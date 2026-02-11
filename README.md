@@ -19,8 +19,8 @@ A minimum and universal Firestore client (Repository Pattern) for TypeScript
 ### For backend (with [`@google-cloud/firestore`](https://www.npmjs.com/package/@google-cloud/firestore))
 
 ```shell
-npm install firestore-repository @firestore-repository/google-cloud-firestore 
-````
+npm install firestore-repository @firestore-repository/google-cloud-firestore
+```
 
 ### For web frontend (with [`@firebase/firestore`](https://www.npmjs.com/package/@firebase/firestore))
 
@@ -51,10 +51,7 @@ const users = rootCollection({
   id: mapTo('userId'),
   data: data<{
     name: string;
-    profile: {
-      age: number;
-      gender?: 'male' | 'female';
-    };
+    profile: { age: number; gender?: 'male' | 'female' };
     tag: string[];
   }>(),
 });
@@ -69,10 +66,7 @@ const repository = new Repository(users, db);
 await repository.set({
   userId: 'user1',
   name: 'John Doe',
-  profile: {
-    age: 42,
-    gender: 'male',
-  },
+  profile: { age: 42, gender: 'male' },
   tag: ['new'],
 });
 
@@ -94,12 +88,7 @@ await repository.delete({ userId: 'user2' });
 import { condition as $, limit, query } from 'firestore-repository/query';
 
 // Define a query
-const q = query(
-    users,
-    $('profile.age', '>=', 20),
-    $('profile.gender', '==', 'male'),
-    limit(10),
-);
+const q = query(users, $('profile.age', '>=', 20), $('profile.gender', '==', 'male'), limit(10));
 
 // List documents
 const docs = await repository.list(q);
@@ -127,18 +116,8 @@ const users = await repository.batchGet([{ userId: 'user1' }, { userId: 'user2' 
 
 // Set multiple documents
 await repository.batchSet([
-  {
-    userId: 'user1',
-    name: 'Alice',
-    profile: { age: 30, gender: 'female' },
-    tag: ['new'],
-  },
-  {
-    userId: 'user2',
-    name: 'Bob',
-    profile: { age: 20, gender: 'male' },
-    tag: [],
-  },
+  { userId: 'user1', name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] },
+  { userId: 'user2', name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] },
 ]);
 
 // Delete multiple documents
@@ -155,19 +134,17 @@ import { writeBatch } from '@firebase/firestore';
 const batch = writeBatch();
 
 await repository.set(
-    {
-      userId: 'user3',
-      name: 'Bob',
-      profile: { age: 20, gender: 'male' },
-      tag: [],
-    },
-    { tx: batch },
+  { userId: 'user3', name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] },
+  { tx: batch },
 );
-await repository.batchSet([ /* ... */ ], { tx: batch });
+await repository.batchSet(
+  [
+    /* ... */
+  ],
+  { tx: batch },
+);
 await repository.delete({ userId: 'user4' }, { tx: batch });
-await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], {
-  tx: batch,
-});
+await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], { tx: batch });
 
 await batch.commit();
 ```
@@ -182,15 +159,18 @@ import { runTransaction } from '@firebase/firestore';
 await runTransaction(db, async (tx) => {
   // Get
   const doc = await repository.get({ userId: 'user1' }, { tx });
-  
+
   if (doc) {
     doc.tag = [...doc.tag, 'new-tag'];
     // Set
     await repository.set(doc, { tx });
-    await repository.batchSet([
-      { ...doc, userId: 'user2' },
-      { ...doc, userId: 'user3' },
-    ], { tx });
+    await repository.batchSet(
+      [
+        { ...doc, userId: 'user2' },
+        { ...doc, userId: 'user3' },
+      ],
+      { tx },
+    );
   }
 
   // Delete
@@ -198,4 +178,3 @@ await runTransaction(db, async (tx) => {
   await repository.batchDelete([{ userId: 'user5' }, { userId: 'user6' }], { tx });
 });
 ```
-

@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+
 import type { Collection } from '../schema.js';
 
 /**

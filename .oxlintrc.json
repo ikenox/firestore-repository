@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "eslint/no-console": "error",
+    "import/no-default-export": "error",
+    "import/no-nodejs-modules": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-unsafe-type-assertion": "error",
+    "typescript/no-meaningless-void-operator": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/no-duplicate-type-constituents": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/__test__/**/*.ts"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "typescript/no-redundant-type-constituents": "off",
+        "typescript/no-floating-promises": "off"
+      }
+    },
+    {
+      "files": ["**/vitest.config.ts", "vitest.shared.ts"],
+      "rules": { "import/no-default-export": "off" }
+    },
+    { "files": ["examples/**/*.ts"], "rules": { "eslint/no-console": "off" } }
+  ]
+}

@@ -13,6 +13,7 @@ import {
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { plainMapper } from 'firestore-repository/repository';
 import { describe } from 'vitest';
+
 import { type Env, newRepositoryWithMapper } from './index.js';
 import { wrap } from './value.js';
 

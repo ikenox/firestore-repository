@@ -55,7 +55,7 @@ export const query = <T extends Collection>(
   if ('extends' in base || base.group) {
     return { base, constraints };
   }
-  // biome-ignore lint/plugin/no-type-assertion: schema without validation
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- schema without validation
   return { base: { ...base, parent: base.parent ?? ([] as ParentDocRef<T>) }, constraints };
 };
 

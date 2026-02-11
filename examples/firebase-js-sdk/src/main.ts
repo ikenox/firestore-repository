@@ -54,7 +54,7 @@ type AuthorData = {
 
 const authors = rootCollection({
   name: 'Authors',
-  // biome-ignore lint/plugin/no-type-assertion: example code for demonstration
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- example code for demonstration
   data: { validate: (data): AuthorData => data as unknown as AuthorData },
 });
 

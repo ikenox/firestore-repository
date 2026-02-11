@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { collectionPath, documentPath } from './path.js';
 import { rootCollection, schemaWithoutValidation, subCollection } from './schema.js';
 

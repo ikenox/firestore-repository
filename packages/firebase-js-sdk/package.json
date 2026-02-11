@@ -2,23 +2,53 @@
   "name": "@firestore-repository/firebase-js-sdk",
   "version": "0.4.2",
   "description": "A minimum and universal Firestore ORM (Repository Pattern) for TypeScript",
+  "keywords": [
+    "database",
+    "firebase",
+    "firebase-js-sdk",
+    "firestore",
+    "orm",
+    "repository"
+  ],
   "homepage": "https://github.com/ikenox/firestore-repository",
-  "repository": { "type": "git", "url": "https://github.com/ikenox/firestore-repository.git" },
+  "license": "MIT",
+  "author": "Naoto Ikeno <ikenox@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ikenox/firestore-repository.git"
+  },
+  "files": [
+    "build",
+    "!**/*.tsbuildinfo"
+  ],
   "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./build/esm/index.d.ts",
+        "default": "./build/esm/index.js"
+      }
+    },
+    "./*": {
+      "import": {
+        "types": "./build/esm/*.d.ts",
+        "default": "./build/esm/*.js"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json",
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
-  "dependencies": { "@firebase/firestore": "catalog:", "firestore-repository": "workspace:*" },
-  "devDependencies": { "@firebase/app": "catalog:" },
-  "exports": {
-    ".": { "import": { "types": "./build/esm/index.d.ts", "default": "./build/esm/index.js" } },
-    "./*": { "import": { "types": "./build/esm/*.d.ts", "default": "./build/esm/*.js" } }
+  "dependencies": {
+    "@firebase/firestore": "catalog:",
+    "firestore-repository": "workspace:*"
   },
-  "files": ["build", "!**/*.tsbuildinfo"],
-  "keywords": ["firestore", "orm", "database", "repository", "firebase", "firebase-js-sdk"],
-  "author": "Naoto Ikeno <ikenox@gmail.com>",
-  "license": "MIT",
-  "publishConfig": { "access": "public" }
+  "devDependencies": {
+    "@firebase/app": "catalog:"
+  }
 }

@@ -1,4 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest';
+
 import { authorsCollection, postsCollection } from './__test__/specification.js';
 import { type FilterOperand, limit, orderBy, query } from './query.js';
 

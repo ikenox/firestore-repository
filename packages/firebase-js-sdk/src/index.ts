@@ -161,7 +161,7 @@ export const newRepositoryWithMapper = <T extends Collection, Model extends AppM
 
       const firestoreQueryObj = toFirestore.query(query);
       const res = await getAggregateFromServer(firestoreQueryObj, aggregateSpec);
-      // biome-ignore lint/plugin/no-type-assertion: there is no way to infer correct type
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- there is no way to infer correct type
       return res.data() as Aggregated<U>;
     },
 
@@ -305,7 +305,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
 
   const fromFirestore = {
     documentMustExist: (document: DocumentSnapshot): Doc<T> => {
-      // biome-ignore lint/plugin/no-type-assertion: cannot infer type here
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
       const data = document.data() as DocData<T> | undefined;
       if (!data) {
         throw new Error('document must exist');
@@ -326,7 +326,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
         docRef.push(currentRef.id);
         currentRef = currentRef.parent.parent;
       }
-      // biome-ignore lint/plugin/no-type-assertion: cannot infer type here
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
       return docRef.reverse() as DocRef<T>;
     },
   };
