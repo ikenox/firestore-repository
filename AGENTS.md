@@ -14,6 +14,6 @@
 
 ## Workflow
 
-- When starting work on a new task in a new session, create a git worktree under `.worktree/` and switch to it before making changes. Choose an appropriate worktree/branch name based on the task description.
+- When starting work on a new task in a new session, create a new branch and a git worktree for it under `.worktree/` and switch to it before making changes. Choose an appropriate branch/worktree name based on the task description. Do not commit directly to main.
 - Before completing a task, run `pnpm check` to ensure static checks (type checking, linting, formatting) pass.
 - Before completing a task, run `pnpm test` to ensure all tests pass.
