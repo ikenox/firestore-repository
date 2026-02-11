@@ -12,6 +12,10 @@
 - `pnpm fix` - Fix all auto-fixable issues
 - `pnpm build` - Build all packages
 
+## Workflow
+
+- When starting work on a new task in a new session, create a git worktree under `.worktree/` and switch to it before making changes. Choose an appropriate worktree/branch name based on the task description.
+
 ## Coding Guidelines
 
 - Use `const` instead of `let` for variable declarations
