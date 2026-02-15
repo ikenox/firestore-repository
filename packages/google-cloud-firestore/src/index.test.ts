@@ -1,4 +1,5 @@
 import { FieldValue, Firestore, GeoPoint, Timestamp } from '@google-cloud/firestore';
+import { defineReadmeExampleTests } from 'firestore-repository/__test__/readme-example';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
@@ -19,9 +20,17 @@ describe('repository', async () => {
     databaseId: process.env['FIRESTORE_TEST_DB']!,
   });
 
+  const createRepository: Parameters<
+    typeof defineRepositorySpecificationTests<Env>
+  >[0]['createRepository'] = (collection) =>
+    newRepositoryWithMapper(db, collection, plainMapper(collection));
+  const dbOps: Parameters<typeof defineRepositorySpecificationTests<Env>>[0]['db'] = {
+    writeBatch: () => db.batch(),
+    transaction: (runner) => db.runTransaction(runner),
+  };
+
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) =>
-      newRepositoryWithMapper(db, collection, plainMapper(collection)),
+    createRepository,
     types: {
       timestamp: (date) => wrap(Timestamp.fromDate(date)),
       geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
@@ -29,7 +38,7 @@ describe('repository', async () => {
       vector: (value) => wrap(FieldValue.vector(value)),
       documentReference: (path) => wrap(db.doc(path)),
     },
-    db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
+    db: dbOps,
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type TestCollection = typeof collection;
 
@@ -132,6 +141,8 @@ describe('repository', async () => {
       });
     },
   });
+
+  defineReadmeExampleTests<Env>({ createRepository, db: dbOps });
 
   describe('query', () => {
     const coll = uniqueCollection(authorsCollection);
