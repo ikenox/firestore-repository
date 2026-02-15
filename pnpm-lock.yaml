@@ -7,11 +7,11 @@ settings:
 catalogs:
   default:
     '@firebase/app':
-      specifier: ^0.12.3
-      version: 0.12.3
+      specifier: ^0.14.8
+      version: 0.14.8
     '@firebase/firestore':
-      specifier: ^4.7.14
-      version: 4.7.16
+      specifier: ^4.11.0
+      version: 4.11.0
     '@google-cloud/firestore':
       specifier: ^8.3.0
       version: 8.3.0
@@ -70,10 +70,10 @@ importers:
     dependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.12.3
+        version: 0.14.8
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.16(@firebase/app@0.12.3)
+        version: 4.11.0(@firebase/app@0.14.8)
       '@firestore-repository/firebase-js-sdk':
         specifier: workspace:*
         version: link:../../packages/firebase-js-sdk
@@ -101,14 +101,14 @@ importers:
     dependencies:
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.7.16(@firebase/app@0.12.3)
+        version: 4.11.0(@firebase/app@0.14.8)
       firestore-repository:
         specifier: workspace:*
         version: link:../firestore-repository
     devDependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.12.3
+        version: 0.14.8
 
   packages/firestore-repository: {}
 
@@ -300,38 +300,30 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@firebase/app@0.12.3':
-    resolution: {integrity: sha512-8BbBlBUEZ9LUQ1Sm9wcDNv+gdj+3k3hv2I59dsw0tayjdmJTo+IDWsWe1N7sUSi20Hc7p3QoE9DdVxp4jtT7Mg==}
-    engines: {node: '>=18.0.0'}
+  '@firebase/app@0.14.8':
+    resolution: {integrity: sha512-WiE9uCGRLUnShdjb9iP20sA3ToWrBbNXr14/N5mow7Nls9dmKgfGaGX5cynLvrltxq2OrDLh1VDNaUgsnS/k/g==}
+    engines: {node: '>=20.0.0'}
 
-  '@firebase/component@0.6.16':
-    resolution: {integrity: sha512-whx+e3pgC3J9O6t4LOB8jiLk3tpWtnXaQ+xt/ys/4IGUPRI+nnWooVdtWrEnMga/gT03ug9SdEAEJLl6I1BIlg==}
-    engines: {node: '>=18.0.0'}
+  '@firebase/component@0.7.0':
+    resolution: {integrity: sha512-wR9En2A+WESUHexjmRHkqtaVH94WLNKt6rmeqZhSLBybg4Wyf0Umk04SZsS6sBq4102ZsDBFwoqMqJYj2IoDSg==}
+    engines: {node: '>=20.0.0'}
 
-  '@firebase/component@0.6.17':
-    resolution: {integrity: sha512-M6DOg7OySrKEFS8kxA3MU5/xc37fiOpKPMz6cTsMUcsuKB6CiZxxNAvgFta8HGRgEpZbi8WjGIj6Uf+TpOhyzg==}
-    engines: {node: '>=18.0.0'}
-
-  '@firebase/firestore@4.7.16':
-    resolution: {integrity: sha512-5OpvlwYVUTLEnqewOlXmtIpH8t2ISlZHDW0NDbKROM2D0ATMqFkMHdvl+/wz9zOAcb8GMQYlhCihOnVAliUbpQ==}
-    engines: {node: '>=18.0.0'}
+  '@firebase/firestore@4.11.0':
+    resolution: {integrity: sha512-Zb88s8rssBd0J2Tt+NUXMPt2sf+Dq7meatKiJf5t9oto1kZ8w9gK59Koe1uPVbaKfdgBp++N/z0I4G/HamyEhg==}
+    engines: {node: '>=20.0.0'}
     peerDependencies:
       '@firebase/app': 0.x
 
-  '@firebase/logger@0.4.4':
-    resolution: {integrity: sha512-mH0PEh1zoXGnaR8gD1DeGeNZtWFKbnz9hDO91dIml3iou1gpOnLqXQ2dJfB71dj6dpmUjcQ6phY3ZZJbjErr9g==}
-    engines: {node: '>=18.0.0'}
+  '@firebase/logger@0.5.0':
+    resolution: {integrity: sha512-cGskaAvkrnh42b3BA3doDWeBmuHFO/Mx5A83rbRDYakPjO9bJtRL3dX7javzc2Rr/JHZf4HlterTW2lUkfeN4g==}
+    engines: {node: '>=20.0.0'}
 
-  '@firebase/util@1.11.3':
-    resolution: {integrity: sha512-4wYnOV9FpwdCq3rHQOCrdx4AQBUbfH1p2DhWGQxlQ+D3Xl/wSxc/HttcyPN4NNFiynxoNCFGWQH/zdhRfxP1Zg==}
-    engines: {node: '>=18.0.0'}
+  '@firebase/util@1.13.0':
+    resolution: {integrity: sha512-0AZUyYUfpMNcztR5l09izHwXkZpghLgCUaAGjtMwXnCg3bj4ml5VgiwqOMOxJ+Nw4qN/zJAaOQBcJ7KGkWStqQ==}
+    engines: {node: '>=20.0.0'}
 
-  '@firebase/util@1.12.0':
-    resolution: {integrity: sha512-Z4rK23xBCwgKDqmzGVMef+Vb4xso2j5Q8OG0vVL4m4fA5ZjPMYQazu8OJJC3vtQRC3SQ/Pgx/6TPNVsCd70QRw==}
-    engines: {node: '>=18.0.0'}
-
-  '@firebase/webchannel-wrapper@1.0.3':
-    resolution: {integrity: sha512-2xCRM9q9FlzGZCdgDMJwc0gyUkWFtkosy7Xxr6sFgQwn+wMNIWd7xIvYNauU1r64B5L5rsGKy/n9TKJ0aAFeqQ==}
+  '@firebase/webchannel-wrapper@1.0.5':
+    resolution: {integrity: sha512-+uGNN7rkfn41HLO0vekTFhTxk61eKa8mTpRGLO0QSqlQdKvIoGAvLp3ppdVIWbTGYJWM6Kp0iN+PjMIOcnVqTw==}
 
   '@google-cloud/firestore@8.3.0':
     resolution: {integrity: sha512-OYadXaHxx8J5GQtCwDNjaVu2+O9Ozdst4Iqi+vDTI/WmLTO56XX3QBOXp4T+qh3tyQzl9YzDBrmA7o8n1xTouA==}
@@ -1447,48 +1439,39 @@ snapshots:
   '@esbuild/win32-x64@0.27.2':
     optional: true
 
-  '@firebase/app@0.12.3':
+  '@firebase/app@0.14.8':
     dependencies:
-      '@firebase/component': 0.6.16
-      '@firebase/logger': 0.4.4
-      '@firebase/util': 1.11.3
+      '@firebase/component': 0.7.0
+      '@firebase/logger': 0.5.0
+      '@firebase/util': 1.13.0
       idb: 7.1.1
       tslib: 2.8.1
 
-  '@firebase/component@0.6.16':
+  '@firebase/component@0.7.0':
     dependencies:
-      '@firebase/util': 1.11.3
+      '@firebase/util': 1.13.0
       tslib: 2.8.1
 
-  '@firebase/component@0.6.17':
+  '@firebase/firestore@4.11.0(@firebase/app@0.14.8)':
     dependencies:
-      '@firebase/util': 1.12.0
-      tslib: 2.8.1
-
-  '@firebase/firestore@4.7.16(@firebase/app@0.12.3)':
-    dependencies:
-      '@firebase/app': 0.12.3
-      '@firebase/component': 0.6.17
-      '@firebase/logger': 0.4.4
-      '@firebase/util': 1.12.0
-      '@firebase/webchannel-wrapper': 1.0.3
+      '@firebase/app': 0.14.8
+      '@firebase/component': 0.7.0
+      '@firebase/logger': 0.5.0
+      '@firebase/util': 1.13.0
+      '@firebase/webchannel-wrapper': 1.0.5
       '@grpc/grpc-js': 1.9.15
       '@grpc/proto-loader': 0.7.15
       tslib: 2.8.1
 
-  '@firebase/logger@0.4.4':
+  '@firebase/logger@0.5.0':
     dependencies:
       tslib: 2.8.1
 
-  '@firebase/util@1.11.3':
+  '@firebase/util@1.13.0':
     dependencies:
       tslib: 2.8.1
 
-  '@firebase/util@1.12.0':
-    dependencies:
-      tslib: 2.8.1
-
-  '@firebase/webchannel-wrapper@1.0.3': {}
+  '@firebase/webchannel-wrapper@1.0.5': {}
 
   '@google-cloud/firestore@8.3.0':
     dependencies:
