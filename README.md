@@ -67,6 +67,12 @@ await repository.set({
   data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
 });
 
+// Create a document (backend only)
+await repository.create({
+  ref: 'user2',
+  data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
+});
+
 // Get a document
 const doc = await repository.get('user1');
 
