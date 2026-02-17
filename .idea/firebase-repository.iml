@@ -8,6 +8,7 @@
       <sourceFolder url="file://$MODULE_DIR$/packages/google-cloud-firestore/src/__test__" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/packages/firestore-repository/build" />
       <excludeFolder url="file://$MODULE_DIR$/packages/google-cloud-firestore/build" />
+      <excludeFolder url="file://$MODULE_DIR$/.worktree" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
