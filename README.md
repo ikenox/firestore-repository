@@ -187,6 +187,34 @@ await runTransaction(db, async (tx) => {
 });
 ```
 
+### Subcollection
+
+Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (array of parent doc ID + doc ID). All other operations (query, batch, transaction, etc.) work the same.
+
+```ts
+import { subCollection, schemaWithoutValidation } from 'firestore-repository/schema';
+
+// For backend
+import { newSubcollectionRepository } from '@firestore-repository/google-cloud-firestore';
+
+// For web frontend
+import { newSubcollectionRepository } from '@firestore-repository/firebase-js-sdk';
+
+const posts = subCollection({
+  name: 'Posts',
+  data: schemaWithoutValidation<{ title: string }>(),
+  parent: ['Users'] as const,
+});
+
+const postRepository = newSubcollectionRepository(db, posts);
+
+// Set a document (ref is [parentDocId, docId])
+await postRepository.set({ ref: ['user1', 'post1'], data: { title: 'My first post' } });
+
+// Get a document
+const post = await postRepository.get(['user1', 'post1']);
+```
+
 ### Custom Mapper
 
 By default, `newRootCollectionRepository` returns a repository with `{ ref: string, data: ... }` as its model type. If you want to use your own application model types, you can define a custom `Mapper` and use `newRepositoryWithMapper` to create a repository that automatically converts between Firestore documents and your models.
@@ -236,32 +264,4 @@ await repository.set({
 });
 const user: User | undefined = await repository.get('user1');
 await repository.delete('user1');
-```
-
-### Subcollection
-
-Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (array of parent doc ID + doc ID). All other operations (query, batch, transaction, etc.) work the same.
-
-```ts
-import { subCollection, schemaWithoutValidation } from 'firestore-repository/schema';
-
-// For backend
-import { newSubcollectionRepository } from '@firestore-repository/google-cloud-firestore';
-
-// For web frontend
-import { newSubcollectionRepository } from '@firestore-repository/firebase-js-sdk';
-
-const posts = subCollection({
-  name: 'Posts',
-  data: schemaWithoutValidation<{ title: string }>(),
-  parent: ['Users'] as const,
-});
-
-const postRepository = newSubcollectionRepository(db, posts);
-
-// Set a document (ref is [parentDocId, docId])
-await postRepository.set({ ref: ['user1', 'post1'], data: { title: 'My first post' } });
-
-// Get a document
-const post = await postRepository.get(['user1', 'post1']);
 ```
