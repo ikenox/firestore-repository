@@ -1,6 +1,7 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
+import type { WriteDocumentData } from './document.js';
 import type { Query } from './query.js';
-import type { Collection, Doc, DocRef, DocToWrite, RootCollection } from './schema.js';
+import type { Collection, Doc, DocData, DocRef, DocToWrite, RootCollection } from './schema.js';
 
 /**
  * A universal repository interface
@@ -106,8 +107,8 @@ export type PlainModel<T extends Collection> = {
 /** A plain model for root collections where the id is a single string */
 export type RootCollectionPlainModel<T extends Collection> = {
   id: string;
-  write: DocToWrite<T>;
-  read: Doc<T>;
+  write: { ref: string; data: DocData<T> | WriteDocumentData<DocData<T>> };
+  read: { ref: string; data: DocData<T> };
 };
 
 /** Creates a plain mapper that passes documents through without transformation */
@@ -123,6 +124,7 @@ export const rootCollectionPlainMapper = <T extends RootCollection>(
 ): Mapper<T, RootCollectionPlainModel<T>> => ({
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- type system doesn't expand DocRef<T> into [string]
   toDocRef: (id) => [id] as unknown as DocRef<T>,
-  fromFirestore: (doc) => doc,
-  toFirestore: (model) => model,
+  fromFirestore: (doc) => ({ ref: doc.ref[0], data: doc.data }),
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- type system doesn't expand DocRef<T> into [string]
+  toFirestore: (model) => ({ ref: [model.ref] as unknown as DocRef<T>, data: model.data }),
 });

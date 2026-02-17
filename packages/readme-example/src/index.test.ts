@@ -59,7 +59,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   it('basic usage', async () => {
     // set
     await repository.set({
-      ref: ['user1'],
+      ref: 'user1',
       data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
     });
 
@@ -103,10 +103,10 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     // set
     await repository.batchSet([
       {
-        ref: ['user1'],
+        ref: 'user1',
         data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] },
       },
-      { ref: ['user2'], data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+      { ref: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
     ]);
 
     // delete
@@ -115,7 +115,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     // mix multiple operations
     const batch = db.writeBatch();
     await repository.set(
-      { ref: ['user3'], data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+      { ref: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
       { tx: batch },
     );
     await repository.batchSet(
@@ -140,8 +140,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
         await repository.set(doc, { tx });
         await repository.batchSet(
           [
-            { ...doc, ref: ['user2'] },
-            { ...doc, ref: ['user3'] },
+            { ...doc, ref: 'user2' },
+            { ...doc, ref: 'user3' },
           ],
           { tx },
         );
@@ -193,7 +193,7 @@ describe('README example (google-cloud-firestore)', () => {
   it('create', async () => {
     await repository.delete('user-create-test');
     await repository.create({
-      ref: ['user-create-test'],
+      ref: 'user-create-test',
       data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
     });
   });

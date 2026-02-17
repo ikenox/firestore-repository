@@ -20,7 +20,7 @@ async function main() {
   const repository = newRootCollectionRepository(db, authors);
 
   await repository.set({
-    ref: ['author1'],
+    ref: 'author1',
     data: {
       name: 'John Doe',
       profile: { age: 42, gender: 'male' },
