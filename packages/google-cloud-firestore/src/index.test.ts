@@ -1,5 +1,4 @@
 import { FieldValue, Firestore, GeoPoint, Timestamp } from '@google-cloud/firestore';
-import { defineReadmeExampleTests } from 'firestore-repository/__test__/readme-example';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
@@ -141,8 +140,6 @@ describe('repository', async () => {
       });
     },
   });
-
-  defineReadmeExampleTests<Env>({ createRepository, db: dbOps });
 
   describe('query', () => {
     const coll = uniqueCollection(authorsCollection);

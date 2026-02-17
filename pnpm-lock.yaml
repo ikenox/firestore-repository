@@ -121,6 +121,27 @@ importers:
         specifier: workspace:*
         version: link:../firestore-repository
 
+  packages/readme-example:
+    dependencies:
+      '@firebase/app':
+        specifier: 'catalog:'
+        version: 0.14.8
+      '@firebase/firestore':
+        specifier: 'catalog:'
+        version: 4.11.0(@firebase/app@0.14.8)
+      '@firestore-repository/firebase-js-sdk':
+        specifier: workspace:*
+        version: link:../firebase-js-sdk
+      '@firestore-repository/google-cloud-firestore':
+        specifier: workspace:*
+        version: link:../google-cloud-firestore
+      '@google-cloud/firestore':
+        specifier: 'catalog:'
+        version: 8.3.0
+      firestore-repository:
+        specifier: workspace:*
+        version: link:../firestore-repository
+
 packages:
 
   '@babel/helper-string-parser@7.27.1':

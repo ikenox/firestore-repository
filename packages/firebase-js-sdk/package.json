@@ -24,12 +24,14 @@
   "type": "module",
   "exports": {
     ".": {
+      "@firestore-repository/source": "./src/index.ts",
       "import": {
         "types": "./build/esm/index.d.ts",
         "default": "./build/esm/index.js"
       }
     },
     "./*": {
+      "@firestore-repository/source": "./src/*.ts",
       "import": {
         "types": "./build/esm/*.d.ts",
         "default": "./build/esm/*.js"

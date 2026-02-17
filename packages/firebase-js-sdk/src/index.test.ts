@@ -10,7 +10,6 @@ import {
   vector,
   writeBatch,
 } from '@firebase/firestore';
-import { defineReadmeExampleTests } from 'firestore-repository/__test__/readme-example';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { plainMapper } from 'firestore-repository/repository';
 import { describe } from 'vitest';
@@ -50,6 +49,4 @@ describe('repository', async () => {
     },
     db: dbOps,
   });
-
-  defineReadmeExampleTests<Env>({ createRepository, db: dbOps });
 });
