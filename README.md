@@ -4,14 +4,14 @@
 
 # firestore-repository
 
-A minimum and universal Firestore client (Repository Pattern) for TypeScript
+A minimal and universal Firestore client (Repository Pattern) for TypeScript
 
 ## Features
 
-- 🚀 **Minimum**: Only a few straightforward interfaces and classes. You can easily start to use it immediately without learning a lot of things.
+- 🚀 **Minimal**: Only a few straightforward interfaces and classes. You can start using it immediately without a steep learning curve.
 - 🌐 **Universal**: You can share most code, including schema and query definitions, between backend and frontend.
-- 🤝 **Unopinionated**: This library does not introduce any additional concepts, and respects vocabulary of the official Firestore client library.
-- ✅ **Type-safe**: This library provides the type-safe interface. It also covers the untyped parts of the official Firestore library.
+- 🤝 **Unopinionated**: This library does not introduce any additional concepts, and respects the vocabulary of the official Firestore client library.
+- ✅ **Type-safe**: This library provides a type-safe interface. It also covers the untyped parts of the official Firestore library.
 - 🗄️ **Repository Pattern**: A simple and consistent way to access Firestore data.
 
 ## Installation
@@ -67,10 +67,16 @@ await repository.set({
   data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
 });
 
+// Create a document (backend only)
+await repository.create({
+  ref: 'user2',
+  data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
+});
+
 // Get a document
 const doc = await repository.get('user1');
 
-// Listen a document
+// Listen to a document
 repository.getOnSnapshot('user1', (doc) => {
   console.log(doc);
 });
@@ -96,7 +102,7 @@ const q = query(
 // List documents
 const docs = await repository.list(q);
 
-// Listen documents
+// Listen to documents
 repository.listOnSnapshot(q, (docs) => {
   console.log(docs);
 });
@@ -157,7 +163,7 @@ await batch.commit();
 // For web frontend
 import { runTransaction } from '@firebase/firestore';
 
-// Or, please use db.runTransaction for backend
+// Or use db.runTransaction for backend
 await runTransaction(db, async (tx) => {
   // Get
   const doc = await repository.get('user1', { tx });
