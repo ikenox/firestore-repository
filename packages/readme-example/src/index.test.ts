@@ -175,4 +175,19 @@ describe('README example (google-cloud-firestore)', () => {
       newGoogleCloudFirestoreRepository(db, collection, plainMapper(collection)),
     db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
   });
+
+  // google-cloud-firestore only operations
+  const repository = newGoogleCloudFirestoreRepository(db, users, plainMapper(users));
+
+  it('create', async () => {
+    await repository.create({
+      ref: ['user-create-test'],
+      data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
+    });
+  });
+
+  it('batchGet', async () => {
+    const docs = await repository.batchGet([['user1'], ['user2']]);
+    console.log(docs);
+  });
 });
