@@ -5,15 +5,22 @@ import {
   runTransaction,
   writeBatch,
 } from '@firebase/firestore';
-import { newRepositoryWithMapper as newFirebaseJsSdkRepository } from '@firestore-repository/firebase-js-sdk';
-import { newRepositoryWithMapper as newGoogleCloudFirestoreRepository } from '@firestore-repository/google-cloud-firestore';
+import { newRootCollectionRepository as newFirebaseJsSdkRepository } from '@firestore-repository/firebase-js-sdk';
+import {
+  newRepositoryWithMapper as newGoogleCloudFirestoreRepositoryWithMapper,
+  newRootCollectionRepository as newGoogleCloudFirestoreRepository,
+} from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
 import { average, count, sum } from 'firestore-repository/aggregate';
 import { condition as $, limit, query } from 'firestore-repository/query';
-import type { FirestoreEnvironment, PlainRepository } from 'firestore-repository/repository';
-import { plainMapper } from 'firestore-repository/repository';
+import type {
+  FirestoreEnvironment,
+  Repository,
+  RootCollectionPlainModel,
+} from 'firestore-repository/repository';
+import { rootCollectionPlainMapper } from 'firestore-repository/repository';
 import {
-  type Collection,
+  type RootCollection,
   rootCollection,
   schemaWithoutValidation,
 } from 'firestore-repository/schema';
@@ -39,7 +46,9 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
 }: {
-  createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
+  createRepository: <T extends RootCollection>(
+    collection: T,
+  ) => Repository<T, RootCollectionPlainModel<T>, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
@@ -55,11 +64,11 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     });
 
     // get
-    const doc = await repository.get(['user1']);
+    const doc = await repository.get('user1');
     console.log(doc);
 
     // delete
-    await repository.delete(['user2']);
+    await repository.delete('user2');
 
     // query
     const q = query(
@@ -72,7 +81,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     console.log(docs);
 
     // listen document
-    repository.getOnSnapshot(['user1'], (doc) => {
+    repository.getOnSnapshot('user1', (doc) => {
       console.log(doc);
     });
 
@@ -101,7 +110,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     ]);
 
     // delete
-    await repository.batchDelete([['user1'], ['user2']]);
+    await repository.batchDelete(['user1', 'user2']);
 
     // mix multiple operations
     const batch = db.writeBatch();
@@ -115,15 +124,15 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       ],
       { tx: batch },
     );
-    await repository.delete(['user4'], { tx: batch });
-    await repository.batchDelete([['user5'], ['user6']], { tx: batch });
+    await repository.delete('user4', { tx: batch });
+    await repository.batchDelete(['user5', 'user6'], { tx: batch });
     await batch.commit();
   });
 
   it('transaction', async () => {
     await db.transaction(async (tx) => {
       // get
-      const doc = await repository.get(['user1'], { tx });
+      const doc = await repository.get('user1', { tx });
 
       if (doc) {
         doc.data.tag = [...doc.data.tag, 'new-tag'];
@@ -139,8 +148,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       }
 
       // delete
-      await repository.delete(['user4'], { tx });
-      await repository.batchDelete([['user5'], ['user6']], { tx });
+      await repository.delete('user4', { tx });
+      await repository.batchDelete(['user5', 'user6'], { tx });
     });
   });
 };
@@ -158,8 +167,7 @@ describe('README example (firebase-js-sdk)', () => {
   }
 
   defineReadmeExampleTests({
-    createRepository: (collection) =>
-      newFirebaseJsSdkRepository(db, collection, plainMapper(collection)),
+    createRepository: (collection) => newFirebaseJsSdkRepository(db, collection),
     db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
   });
 });
@@ -171,15 +179,19 @@ describe('README example (google-cloud-firestore)', () => {
   });
 
   defineReadmeExampleTests({
-    createRepository: (collection) =>
-      newGoogleCloudFirestoreRepository(db, collection, plainMapper(collection)),
+    createRepository: (collection) => newGoogleCloudFirestoreRepository(db, collection),
     db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
   });
 
   // google-cloud-firestore only operations
-  const repository = newGoogleCloudFirestoreRepository(db, users, plainMapper(users));
+  const repository = newGoogleCloudFirestoreRepositoryWithMapper(
+    db,
+    users,
+    rootCollectionPlainMapper(users),
+  );
 
   it('create', async () => {
+    await repository.delete('user-create-test');
     await repository.create({
       ref: ['user-create-test'],
       data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
@@ -187,7 +199,7 @@ describe('README example (google-cloud-firestore)', () => {
   });
 
   it('batchGet', async () => {
-    const docs = await repository.batchGet([['user1'], ['user2']]);
+    const docs = await repository.batchGet(['user1', 'user2']);
     console.log(docs);
   });
 });
