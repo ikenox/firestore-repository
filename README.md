@@ -187,6 +187,57 @@ await runTransaction(db, async (tx) => {
 });
 ```
 
+### Custom Mapper
+
+By default, `newRootCollectionRepository` returns a repository with `{ ref: string, data: ... }` as its model type. If you want to use your own application model types, you can define a custom `Mapper` and use `newRepositoryWithMapper` to create a repository that automatically converts between Firestore documents and your models.
+
+A `Mapper` consists of three functions:
+
+- `toDocRef`: Converts your model's ID to a Firestore document reference
+- `fromFirestore`: Converts a Firestore document to your read model
+- `toFirestore`: Converts your write model to a Firestore document
+
+You can also define different types for reading and writing via `AppModel<Id, Read, Write>` (e.g., omitting server-managed fields from the write type).
+
+```ts
+import { type AppModel, type Mapper } from 'firestore-repository/repository';
+
+// For backend
+import { newRepositoryWithMapper } from '@firestore-repository/google-cloud-firestore';
+// For web frontend
+import { newRepositoryWithMapper } from '@firestore-repository/firebase-js-sdk';
+
+// Define your application model type
+type User = {
+  id: string;
+  name: string;
+  profile: { age: number; gender?: 'male' | 'female' };
+  tag: string[];
+};
+
+// Define a mapper
+const userMapper: Mapper<typeof users, AppModel<string, User, User>> = {
+  toDocRef: (id) => [id],
+  fromFirestore: (doc) => ({ id: doc.ref[0], ...doc.data }),
+  toFirestore: (user) => ({
+    ref: [user.id],
+    data: { name: user.name, profile: user.profile, tag: user.tag },
+  }),
+};
+
+const repository = newRepositoryWithMapper(db, users, userMapper);
+
+// Now the repository accepts and returns your custom User type directly
+await repository.set({
+  id: 'user1',
+  name: 'Alice',
+  profile: { age: 30, gender: 'female' },
+  tag: ['new'],
+});
+const user: User | undefined = await repository.get('user1');
+await repository.delete('user1');
+```
+
 ### Subcollection
 
 Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (array of parent doc ID + doc ID). All other operations (query, batch, transaction, etc.) work the same.
