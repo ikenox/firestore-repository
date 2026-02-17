@@ -7,6 +7,7 @@ import {
   writeBatch,
 } from '@firebase/firestore';
 import {
+  newRepositoryWithMapper as newFirebaseJsSdkRepositoryWithMapper,
   newRootCollectionRepository as newFirebaseJsSdkRepository,
   newSubcollectionRepository as newFirebaseJsSdkSubcollectionRepository,
 } from '@firestore-repository/firebase-js-sdk';
@@ -21,7 +22,9 @@ import { randomString } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
 import { condition as $, limit, query } from 'firestore-repository/query';
 import type {
+  AppModel,
   FirestoreEnvironment,
+  Mapper,
   PlainModel,
   Repository,
   RootCollectionPlainModel,
@@ -64,12 +67,17 @@ type UsersCollection = typeof users;
 const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
+  createRepositoryWithMapper,
   createSubcollectionRepository,
   onlyGoogleCloudFirestore = () => {},
 }: {
   createRepository: <T extends RootCollection>(
     collection: T,
   ) => Repository<T, RootCollectionPlainModel<T>, Env>;
+  createRepositoryWithMapper: <T extends RootCollection, Model extends AppModel>(
+    collection: T,
+    mapper: Mapper<T, Model>,
+  ) => Repository<T, Model, Env>;
   createSubcollectionRepository: <T extends SubCollection>(
     collection: T,
   ) => Repository<T, PlainModel<T>, Env>;
@@ -222,6 +230,44 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       const doc = await subcollectionRepository.get(['user1', 'post1']);
     });
   });
+
+  describe('Custom mapper', () => {
+    type User = {
+      id: string;
+      name: string;
+      profile: { age: number; gender?: 'male' | 'female' };
+      tag: string[];
+    };
+
+    const userMapper: Mapper<UsersCollection, AppModel<string, User, User>> = {
+      toDocRef: (id) => [id],
+      fromFirestore: (doc) => ({ id: doc.ref[0], ...doc.data }),
+      toFirestore: (user) => ({
+        ref: [user.id],
+        data: { name: user.name, profile: user.profile, tag: user.tag },
+      }),
+    };
+
+    const userRepository = createRepositoryWithMapper(
+      { ...users, name: `${users.name}-${randomString()}` },
+      userMapper,
+    );
+
+    it('set and get', async () => {
+      await userRepository.set({
+        id: 'user1',
+        name: 'Alice',
+        profile: { age: 30, gender: 'female' },
+        tag: ['new'],
+      });
+      const user = await userRepository.get('user1');
+      console.log(user);
+    });
+
+    it('delete', async () => {
+      await userRepository.delete('user1');
+    });
+  });
 };
 
 describe('README example', () => {
@@ -239,6 +285,8 @@ describe('README example', () => {
 
     defineReadmeExampleTests({
       createRepository: (collection) => newFirebaseJsSdkRepository(db, collection),
+      createRepositoryWithMapper: (collection, mapper) =>
+        newFirebaseJsSdkRepositoryWithMapper(db, collection, mapper),
       createSubcollectionRepository: (collection) =>
         newFirebaseJsSdkSubcollectionRepository(db, collection),
       db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
@@ -253,6 +301,8 @@ describe('README example', () => {
 
     defineReadmeExampleTests({
       createRepository: (collection) => newGoogleCloudFirestoreRepository(db, collection),
+      createRepositoryWithMapper: (collection, mapper) =>
+        newGoogleCloudFirestoreRepositoryWithMapper(db, collection, mapper),
       createSubcollectionRepository: (collection) =>
         newGoogleCloudFirestoreSubcollectionRepository(db, collection),
       db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
