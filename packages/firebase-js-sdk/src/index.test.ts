@@ -29,9 +29,17 @@ describe('repository', async () => {
     connectFirestoreEmulator(db, host!, Number(port));
   }
 
+  const createRepository: Parameters<
+    typeof defineRepositorySpecificationTests<Env>
+  >[0]['createRepository'] = (collection) =>
+    newRepositoryWithMapper(db, collection, plainMapper(collection));
+  const dbOps: Parameters<typeof defineRepositorySpecificationTests<Env>>[0]['db'] = {
+    writeBatch: () => writeBatch(db),
+    transaction: (runner) => runTransaction(db, runner),
+  };
+
   defineRepositorySpecificationTests<Env>({
-    createRepository: (collection) =>
-      newRepositoryWithMapper(db, collection, plainMapper(collection)),
+    createRepository,
     types: {
       timestamp: (date) => wrap(Timestamp.fromDate(date)),
       geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
@@ -39,6 +47,6 @@ describe('repository', async () => {
       vector: (value) => wrap(vector(value)),
       documentReference: (path) => wrap(doc(db, path)),
     },
-    db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
+    db: dbOps,
   });
 });

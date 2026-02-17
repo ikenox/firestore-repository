@@ -1,0 +1,16 @@
+{
+  "name": "@firestore-repository/readme-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@firebase/app": "catalog:",
+    "@firebase/firestore": "catalog:",
+    "@firestore-repository/firebase-js-sdk": "workspace:*",
+    "@firestore-repository/google-cloud-firestore": "workspace:*",
+    "@google-cloud/firestore": "catalog:",
+    "firestore-repository": "workspace:*"
+  }
+}
