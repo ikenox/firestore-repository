@@ -1,3 +1,4 @@
+// oxlint-disable no-unused-vars
 import { initializeApp } from '@firebase/app';
 import {
   connectFirestoreEmulator,
@@ -7,10 +8,12 @@ import {
 } from '@firebase/firestore';
 import { newRootCollectionRepository as newFirebaseJsSdkRepository } from '@firestore-repository/firebase-js-sdk';
 import {
+  type GoogleCloudFirestoreRepository,
   newRepositoryWithMapper as newGoogleCloudFirestoreRepositoryWithMapper,
   newRootCollectionRepository as newGoogleCloudFirestoreRepository,
 } from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
+import { randomString } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
 import { condition as $, limit, query } from 'firestore-repository/query';
 import type {
@@ -42,9 +45,12 @@ const users = rootCollection({
   }>(),
 });
 
+type UsersCollection = typeof users;
+
 const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
+  onlyGoogleCloudFirestore = () => {},
 }: {
   createRepository: <T extends RootCollection>(
     collection: T,
@@ -53,8 +59,17 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
   };
+  onlyGoogleCloudFirestore?: (
+    name: string,
+    fn: (
+      repository: GoogleCloudFirestoreRepository<
+        UsersCollection,
+        RootCollectionPlainModel<UsersCollection>
+      >,
+    ) => Promise<void>,
+  ) => void;
 }) => {
-  const repository = createRepository(users);
+  const repository = createRepository({ ...users, name: `${users.name}-${randomString()}` });
 
   describe('Basic operations for a single document', () => {
     it('set', async () => {
@@ -64,9 +79,15 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       });
     });
 
+    onlyGoogleCloudFirestore('create', async (repository) => {
+      await repository.create({
+        ref: 'user2',
+        data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
+      });
+    });
+
     it('get', async () => {
       const doc = await repository.get('user1');
-      console.log(doc);
     });
 
     it('getOnSnapshot', () => {
@@ -90,7 +111,6 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
     it('list', async () => {
       const docs = await repository.list(q);
-      console.log(docs);
     });
 
     it('listOnSnapshot', () => {
@@ -122,6 +142,10 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
     it('batchDelete', async () => {
       await repository.batchDelete(['user1', 'user2']);
+    });
+
+    onlyGoogleCloudFirestore('Get multiple documents', async (repository) => {
+      const users = await repository.batchGet(['user1', 'user2']);
     });
 
     it('include multiple different operations in a batch', async () => {
@@ -164,56 +188,42 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   });
 };
 
-describe('README example (firebase-js-sdk)', () => {
-  const db = getFirestore(
-    initializeApp({ projectId: process.env['FIRESTORE_TEST_PROJECT']! }),
-    process.env['FIRESTORE_TEST_DB']!,
-  );
+describe('README example', () => {
+  describe('firebase-js-sdk', () => {
+    const db = getFirestore(
+      initializeApp({ projectId: process.env['FIRESTORE_TEST_PROJECT']! }),
+      process.env['FIRESTORE_TEST_DB']!,
+    );
 
-  const emulatorHost = process.env['FIRESTORE_EMULATOR_HOST'];
-  if (emulatorHost) {
-    const [host, port] = emulatorHost.split(':');
-    connectFirestoreEmulator(db, host!, Number(port));
-  }
+    const emulatorHost = process.env['FIRESTORE_EMULATOR_HOST'];
+    if (emulatorHost) {
+      const [host, port] = emulatorHost.split(':');
+      connectFirestoreEmulator(db, host!, Number(port));
+    }
 
-  defineReadmeExampleTests({
-    createRepository: (collection) => newFirebaseJsSdkRepository(db, collection),
-    db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
-  });
-});
-
-describe('README example (google-cloud-firestore)', () => {
-  const db = new Firestore({
-    projectId: process.env['FIRESTORE_TEST_PROJECT']!,
-    databaseId: process.env['FIRESTORE_TEST_DB']!,
-  });
-
-  defineReadmeExampleTests({
-    createRepository: (collection) => newGoogleCloudFirestoreRepository(db, collection),
-    db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
-  });
-
-  // google-cloud-firestore only operations
-  const repository = newGoogleCloudFirestoreRepositoryWithMapper(
-    db,
-    users,
-    rootCollectionPlainMapper(users),
-  );
-
-  describe('Basic operations for a single document', () => {
-    it('create', async () => {
-      await repository.delete('user-create-test');
-      await repository.create({
-        ref: 'user-create-test',
-        data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
-      });
+    defineReadmeExampleTests({
+      createRepository: (collection) => newFirebaseJsSdkRepository(db, collection),
+      db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
     });
   });
 
-  describe('Batch operations', () => {
-    it('batchGet', async () => {
-      const docs = await repository.batchGet(['user1', 'user2']);
-      console.log(docs);
+  describe('google-cloud-firestore', () => {
+    const db = new Firestore({
+      projectId: process.env['FIRESTORE_TEST_PROJECT']!,
+      databaseId: process.env['FIRESTORE_TEST_DB']!,
+    });
+
+    defineReadmeExampleTests({
+      createRepository: (collection) => newGoogleCloudFirestoreRepository(db, collection),
+      db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
+      onlyGoogleCloudFirestore: (name, fn) => {
+        const repo = newGoogleCloudFirestoreRepositoryWithMapper(
+          db,
+          users,
+          rootCollectionPlainMapper(users),
+        );
+        it(name, () => fn(repo));
+      },
     });
   });
 });
