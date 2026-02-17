@@ -186,3 +186,31 @@ await runTransaction(db, async (tx) => {
   await repository.batchDelete(['user5', 'user6'], { tx });
 });
 ```
+
+### Subcollection
+
+Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (array of parent doc ID + doc ID). All other operations (query, batch, transaction, etc.) work the same.
+
+```ts
+import { subCollection, schemaWithoutValidation } from 'firestore-repository/schema';
+
+// For backend
+import { newSubcollectionRepository } from '@firestore-repository/google-cloud-firestore';
+
+// For web frontend
+import { newSubcollectionRepository } from '@firestore-repository/firebase-js-sdk';
+
+const posts = subCollection({
+  name: 'Posts',
+  data: schemaWithoutValidation<{ title: string }>(),
+  parent: ['Users'] as const,
+});
+
+const postRepository = newSubcollectionRepository(db, posts);
+
+// Set a document (ref is [parentDocId, docId])
+await postRepository.set({ ref: ['user1', 'post1'], data: { title: 'My first post' } });
+
+// Get a document
+const post = await postRepository.get(['user1', 'post1']);
+```

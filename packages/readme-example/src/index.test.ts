@@ -6,11 +6,15 @@ import {
   runTransaction,
   writeBatch,
 } from '@firebase/firestore';
-import { newRootCollectionRepository as newFirebaseJsSdkRepository } from '@firestore-repository/firebase-js-sdk';
+import {
+  newRootCollectionRepository as newFirebaseJsSdkRepository,
+  newSubcollectionRepository as newFirebaseJsSdkSubcollectionRepository,
+} from '@firestore-repository/firebase-js-sdk';
 import {
   type GoogleCloudFirestoreRepository,
   newRepositoryWithMapper as newGoogleCloudFirestoreRepositoryWithMapper,
   newRootCollectionRepository as newGoogleCloudFirestoreRepository,
+  newSubcollectionRepository as newGoogleCloudFirestoreSubcollectionRepository,
 } from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
 import { randomString } from 'firestore-repository/__test__/util';
@@ -18,14 +22,17 @@ import { average, count, sum } from 'firestore-repository/aggregate';
 import { condition as $, limit, query } from 'firestore-repository/query';
 import type {
   FirestoreEnvironment,
+  PlainModel,
   Repository,
   RootCollectionPlainModel,
 } from 'firestore-repository/repository';
 import { rootCollectionPlainMapper } from 'firestore-repository/repository';
 import {
   type RootCollection,
+  type SubCollection,
   rootCollection,
   schemaWithoutValidation,
+  subCollection,
 } from 'firestore-repository/schema';
 import { describe, it } from 'vitest';
 
@@ -45,16 +52,27 @@ const users = rootCollection({
   }>(),
 });
 
+// define a subcollection
+const posts = subCollection({
+  name: 'Posts',
+  data: schemaWithoutValidation<{ title: string }>(),
+  parent: ['Authors'] as const,
+});
+
 type UsersCollection = typeof users;
 
 const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
+  createSubcollectionRepository,
   onlyGoogleCloudFirestore = () => {},
 }: {
   createRepository: <T extends RootCollection>(
     collection: T,
   ) => Repository<T, RootCollectionPlainModel<T>, Env>;
+  createSubcollectionRepository: <T extends SubCollection>(
+    collection: T,
+  ) => Repository<T, PlainModel<T>, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
@@ -186,6 +204,24 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       await repository.batchDelete(['user5', 'user6'], { tx });
     });
   });
+
+  describe('Subcollection', () => {
+    const subcollectionRepository = createSubcollectionRepository({
+      ...posts,
+      name: `${posts.name}-${randomString()}`,
+    });
+
+    it('set', async () => {
+      await subcollectionRepository.set({
+        ref: ['user1', 'post1'],
+        data: { title: 'My first post' },
+      });
+    });
+
+    it('get', async () => {
+      const doc = await subcollectionRepository.get(['user1', 'post1']);
+    });
+  });
 };
 
 describe('README example', () => {
@@ -203,6 +239,8 @@ describe('README example', () => {
 
     defineReadmeExampleTests({
       createRepository: (collection) => newFirebaseJsSdkRepository(db, collection),
+      createSubcollectionRepository: (collection) =>
+        newFirebaseJsSdkSubcollectionRepository(db, collection),
       db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
     });
   });
@@ -215,11 +253,13 @@ describe('README example', () => {
 
     defineReadmeExampleTests({
       createRepository: (collection) => newGoogleCloudFirestoreRepository(db, collection),
+      createSubcollectionRepository: (collection) =>
+        newGoogleCloudFirestoreSubcollectionRepository(db, collection),
       db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
       onlyGoogleCloudFirestore: (name, fn) => {
         const repo = newGoogleCloudFirestoreRepositoryWithMapper(
           db,
-          users,
+          { ...users, name: `${users.name}-${randomString()}` },
           rootCollectionPlainMapper(users),
         );
         it(name, () => fn(repo));
