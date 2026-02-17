@@ -15,9 +15,6 @@ catalogs:
     '@google-cloud/firestore':
       specifier: ^8.3.0
       version: 8.3.0
-    '@types/node':
-      specifier: 20.0.0
-      version: 20.0.0
     '@typescript/native-preview':
       specifier: ^7.0.0-dev
       version: 7.0.0-dev.20260203.1
@@ -65,37 +62,6 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.1)(yaml@2.8.1)
-
-  examples/firebase-js-sdk:
-    dependencies:
-      '@firebase/app':
-        specifier: 'catalog:'
-        version: 0.14.8
-      '@firebase/firestore':
-        specifier: 'catalog:'
-        version: 4.11.0(@firebase/app@0.14.8)
-      '@firestore-repository/firebase-js-sdk':
-        specifier: workspace:*
-        version: link:../../packages/firebase-js-sdk
-      firestore-repository:
-        specifier: workspace:*
-        version: link:../../packages/firestore-repository
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 20.0.0
-
-  examples/google-cloud-firestore:
-    dependencies:
-      '@firestore-repository/google-cloud-firestore':
-        specifier: workspace:*
-        version: link:../../packages/google-cloud-firestore
-      '@google-cloud/firestore':
-        specifier: 'catalog:'
-        version: 8.3.0
-      firestore-repository:
-        specifier: workspace:*
-        version: link:../../packages/firestore-repository
 
   packages/firebase-js-sdk:
     dependencies:
@@ -694,9 +660,6 @@ packages:
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
-
-  '@types/node@20.0.0':
-    resolution: {integrity: sha512-cD2uPTDnQQCVpmRefonO98/PPijuOnnEy5oytWJFPY1N9aJCz2wJ5kSGWO+zJoed2cY2JxQh6yBuUq4vIn61hw==}
 
   '@types/node@24.10.1':
     resolution: {integrity: sha512-GNWcUTRBgIRJD5zj+Tq0fKOJ5XZajIiBroOF0yvj2bSU1WvNdYS/dn9UxwsujGW4JX06dnHyjV2y9rRaybH0iQ==}
@@ -1729,8 +1692,6 @@ snapshots:
   '@types/deep-eql@4.0.2': {}
 
   '@types/estree@1.0.8': {}
-
-  '@types/node@20.0.0': {}
 
   '@types/node@24.10.1':
     dependencies:

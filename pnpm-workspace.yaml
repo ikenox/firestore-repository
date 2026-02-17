@@ -1,6 +1,5 @@
 packages:
   - packages/*
-  - examples/*
 
 catalog:
   oxlint: ^1.43.0
