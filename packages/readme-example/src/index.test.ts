@@ -56,87 +56,98 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 }) => {
   const repository = createRepository(users);
 
-  it('basic usage', async () => {
-    // set
-    await repository.set({
-      ref: 'user1',
-      data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
+  describe('Basic operations for a single document', () => {
+    it('set', async () => {
+      await repository.set({
+        ref: 'user1',
+        data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
+      });
     });
 
-    // get
-    const doc = await repository.get('user1');
-    console.log(doc);
+    it('get', async () => {
+      const doc = await repository.get('user1');
+      console.log(doc);
+    });
 
-    // delete
-    await repository.delete('user2');
+    it('getOnSnapshot', () => {
+      repository.getOnSnapshot('user1', (doc) => {
+        console.log(doc);
+      });
+    });
 
-    // query
+    it('delete', async () => {
+      await repository.delete('user2');
+    });
+  });
+
+  describe('Query', () => {
     const q = query(
       { collection: users },
       $('profile.age', '>=', 20),
       $('profile.gender', '==', 'male'),
       limit(10),
     );
-    const docs = await repository.list(q);
-    console.log(docs);
 
-    // listen document
-    repository.getOnSnapshot('user1', (doc) => {
-      console.log(doc);
-    });
-
-    // listen query
-    repository.listOnSnapshot(q, (docs) => {
+    it('list', async () => {
+      const docs = await repository.list(q);
       console.log(docs);
     });
 
-    // aggregate
-    const result = await repository.aggregate(q, {
-      avgAge: average('profile.age'),
-      sumAge: sum('profile.age'),
-      count: count(),
+    it('listOnSnapshot', () => {
+      repository.listOnSnapshot(q, (docs) => {
+        console.log(docs);
+      });
     });
-    console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
+
+    it('aggregate', async () => {
+      const result = await repository.aggregate(q, {
+        avgAge: average('profile.age'),
+        sumAge: sum('profile.age'),
+        count: count(),
+      });
+      console.log(`avg:${result.avgAge} sum:${result.sumAge} count:${result.count}`);
+    });
   });
 
-  it('batch operation', async () => {
-    // set
-    await repository.batchSet([
-      {
-        ref: 'user1',
-        data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] },
-      },
-      { ref: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
-    ]);
+  describe('Batch operations', () => {
+    it('batchSet', async () => {
+      await repository.batchSet([
+        {
+          ref: 'user1',
+          data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] },
+        },
+        { ref: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+      ]);
+    });
 
-    // delete
-    await repository.batchDelete(['user1', 'user2']);
+    it('batchDelete', async () => {
+      await repository.batchDelete(['user1', 'user2']);
+    });
 
-    // mix multiple operations
-    const batch = db.writeBatch();
-    await repository.set(
-      { ref: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
-      { tx: batch },
-    );
-    await repository.batchSet(
-      [
-        // ...
-      ],
-      { tx: batch },
-    );
-    await repository.delete('user4', { tx: batch });
-    await repository.batchDelete(['user5', 'user6'], { tx: batch });
-    await batch.commit();
+    it('include multiple different operations in a batch', async () => {
+      const batch = db.writeBatch();
+      await repository.set(
+        { ref: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+        { tx: batch },
+      );
+      await repository.batchSet(
+        [
+          // ...
+        ],
+        { tx: batch },
+      );
+      await repository.delete('user4', { tx: batch });
+      await repository.batchDelete(['user5', 'user6'], { tx: batch });
+      await batch.commit();
+    });
   });
 
-  it('transaction', async () => {
+  it('Transaction', async () => {
     await db.transaction(async (tx) => {
-      // get
       const doc = await repository.get('user1', { tx });
 
       if (doc) {
         doc.data.tag = [...doc.data.tag, 'new-tag'];
-        // set
         await repository.set(doc, { tx });
         await repository.batchSet(
           [
@@ -147,7 +158,6 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
         );
       }
 
-      // delete
       await repository.delete('user4', { tx });
       await repository.batchDelete(['user5', 'user6'], { tx });
     });
@@ -190,16 +200,20 @@ describe('README example (google-cloud-firestore)', () => {
     rootCollectionPlainMapper(users),
   );
 
-  it('create', async () => {
-    await repository.delete('user-create-test');
-    await repository.create({
-      ref: 'user-create-test',
-      data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
+  describe('Basic operations for a single document', () => {
+    it('create', async () => {
+      await repository.delete('user-create-test');
+      await repository.create({
+        ref: 'user-create-test',
+        data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
+      });
     });
   });
 
-  it('batchGet', async () => {
-    const docs = await repository.batchGet(['user1', 'user2']);
-    console.log(docs);
+  describe('Batch operations', () => {
+    it('batchGet', async () => {
+      const docs = await repository.batchGet(['user1', 'user2']);
+      console.log(docs);
+    });
   });
 });
