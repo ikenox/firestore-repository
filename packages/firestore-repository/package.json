@@ -44,5 +44,8 @@
     "typecheck": "tsgo --noEmit",
     "build": "rm -rf build/ && tsc -b tsconfig.build.json",
     "prepublishOnly": "cp ../../README.md . && pnpm build"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

@@ -50,5 +50,8 @@
   "dependencies": {
     "@google-cloud/firestore": "catalog:",
     "firestore-repository": "workspace:*"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

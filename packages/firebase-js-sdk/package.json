@@ -52,5 +52,8 @@
   },
   "devDependencies": {
     "@firebase/app": "catalog:"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
