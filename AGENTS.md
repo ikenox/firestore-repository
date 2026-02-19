@@ -11,6 +11,11 @@ Before completing a task, run the following commands to ensure there are no issu
 - `pnpm check` - Static checks (type checking, linting, formatting)
 - `pnpm test` - All tests
 
+If your changes affect the public API or usage patterns, update the following as needed:
+
+- `packages/readme-example/` - Test cases that verify README examples work correctly
+- `README.md` - Usage examples and documentation
+
 ## Available Commands
 
 ### Test
