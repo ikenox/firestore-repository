@@ -45,35 +45,17 @@ import {
   writeBatch,
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
-import {
-  bytesBrand,
-  docRefBrand,
-  getPointBrand,
-  timestampBrand,
-  vectorValueBrand,
-  type ArrayRemove,
-  type ArrayUnion,
-  type Increment,
-  type ServerTimestamp,
+import type {
+  ArrayRemove,
+  ArrayUnion,
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Increment,
+  ServerTimestamp,
+  Timestamp,
+  VectorValue,
 } from 'firestore-repository/document';
-
-declare module '@firebase/firestore' {
-  interface Timestamp {
-    [timestampBrand]: unknown;
-  }
-  interface Bytes {
-    [bytesBrand]: unknown;
-  }
-  interface DocumentReference {
-    [docRefBrand]: unknown;
-  }
-  interface GeoPoint {
-    [getPointBrand]: unknown;
-  }
-  interface VectorValue {
-    [vectorValueBrand]: unknown;
-  }
-}
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import {
@@ -434,19 +416,19 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
     },
   };
 
+  // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
   const wrapper: Wrapper = {
-    timestamp: (date) => FirestoreTimestamp.fromDate(date),
-    bytes: (bytes) => FirestoreBytes.fromUint8Array(new Uint8Array(bytes)),
-    documentReference: (docRef) => doc(db, docRef.path),
-    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude),
-    vectorValue: (vv) => vector(vv),
-    // oxlint-disable typescript/no-unsafe-type-assertion -- sentinel FieldValue types cannot use declaration merging
+    timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
+    bytes: (bytes) => FirestoreBytes.fromUint8Array(new Uint8Array(bytes)) as unknown as Bytes,
+    documentReference: (docRef) => doc(db, docRef.path) as unknown as DocumentReference,
+    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
+    vectorValue: (vv) => vector(vv) as unknown as VectorValue,
     serverTimestamp: () => firestoreServerTimestamp() as unknown as ServerTimestamp,
     increment: (n) => firestoreIncrement(n) as unknown as Increment,
     arrayUnion: (...elements) => firestoreArrayUnion(...elements) as unknown as ArrayUnion,
     arrayRemove: (...elements) => firestoreArrayRemove(...elements) as unknown as ArrayRemove,
-    // oxlint-enable typescript/no-unsafe-type-assertion
   };
+  // oxlint-enable typescript/no-unsafe-type-assertion
 
   return { fromFirestore, toFirestore, batchWriteOperation, unwrapper, wrapper };
 };
