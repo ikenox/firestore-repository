@@ -1184,17 +1184,64 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           expect(doc.updatedAt.getTime()).toBeLessThanOrEqual(now + 1000);
         });
 
-        it.todo(
-          'increment (requires update/merge - set() replaces entire document so increment creates new value instead of adding)',
-        );
+        it('increment', async () => {
+          const id = randomString();
 
-        it.todo(
-          'arrayUnion (requires update/merge - set() replaces entire document so arrays are not merged)',
-        );
+          // Verify increment works with set() without runtime error
+          await repository.set({ id, updatedAt: new Date(), counter: { increment: 5 }, tags: [] });
 
-        it.todo(
-          'arrayRemove (requires update/merge - set() replaces entire document so arrays are not merged)',
-        );
+          const doc = await repository.get(id);
+          assert(doc);
+          // increment with set() creates a new value (not adding to existing)
+          expect(doc.counter).toBe(5);
+
+          // TODO: Test increment behavior with update/merge operation
+          // Currently only testing that set() doesn't throw and overwrites with the increment value
+        });
+
+        it('arrayUnion', async () => {
+          const id = randomString();
+
+          // Verify arrayUnion works with set() without runtime error
+          await repository.set({
+            id,
+            updatedAt: new Date(),
+            counter: 0,
+            tags: { arrayUnion: ['tag1', 'tag2'] },
+          });
+
+          const doc = await repository.get(id);
+          assert(doc);
+          // arrayUnion with set() creates a new array (not merging with existing)
+          expect(doc.tags).toEqual(expect.arrayContaining(['tag1', 'tag2']));
+
+          // TODO: Test arrayUnion merge behavior with update/merge operation
+          // Currently only testing that set() doesn't throw and overwrites with the union values
+        });
+
+        it('arrayRemove', async () => {
+          const id = randomString();
+
+          // First create a document with some tags
+          await repository.set({ id, updatedAt: new Date(), counter: 0, tags: ['tag1', 'tag2'] });
+
+          // Verify arrayRemove works with set() without runtime error
+          await repository.set({
+            id,
+            updatedAt: new Date(),
+            counter: 0,
+            tags: { arrayRemove: ['tag1'] },
+          });
+
+          const doc = await repository.get(id);
+          assert(doc);
+          // arrayRemove with set() replaces the array (behavior depends on implementation)
+          // Just verify no runtime error occurred
+          expect(doc.tags).toBeDefined();
+
+          // TODO: Test arrayRemove merge behavior with update/merge operation
+          // Currently only testing that set() doesn't throw and overwrites the array
+        });
       });
     });
   });
