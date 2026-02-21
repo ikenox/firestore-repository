@@ -4,6 +4,8 @@
 
 Read [README.md](./README.md) to understand the project overview.
 
+For detailed information about the project structure, package responsibilities, and architectural design philosophy, refer to [docs/project-structure.md](./docs/project-structure.md).
+
 ## Workflow
 
 Before completing a task, run the following commands to ensure there are no issues:
