@@ -14,7 +14,7 @@ import { defineRepositorySpecificationTests } from 'firestore-repository/__test_
 import { plainMapper } from 'firestore-repository/repository';
 import { describe } from 'vitest';
 
-import { type Env, newRepositoryWithMapper } from './index.js';
+import { type Env, repositoryWithMapper } from './index.js';
 import { wrap } from './value.js';
 
 describe('repository', async () => {
@@ -32,7 +32,7 @@ describe('repository', async () => {
   const createRepository: Parameters<
     typeof defineRepositorySpecificationTests<Env>
   >[0]['createRepository'] = (collection) =>
-    newRepositoryWithMapper(db, collection, plainMapper(collection));
+    repositoryWithMapper(db, collection, plainMapper(collection));
   const dbOps: Parameters<typeof defineRepositorySpecificationTests<Env>>[0]['db'] = {
     writeBatch: () => writeBatch(db),
     transaction: (runner) => runTransaction(db, runner),
