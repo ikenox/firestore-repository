@@ -1071,7 +1071,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         };
       };
 
-      it('set/get with custom mapper', async () => {
+      it('serialize/deserialize platform-specific types', async () => {
         const repository = createRepositoryWithMapper<typeof testCollection, AppModel>(
           testCollection,
           {
