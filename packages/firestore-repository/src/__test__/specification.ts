@@ -1126,7 +1126,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         );
       });
 
-      it('sentinel values (serverTimestamp, increment, arrayUnion, arrayRemove)', async () => {
+      describe('sentinel values', () => {
         const sentinelCollection = rootCollection({
           name: `SentinelTest_${randomString()}`,
           data: schemaWithoutValidation<{
@@ -1178,23 +1178,30 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           },
         );
 
-        const id = randomString();
+        it('serverTimestamp', async () => {
+          const id = randomString();
 
-        // Test serverTimestamp
-        const beforeWrite = new Date();
-        await repository.set({ id, updatedAt: 'serverTimestamp', counter: 1, tags: [] });
-        const afterWrite = new Date();
+          const beforeWrite = new Date();
+          await repository.set({ id, updatedAt: 'serverTimestamp', counter: 1, tags: [] });
+          const afterWrite = new Date();
 
-        const doc1 = await repository.get(id);
-        assert(doc1);
-        expect(doc1.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeWrite.getTime());
-        expect(doc1.updatedAt.getTime()).toBeLessThanOrEqual(afterWrite.getTime());
+          const doc = await repository.get(id);
+          assert(doc);
+          expect(doc.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeWrite.getTime());
+          expect(doc.updatedAt.getTime()).toBeLessThanOrEqual(afterWrite.getTime());
+        });
 
-        // TODO: Test increment, arrayUnion, and arrayRemove
-        // These sentinel values require update/merge operation to work correctly with existing data.
-        // repository.set() replaces the entire document, so:
-        // - increment creates a new value instead of adding to existing value
-        // - arrayUnion/arrayRemove don't merge with existing arrays across multiple set() calls
+        it.todo(
+          'increment (requires update/merge - set() replaces entire document so increment creates new value instead of adding)',
+        );
+
+        it.todo(
+          'arrayUnion (requires update/merge - set() replaces entire document so arrays are not merged)',
+        );
+
+        it.todo(
+          'arrayRemove (requires update/merge - set() replaces entire document so arrays are not merged)',
+        );
       });
     });
   });
