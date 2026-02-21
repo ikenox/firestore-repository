@@ -244,15 +244,20 @@ The following updates are required:
 ### Workspace Dependencies
 
 ```
-firestore-repository (core)
-    ↑               ↑
-    |               |
+    firestore-repository (core)
+        ↑           ↑
+        |           |
+        |           |
 google-cloud    firebase-js-sdk
 -firestore      (implementation)
-(implementation)    ↑
-                    |
-              readme-example
-              (tests)
+(implementation)
+        ↑           ↑
+        |           |
+        +-----+-----+
+              |
+        readme-example
+          (tests)
 ```
 
-Package dependencies are managed using the `workspace:*` protocol.
+- `readme-example` depends on both `google-cloud-firestore` and `firebase-js-sdk` (and the core package) to test examples for both backend and frontend environments
+- Package dependencies are managed using the `workspace:*` protocol
