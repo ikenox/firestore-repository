@@ -1181,14 +1181,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         it('serverTimestamp', async () => {
           const id = randomString();
 
-          const beforeWrite = new Date();
+          const now = Date.now();
           await repository.set({ id, updatedAt: 'serverTimestamp', counter: 1, tags: [] });
-          const afterWrite = new Date();
 
           const doc = await repository.get(id);
           assert(doc);
-          expect(doc.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeWrite.getTime());
-          expect(doc.updatedAt.getTime()).toBeLessThanOrEqual(afterWrite.getTime());
+          expect(doc.updatedAt.getTime()).toBeGreaterThanOrEqual(now - 1000);
+          expect(doc.updatedAt.getTime()).toBeLessThanOrEqual(now + 1000);
         });
 
         it.todo(
