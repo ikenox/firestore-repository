@@ -29,6 +29,7 @@ import type {
   FirestoreEnvironment,
   Mapper,
   PlainRepository,
+  PlatformValueSerializer,
   Repository,
 } from '../repository.js';
 import {
@@ -76,7 +77,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   db,
   createRepository,
   createRepositoryWithMapper,
-  types,
+  serializer,
   implementationSpecificTests,
 }: {
   createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
@@ -88,13 +89,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
   };
-  types: {
-    timestamp: (date: Date) => Timestamp;
-    geoPoint: (latitude: number, longitude: number) => GeoPoint;
-    bytes: (value: number[]) => Bytes;
-    vector: (values: number[]) => VectorValue;
-    documentReference: (path: string) => DocumentReference;
-  };
+  serializer: PlatformValueSerializer;
   implementationSpecificTests?: <T extends Collection>(
     params: TestCollectionParams<T>,
     setup: () => RepositoryTestEnv<T, Env>,
@@ -489,7 +484,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const authorId = baseId++;
         return {
           ref: [`author${authorId}`, `${id}`],
-          data: { title: `post${id}`, postedAt: types.timestamp(new Date()) },
+          data: { title: `post${id}`, postedAt: serializer.timestamp(new Date()) },
         };
       },
       mutate: (data) => ({
@@ -932,15 +927,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           items: [
             {
               ref: ['author1', '1'],
-              data: { title: 'post1', postedAt: types.timestamp(new Date('2020-02-01')) },
+              data: { title: 'post1', postedAt: serializer.timestamp(new Date('2020-02-01')) },
             },
             {
               ref: ['author1', '2'],
-              data: { title: 'post2', postedAt: types.timestamp(new Date('2020-01-01')) },
+              data: { title: 'post2', postedAt: serializer.timestamp(new Date('2020-01-01')) },
             },
             {
               ref: ['author2', '3'],
-              data: { title: 'post3', postedAt: types.timestamp(new Date('2020-03-01')) },
+              data: { title: 'post3', postedAt: serializer.timestamp(new Date('2020-03-01')) },
             },
           ],
         });
@@ -1009,15 +1004,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           data: {
             array: [1, 2, 'foo', 3, 'bar'],
             boolean: false,
-            bytes: types.bytes([1, 2, 3, 4, 5]),
-            timestamp: types.timestamp(new Date()),
+            bytes: serializer.bytes(Uint8Array.from([1, 2, 3, 4, 5])),
+            timestamp: serializer.timestamp(new Date()),
             number: randomNumber(),
-            getPoint: types.geoPoint(12.3, 45.6),
+            getPoint: serializer.geoPoint({ latitude: 12.3, longitude: 45.6 }),
             map: { a: 123, b: ['foo', 'bar'] },
             null: null,
-            docRef: types.documentReference('foo/a/bar/b'),
+            docRef: serializer.documentReference({ path: 'foo/a/bar/b' }),
             string: randomString(),
-            vector: types.vector([1, 2, 3, 4, 5]),
+            vector: serializer.vectorValue([1, 2, 3, 4, 5]),
           },
         };
         await repository.set(value);
@@ -1100,8 +1095,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         );
 
         const testDate = new Date('2024-01-01T00:00:00Z');
-        const testBuffer = new Uint8Array(new ArrayBuffer(8));
-        testBuffer.set([1, 2, 3, 4, 5, 6, 7, 8]);
+        const testBuffer = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
 
         const appData: AppModel['write'] = {
           id: randomString(),

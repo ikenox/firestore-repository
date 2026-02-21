@@ -412,19 +412,25 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
     },
   };
 
-  // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
-  const serializer: PlatformValueSerializer = {
-    timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
-    bytes: (bytes) => FirestoreBytes.fromUint8Array(bytes) as unknown as Bytes,
-    documentReference: (docRef) => doc(db, docRef.path) as unknown as DocumentReference,
-    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
-    vectorValue: (vv) => vector(vv) as unknown as VectorValue,
-    serverTimestamp: () => firestoreServerTimestamp() as unknown as ServerTimestamp,
-    increment: (n) => firestoreIncrement(n) as unknown as Increment,
-    arrayUnion: (...elements) => firestoreArrayUnion(...elements) as unknown as ArrayUnion,
-    arrayRemove: (...elements) => firestoreArrayRemove(...elements) as unknown as ArrayRemove,
+  return {
+    fromFirestore,
+    toFirestore,
+    batchWriteOperation,
+    deserializer,
+    serializer: createPlatformValueSerializer(db),
   };
-  // oxlint-enable typescript/no-unsafe-type-assertion
-
-  return { fromFirestore, toFirestore, batchWriteOperation, deserializer, serializer };
 };
+
+// oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
+export const createPlatformValueSerializer = (db: Firestore): PlatformValueSerializer => ({
+  timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
+  bytes: (bytes) => FirestoreBytes.fromUint8Array(bytes) as unknown as Bytes,
+  documentReference: (docRef) => doc(db, docRef.path) as unknown as DocumentReference,
+  geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
+  vectorValue: (vv) => vector(vv) as unknown as VectorValue,
+  serverTimestamp: () => firestoreServerTimestamp() as unknown as ServerTimestamp,
+  increment: (n) => firestoreIncrement(n) as unknown as Increment,
+  arrayUnion: (...elements) => firestoreArrayUnion(...elements) as unknown as ArrayUnion,
+  arrayRemove: (...elements) => firestoreArrayRemove(...elements) as unknown as ArrayRemove,
+});
+// oxlint-enable typescript/no-unsafe-type-assertion

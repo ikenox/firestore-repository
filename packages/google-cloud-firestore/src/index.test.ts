@@ -1,4 +1,4 @@
-import { FieldValue, Firestore, GeoPoint, Timestamp } from '@google-cloud/firestore';
+import { Firestore } from '@google-cloud/firestore';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
@@ -9,9 +9,13 @@ import { type PlainModel, plainMapper } from 'firestore-repository/repository';
 import type { Doc } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { type Env, type GoogleCloudFirestoreRepository, repositoryWithMapper } from './index.js';
+import {
+  createPlatformValueSerializer,
+  type Env,
+  type GoogleCloudFirestoreRepository,
+  repositoryWithMapper,
+} from './index.js';
 import { offset } from './query.js';
-import { serialize } from './value.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -32,14 +36,8 @@ describe('repository', async () => {
     createRepository,
     createRepositoryWithMapper: (collection, mapper) =>
       repositoryWithMapper(db, collection, mapper),
-    types: {
-      timestamp: (date) => serialize(Timestamp.fromDate(date)),
-      geoPoint: (latitude, longitude) => serialize(new GeoPoint(latitude, longitude)),
-      bytes: (bytes) => serialize(Buffer.from(bytes)),
-      vector: (value) => serialize(FieldValue.vector(value)),
-      documentReference: (path) => serialize(db.doc(path)),
-    },
     db: dbOps,
+    serializer: createPlatformValueSerializer(db),
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type TestCollection = typeof collection;
 
