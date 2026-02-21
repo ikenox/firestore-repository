@@ -24,7 +24,13 @@ import {
   startAfter,
   startAt,
 } from '../query.js';
-import type { FirestoreEnvironment, PlainRepository } from '../repository.js';
+import type {
+  AppModel,
+  FirestoreEnvironment,
+  Mapper,
+  PlainRepository,
+  Repository,
+} from '../repository.js';
 import {
   type Collection,
   type Doc,
@@ -74,13 +80,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   implementationSpecificTests,
 }: {
   createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
-  createRepositoryWithMapper: <
-    T extends Collection,
-    Model extends import('../repository.js').AppModel,
-  >(
+  createRepositoryWithMapper: <T extends Collection, Model extends AppModel>(
     collection: T,
-    mapper: import('../repository.js').Mapper<T, Model>,
-  ) => import('../repository.js').Repository<T, Model, Env>;
+    mapper: Mapper<T, Model>,
+  ) => Repository<T, Model, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
@@ -1121,6 +1124,82 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         expect(new Uint8Array(retrieved.content)).toStrictEqual(
           new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
         );
+      });
+
+      it('sentinel values (serverTimestamp, increment, arrayUnion, arrayRemove)', async () => {
+        const sentinelCollection = rootCollection({
+          name: `SentinelTest_${randomString()}`,
+          data: schemaWithoutValidation<{
+            updatedAt: Timestamp;
+            counter: number;
+            tags: string[];
+          }>(),
+        });
+
+        type SentinelAppModel = {
+          id: string;
+          read: { id: string; updatedAt: Date; counter: number; tags: string[] };
+          write: {
+            id: string;
+            updatedAt: Date | 'serverTimestamp';
+            counter: number | { increment: number };
+            tags: string[] | { arrayUnion: string[] } | { arrayRemove: string[] };
+          };
+        };
+
+        const repository = createRepositoryWithMapper<typeof sentinelCollection, SentinelAppModel>(
+          sentinelCollection,
+          {
+            toDocRef: (id) => [id],
+            fromFirestore: (doc, deserializer) => ({
+              id: doc.ref[0],
+              updatedAt: deserializer.timestamp(doc.data.updatedAt),
+              counter: doc.data.counter,
+              tags: doc.data.tags,
+            }),
+            toFirestore: (model, serializer) => ({
+              ref: [model.id],
+              data: {
+                updatedAt:
+                  model.updatedAt === 'serverTimestamp'
+                    ? serializer.serverTimestamp()
+                    : serializer.timestamp(model.updatedAt),
+                counter:
+                  typeof model.counter === 'object' && 'increment' in model.counter
+                    ? serializer.increment(model.counter.increment)
+                    : model.counter,
+                tags: Array.isArray(model.tags)
+                  ? model.tags
+                  : 'arrayUnion' in model.tags
+                    ? serializer.arrayUnion(...model.tags.arrayUnion)
+                    : serializer.arrayRemove(...model.tags.arrayRemove),
+              },
+            }),
+          },
+        );
+
+        const id = randomString();
+
+        // Test serverTimestamp
+        const beforeWrite = new Date();
+        await repository.set({ id, updatedAt: 'serverTimestamp', counter: 0, tags: [] });
+        const afterWrite = new Date();
+
+        const doc1 = await repository.get(id);
+        assert(doc1);
+        expect(doc1.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeWrite.getTime());
+        expect(doc1.updatedAt.getTime()).toBeLessThanOrEqual(afterWrite.getTime());
+
+        // Test increment
+        await repository.set({ id, updatedAt: new Date(), counter: { increment: 5 }, tags: [] });
+        const doc2 = await repository.get(id);
+        assert(doc2);
+        expect(doc2.counter).toBe(5);
+
+        // TODO: Test arrayUnion and arrayRemove
+        // These sentinel values require update/merge operation which doesn't exist in Repository interface.
+        // repository.set() replaces the entire document, so multiple calls with arrayUnion/arrayRemove
+        // don't accumulate values as expected.
       });
     });
   });
