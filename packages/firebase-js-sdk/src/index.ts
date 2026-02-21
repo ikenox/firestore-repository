@@ -1,5 +1,4 @@
 import type {
-  DocumentReference,
   DocumentSnapshot,
   Firestore,
   AggregateSpec as FirestoreAggregateSpec,
@@ -10,32 +9,53 @@ import type {
 } from '@firebase/firestore';
 import {
   and,
+  arrayRemove as firestoreArrayRemove,
+  arrayUnion as firestoreArrayUnion,
   average,
+  Bytes as FirestoreBytes,
   collection,
   collectionGroup,
   count,
   deleteDoc,
   doc,
+  DocumentReference as FirestoreDocumentReference,
   endAt,
   endBefore,
   query as firestoreQuery,
+  GeoPoint as FirestoreGeoPoint,
   getAggregateFromServer,
   getDoc,
   getDocs,
+  increment as firestoreIncrement,
   limit,
   limitToLast,
   onSnapshot,
   or,
   orderBy,
+  serverTimestamp as firestoreServerTimestamp,
   setDoc,
   startAfter,
   startAt,
   sum,
+  Timestamp as FirestoreTimestamp,
   Transaction,
+  vector,
+  VectorValue as FirestoreVectorValue,
   where,
   writeBatch,
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
+import type {
+  ArrayRemove,
+  ArrayUnion,
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Increment,
+  ServerTimestamp,
+  Timestamp,
+  VectorValue,
+} from 'firestore-repository/document';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import {
@@ -48,6 +68,8 @@ import {
   rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
+  type Unwrapper,
+  type Wrapper,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
 import type {
@@ -83,10 +105,8 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   collection: T,
   mapper: Mapper<T, Model>,
 ): Repository<T, Model, Env> => {
-  const { toFirestore, fromFirestore, batchWriteOperation } = buildFirestoreUtilities(
-    db,
-    collection,
-  );
+  const { toFirestore, fromFirestore, batchWriteOperation, unwrapper, wrapper } =
+    buildFirestoreUtilities(db, collection);
 
   return {
     collection,
@@ -101,7 +121,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       if (!doc) {
         return undefined;
       }
-      return mapper.fromFirestore(doc);
+      return mapper.fromFirestore(doc, unwrapper);
     },
 
     getOnSnapshot: (
@@ -113,7 +133,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       return onSnapshot(docRef, {
         next: (snapshot) => {
           const doc = fromFirestore.document(snapshot);
-          next(doc ? mapper.fromFirestore(doc) : undefined);
+          next(doc ? mapper.fromFirestore(doc, unwrapper) : undefined);
         },
         error: (e) => error?.(e),
       });
@@ -122,7 +142,9 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
       const firestoreQueryObj = toFirestore.query(query);
       const { docs } = await getDocs(firestoreQueryObj);
-      return docs.values().map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
+      return docs
+        .values()
+        .map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc), unwrapper));
     },
 
     listOnSnapshot: (
@@ -133,7 +155,11 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const firestoreQueryObj = toFirestore.query(query);
       return onSnapshot(firestoreQueryObj, {
         next: ({ docs }) =>
-          next(docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)))),
+          next(
+            docs.map((doc) =>
+              mapper.fromFirestore(fromFirestore.documentMustExist(doc), unwrapper),
+            ),
+          ),
         error: (e) => error?.(e),
       });
     },
@@ -166,7 +192,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model);
+      const docToWrite = mapper.toFirestore(model, wrapper);
       const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -184,7 +210,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map(mapper.toFirestore);
+      const docs = models.map((m) => mapper.toFirestore(m, wrapper));
       await batchWriteOperation(
         docs,
         {
@@ -214,7 +240,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
 
 const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
   const toFirestore = {
-    docRef: (ref: DocRef<T>): DocumentReference => doc(db, documentPath(coll, ref)),
+    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
     query: (query: Query<T>): FirestoreQuery => {
       let base: FirestoreQuery;
       if ('collection' in query.base) {
@@ -318,10 +344,10 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
       }
       return fromFirestore.documentMustExist(document);
     },
-    docRef: (ref: DocumentReference): DocRef<T> => {
+    docRef: (ref: FirestoreDocumentReference): DocRef<T> => {
       const docRef: string[] = [];
 
-      let currentRef: DocumentReference | null = ref;
+      let currentRef: FirestoreDocumentReference | null = ref;
       while (currentRef != null) {
         docRef.push(currentRef.id);
         currentRef = currentRef.parent.parent;
@@ -353,5 +379,56 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
     }
   };
 
-  return { fromFirestore, toFirestore, batchWriteOperation };
+  const unwrapper: Unwrapper = {
+    timestamp: (ts) => {
+      if (!(ts instanceof FirestoreTimestamp)) {
+        throw new TypeError('Expected Timestamp');
+      }
+      return ts.toDate();
+    },
+    bytes: (bytes) => {
+      if (!(bytes instanceof FirestoreBytes)) {
+        throw new TypeError('Expected Bytes');
+      }
+      const { buffer } = bytes.toUint8Array();
+      if (!(buffer instanceof ArrayBuffer)) {
+        throw new TypeError('Expected ArrayBuffer');
+      }
+      return buffer;
+    },
+    documentReference: (ref) => {
+      if (!(ref instanceof FirestoreDocumentReference)) {
+        throw new TypeError('Expected DocumentReference');
+      }
+      return { path: ref.path };
+    },
+    geoPoint: (gp) => {
+      if (!(gp instanceof FirestoreGeoPoint)) {
+        throw new TypeError('Expected GeoPoint');
+      }
+      return { latitude: gp.latitude, longitude: gp.longitude };
+    },
+    vectorValue: (vv) => {
+      if (!(vv instanceof FirestoreVectorValue)) {
+        throw new TypeError('Expected VectorValue');
+      }
+      return vv.toArray();
+    },
+  };
+
+  // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
+  const wrapper: Wrapper = {
+    timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
+    bytes: (bytes) => FirestoreBytes.fromUint8Array(new Uint8Array(bytes)) as unknown as Bytes,
+    documentReference: (docRef) => doc(db, docRef.path) as unknown as DocumentReference,
+    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
+    vectorValue: (vv) => vector(vv) as unknown as VectorValue,
+    serverTimestamp: () => firestoreServerTimestamp() as unknown as ServerTimestamp,
+    increment: (n) => firestoreIncrement(n) as unknown as Increment,
+    arrayUnion: (...elements) => firestoreArrayUnion(...elements) as unknown as ArrayUnion,
+    arrayRemove: (...elements) => firestoreArrayRemove(...elements) as unknown as ArrayRemove,
+  };
+  // oxlint-enable typescript/no-unsafe-type-assertion
+
+  return { fromFirestore, toFirestore, batchWriteOperation, unwrapper, wrapper };
 };

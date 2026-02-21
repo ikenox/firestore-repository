@@ -48,16 +48,19 @@ export type Bytes = { [bytesBrand]: unknown };
  * A platform-agnostic representation of the DocumentReference type, compatible with both firebase-js-sdk and firebase-admin
  */
 export type DocumentReference = { [docRefBrand]: unknown };
+export type UnwrappedDocumentReference = { path: string };
 
 /**
  * A platform-agnostic representation of the GeoPoint type, compatible with both firebase-js-sdk and firebase-admin
  */
 export type GeoPoint = { [getPointBrand]: unknown };
+export type UnwrappedGeoPoint = { latitude: number; longitude: number };
 
 /**
  * A platform-agnostic representation of the VectorValue type, compatible with both firebase-js-sdk and firebase-admin
  */
 export type VectorValue = { [vectorValueBrand]: unknown };
+export type UnwrappedVectorValue = number[];
 
 /**
  * A write-only value that is replaced with the current time on the server side

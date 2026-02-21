@@ -1,5 +1,19 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
-import type { WriteDocumentData } from './document.js';
+import type {
+  ArrayRemove,
+  ArrayUnion,
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Increment,
+  ServerTimestamp,
+  Timestamp,
+  UnwrappedDocumentReference,
+  UnwrappedGeoPoint,
+  UnwrappedVectorValue,
+  VectorValue,
+  WriteDocumentData,
+} from './document.js';
 import type { Query } from './query.js';
 import type { Collection, Doc, DocData, DocRef, DocToWrite, RootCollection } from './schema.js';
 
@@ -70,8 +84,28 @@ export interface Repository<
 /** A mapper that converts between Firestore documents and application models */
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
-  fromFirestore: (doc: Doc<T>) => Model['read'];
-  toFirestore: (model: Model['write']) => DocToWrite<T>;
+  fromFirestore: (doc: Doc<T>, unwrapper: Unwrapper) => Model['read'];
+  toFirestore: (model: Model['write'], wrapper: Wrapper) => DocToWrite<T>;
+};
+
+export type Unwrapper = {
+  timestamp: (timestamp: Timestamp) => Date;
+  bytes: (bytes: Bytes) => ArrayBuffer;
+  documentReference: (docRef: DocumentReference) => UnwrappedDocumentReference;
+  geoPoint: (geoPoint: GeoPoint) => UnwrappedGeoPoint;
+  vectorValue: (vectorValue: VectorValue) => UnwrappedVectorValue;
+};
+
+export type Wrapper = {
+  timestamp: (date: Date) => Timestamp;
+  bytes: (bytes: ArrayBuffer) => Bytes;
+  documentReference: (docRef: UnwrappedDocumentReference) => DocumentReference;
+  geoPoint: (geoPoint: UnwrappedGeoPoint) => GeoPoint;
+  vectorValue: (vectorValue: UnwrappedVectorValue) => VectorValue;
+  serverTimestamp: () => ServerTimestamp;
+  increment: (n: number) => Increment;
+  arrayUnion: (...elements: unknown[]) => ArrayUnion;
+  arrayRemove: (...elements: unknown[]) => ArrayRemove;
 };
 
 /** An application model type definition with id, read, and write shapes */

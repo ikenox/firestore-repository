@@ -1,6 +1,26 @@
 import type * as firestore from '@google-cloud/firestore';
-import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
+import {
+  AggregateField,
+  DocumentReference as FirestoreDocumentReference,
+  FieldValue,
+  Filter,
+  GeoPoint as FirestoreGeoPoint,
+  Timestamp as FirestoreTimestamp,
+  Transaction,
+  VectorValue as FirestoreVectorValue,
+} from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
+import type {
+  ArrayRemove,
+  ArrayUnion,
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Increment,
+  ServerTimestamp,
+  Timestamp,
+  VectorValue,
+} from 'firestore-repository/document';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import {
@@ -13,6 +33,8 @@ import {
   rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
+  type Unwrapper,
+  type Wrapper,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
 import type {
@@ -77,10 +99,8 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   collection: T,
   mapper: Mapper<T, Model>,
 ): GoogleCloudFirestoreRepository<T, Model> => {
-  const { toFirestore, fromFirestore, batchWriteOperation } = buildFirestoreUtilities(
-    db,
-    collection,
-  );
+  const { toFirestore, fromFirestore, batchWriteOperation, unwrapper, wrapper } =
+    buildFirestoreUtilities(db, collection);
 
   return {
     collection,
@@ -95,7 +115,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       if (!doc) {
         return undefined;
       }
-      return mapper.fromFirestore(doc);
+      return mapper.fromFirestore(doc, unwrapper);
     },
 
     getOnSnapshot: (
@@ -106,14 +126,16 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const docRef = toFirestore.docRef(mapper.toDocRef(ref));
       return docRef.onSnapshot((snapshot) => {
         const doc = fromFirestore.document(snapshot);
-        next(doc ? mapper.fromFirestore(doc) : undefined);
+        next(doc ? mapper.fromFirestore(doc, unwrapper) : undefined);
       }, error);
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
       const firestoreQuery = toFirestore.query(query);
       const { docs } = await firestoreQuery.get();
-      return docs.values().map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
+      return docs
+        .values()
+        .map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc), unwrapper));
     },
 
     listOnSnapshot: (
@@ -124,7 +146,9 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const firestoreQuery = toFirestore.query(query);
       return firestoreQuery.onSnapshot((snapshot) => {
         next(
-          snapshot.docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
+          snapshot.docs.map((doc) =>
+            mapper.fromFirestore(fromFirestore.documentMustExist(doc), unwrapper),
+          ),
         );
       }, error);
     },
@@ -157,7 +181,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model);
+      const docToWrite = mapper.toFirestore(model, wrapper);
       const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx.create(docRef, docToWrite.data)
@@ -165,7 +189,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model);
+      const docToWrite = mapper.toFirestore(model, wrapper);
       const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -190,7 +214,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const docs = await (options?.tx ? options.tx.getAll(...docRefs) : db.getAll(...docRefs));
       return docs.map((doc) => {
         const d = fromFirestore.document(doc);
-        return d ? mapper.fromFirestore(d) : undefined;
+        return d ? mapper.fromFirestore(d, unwrapper) : undefined;
       });
     },
 
@@ -198,7 +222,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map(mapper.toFirestore);
+      const docs = models.map((m) => mapper.toFirestore(m, wrapper));
       await batchWriteOperation(
         docs,
         {
@@ -213,7 +237,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map(mapper.toFirestore);
+      const docs = models.map((m) => mapper.toFirestore(m, wrapper));
       await batchWriteOperation(
         docs,
         {
@@ -354,5 +378,56 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     }
   };
 
-  return { fromFirestore, toFirestore, batchWriteOperation };
+  const unwrapper: Unwrapper = {
+    timestamp: (ts) => {
+      if (!(ts instanceof FirestoreTimestamp)) {
+        throw new TypeError('Expected Timestamp');
+      }
+      return ts.toDate();
+    },
+    bytes: (bytes) => {
+      if (!(bytes instanceof Buffer)) {
+        throw new TypeError('Expected Buffer');
+      }
+      const { buffer, byteOffset, byteLength } = bytes;
+      if (!(buffer instanceof ArrayBuffer)) {
+        throw new TypeError('Expected ArrayBuffer');
+      }
+      return buffer.slice(byteOffset, byteOffset + byteLength);
+    },
+    documentReference: (ref) => {
+      if (!(ref instanceof FirestoreDocumentReference)) {
+        throw new TypeError('Expected DocumentReference');
+      }
+      return { path: ref.path };
+    },
+    geoPoint: (gp) => {
+      if (!(gp instanceof FirestoreGeoPoint)) {
+        throw new TypeError('Expected GeoPoint');
+      }
+      return { latitude: gp.latitude, longitude: gp.longitude };
+    },
+    vectorValue: (vv) => {
+      if (!(vv instanceof FirestoreVectorValue)) {
+        throw new TypeError('Expected VectorValue');
+      }
+      return vv.toArray();
+    },
+  };
+
+  // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
+  const wrapper: Wrapper = {
+    timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
+    bytes: (bytes) => Buffer.from(bytes) as unknown as Bytes,
+    documentReference: (docRef) => db.doc(docRef.path) as unknown as DocumentReference,
+    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
+    vectorValue: (vv) => FieldValue.vector(vv) as unknown as VectorValue,
+    serverTimestamp: () => FieldValue.serverTimestamp() as unknown as ServerTimestamp,
+    increment: (n) => FieldValue.increment(n) as unknown as Increment,
+    arrayUnion: (...elements) => FieldValue.arrayUnion(...elements) as unknown as ArrayUnion,
+    arrayRemove: (...elements) => FieldValue.arrayRemove(...elements) as unknown as ArrayRemove,
+  };
+  // oxlint-enable typescript/no-unsafe-type-assertion
+
+  return { fromFirestore, toFirestore, batchWriteOperation, unwrapper, wrapper };
 };

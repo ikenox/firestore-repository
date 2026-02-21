@@ -3,6 +3,7 @@
   "plugins": ["typescript", "import"],
   "categories": { "correctness": "error" },
   "rules": {
+    "eslint/curly": "error",
     "eslint/no-console": "error",
     "import/no-default-export": "error",
     "import/no-nodejs-modules": "error",
