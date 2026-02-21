@@ -7,15 +7,15 @@ import {
   writeBatch,
 } from '@firebase/firestore';
 import {
-  newRepositoryWithMapper as newFirebaseJsSdkRepositoryWithMapper,
-  newRootCollectionRepository as newFirebaseJsSdkRepository,
-  newSubcollectionRepository as newFirebaseJsSdkSubcollectionRepository,
+  repositoryWithMapper as firebaseJsSdkRepositoryWithMapper,
+  rootCollectionRepository as firebaseJsSdkRepository,
+  subcollectionRepository as firebaseJsSdkSubcollectionRepository,
 } from '@firestore-repository/firebase-js-sdk';
 import {
   type GoogleCloudFirestoreRepository,
-  newRepositoryWithMapper as newGoogleCloudFirestoreRepositoryWithMapper,
-  newRootCollectionRepository as newGoogleCloudFirestoreRepository,
-  newSubcollectionRepository as newGoogleCloudFirestoreSubcollectionRepository,
+  repositoryWithMapper as googleCloudFirestoreRepositoryWithMapper,
+  rootCollectionRepository as googleCloudFirestoreRepository,
+  subcollectionRepository as googleCloudFirestoreSubcollectionRepository,
 } from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
 import { randomString } from 'firestore-repository/__test__/util';
@@ -284,11 +284,11 @@ describe('README example', () => {
     }
 
     defineReadmeExampleTests({
-      createRepository: (collection) => newFirebaseJsSdkRepository(db, collection),
+      createRepository: (collection) => firebaseJsSdkRepository(db, collection),
       createRepositoryWithMapper: (collection, mapper) =>
-        newFirebaseJsSdkRepositoryWithMapper(db, collection, mapper),
+        firebaseJsSdkRepositoryWithMapper(db, collection, mapper),
       createSubcollectionRepository: (collection) =>
-        newFirebaseJsSdkSubcollectionRepository(db, collection),
+        firebaseJsSdkSubcollectionRepository(db, collection),
       db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
     });
   });
@@ -300,14 +300,14 @@ describe('README example', () => {
     });
 
     defineReadmeExampleTests({
-      createRepository: (collection) => newGoogleCloudFirestoreRepository(db, collection),
+      createRepository: (collection) => googleCloudFirestoreRepository(db, collection),
       createRepositoryWithMapper: (collection, mapper) =>
-        newGoogleCloudFirestoreRepositoryWithMapper(db, collection, mapper),
+        googleCloudFirestoreRepositoryWithMapper(db, collection, mapper),
       createSubcollectionRepository: (collection) =>
-        newGoogleCloudFirestoreSubcollectionRepository(db, collection),
+        googleCloudFirestoreSubcollectionRepository(db, collection),
       db: { writeBatch: () => db.batch(), transaction: (runner) => db.runTransaction(runner) },
       onlyGoogleCloudFirestore: (name, fn) => {
-        const repo = newGoogleCloudFirestoreRepositoryWithMapper(
+        const repo = googleCloudFirestoreRepositoryWithMapper(
           db,
           { ...users, name: `${users.name}-${randomString()}` },
           rootCollectionPlainMapper(users),

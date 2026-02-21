@@ -37,12 +37,12 @@ import { rootCollection, schemaWithoutValidation } from 'firestore-repository/sc
 
 // For backend
 import { Firestore } from '@google-cloud/firestore';
-import { newRootCollectionRepository } from '@firestore-repository/google-cloud-firestore';
+import { rootCollectionRepository } from '@firestore-repository/google-cloud-firestore';
 const db = new Firestore();
 
 // For web frontend
 import { getFirestore } from '@firebase/firestore';
-import { newRootCollectionRepository } from '@firestore-repository/firebase-js-sdk';
+import { rootCollectionRepository } from '@firestore-repository/firebase-js-sdk';
 const db = getFirestore();
 
 // define a collection
@@ -55,7 +55,7 @@ const users = rootCollection({
   }>(),
 });
 
-const repository = newRootCollectionRepository(db, users);
+const repository = rootCollectionRepository(db, users);
 ```
 
 ### Basic operations for a single document
@@ -201,10 +201,10 @@ Subcollections are defined with `subCollection`, specifying the parent collectio
 import { subCollection, schemaWithoutValidation } from 'firestore-repository/schema';
 
 // For backend
-import { newSubcollectionRepository } from '@firestore-repository/google-cloud-firestore';
+import { subcollectionRepository } from '@firestore-repository/google-cloud-firestore';
 
 // For web frontend
-import { newSubcollectionRepository } from '@firestore-repository/firebase-js-sdk';
+import { subcollectionRepository } from '@firestore-repository/firebase-js-sdk';
 
 const posts = subCollection({
   name: 'Posts',
@@ -212,7 +212,7 @@ const posts = subCollection({
   parent: ['Users'] as const,
 });
 
-const postRepository = newSubcollectionRepository(db, posts);
+const postRepository = subcollectionRepository(db, posts);
 
 // Set a document (ref is [parentDocId, docId])
 await postRepository.set({ ref: ['user1', 'post1'], data: { title: 'My first post' } });
@@ -223,7 +223,7 @@ const post = await postRepository.get(['user1', 'post1']);
 
 ### Custom Mapper
 
-By default, `newRootCollectionRepository` returns a repository with `{ ref: string, data: ... }` as its model type. If you want to use your own application model types, you can define a custom `Mapper` and use `newRepositoryWithMapper` to create a repository that automatically converts between Firestore documents and your models.
+By default, `rootCollectionRepository` returns a repository with `{ ref: string, data: ... }` as its model type. If you want to use your own application model types, you can define a custom `Mapper` and use `repositoryWithMapper` to create a repository that automatically converts between Firestore documents and your models.
 
 A `Mapper` consists of three functions:
 
@@ -237,9 +237,9 @@ You can also define different types for reading and writing via `AppModel<Id, Re
 import { type AppModel, type Mapper } from 'firestore-repository/repository';
 
 // For backend
-import { newRepositoryWithMapper } from '@firestore-repository/google-cloud-firestore';
+import { repositoryWithMapper } from '@firestore-repository/google-cloud-firestore';
 // For web frontend
-import { newRepositoryWithMapper } from '@firestore-repository/firebase-js-sdk';
+import { repositoryWithMapper } from '@firestore-repository/firebase-js-sdk';
 
 // Define your application model type
 type User = {
@@ -259,7 +259,7 @@ const userMapper: Mapper<typeof users, AppModel<string, User, User>> = {
   }),
 };
 
-const repository = newRepositoryWithMapper(db, users, userMapper);
+const repository = repositoryWithMapper(db, users, userMapper);
 
 // Now the repository accepts and returns your custom User type directly
 await repository.set({

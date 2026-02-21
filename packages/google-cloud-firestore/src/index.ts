@@ -58,21 +58,21 @@ export interface GoogleCloudFirestoreRepository<
 }
 
 /** Creates a repository for a root collection using plain document types */
-export const newRootCollectionRepository = <T extends RootCollection>(
+export const rootCollectionRepository = <T extends RootCollection>(
   db: firestore.Firestore,
   collection: T,
 ): Repository<T, RootCollectionPlainModel<T>, Env> =>
-  newRepositoryWithMapper(db, collection, rootCollectionPlainMapper(collection));
+  repositoryWithMapper(db, collection, rootCollectionPlainMapper(collection));
 
 /** Creates a repository for a subcollection using plain document types */
-export const newSubcollectionRepository = <T extends SubCollection>(
+export const subcollectionRepository = <T extends SubCollection>(
   db: firestore.Firestore,
   collection: T,
 ): Repository<T, PlainModel<T>, Env> =>
-  newRepositoryWithMapper(db, collection, plainMapper(collection));
+  repositoryWithMapper(db, collection, plainMapper(collection));
 
 /** Creates a repository with a custom mapper for transforming between Firestore documents and application models */
-export const newRepositoryWithMapper = <T extends Collection, Model extends AppModel>(
+export const repositoryWithMapper = <T extends Collection, Model extends AppModel>(
   db: firestore.Firestore,
   collection: T,
   mapper: Mapper<T, Model>,

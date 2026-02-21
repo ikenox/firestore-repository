@@ -9,7 +9,7 @@ import { type PlainModel, plainMapper } from 'firestore-repository/repository';
 import type { Doc } from 'firestore-repository/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { type Env, type GoogleCloudFirestoreRepository, newRepositoryWithMapper } from './index.js';
+import { type Env, type GoogleCloudFirestoreRepository, repositoryWithMapper } from './index.js';
 import { offset } from './query.js';
 import { wrap } from './value.js';
 
@@ -22,7 +22,7 @@ describe('repository', async () => {
   const createRepository: Parameters<
     typeof defineRepositorySpecificationTests<Env>
   >[0]['createRepository'] = (collection) =>
-    newRepositoryWithMapper(db, collection, plainMapper(collection));
+    repositoryWithMapper(db, collection, plainMapper(collection));
   const dbOps: Parameters<typeof defineRepositorySpecificationTests<Env>>[0]['db'] = {
     writeBatch: () => db.batch(),
     transaction: (runner) => db.runTransaction(runner),
@@ -143,7 +143,7 @@ describe('repository', async () => {
 
   describe('query', () => {
     const coll = uniqueCollection(authorsCollection);
-    const repository = newRepositoryWithMapper(db, coll, plainMapper(coll));
+    const repository = repositoryWithMapper(db, coll, plainMapper(coll));
     const items = [
       {
         ref: ['1'],
