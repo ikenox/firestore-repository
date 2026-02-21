@@ -99,8 +99,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   collection: T,
   mapper: Mapper<T, Model>,
 ): GoogleCloudFirestoreRepository<T, Model> => {
-  const { toFirestore, fromFirestore, batchWriteOperation, deserializer, serializer } =
-    buildFirestoreUtilities(db, collection);
+  const { toFirestore, fromFirestore, batchWriteOperation } = buildFirestoreUtilities(
+    db,
+    collection,
+  );
+  const serializer = createPlatformValueSerializer(db);
+  const deserializer = platformValueDeserializer;
 
   return {
     collection,
@@ -378,46 +382,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     }
   };
 
-  const deserializer: PlatformValueDeserializer = {
-    timestamp: (ts) => {
-      if (ts instanceof FirestoreTimestamp) {
-        return ts.toDate();
-      }
-      return throwTypeMismatchError(FirestoreTimestamp, ts);
-    },
-    bytes: (bytes) => {
-      if (bytes instanceof Buffer) {
-        return bytes;
-      }
-      return throwTypeMismatchError(Buffer, bytes);
-    },
-    documentReference: (ref) => {
-      if (ref instanceof FirestoreDocumentReference) {
-        return { path: ref.path };
-      }
-      return throwTypeMismatchError(FirestoreDocumentReference, ref);
-    },
-    geoPoint: (gp) => {
-      if (gp instanceof FirestoreGeoPoint) {
-        return { latitude: gp.latitude, longitude: gp.longitude };
-      }
-      return throwTypeMismatchError(FirestoreGeoPoint, gp);
-    },
-    vectorValue: (vv) => {
-      if (vv instanceof FirestoreVectorValue) {
-        return vv.toArray();
-      }
-      return throwTypeMismatchError(FirestoreVectorValue, vv);
-    },
-  };
-
-  return {
-    fromFirestore,
-    toFirestore,
-    batchWriteOperation,
-    deserializer,
-    serializer: createPlatformValueSerializer(db),
-  };
+  return { fromFirestore, toFirestore, batchWriteOperation };
 };
 
 // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
@@ -435,3 +400,36 @@ export const createPlatformValueSerializer = (
   arrayRemove: (...elements) => FieldValue.arrayRemove(...elements) as unknown as ArrayRemove,
 });
 // oxlint-enable typescript/no-unsafe-type-assertion
+
+export const platformValueDeserializer: PlatformValueDeserializer = {
+  timestamp: (ts) => {
+    if (ts instanceof FirestoreTimestamp) {
+      return ts.toDate();
+    }
+    return throwTypeMismatchError(FirestoreTimestamp, ts);
+  },
+  bytes: (bytes) => {
+    if (bytes instanceof Buffer) {
+      return bytes;
+    }
+    return throwTypeMismatchError(Buffer, bytes);
+  },
+  documentReference: (ref) => {
+    if (ref instanceof FirestoreDocumentReference) {
+      return { path: ref.path };
+    }
+    return throwTypeMismatchError(FirestoreDocumentReference, ref);
+  },
+  geoPoint: (gp) => {
+    if (gp instanceof FirestoreGeoPoint) {
+      return { latitude: gp.latitude, longitude: gp.longitude };
+    }
+    return throwTypeMismatchError(FirestoreGeoPoint, gp);
+  },
+  vectorValue: (vv) => {
+    if (vv instanceof FirestoreVectorValue) {
+      return vv.toArray();
+    }
+    return throwTypeMismatchError(FirestoreVectorValue, vv);
+  },
+};
