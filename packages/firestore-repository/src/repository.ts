@@ -84,11 +84,16 @@ export interface Repository<
 /** A mapper that converts between Firestore documents and application models */
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
-  fromFirestore: (doc: Doc<T>, deserializer: Deserializer) => Model['read'];
-  toFirestore: (model: Model['write'], serializer: Serializer) => DocToWrite<T>;
+  fromFirestore: (doc: Doc<T>, deserializer: PlatformValueDeserializer) => Model['read'];
+  toFirestore: (model: Model['write'], serializer: PlatformValueSerializer) => DocToWrite<T>;
 };
 
-export type Deserializer = {
+/**
+ * Converts platform-specific Firestore value types into plain JavaScript values.
+ * Used when reading documents from Firestore to transform SDK types (Timestamp, Bytes, etc.)
+ * into application-friendly types (Date, ArrayBuffer, etc.).
+ */
+export type PlatformValueDeserializer = {
   timestamp: (timestamp: Timestamp) => Date;
   bytes: (bytes: Bytes) => ArrayBuffer;
   documentReference: (docRef: DocumentReference) => DeserializedDocumentReference;
@@ -96,7 +101,12 @@ export type Deserializer = {
   vectorValue: (vectorValue: VectorValue) => DeserializedVectorValue;
 };
 
-export type Serializer = {
+/**
+ * Converts plain JavaScript values into platform-specific Firestore value types.
+ * Used when writing documents to Firestore to transform application values into SDK types.
+ * Also provides special write-only sentinel values (serverTimestamp, increment, etc.).
+ */
+export type PlatformValueSerializer = {
   timestamp: (date: Date) => Timestamp;
   bytes: (bytes: ArrayBuffer) => Bytes;
   documentReference: (docRef: DeserializedDocumentReference) => DocumentReference;

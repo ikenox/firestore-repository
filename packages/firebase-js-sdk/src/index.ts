@@ -68,8 +68,8 @@ import {
   rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
-  type Deserializer,
-  type Serializer,
+  type PlatformValueDeserializer,
+  type PlatformValueSerializer,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
 import type {
@@ -379,7 +379,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
     }
   };
 
-  const deserializer: Deserializer = {
+  const deserializer: PlatformValueDeserializer = {
     timestamp: (ts) => {
       if (!(ts instanceof FirestoreTimestamp)) {
         throw new TypeError('Expected Timestamp');
@@ -417,7 +417,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
   };
 
   // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
-  const serializer: Serializer = {
+  const serializer: PlatformValueSerializer = {
     timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
     bytes: (bytes) => FirestoreBytes.fromUint8Array(new Uint8Array(bytes)) as unknown as Bytes,
     documentReference: (docRef) => doc(db, docRef.path) as unknown as DocumentReference,
