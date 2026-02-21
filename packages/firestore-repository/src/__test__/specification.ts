@@ -10,8 +10,8 @@ import type {
   VectorValue,
 } from '../document.js';
 import {
-  condition as $,
   and,
+  condition as $,
   endAt,
   endBefore,
   type FilterExpression,
@@ -24,7 +24,14 @@ import {
   startAfter,
   startAt,
 } from '../query.js';
-import type { FirestoreEnvironment, PlainRepository } from '../repository.js';
+import type {
+  AppModel,
+  FirestoreEnvironment,
+  Mapper,
+  PlainRepository,
+  PlatformValueSerializer,
+  Repository,
+} from '../repository.js';
 import {
   type Collection,
   type Doc,
@@ -69,21 +76,20 @@ export const postsCollection = subCollection({
 export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
-  types,
+  createRepositoryWithMapper,
+  serializer,
   implementationSpecificTests,
 }: {
   createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
+  createRepositoryWithMapper: <T extends Collection, Model extends AppModel>(
+    collection: T,
+    mapper: Mapper<T, Model>,
+  ) => Repository<T, Model, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
   };
-  types: {
-    timestamp: (date: Date) => Timestamp;
-    geoPoint: (latitude: number, longitude: number) => GeoPoint;
-    bytes: (value: number[]) => Bytes;
-    vector: (values: number[]) => VectorValue;
-    documentReference: (path: string) => DocumentReference;
-  };
+  serializer: PlatformValueSerializer;
   implementationSpecificTests?: <T extends Collection>(
     params: TestCollectionParams<T>,
     setup: () => RepositoryTestEnv<T, Env>,
@@ -478,7 +484,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const authorId = baseId++;
         return {
           ref: [`author${authorId}`, `${id}`],
-          data: { title: `post${id}`, postedAt: types.timestamp(new Date()) },
+          data: { title: `post${id}`, postedAt: serializer.timestamp(new Date()) },
         };
       },
       mutate: (data) => ({
@@ -921,15 +927,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           items: [
             {
               ref: ['author1', '1'],
-              data: { title: 'post1', postedAt: types.timestamp(new Date('2020-02-01')) },
+              data: { title: 'post1', postedAt: serializer.timestamp(new Date('2020-02-01')) },
             },
             {
               ref: ['author1', '2'],
-              data: { title: 'post2', postedAt: types.timestamp(new Date('2020-01-01')) },
+              data: { title: 'post2', postedAt: serializer.timestamp(new Date('2020-01-01')) },
             },
             {
               ref: ['author2', '3'],
-              data: { title: 'post3', postedAt: types.timestamp(new Date('2020-03-01')) },
+              data: { title: 'post3', postedAt: serializer.timestamp(new Date('2020-03-01')) },
             },
           ],
         });
@@ -998,15 +1004,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           data: {
             array: [1, 2, 'foo', 3, 'bar'],
             boolean: false,
-            bytes: types.bytes([1, 2, 3, 4, 5]),
-            timestamp: types.timestamp(new Date()),
+            bytes: serializer.bytes(Uint8Array.from([1, 2, 3, 4, 5])),
+            timestamp: serializer.timestamp(new Date()),
             number: randomNumber(),
-            getPoint: types.geoPoint(12.3, 45.6),
+            getPoint: serializer.geoPoint({ latitude: 12.3, longitude: 45.6 }),
             map: { a: 123, b: ['foo', 'bar'] },
             null: null,
-            docRef: types.documentReference('foo/a/bar/b'),
+            docRef: serializer.documentReference({ path: 'foo/a/bar/b' }),
             string: randomString(),
-            vector: types.vector([1, 2, 3, 4, 5]),
+            vector: serializer.vectorValue([1, 2, 3, 4, 5]),
           },
         };
         await repository.set(value);
@@ -1029,6 +1035,213 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
         // @ts-expect-error -- Some private field values of DocumentReference will be different
         expect(dbDocRef.path).toStrictEqual(docRef.path);
+      });
+    });
+
+    describe('custom mapper with serializer/deserializer', () => {
+      // Define a collection with Firestore types
+      const testCollection = rootCollection({
+        name: `CustomMapperTest_${randomString()}`,
+        data: schemaWithoutValidation<{
+          createdAt: Timestamp;
+          location: GeoPoint;
+          content: Bytes;
+        }>(),
+      });
+
+      // Define an application model with plain JavaScript types
+      type AppModel = {
+        id: string;
+        read: {
+          id: string;
+          createdAt: Date;
+          location: { lat: number; lng: number };
+          content: Uint8Array;
+        };
+        write: {
+          id: string;
+          createdAt: Date;
+          location: { lat: number; lng: number };
+          content: Uint8Array;
+        };
+      };
+
+      it('serialize/deserialize platform-specific types', async () => {
+        const repository = createRepositoryWithMapper<typeof testCollection, AppModel>(
+          testCollection,
+          {
+            toDocRef: (id) => [id],
+            fromFirestore: (doc, deserializer) => ({
+              id: doc.ref[0],
+              createdAt: deserializer.timestamp(doc.data.createdAt),
+              location: {
+                lat: deserializer.geoPoint(doc.data.location).latitude,
+                lng: deserializer.geoPoint(doc.data.location).longitude,
+              },
+              content: deserializer.bytes(doc.data.content),
+            }),
+            toFirestore: (model, serializer) => ({
+              ref: [model.id],
+              data: {
+                createdAt: serializer.timestamp(model.createdAt),
+                location: serializer.geoPoint({
+                  latitude: model.location.lat,
+                  longitude: model.location.lng,
+                }),
+                content: serializer.bytes(model.content),
+              },
+            }),
+          },
+        );
+
+        const testDate = new Date('2024-01-01T00:00:00Z');
+        const testBuffer = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+
+        const appData: AppModel['write'] = {
+          id: randomString(),
+          createdAt: testDate,
+          location: { lat: 35.6812, lng: 139.7671 },
+          content: testBuffer,
+        };
+
+        // Set using application model
+        await repository.set(appData);
+
+        // Get and verify deserialization
+        const retrieved = await repository.get(appData.id);
+        assert(retrieved);
+
+        expect(retrieved.id).toBe(appData.id);
+        expect(retrieved.createdAt).toBeInstanceOf(Date);
+        expect(retrieved.createdAt.getTime()).toBe(testDate.getTime());
+        expect(retrieved.location).toStrictEqual({ lat: 35.6812, lng: 139.7671 });
+        expect(new Uint8Array(retrieved.content)).toStrictEqual(
+          new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+        );
+      });
+
+      describe('sentinel values', () => {
+        const sentinelCollection = rootCollection({
+          name: `SentinelTest_${randomString()}`,
+          data: schemaWithoutValidation<{
+            updatedAt: Timestamp;
+            counter: number;
+            tags: string[];
+          }>(),
+        });
+
+        type SentinelAppModel = {
+          id: string;
+          read: { id: string; updatedAt: Date; counter: number; tags: string[] };
+          write: {
+            id: string;
+            updatedAt: Date | 'serverTimestamp';
+            counter: number | { increment: number };
+            tags: string[] | { arrayUnion: string[] } | { arrayRemove: string[] };
+          };
+        };
+
+        const repository = createRepositoryWithMapper<typeof sentinelCollection, SentinelAppModel>(
+          sentinelCollection,
+          {
+            toDocRef: (id) => [id],
+            fromFirestore: (doc, deserializer) => ({
+              id: doc.ref[0],
+              updatedAt: deserializer.timestamp(doc.data.updatedAt),
+              counter: doc.data.counter,
+              tags: doc.data.tags,
+            }),
+            toFirestore: (model, serializer) => ({
+              ref: [model.id],
+              data: {
+                updatedAt:
+                  model.updatedAt === 'serverTimestamp'
+                    ? serializer.serverTimestamp()
+                    : serializer.timestamp(model.updatedAt),
+                counter:
+                  typeof model.counter === 'object' && 'increment' in model.counter
+                    ? serializer.increment(model.counter.increment)
+                    : model.counter,
+                tags: Array.isArray(model.tags)
+                  ? model.tags
+                  : 'arrayUnion' in model.tags
+                    ? serializer.arrayUnion(...model.tags.arrayUnion)
+                    : serializer.arrayRemove(...model.tags.arrayRemove),
+              },
+            }),
+          },
+        );
+
+        it('serverTimestamp', async () => {
+          const id = randomString();
+
+          const now = Date.now();
+          await repository.set({ id, updatedAt: 'serverTimestamp', counter: 1, tags: [] });
+
+          const doc = await repository.get(id);
+          assert(doc);
+          expect(doc.updatedAt.getTime()).toBeGreaterThanOrEqual(now - 1000);
+          expect(doc.updatedAt.getTime()).toBeLessThanOrEqual(now + 1000);
+        });
+
+        it('increment', async () => {
+          const id = randomString();
+
+          // Verify increment works with set() without runtime error
+          await repository.set({ id, updatedAt: new Date(), counter: { increment: 5 }, tags: [] });
+
+          const doc = await repository.get(id);
+          assert(doc);
+          // increment with set() creates a new value (not adding to existing)
+          expect(doc.counter).toBe(5);
+
+          // TODO: Test increment behavior with update/merge operation
+          // Currently only testing that set() doesn't throw and overwrites with the increment value
+        });
+
+        it('arrayUnion', async () => {
+          const id = randomString();
+
+          // Verify arrayUnion works with set() without runtime error
+          await repository.set({
+            id,
+            updatedAt: new Date(),
+            counter: 0,
+            tags: { arrayUnion: ['tag1', 'tag2'] },
+          });
+
+          const doc = await repository.get(id);
+          assert(doc);
+          // arrayUnion with set() creates a new array (not merging with existing)
+          expect(doc.tags).toEqual(expect.arrayContaining(['tag1', 'tag2']));
+
+          // TODO: Test arrayUnion merge behavior with update/merge operation
+          // Currently only testing that set() doesn't throw and overwrites with the union values
+        });
+
+        it('arrayRemove', async () => {
+          const id = randomString();
+
+          // First create a document with some tags
+          await repository.set({ id, updatedAt: new Date(), counter: 0, tags: ['tag1', 'tag2'] });
+
+          // Verify arrayRemove works with set() without runtime error
+          await repository.set({
+            id,
+            updatedAt: new Date(),
+            counter: 0,
+            tags: { arrayRemove: ['tag1'] },
+          });
+
+          const doc = await repository.get(id);
+          assert(doc);
+          // arrayRemove with set() replaces the array (behavior depends on implementation)
+          // Just verify no runtime error occurred
+          expect(doc.tags).toBeDefined();
+
+          // TODO: Test arrayRemove merge behavior with update/merge operation
+          // Currently only testing that set() doesn't throw and overwrites the array
+        });
       });
     });
   });

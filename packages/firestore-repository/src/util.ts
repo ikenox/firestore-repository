@@ -6,6 +6,13 @@ export const assertNever = (x: never): never => {
   throw new Error(`Unreachable code reached with: ${x}`);
 };
 
+export const throwTypeMismatchError = (
+  expected: { constructor: { name: string } },
+  got: { constructor: { name: string } },
+): never => {
+  throw new TypeError(`Expected type ${expected.constructor.name} but got ${got.constructor.name}`);
+};
+
 /**
  * Checks type-level equality
  */

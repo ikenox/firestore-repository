@@ -241,8 +241,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
     const userMapper: Mapper<UsersCollection, AppModel<string, User, User>> = {
       toDocRef: (id) => [id],
-      fromFirestore: (doc) => ({ id: doc.ref[0], ...doc.data }),
-      toFirestore: (user) => ({
+      fromFirestore: (doc, _deserializer) => ({ id: doc.ref[0], ...doc.data }),
+      toFirestore: (user, _serializer) => ({
         ref: [user.id],
         data: { name: user.name, profile: user.profile, tag: user.tag },
       }),

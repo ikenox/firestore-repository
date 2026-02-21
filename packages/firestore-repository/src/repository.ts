@@ -1,5 +1,19 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
-import type { WriteDocumentData } from './document.js';
+import type {
+  ArrayRemove,
+  ArrayUnion,
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Increment,
+  ServerTimestamp,
+  Timestamp,
+  DeserializedDocumentReference,
+  DeserializedGeoPoint,
+  DeserializedVectorValue,
+  VectorValue,
+  WriteDocumentData,
+} from './document.js';
 import type { Query } from './query.js';
 import type { Collection, Doc, DocData, DocRef, DocToWrite, RootCollection } from './schema.js';
 
@@ -70,8 +84,38 @@ export interface Repository<
 /** A mapper that converts between Firestore documents and application models */
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
-  fromFirestore: (doc: Doc<T>) => Model['read'];
-  toFirestore: (model: Model['write']) => DocToWrite<T>;
+  fromFirestore: (doc: Doc<T>, deserializer: PlatformValueDeserializer) => Model['read'];
+  toFirestore: (model: Model['write'], serializer: PlatformValueSerializer) => DocToWrite<T>;
+};
+
+/**
+ * Converts platform-specific Firestore value types into plain JavaScript values.
+ * Used when reading documents from Firestore to transform SDK types (Timestamp, Bytes, etc.)
+ * into application-friendly types (Date, ArrayBuffer, etc.).
+ */
+export type PlatformValueDeserializer = {
+  timestamp: (timestamp: Timestamp) => Date;
+  bytes: (bytes: Bytes) => Uint8Array;
+  documentReference: (docRef: DocumentReference) => DeserializedDocumentReference;
+  geoPoint: (geoPoint: GeoPoint) => DeserializedGeoPoint;
+  vectorValue: (vectorValue: VectorValue) => DeserializedVectorValue;
+};
+
+/**
+ * Converts plain JavaScript values into platform-specific Firestore value types.
+ * Used when writing documents to Firestore to transform application values into SDK types.
+ * Also provides special write-only sentinel values (serverTimestamp, increment, etc.).
+ */
+export type PlatformValueSerializer = {
+  timestamp: (date: Date) => Timestamp;
+  bytes: (bytes: Uint8Array) => Bytes;
+  documentReference: (docRef: DeserializedDocumentReference) => DocumentReference;
+  geoPoint: (geoPoint: DeserializedGeoPoint) => GeoPoint;
+  vectorValue: (vectorValue: DeserializedVectorValue) => VectorValue;
+  serverTimestamp: () => ServerTimestamp;
+  increment: (n: number) => Increment;
+  arrayUnion: (...elements: unknown[]) => ArrayUnion;
+  arrayRemove: (...elements: unknown[]) => ArrayRemove;
 };
 
 /** An application model type definition with id, read, and write shapes */

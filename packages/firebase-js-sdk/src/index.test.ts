@@ -1,21 +1,15 @@
 import { initializeApp } from '@firebase/app';
 import {
-  Bytes,
   connectFirestoreEmulator,
-  doc,
-  GeoPoint,
   getFirestore,
   runTransaction,
-  Timestamp,
-  vector,
   writeBatch,
 } from '@firebase/firestore';
 import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
 import { plainMapper } from 'firestore-repository/repository';
 import { describe } from 'vitest';
 
-import { type Env, repositoryWithMapper } from './index.js';
-import { wrap } from './value.js';
+import { createPlatformValueSerializer, type Env, repositoryWithMapper } from './index.js';
 
 describe('repository', async () => {
   const db = getFirestore(
@@ -40,13 +34,9 @@ describe('repository', async () => {
 
   defineRepositorySpecificationTests<Env>({
     createRepository,
-    types: {
-      timestamp: (date) => wrap(Timestamp.fromDate(date)),
-      geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
-      bytes: (bytes) => wrap(Bytes.fromUint8Array(Uint8Array.from(bytes))),
-      vector: (value) => wrap(vector(value)),
-      documentReference: (path) => wrap(doc(db, path)),
-    },
+    createRepositoryWithMapper: (collection, mapper) =>
+      repositoryWithMapper(db, collection, mapper),
     db: dbOps,
+    serializer: createPlatformValueSerializer(db),
   });
 });

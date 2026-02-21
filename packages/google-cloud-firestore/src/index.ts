@@ -1,6 +1,26 @@
 import type * as firestore from '@google-cloud/firestore';
-import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
+import {
+  AggregateField,
+  DocumentReference as FirestoreDocumentReference,
+  FieldValue,
+  Filter,
+  GeoPoint as FirestoreGeoPoint,
+  Timestamp as FirestoreTimestamp,
+  Transaction,
+  VectorValue as FirestoreVectorValue,
+} from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
+import type {
+  ArrayRemove,
+  ArrayUnion,
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Increment,
+  ServerTimestamp,
+  Timestamp,
+  VectorValue,
+} from 'firestore-repository/document';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import {
@@ -13,6 +33,8 @@ import {
   rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
+  type PlatformValueDeserializer,
+  type PlatformValueSerializer,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
 import type {
@@ -23,7 +45,7 @@ import type {
   RootCollection,
   SubCollection,
 } from 'firestore-repository/schema';
-import { assertNever } from 'firestore-repository/util';
+import { assertNever, throwTypeMismatchError } from 'firestore-repository/util';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -81,6 +103,8 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     db,
     collection,
   );
+  const serializer = createPlatformValueSerializer(db);
+  const deserializer = platformValueDeserializer;
 
   return {
     collection,
@@ -95,7 +119,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       if (!doc) {
         return undefined;
       }
-      return mapper.fromFirestore(doc);
+      return mapper.fromFirestore(doc, deserializer);
     },
 
     getOnSnapshot: (
@@ -106,14 +130,16 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const docRef = toFirestore.docRef(mapper.toDocRef(ref));
       return docRef.onSnapshot((snapshot) => {
         const doc = fromFirestore.document(snapshot);
-        next(doc ? mapper.fromFirestore(doc) : undefined);
+        next(doc ? mapper.fromFirestore(doc, deserializer) : undefined);
       }, error);
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
       const firestoreQuery = toFirestore.query(query);
       const { docs } = await firestoreQuery.get();
-      return docs.values().map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
+      return docs
+        .values()
+        .map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc), deserializer));
     },
 
     listOnSnapshot: (
@@ -124,7 +150,9 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const firestoreQuery = toFirestore.query(query);
       return firestoreQuery.onSnapshot((snapshot) => {
         next(
-          snapshot.docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
+          snapshot.docs.map((doc) =>
+            mapper.fromFirestore(fromFirestore.documentMustExist(doc), deserializer),
+          ),
         );
       }, error);
     },
@@ -157,7 +185,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model);
+      const docToWrite = mapper.toFirestore(model, serializer);
       const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx.create(docRef, docToWrite.data)
@@ -165,7 +193,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model);
+      const docToWrite = mapper.toFirestore(model, serializer);
       const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -190,7 +218,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const docs = await (options?.tx ? options.tx.getAll(...docRefs) : db.getAll(...docRefs));
       return docs.map((doc) => {
         const d = fromFirestore.document(doc);
-        return d ? mapper.fromFirestore(d) : undefined;
+        return d ? mapper.fromFirestore(d, deserializer) : undefined;
       });
     },
 
@@ -198,7 +226,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map(mapper.toFirestore);
+      const docs = models.map((m) => mapper.toFirestore(m, serializer));
       await batchWriteOperation(
         docs,
         {
@@ -213,7 +241,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map(mapper.toFirestore);
+      const docs = models.map((m) => mapper.toFirestore(m, serializer));
       await batchWriteOperation(
         docs,
         {
@@ -355,4 +383,53 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
   };
 
   return { fromFirestore, toFirestore, batchWriteOperation };
+};
+
+// oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
+export const createPlatformValueSerializer = (
+  db: firestore.Firestore,
+): PlatformValueSerializer => ({
+  timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
+  bytes: (bytes) => Buffer.from(bytes) as unknown as Bytes,
+  documentReference: (docRef) => db.doc(docRef.path) as unknown as DocumentReference,
+  geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
+  vectorValue: (vv) => FieldValue.vector(vv) as unknown as VectorValue,
+  serverTimestamp: () => FieldValue.serverTimestamp() as unknown as ServerTimestamp,
+  increment: (n) => FieldValue.increment(n) as unknown as Increment,
+  arrayUnion: (...elements) => FieldValue.arrayUnion(...elements) as unknown as ArrayUnion,
+  arrayRemove: (...elements) => FieldValue.arrayRemove(...elements) as unknown as ArrayRemove,
+});
+// oxlint-enable typescript/no-unsafe-type-assertion
+
+export const platformValueDeserializer: PlatformValueDeserializer = {
+  timestamp: (ts) => {
+    if (ts instanceof FirestoreTimestamp) {
+      return ts.toDate();
+    }
+    return throwTypeMismatchError(FirestoreTimestamp, ts);
+  },
+  bytes: (bytes) => {
+    if (bytes instanceof Buffer) {
+      return bytes;
+    }
+    return throwTypeMismatchError(Buffer, bytes);
+  },
+  documentReference: (ref) => {
+    if (ref instanceof FirestoreDocumentReference) {
+      return { path: ref.path };
+    }
+    return throwTypeMismatchError(FirestoreDocumentReference, ref);
+  },
+  geoPoint: (gp) => {
+    if (gp instanceof FirestoreGeoPoint) {
+      return { latitude: gp.latitude, longitude: gp.longitude };
+    }
+    return throwTypeMismatchError(FirestoreGeoPoint, gp);
+  },
+  vectorValue: (vv) => {
+    if (vv instanceof FirestoreVectorValue) {
+      return vv.toArray();
+    }
+    return throwTypeMismatchError(FirestoreVectorValue, vv);
+  },
 };
