@@ -10,8 +10,8 @@ import type {
   VectorValue,
 } from '../document.js';
 import {
-  condition as $,
   and,
+  condition as $,
   endAt,
   endBefore,
   type FilterExpression,
@@ -1061,13 +1061,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           id: string;
           createdAt: Date;
           location: { lat: number; lng: number };
-          content: ArrayBuffer;
+          content: Uint8Array;
         };
         write: {
           id: string;
           createdAt: Date;
           location: { lat: number; lng: number };
-          content: ArrayBuffer;
+          content: Uint8Array;
         };
       };
 
@@ -1100,8 +1100,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         );
 
         const testDate = new Date('2024-01-01T00:00:00Z');
-        const testBuffer = new ArrayBuffer(8);
-        new Uint8Array(testBuffer).set([1, 2, 3, 4, 5, 6, 7, 8]);
+        const testBuffer = new Uint8Array(new ArrayBuffer(8));
+        testBuffer.set([1, 2, 3, 4, 5, 6, 7, 8]);
 
         const appData: AppModel['write'] = {
           id: randomString(),

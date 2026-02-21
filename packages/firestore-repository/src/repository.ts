@@ -95,7 +95,7 @@ export type Mapper<T extends Collection = Collection, Model extends AppModel = A
  */
 export type PlatformValueDeserializer = {
   timestamp: (timestamp: Timestamp) => Date;
-  bytes: (bytes: Bytes) => ArrayBuffer;
+  bytes: (bytes: Bytes) => Uint8Array;
   documentReference: (docRef: DocumentReference) => DeserializedDocumentReference;
   geoPoint: (geoPoint: GeoPoint) => DeserializedGeoPoint;
   vectorValue: (vectorValue: VectorValue) => DeserializedVectorValue;
@@ -108,7 +108,7 @@ export type PlatformValueDeserializer = {
  */
 export type PlatformValueSerializer = {
   timestamp: (date: Date) => Timestamp;
-  bytes: (bytes: ArrayBuffer) => Bytes;
+  bytes: (bytes: Uint8Array) => Bytes;
   documentReference: (docRef: DeserializedDocumentReference) => DocumentReference;
   geoPoint: (geoPoint: DeserializedGeoPoint) => GeoPoint;
   vectorValue: (vectorValue: DeserializedVectorValue) => VectorValue;

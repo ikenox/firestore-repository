@@ -45,7 +45,7 @@ import type {
   RootCollection,
   SubCollection,
 } from 'firestore-repository/schema';
-import { assertNever } from 'firestore-repository/util';
+import { assertNever, throwTypeMismatchError } from 'firestore-repository/util';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -380,38 +380,34 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
 
   const deserializer: PlatformValueDeserializer = {
     timestamp: (ts) => {
-      if (!(ts instanceof FirestoreTimestamp)) {
-        throw new TypeError('Expected Timestamp');
+      if (ts instanceof FirestoreTimestamp) {
+        return ts.toDate();
       }
-      return ts.toDate();
+      return throwTypeMismatchError(FirestoreTimestamp, ts);
     },
     bytes: (bytes) => {
-      if (!(bytes instanceof Buffer)) {
-        throw new TypeError('Expected Buffer');
+      if (bytes instanceof Buffer) {
+        return bytes;
       }
-      const { buffer, byteOffset, byteLength } = bytes;
-      if (!(buffer instanceof ArrayBuffer)) {
-        throw new TypeError('Expected ArrayBuffer');
-      }
-      return buffer.slice(byteOffset, byteOffset + byteLength);
+      return throwTypeMismatchError(Buffer, bytes);
     },
     documentReference: (ref) => {
-      if (!(ref instanceof FirestoreDocumentReference)) {
-        throw new TypeError('Expected DocumentReference');
+      if (ref instanceof FirestoreDocumentReference) {
+        return { path: ref.path };
       }
-      return { path: ref.path };
+      return throwTypeMismatchError(FirestoreDocumentReference, ref);
     },
     geoPoint: (gp) => {
-      if (!(gp instanceof FirestoreGeoPoint)) {
-        throw new TypeError('Expected GeoPoint');
+      if (gp instanceof FirestoreGeoPoint) {
+        return { latitude: gp.latitude, longitude: gp.longitude };
       }
-      return { latitude: gp.latitude, longitude: gp.longitude };
+      return throwTypeMismatchError(FirestoreGeoPoint, gp);
     },
     vectorValue: (vv) => {
-      if (!(vv instanceof FirestoreVectorValue)) {
-        throw new TypeError('Expected VectorValue');
+      if (vv instanceof FirestoreVectorValue) {
+        return vv.toArray();
       }
-      return vv.toArray();
+      return throwTypeMismatchError(FirestoreVectorValue, vv);
     },
   };
 
