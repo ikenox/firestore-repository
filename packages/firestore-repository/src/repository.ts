@@ -8,9 +8,9 @@ import type {
   Increment,
   ServerTimestamp,
   Timestamp,
-  UnwrappedDocumentReference,
-  UnwrappedGeoPoint,
-  UnwrappedVectorValue,
+  DeserializedDocumentReference,
+  DeserializedGeoPoint,
+  DeserializedVectorValue,
   VectorValue,
   WriteDocumentData,
 } from './document.js';
@@ -91,17 +91,17 @@ export type Mapper<T extends Collection = Collection, Model extends AppModel = A
 export type Deserializer = {
   timestamp: (timestamp: Timestamp) => Date;
   bytes: (bytes: Bytes) => ArrayBuffer;
-  documentReference: (docRef: DocumentReference) => UnwrappedDocumentReference;
-  geoPoint: (geoPoint: GeoPoint) => UnwrappedGeoPoint;
-  vectorValue: (vectorValue: VectorValue) => UnwrappedVectorValue;
+  documentReference: (docRef: DocumentReference) => DeserializedDocumentReference;
+  geoPoint: (geoPoint: GeoPoint) => DeserializedGeoPoint;
+  vectorValue: (vectorValue: VectorValue) => DeserializedVectorValue;
 };
 
 export type Serializer = {
   timestamp: (date: Date) => Timestamp;
   bytes: (bytes: ArrayBuffer) => Bytes;
-  documentReference: (docRef: UnwrappedDocumentReference) => DocumentReference;
-  geoPoint: (geoPoint: UnwrappedGeoPoint) => GeoPoint;
-  vectorValue: (vectorValue: UnwrappedVectorValue) => VectorValue;
+  documentReference: (docRef: DeserializedDocumentReference) => DocumentReference;
+  geoPoint: (geoPoint: DeserializedGeoPoint) => GeoPoint;
+  vectorValue: (vectorValue: DeserializedVectorValue) => VectorValue;
   serverTimestamp: () => ServerTimestamp;
   increment: (n: number) => Increment;
   arrayUnion: (...elements: unknown[]) => ArrayUnion;
