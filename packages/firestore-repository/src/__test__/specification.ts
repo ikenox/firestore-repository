@@ -1182,7 +1182,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         // Test serverTimestamp
         const beforeWrite = new Date();
-        await repository.set({ id, updatedAt: 'serverTimestamp', counter: 0, tags: [] });
+        await repository.set({ id, updatedAt: 'serverTimestamp', counter: 1, tags: [] });
         const afterWrite = new Date();
 
         const doc1 = await repository.get(id);
@@ -1190,16 +1190,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         expect(doc1.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeWrite.getTime());
         expect(doc1.updatedAt.getTime()).toBeLessThanOrEqual(afterWrite.getTime());
 
-        // Test increment
-        await repository.set({ id, updatedAt: new Date(), counter: { increment: 5 }, tags: [] });
-        const doc2 = await repository.get(id);
-        assert(doc2);
-        expect(doc2.counter).toBe(5);
-
-        // TODO: Test arrayUnion and arrayRemove
-        // These sentinel values require update/merge operation which doesn't exist in Repository interface.
-        // repository.set() replaces the entire document, so multiple calls with arrayUnion/arrayRemove
-        // don't accumulate values as expected.
+        // TODO: Test increment, arrayUnion, and arrayRemove
+        // These sentinel values require update/merge operation to work correctly with existing data.
+        // repository.set() replaces the entire document, so:
+        // - increment creates a new value instead of adding to existing value
+        // - arrayUnion/arrayRemove don't merge with existing arrays across multiple set() calls
       });
     });
   });
