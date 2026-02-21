@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { type Env, type GoogleCloudFirestoreRepository, repositoryWithMapper } from './index.js';
 import { offset } from './query.js';
-import { wrap } from './value.js';
+import { serialize } from './value.js';
 
 describe('repository', async () => {
   const db = new Firestore({
@@ -31,11 +31,11 @@ describe('repository', async () => {
   defineRepositorySpecificationTests<Env>({
     createRepository,
     types: {
-      timestamp: (date) => wrap(Timestamp.fromDate(date)),
-      geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
-      bytes: (bytes) => wrap(Buffer.from(bytes)),
-      vector: (value) => wrap(FieldValue.vector(value)),
-      documentReference: (path) => wrap(db.doc(path)),
+      timestamp: (date) => serialize(Timestamp.fromDate(date)),
+      geoPoint: (latitude, longitude) => serialize(new GeoPoint(latitude, longitude)),
+      bytes: (bytes) => serialize(Buffer.from(bytes)),
+      vector: (value) => serialize(FieldValue.vector(value)),
+      documentReference: (path) => serialize(db.doc(path)),
     },
     db: dbOps,
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {

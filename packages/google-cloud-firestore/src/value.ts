@@ -7,13 +7,13 @@ import type {
   VectorValue,
 } from 'firestore-repository/document';
 
-/** Wraps a Google Cloud Firestore value type into its platform-agnostic branded type */
-export function wrap(v: firestore.Timestamp): Timestamp;
-export function wrap(v: firestore.GeoPoint): GeoPoint;
-export function wrap(v: firestore.DocumentReference): DocumentReference;
-export function wrap(v: firestore.VectorValue): VectorValue;
-export function wrap(v: Buffer): Bytes;
-export function wrap(
+/** Serializes a Google Cloud Firestore value type into its platform-agnostic branded type */
+export function serialize(v: firestore.Timestamp): Timestamp;
+export function serialize(v: firestore.GeoPoint): GeoPoint;
+export function serialize(v: firestore.DocumentReference): DocumentReference;
+export function serialize(v: firestore.VectorValue): VectorValue;
+export function serialize(v: Buffer): Bytes;
+export function serialize(
   v:
     | firestore.Timestamp
     | firestore.GeoPoint
@@ -25,13 +25,13 @@ export function wrap(
   return v;
 }
 
-/** Unwraps a platform-agnostic branded type back into its Google Cloud Firestore value type */
-export function unwrap(v: Timestamp): firestore.Timestamp;
-export function unwrap(v: GeoPoint): firestore.GeoPoint;
-export function unwrap(v: DocumentReference): firestore.DocumentReference;
-export function unwrap(v: VectorValue): firestore.VectorValue;
-export function unwrap(v: Bytes): Buffer;
-export function unwrap(
+/** Deserializes a platform-agnostic branded type back into its Google Cloud Firestore value type */
+export function deserialize(v: Timestamp): firestore.Timestamp;
+export function deserialize(v: GeoPoint): firestore.GeoPoint;
+export function deserialize(v: DocumentReference): firestore.DocumentReference;
+export function deserialize(v: VectorValue): firestore.VectorValue;
+export function deserialize(v: Bytes): Buffer;
+export function deserialize(
   v: Timestamp | GeoPoint | DocumentReference | VectorValue | Bytes,
 ):
   | firestore.Timestamp

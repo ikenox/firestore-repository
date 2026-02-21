@@ -68,8 +68,8 @@ import {
   rootCollectionPlainMapper,
   type TransactionOption,
   type Unsubscribe,
-  type Unwrapper,
-  type Wrapper,
+  type Deserializer,
+  type Serializer,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
 import type {
@@ -105,7 +105,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   collection: T,
   mapper: Mapper<T, Model>,
 ): Repository<T, Model, Env> => {
-  const { toFirestore, fromFirestore, batchWriteOperation, unwrapper, wrapper } =
+  const { toFirestore, fromFirestore, batchWriteOperation, deserializer, serializer } =
     buildFirestoreUtilities(db, collection);
 
   return {
@@ -121,7 +121,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       if (!doc) {
         return undefined;
       }
-      return mapper.fromFirestore(doc, unwrapper);
+      return mapper.fromFirestore(doc, deserializer);
     },
 
     getOnSnapshot: (
@@ -133,7 +133,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       return onSnapshot(docRef, {
         next: (snapshot) => {
           const doc = fromFirestore.document(snapshot);
-          next(doc ? mapper.fromFirestore(doc, unwrapper) : undefined);
+          next(doc ? mapper.fromFirestore(doc, deserializer) : undefined);
         },
         error: (e) => error?.(e),
       });
@@ -144,7 +144,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const { docs } = await getDocs(firestoreQueryObj);
       return docs
         .values()
-        .map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc), unwrapper));
+        .map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc), deserializer));
     },
 
     listOnSnapshot: (
@@ -157,7 +157,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
         next: ({ docs }) =>
           next(
             docs.map((doc) =>
-              mapper.fromFirestore(fromFirestore.documentMustExist(doc), unwrapper),
+              mapper.fromFirestore(fromFirestore.documentMustExist(doc), deserializer),
             ),
           ),
         error: (e) => error?.(e),
@@ -192,7 +192,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model, wrapper);
+      const docToWrite = mapper.toFirestore(model, serializer);
       const docRef = toFirestore.docRef(docToWrite.ref);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -210,7 +210,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map((m) => mapper.toFirestore(m, wrapper));
+      const docs = models.map((m) => mapper.toFirestore(m, serializer));
       await batchWriteOperation(
         docs,
         {
@@ -379,7 +379,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
     }
   };
 
-  const unwrapper: Unwrapper = {
+  const deserializer: Deserializer = {
     timestamp: (ts) => {
       if (!(ts instanceof FirestoreTimestamp)) {
         throw new TypeError('Expected Timestamp');
@@ -417,7 +417,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
   };
 
   // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
-  const wrapper: Wrapper = {
+  const serializer: Serializer = {
     timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
     bytes: (bytes) => FirestoreBytes.fromUint8Array(new Uint8Array(bytes)) as unknown as Bytes,
     documentReference: (docRef) => doc(db, docRef.path) as unknown as DocumentReference,
@@ -430,5 +430,5 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
   };
   // oxlint-enable typescript/no-unsafe-type-assertion
 
-  return { fromFirestore, toFirestore, batchWriteOperation, unwrapper, wrapper };
+  return { fromFirestore, toFirestore, batchWriteOperation, deserializer, serializer };
 };

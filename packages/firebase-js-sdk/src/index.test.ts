@@ -15,7 +15,7 @@ import { plainMapper } from 'firestore-repository/repository';
 import { describe } from 'vitest';
 
 import { type Env, repositoryWithMapper } from './index.js';
-import { wrap } from './value.js';
+import { serialize } from './value.js';
 
 describe('repository', async () => {
   const db = getFirestore(
@@ -41,11 +41,11 @@ describe('repository', async () => {
   defineRepositorySpecificationTests<Env>({
     createRepository,
     types: {
-      timestamp: (date) => wrap(Timestamp.fromDate(date)),
-      geoPoint: (latitude, longitude) => wrap(new GeoPoint(latitude, longitude)),
-      bytes: (bytes) => wrap(Bytes.fromUint8Array(Uint8Array.from(bytes))),
-      vector: (value) => wrap(vector(value)),
-      documentReference: (path) => wrap(doc(db, path)),
+      timestamp: (date) => serialize(Timestamp.fromDate(date)),
+      geoPoint: (latitude, longitude) => serialize(new GeoPoint(latitude, longitude)),
+      bytes: (bytes) => serialize(Bytes.fromUint8Array(Uint8Array.from(bytes))),
+      vector: (value) => serialize(vector(value)),
+      documentReference: (path) => serialize(doc(db, path)),
     },
     db: dbOps,
   });

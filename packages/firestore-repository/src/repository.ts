@@ -84,11 +84,11 @@ export interface Repository<
 /** A mapper that converts between Firestore documents and application models */
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
-  fromFirestore: (doc: Doc<T>, unwrapper: Unwrapper) => Model['read'];
-  toFirestore: (model: Model['write'], wrapper: Wrapper) => DocToWrite<T>;
+  fromFirestore: (doc: Doc<T>, deserializer: Deserializer) => Model['read'];
+  toFirestore: (model: Model['write'], serializer: Serializer) => DocToWrite<T>;
 };
 
-export type Unwrapper = {
+export type Deserializer = {
   timestamp: (timestamp: Timestamp) => Date;
   bytes: (bytes: Bytes) => ArrayBuffer;
   documentReference: (docRef: DocumentReference) => UnwrappedDocumentReference;
@@ -96,7 +96,7 @@ export type Unwrapper = {
   vectorValue: (vectorValue: VectorValue) => UnwrappedVectorValue;
 };
 
-export type Wrapper = {
+export type Serializer = {
   timestamp: (date: Date) => Timestamp;
   bytes: (bytes: ArrayBuffer) => Bytes;
   documentReference: (docRef: UnwrappedDocumentReference) => DocumentReference;
