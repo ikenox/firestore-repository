@@ -21,7 +21,6 @@ export function wrap(
     | firestore.VectorValue
     | Buffer,
 ): Timestamp | GeoPoint | DocumentReference | VectorValue | Bytes {
-  // @ts-expect-error
   return v;
 }
 

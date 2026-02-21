@@ -10,16 +10,16 @@ import {
   VectorValue as FirestoreVectorValue,
 } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
-import type {
-  ArrayRemove,
-  ArrayUnion,
-  Bytes,
-  DocumentReference,
-  GeoPoint,
-  Increment,
-  ServerTimestamp,
-  Timestamp,
-  VectorValue,
+import {
+  bytesBrand,
+  docRefBrand,
+  getPointBrand,
+  timestampBrand,
+  vectorValueBrand,
+  type ArrayRemove,
+  type ArrayUnion,
+  type Increment,
+  type ServerTimestamp,
 } from 'firestore-repository/document';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
@@ -46,6 +46,27 @@ import type {
   SubCollection,
 } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
+
+declare module '@google-cloud/firestore' {
+  interface Timestamp {
+    [timestampBrand]: unknown;
+  }
+  interface DocumentReference {
+    [docRefBrand]: unknown;
+  }
+  interface GeoPoint {
+    [getPointBrand]: unknown;
+  }
+  interface VectorValue {
+    [vectorValueBrand]: unknown;
+  }
+}
+
+declare global {
+  interface Buffer {
+    [bytesBrand]: unknown;
+  }
+}
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -415,19 +436,19 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     },
   };
 
-  // oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
   const wrapper: Wrapper = {
-    timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
-    bytes: (bytes) => Buffer.from(bytes) as unknown as Bytes,
-    documentReference: (docRef) => db.doc(docRef.path) as unknown as DocumentReference,
-    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
-    vectorValue: (vv) => FieldValue.vector(vv) as unknown as VectorValue,
+    timestamp: (date) => FirestoreTimestamp.fromDate(date),
+    bytes: (bytes) => Buffer.from(bytes),
+    documentReference: (docRef) => db.doc(docRef.path),
+    geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude),
+    vectorValue: (vv) => FieldValue.vector(vv),
+    // oxlint-disable typescript/no-unsafe-type-assertion -- sentinel FieldValue types cannot use declaration merging
     serverTimestamp: () => FieldValue.serverTimestamp() as unknown as ServerTimestamp,
     increment: (n) => FieldValue.increment(n) as unknown as Increment,
     arrayUnion: (...elements) => FieldValue.arrayUnion(...elements) as unknown as ArrayUnion,
     arrayRemove: (...elements) => FieldValue.arrayRemove(...elements) as unknown as ArrayRemove,
+    // oxlint-enable typescript/no-unsafe-type-assertion
   };
-  // oxlint-enable typescript/no-unsafe-type-assertion
 
   return { fromFirestore, toFirestore, batchWriteOperation, unwrapper, wrapper };
 };
