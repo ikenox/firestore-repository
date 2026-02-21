@@ -2,7 +2,10 @@
 
 ## Overview
 
-Read [README.md](./README.md) to understand the project overview.
+Read the following documents to understand the project:
+
+- [docs/project-structure.md](./docs/project-structure.md) - Project structure, package responsibilities, and architectural design philosophy
+- [README.md](./README.md) - Project overview and usage examples
 
 ## Workflow
 
