@@ -40,6 +40,8 @@ describe('repository', async () => {
 
   defineRepositorySpecificationTests<Env>({
     createRepository,
+    createRepositoryWithMapper: (collection, mapper) =>
+      repositoryWithMapper(db, collection, mapper),
     types: {
       timestamp: (date) => serialize(Timestamp.fromDate(date)),
       geoPoint: (latitude, longitude) => serialize(new GeoPoint(latitude, longitude)),

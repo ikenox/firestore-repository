@@ -69,10 +69,18 @@ export const postsCollection = subCollection({
 export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironment>({
   db,
   createRepository,
+  createRepositoryWithMapper,
   types,
   implementationSpecificTests,
 }: {
   createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
+  createRepositoryWithMapper: <
+    T extends Collection,
+    Model extends import('../repository.js').AppModel,
+  >(
+    collection: T,
+    mapper: import('../repository.js').Mapper<T, Model>,
+  ) => import('../repository.js').Repository<T, Model, Env>;
   db: {
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
@@ -1029,6 +1037,90 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
         // @ts-expect-error -- Some private field values of DocumentReference will be different
         expect(dbDocRef.path).toStrictEqual(docRef.path);
+      });
+    });
+
+    describe('custom mapper with serializer/deserializer', () => {
+      // Define a collection with Firestore types
+      const testCollection = rootCollection({
+        name: `CustomMapperTest_${randomString()}`,
+        data: schemaWithoutValidation<{
+          createdAt: Timestamp;
+          location: GeoPoint;
+          content: Bytes;
+        }>(),
+      });
+
+      // Define an application model with plain JavaScript types
+      type AppModel = {
+        id: string;
+        read: {
+          id: string;
+          createdAt: Date;
+          location: { lat: number; lng: number };
+          content: ArrayBuffer;
+        };
+        write: {
+          id: string;
+          createdAt: Date;
+          location: { lat: number; lng: number };
+          content: ArrayBuffer;
+        };
+      };
+
+      it('set/get with custom mapper', async () => {
+        const repository = createRepositoryWithMapper<typeof testCollection, AppModel>(
+          testCollection,
+          {
+            toDocRef: (id) => [id],
+            fromFirestore: (doc, deserializer) => ({
+              id: doc.ref[0],
+              createdAt: deserializer.timestamp(doc.data.createdAt),
+              location: {
+                lat: deserializer.geoPoint(doc.data.location).latitude,
+                lng: deserializer.geoPoint(doc.data.location).longitude,
+              },
+              content: deserializer.bytes(doc.data.content),
+            }),
+            toFirestore: (model, serializer) => ({
+              ref: [model.id],
+              data: {
+                createdAt: serializer.timestamp(model.createdAt),
+                location: serializer.geoPoint({
+                  latitude: model.location.lat,
+                  longitude: model.location.lng,
+                }),
+                content: serializer.bytes(model.content),
+              },
+            }),
+          },
+        );
+
+        const testDate = new Date('2024-01-01T00:00:00Z');
+        const testBuffer = new ArrayBuffer(8);
+        new Uint8Array(testBuffer).set([1, 2, 3, 4, 5, 6, 7, 8]);
+
+        const appData: AppModel['write'] = {
+          id: randomString(),
+          createdAt: testDate,
+          location: { lat: 35.6812, lng: 139.7671 },
+          content: testBuffer,
+        };
+
+        // Set using application model
+        await repository.set(appData);
+
+        // Get and verify deserialization
+        const retrieved = await repository.get(appData.id);
+        assert(retrieved);
+
+        expect(retrieved.id).toBe(appData.id);
+        expect(retrieved.createdAt).toBeInstanceOf(Date);
+        expect(retrieved.createdAt.getTime()).toBe(testDate.getTime());
+        expect(retrieved.location).toStrictEqual({ lat: 35.6812, lng: 139.7671 });
+        expect(new Uint8Array(retrieved.content)).toStrictEqual(
+          new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+        );
       });
     });
   });
