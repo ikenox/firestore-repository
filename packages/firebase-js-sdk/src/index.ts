@@ -267,10 +267,8 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
       }>(
         (acc, constraint) => {
           switch (constraint.kind) {
-            case 'where':
-            case 'and':
-            case 'or': {
-              const f = toFirestore.filter(constraint);
+            case 'where': {
+              const f = toFirestore.filter(constraint.condition);
               acc.filter = acc.filter ? and(acc.filter, f) : f;
               break;
             }
@@ -321,7 +319,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
     },
     filter: (expr: FilterExpression<T>): FirestoreQueryFilterConstraint => {
       switch (expr.kind) {
-        case 'where':
+        case 'fieldValueCondition':
           return where(expr.fieldPath, expr.opStr, expr.value);
         case 'and':
           return and(...expr.filters.map(toFirestore.filter));

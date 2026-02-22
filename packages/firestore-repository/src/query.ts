@@ -63,7 +63,7 @@ export const query = <T extends Collection>(
  * A query constraint
  */
 export type QueryConstraint<T extends Collection = Collection> =
-  | FilterExpression<T>
+  | Where<T>
   | OrderBy<T>
   | StartAt<T>
   | StartAfter<T>
@@ -72,6 +72,14 @@ export type QueryConstraint<T extends Collection = Collection> =
   | Limit
   | LimitToLast
   | Offset;
+
+/**
+ * A where constraint that wraps a filter expression
+ */
+export type Where<T extends Collection = Collection> = {
+  kind: 'where';
+  condition: FilterExpression<T>;
+};
 
 /** A constraint that sorts results by a field */
 export type OrderBy<T extends Collection> = {
@@ -139,28 +147,95 @@ export type Cursor<_T extends Collection> = unknown[];
  * A query filter expression
  */
 export type FilterExpression<T extends Collection = Collection> =
-  | UnaryCondition<T>
+  | FieldValueCondition<T>
   | Or<T>
   | And<T>;
 
 /**
  * A single filter condition with a field path, operator, and value
  */
-export type UnaryCondition<
+export type FieldValueCondition<
   T extends Collection,
   Path extends FieldPath<DocData<T>> = FieldPath<DocData<T>>,
   Op extends WhereFilterOp = WhereFilterOp,
 > = {
-  kind: 'where';
+  kind: 'fieldValueCondition';
   fieldPath: Path;
   opStr: Op;
   value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, Op>>;
 };
 
 /**
- * Creates a filter condition
+ * Wraps a filter expression as a query constraint
  */
-export const condition = <
+export const where = <T extends Collection>(condition: FilterExpression<T>): Where<T> => ({
+  kind: 'where',
+  condition,
+});
+
+/** Creates an equality filter (==) */
+export const eq = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '=='> => fieldValueCondition(fieldPath, '==', value);
+
+/** Creates a not-equal filter (!=) */
+export const ne = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '!='> => fieldValueCondition(fieldPath, '!=', value);
+
+/** Creates a less-than filter (<) */
+export const lt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '<'> => fieldValueCondition(fieldPath, '<', value);
+
+/** Creates a less-than-or-equal filter (<=) */
+export const lte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '<='> => fieldValueCondition(fieldPath, '<=', value);
+
+/** Creates a greater-than filter (>) */
+export const gt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '>'> => fieldValueCondition(fieldPath, '>', value);
+
+/** Creates a greater-than-or-equal filter (>=) */
+export const gte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '>='> => fieldValueCondition(fieldPath, '>=', value);
+
+/** Creates an array-contains filter */
+export const arrayContains = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains'>>,
+): FieldValueCondition<T, Path, 'array-contains'> =>
+  fieldValueCondition(fieldPath, 'array-contains', value);
+
+/** Creates an array-contains-any filter */
+export const arrayContainsAny = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains-any'>>,
+): FieldValueCondition<T, Path, 'array-contains-any'> =>
+  fieldValueCondition(fieldPath, 'array-contains-any', value);
+
+/** Creates an in filter */
+export const inArray = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'in'>>,
+): FieldValueCondition<T, Path, 'in'> => fieldValueCondition(fieldPath, 'in', value);
+
+/** Creates a not-in filter */
+export const notIn = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'not-in'>>,
+): FieldValueCondition<T, Path, 'not-in'> => fieldValueCondition(fieldPath, 'not-in', value);
+
+const fieldValueCondition = <
   T extends Collection,
   Path extends FieldPath<DocData<T>>,
   Op extends WhereFilterOp,
@@ -168,74 +243,7 @@ export const condition = <
   fieldPath: Path,
   opStr: Op,
   value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, Op>>,
-): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
-
-/**
- * Wraps a filter expression as a query constraint (identity function for clarity)
- */
-export const where = <T extends Collection>(filter: FilterExpression<T>): FilterExpression<T> =>
-  filter;
-
-/** Creates an equality filter (==) */
-export const eq = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FieldValue<DocData<T>, Path>>,
-): UnaryCondition<T, Path, '=='> => condition(fieldPath, '==', value);
-
-/** Creates a not-equal filter (!=) */
-export const ne = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FieldValue<DocData<T>, Path>>,
-): UnaryCondition<T, Path, '!='> => condition(fieldPath, '!=', value);
-
-/** Creates a less-than filter (<) */
-export const lt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FieldValue<DocData<T>, Path>>,
-): UnaryCondition<T, Path, '<'> => condition(fieldPath, '<', value);
-
-/** Creates a less-than-or-equal filter (<=) */
-export const lte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FieldValue<DocData<T>, Path>>,
-): UnaryCondition<T, Path, '<='> => condition(fieldPath, '<=', value);
-
-/** Creates a greater-than filter (>) */
-export const gt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FieldValue<DocData<T>, Path>>,
-): UnaryCondition<T, Path, '>'> => condition(fieldPath, '>', value);
-
-/** Creates a greater-than-or-equal filter (>=) */
-export const gte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FieldValue<DocData<T>, Path>>,
-): UnaryCondition<T, Path, '>='> => condition(fieldPath, '>=', value);
-
-/** Creates an array-contains filter */
-export const arrayContains = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains'>>,
-): UnaryCondition<T, Path, 'array-contains'> => condition(fieldPath, 'array-contains', value);
-
-/** Creates an array-contains-any filter */
-export const arrayContainsAny = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains-any'>>,
-): UnaryCondition<T, Path, 'array-contains-any'> =>
-  condition(fieldPath, 'array-contains-any', value);
-
-/** Creates an in filter */
-export const inArray = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'in'>>,
-): UnaryCondition<T, Path, 'in'> => condition(fieldPath, 'in', value);
-
-/** Creates a not-in filter */
-export const notIn = <T extends Collection, Path extends FieldPath<DocData<T>>>(
-  fieldPath: Path,
-  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'not-in'>>,
-): UnaryCondition<T, Path, 'not-in'> => condition(fieldPath, 'not-in', value);
+): FieldValueCondition<T, Path, Op> => ({ kind: 'fieldValueCondition', fieldPath, opStr, value });
 
 /**
  * The operand type for a filter condition operator
