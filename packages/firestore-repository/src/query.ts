@@ -171,7 +171,7 @@ export const condition = <
 ): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
 
 /**
- * Wraps a filter expression as a query constraint
+ * Wraps a filter expression as a query constraint (identity function for clarity)
  */
 export const where = <T extends Collection>(filter: FilterExpression<T>): FilterExpression<T> =>
   filter;
