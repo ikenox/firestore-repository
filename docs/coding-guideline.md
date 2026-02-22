@@ -17,6 +17,7 @@ When your changes affect the public API or usage patterns, you MUST update the f
 - `README.md` - Usage examples and documentation
 
 This ensures that:
+
 - All public API changes are verified through executable examples
 - Documentation stays in sync with actual implementation
 - Breaking changes are caught early through failing example tests
