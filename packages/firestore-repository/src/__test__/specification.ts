@@ -566,7 +566,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         describe('where', () => {
-          describe('operators', () => {
+          describe('fieldValueConditions', () => {
             const tests: Record<
               string,
               [
@@ -631,7 +631,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                where(or(eq('name', 'author1'), eq('name', 'author2'))),
+                where(gt('profile.age', 40)),
                 where(eq('rank', 2)),
               ),
               [items[1]],
@@ -641,7 +641,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           it('filter expressions of child and parent query are combined by AND condition', async () => {
             const baseQuery = query(
               { collection: repository.collection },
-              where(or(eq('name', 'author1'), eq('name', 'author2'))),
+              where(gt('profile.age', 40)),
             );
             await expectQuery(query({ extends: baseQuery }, where(eq('rank', 2))), [items[1]]);
           });
