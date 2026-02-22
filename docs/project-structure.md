@@ -15,7 +15,6 @@ firestore-repository/
 │   ├── google-cloud-firestore/    # Backend implementation
 │   ├── firebase-js-sdk/           # Frontend implementation
 │   └── readme-example/            # Test code for README examples
-├── examples/                      # Sample code
 ├── firebase-emulator/             # Firebase Emulator configuration
 ├── docs/                          # Project documentation
 └── .worktree/                     # git worktree working directories
