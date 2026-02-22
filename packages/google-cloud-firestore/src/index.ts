@@ -287,9 +287,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
         query.constraints?.reduce((q, constraint) => {
           switch (constraint.kind) {
             case 'where':
-            case 'or':
-            case 'and':
-              return q.where(toFirestore.filter(constraint));
+              return q.where(toFirestore.filter(constraint.condition));
             case 'orderBy':
               return q.orderBy(constraint.field, constraint.direction);
             case 'limit':
@@ -322,7 +320,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     },
     filter: (expr: FilterExpression<T>): firestore.Filter => {
       switch (expr.kind) {
-        case 'where':
+        case 'fieldValueCondition':
           return Filter.where(expr.fieldPath, expr.opStr, expr.value);
         case 'and':
           return Filter.and(...expr.filters.map(toFirestore.filter));

@@ -63,7 +63,7 @@ export const query = <T extends Collection>(
  * A query constraint
  */
 export type QueryConstraint<T extends Collection = Collection> =
-  | FilterExpression<T>
+  | Where<T>
   | OrderBy<T>
   | StartAt<T>
   | StartAfter<T>
@@ -72,6 +72,14 @@ export type QueryConstraint<T extends Collection = Collection> =
   | Limit
   | LimitToLast
   | Offset;
+
+/**
+ * A where constraint that wraps a filter expression
+ */
+export type Where<T extends Collection = Collection> = {
+  kind: 'where';
+  condition: FilterExpression<T>;
+};
 
 /** A constraint that sorts results by a field */
 export type OrderBy<T extends Collection> = {
@@ -139,28 +147,166 @@ export type Cursor<_T extends Collection> = unknown[];
  * A query filter expression
  */
 export type FilterExpression<T extends Collection = Collection> =
-  | UnaryCondition<T>
+  | FieldValueCondition<T>
   | Or<T>
   | And<T>;
 
 /**
  * A single filter condition with a field path, operator, and value
  */
-export type UnaryCondition<
+export type FieldValueCondition<
   T extends Collection,
   Path extends FieldPath<DocData<T>> = FieldPath<DocData<T>>,
   Op extends WhereFilterOp = WhereFilterOp,
 > = {
-  kind: 'where';
+  kind: 'fieldValueCondition';
   fieldPath: Path;
   opStr: Op;
   value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, Op>>;
 };
 
 /**
- * Creates a filter condition
+ * Wraps filter expressions as a query constraint.
+ * When multiple filters are provided, they are combined with AND condition.
+ *
+ * @example
+ * // Single filter
+ * where(eq('name', 'John'))
+ *
+ * @example
+ * // Multiple filters (combined with AND)
+ * where(eq('name', 'John'), gte('age', 20))
  */
-export const condition = <
+export const where = <T extends Collection>(
+  ...conditions: [FilterExpression<T>, ...FilterExpression<T>[]]
+): Where<T> => ({
+  kind: 'where',
+  condition: conditions.length === 1 ? conditions[0] : and(...conditions),
+});
+
+/**
+ * Creates an equality filter (==).
+ * Matches documents where the field equals the specified value.
+ *
+ * @example
+ * eq('status', 'active')
+ */
+export const eq = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '=='> => fieldValueCondition(fieldPath, '==', value);
+
+/**
+ * Creates a not-equal filter (!=).
+ * Matches documents where the field does not equal the specified value.
+ *
+ * @example
+ * ne('status', 'deleted')
+ */
+export const ne = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '!='> => fieldValueCondition(fieldPath, '!=', value);
+
+/**
+ * Creates a less-than filter (<).
+ * Matches documents where the field is less than the specified value.
+ *
+ * @example
+ * lt('age', 18)
+ */
+export const lt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '<'> => fieldValueCondition(fieldPath, '<', value);
+
+/**
+ * Creates a less-than-or-equal filter (<=).
+ * Matches documents where the field is less than or equal to the specified value.
+ *
+ * @example
+ * lte('price', 100)
+ */
+export const lte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '<='> => fieldValueCondition(fieldPath, '<=', value);
+
+/**
+ * Creates a greater-than filter (>).
+ * Matches documents where the field is greater than the specified value.
+ *
+ * @example
+ * gt('score', 50)
+ */
+export const gt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '>'> => fieldValueCondition(fieldPath, '>', value);
+
+/**
+ * Creates a greater-than-or-equal filter (>=).
+ * Matches documents where the field is greater than or equal to the specified value.
+ *
+ * @example
+ * gte('age', 20)
+ */
+export const gte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): FieldValueCondition<T, Path, '>='> => fieldValueCondition(fieldPath, '>=', value);
+
+/**
+ * Creates an array-contains filter.
+ * Matches documents where the array field contains the specified element.
+ *
+ * @example
+ * arrayContains('tags', 'featured')
+ */
+export const arrayContains = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains'>>,
+): FieldValueCondition<T, Path, 'array-contains'> =>
+  fieldValueCondition(fieldPath, 'array-contains', value);
+
+/**
+ * Creates an array-contains-any filter.
+ * Matches documents where the array field contains any of the specified elements.
+ *
+ * @example
+ * arrayContainsAny('tags', ['featured', 'new'])
+ */
+export const arrayContainsAny = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains-any'>>,
+): FieldValueCondition<T, Path, 'array-contains-any'> =>
+  fieldValueCondition(fieldPath, 'array-contains-any', value);
+
+/**
+ * Creates an in filter.
+ * Matches documents where the field value is in the specified array.
+ *
+ * @example
+ * inArray('status', ['active', 'pending'])
+ */
+export const inArray = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'in'>>,
+): FieldValueCondition<T, Path, 'in'> => fieldValueCondition(fieldPath, 'in', value);
+
+/**
+ * Creates a not-in filter.
+ * Matches documents where the field value is not in the specified array.
+ *
+ * @example
+ * notIn('status', ['deleted', 'archived'])
+ */
+export const notIn = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'not-in'>>,
+): FieldValueCondition<T, Path, 'not-in'> => fieldValueCondition(fieldPath, 'not-in', value);
+
+const fieldValueCondition = <
   T extends Collection,
   Path extends FieldPath<DocData<T>>,
   Op extends WhereFilterOp,
@@ -168,7 +314,7 @@ export const condition = <
   fieldPath: Path,
   opStr: Op,
   value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, Op>>,
-): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
+): FieldValueCondition<T, Path, Op> => ({ kind: 'fieldValueCondition', fieldPath, opStr, value });
 
 /**
  * The operand type for a filter condition operator
