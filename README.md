@@ -60,6 +60,8 @@ const repository = rootCollectionRepository(db, users);
 
 ### Basic operations for a single document
 
+All operations are **type-safe** based on the schema you defined. The `data` field is typed according to your schema, so invalid data structures are caught at compile time.
+
 ```ts
 // Set a document
 await repository.set({
