@@ -60,6 +60,8 @@ const repository = rootCollectionRepository(db, users);
 
 ### Basic operations for a single document
 
+All operations are **type-safe** based on the schema you defined. The `data` field is typed according to your schema, so invalid data structures are caught at compile time.
+
 ```ts
 // Set a document
 await repository.set({
@@ -98,8 +100,7 @@ import { average, count, sum } from 'firestore-repository/aggregate';
 // The value `20` is validated as `number` because `profile.age` is `number`.
 const q = query(
   { collection: users },
-  where(gte('profile.age', 20)),
-  where(eq('profile.gender', 'male')),
+  where(gte('profile.age', 20), eq('profile.gender', 'male')),
   // where(gte('profile.age', 'foo')) // ← Compile error: string is not assignable to number
   // where(eq('nonExistent', 1))      // ← Compile error: invalid field path
   limit(10),
