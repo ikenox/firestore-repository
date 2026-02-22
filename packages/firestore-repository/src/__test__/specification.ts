@@ -11,18 +11,28 @@ import type {
 } from '../document.js';
 import {
   and,
-  condition as $,
+  arrayContains,
+  arrayContainsAny,
   endAt,
   endBefore,
+  eq,
   type FilterExpression,
+  gt,
+  gte,
+  inArray,
   limit,
   limitToLast,
+  lt,
+  lte,
+  ne,
+  notIn,
   or,
   orderBy,
   type Query,
   query,
   startAfter,
   startAt,
+  where,
 } from '../query.js';
 import type {
   AppModel,
@@ -548,7 +558,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('extend base query', async () => {
-          const base = query({ collection: repository.collection }, $('profile.age', '>=', 40));
+          const base = query({ collection: repository.collection }, where(gte('profile.age', 40)));
           await expectQuery(query({ extends: base }, orderBy('profile.age', 'desc')), [
             items[1],
             items[0],
@@ -564,24 +574,21 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 expected: Doc<typeof authorsCollection>[],
               ]
             > = {
-              '==': [$('name', '==', 'author1'), [items[0]]],
-              '!=': [$('name', '!=', 'author1'), [items[1], items[2]]],
-              '<': [$('profile.age', '<', 40), [items[2]]],
-              '<=': [$('profile.age', '<=', 40), [items[2], items[0]]],
-              '>': [$('profile.age', '>', 40), [items[1]]],
-              '>=': [$('profile.age', '>=', 40), [items[0], items[1]]],
-              in: [$('name', 'in', ['author1', 'author2']), [items[0], items[1]]],
-              'not-in': [$('name', 'not-in', ['author1', 'author2']), [items[2]]],
-              'array-contains': [$('tag', 'array-contains', 'b'), [items[0], items[1]]],
-              'array-contains-any': [
-                $('tag', 'array-contains-any', ['a', 'd']),
-                [items[0], items[2]],
-              ],
+              '==': [eq('name', 'author1'), [items[0]]],
+              '!=': [ne('name', 'author1'), [items[1], items[2]]],
+              '<': [lt('profile.age', 40), [items[2]]],
+              '<=': [lte('profile.age', 40), [items[2], items[0]]],
+              '>': [gt('profile.age', 40), [items[1]]],
+              '>=': [gte('profile.age', 40), [items[0], items[1]]],
+              in: [inArray('name', ['author1', 'author2']), [items[0], items[1]]],
+              'not-in': [notIn('name', ['author1', 'author2']), [items[2]]],
+              'array-contains': [arrayContains('tag', 'b'), [items[0], items[1]]],
+              'array-contains-any': [arrayContainsAny('tag', ['a', 'd']), [items[0], items[2]]],
             };
             for (const [title, [condition, expected]] of Object.entries(tests)) {
               it(title, async () => {
                 await expectQuery(
-                  query({ collection: repository.collection }, condition),
+                  query({ collection: repository.collection }, where(condition)),
                   expected,
                 );
               });
@@ -590,22 +597,22 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           it('filter by id', async () => {
             await expectQuery(
-              query({ collection: repository.collection }, $('__name__', '==', '1')),
+              query({ collection: repository.collection }, where(eq('__name__', '1'))),
               [items[0]],
             );
             await expectQuery(
-              query({ collection: repository.collection }, $('__name__', '==', '2')),
+              query({ collection: repository.collection }, where(eq('__name__', '2'))),
               [items[1]],
             );
           });
 
           it('filter by nested field', async () => {
             await expectQuery(
-              query({ collection: repository.collection }, $('profile.age', '>=', 40)),
+              query({ collection: repository.collection }, where(gte('profile.age', 40))),
               [items[0], items[1]],
             );
             await expectQuery(
-              query({ collection: repository.collection }, $('profile.gender', '==', 'male')),
+              query({ collection: repository.collection }, where(eq('profile.gender', 'male'))),
               [items[0]],
             );
           });
@@ -614,7 +621,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                $('profile', '==', { age: 40, gender: 'male' }),
+                where(eq('profile', { age: 40, gender: 'male' })),
               ),
               [items[0]],
             );
@@ -624,8 +631,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                or($('name', '==', 'author1'), $('name', '==', 'author2')),
-                $('rank', '==', 2),
+                where(or(eq('name', 'author1'), eq('name', 'author2'))),
+                where(eq('rank', 2)),
               ),
               [items[1]],
             );
@@ -634,23 +641,23 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           it('filter expressions of child and parent query are combined by AND condition', async () => {
             const baseQuery = query(
               { collection: repository.collection },
-              or($('name', '==', 'author1'), $('name', '==', 'author2')),
+              where(or(eq('name', 'author1'), eq('name', 'author2'))),
             );
-            await expectQuery(query({ extends: baseQuery }, $('rank', '==', 2)), [items[1]]);
+            await expectQuery(query({ extends: baseQuery }, where(eq('rank', 2))), [items[1]]);
           });
 
           it('or', async () => {
             await expectQuery(
               query(
                 { collection: repository.collection },
-                or($('name', '==', 'author1'), $('name', '==', 'author3')),
+                where(or(eq('name', 'author1'), eq('name', 'author3'))),
               ),
               [items[0], items[2]],
             );
 
-            await expectQuery(query({ collection: repository.collection }, or()), items);
+            await expectQuery(query({ collection: repository.collection }, where(or())), items);
             await expectQuery(
-              query({ collection: repository.collection }, or($('name', '==', 'author1'))),
+              query({ collection: repository.collection }, where(or(eq('name', 'author1')))),
               [items[0]],
             );
           });
@@ -659,7 +666,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                and($('name', '==', 'author1'), $('profile.age', '==', 40)),
+                where(and(eq('name', 'author1'), eq('profile.age', 40))),
               ),
               [items[0]],
             );
@@ -667,14 +674,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                and($('name', '==', 'author1'), $('profile.age', '==', 41)),
+                where(and(eq('name', 'author1'), eq('profile.age', 41))),
               ),
               [],
             );
 
-            await expectQuery(query({ collection: repository.collection }, and()), items);
+            await expectQuery(query({ collection: repository.collection }, where(and())), items);
             await expectQuery(
-              query({ collection: repository.collection }, and($('name', '==', 'author1'))),
+              query({ collection: repository.collection }, where(and(eq('name', 'author1')))),
               [items[0]],
             );
           });
@@ -683,9 +690,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                or(
-                  and($('name', '==', 'author1'), $('profile.age', '==', 40)),
-                  and($('name', '==', 'author2'), $('profile.age', '==', 90)),
+                where(
+                  or(
+                    and(eq('name', 'author1'), eq('profile.age', 40)),
+                    and(eq('name', 'author2'), eq('profile.age', 90)),
+                  ),
                 ),
               ),
               [items[0], items[1]],
@@ -693,9 +702,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                or(
-                  and($('name', '!=', 'author1'), $('profile.age', '==', 40)),
-                  and($('name', '==', 'author2'), $('profile.age', '==', 90)),
+                where(
+                  or(
+                    and(ne('name', 'author1'), eq('profile.age', 40)),
+                    and(eq('name', 'author2'), eq('profile.age', 90)),
+                  ),
                 ),
               ),
               [items[1]],
@@ -703,9 +714,11 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection },
-                or(
-                  and($('name', '==', 'author1'), $('profile.age', '==', 40)),
-                  and($('name', '!=', 'author2'), $('profile.age', '==', 90)),
+                where(
+                  or(
+                    and(eq('name', 'author1'), eq('profile.age', 40)),
+                    and(ne('name', 'author2'), eq('profile.age', 90)),
+                  ),
                 ),
               ),
               [items[0]],
@@ -902,7 +915,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await expectQuery(
             query(
               { collection: repository.collection },
-              $('name', '!=', 'author1'),
+              where(ne('name', 'author1')),
               orderBy('profile.age', 'desc'),
               limit(1),
             ),
@@ -970,7 +983,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 { collection: repository.collection, group: true },
-                $('postedAt', '>', new Date('2020-01-01')),
+                where(gt('postedAt', new Date('2020-01-01'))),
               ),
               [items[0], items[2]],
             );

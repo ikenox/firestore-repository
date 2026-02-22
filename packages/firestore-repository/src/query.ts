@@ -171,6 +171,73 @@ export const condition = <
 ): UnaryCondition<T, Path, Op> => ({ kind: 'where', fieldPath, opStr, value });
 
 /**
+ * Wraps a filter expression as a query constraint
+ */
+export const where = <T extends Collection>(filter: FilterExpression<T>): FilterExpression<T> =>
+  filter;
+
+/** Creates an equality filter (==) */
+export const eq = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): UnaryCondition<T, Path, '=='> => condition(fieldPath, '==', value);
+
+/** Creates a not-equal filter (!=) */
+export const ne = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): UnaryCondition<T, Path, '!='> => condition(fieldPath, '!=', value);
+
+/** Creates a less-than filter (<) */
+export const lt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): UnaryCondition<T, Path, '<'> => condition(fieldPath, '<', value);
+
+/** Creates a less-than-or-equal filter (<=) */
+export const lte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): UnaryCondition<T, Path, '<='> => condition(fieldPath, '<=', value);
+
+/** Creates a greater-than filter (>) */
+export const gt = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): UnaryCondition<T, Path, '>'> => condition(fieldPath, '>', value);
+
+/** Creates a greater-than-or-equal filter (>=) */
+export const gte = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FieldValue<DocData<T>, Path>>,
+): UnaryCondition<T, Path, '>='> => condition(fieldPath, '>=', value);
+
+/** Creates an array-contains filter */
+export const arrayContains = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains'>>,
+): UnaryCondition<T, Path, 'array-contains'> => condition(fieldPath, 'array-contains', value);
+
+/** Creates an array-contains-any filter */
+export const arrayContainsAny = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'array-contains-any'>>,
+): UnaryCondition<T, Path, 'array-contains-any'> =>
+  condition(fieldPath, 'array-contains-any', value);
+
+/** Creates an in filter */
+export const inArray = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'in'>>,
+): UnaryCondition<T, Path, 'in'> => condition(fieldPath, 'in', value);
+
+/** Creates a not-in filter */
+export const notIn = <T extends Collection, Path extends FieldPath<DocData<T>>>(
+  fieldPath: Path,
+  value: WriteValue<FilterOperand<FieldValue<DocData<T>, Path>, 'not-in'>>,
+): UnaryCondition<T, Path, 'not-in'> => condition(fieldPath, 'not-in', value);
+
+/**
  * The operand type for a filter condition operator
  */
 export type FilterOperand<T extends ValueType, U extends WhereFilterOp> = {

@@ -20,7 +20,7 @@ import {
 import { Firestore } from '@google-cloud/firestore';
 import { randomString } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
-import { condition as $, limit, query } from 'firestore-repository/query';
+import { eq, gte, limit, query, where } from 'firestore-repository/query';
 import type {
   AppModel,
   FirestoreEnvironment,
@@ -130,8 +130,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   describe('Query', () => {
     const q = query(
       { collection: users },
-      $('profile.age', '>=', 20),
-      $('profile.gender', '==', 'male'),
+      where(gte('profile.age', 20)),
+      where(eq('profile.gender', 'male')),
       limit(10),
     );
 
