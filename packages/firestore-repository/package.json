@@ -44,6 +44,9 @@
     "build": "rm -rf build/ && tsc -b tsconfig.build.json",
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
+  "dependencies": {
+    "@standard-schema/spec": "catalog:"
+  },
   "engines": {
     "node": ">=18"
   }

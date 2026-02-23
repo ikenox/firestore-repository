@@ -16,6 +16,9 @@
     "build": "pnpm run -r build",
     "start-emulator": "docker build firebase-emulator && docker run -p 60000:60000 -p 60001:60001 -d --rm -it $(docker build -q firebase-emulator)"
   },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
   "devDependencies": {
     "@typescript/native-preview": "catalog:",
     "@vitest/coverage-v8": "catalog:",

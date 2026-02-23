@@ -13,6 +13,7 @@ catalog:
   '@typescript/native-preview': ^7.0.0-dev
   typescript: ^5.9.3
   vitest: ^4.0.18
+  '@standard-schema/spec': ^1.1.0
 
 minimumReleaseAge: 10080
 

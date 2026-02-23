@@ -1,3 +1,5 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+
 import type { DocumentData, WriteDocumentData } from './document.js';
 import type { ToStringTuple } from './util.js';
 
@@ -63,4 +65,20 @@ export type ParentDocRef<T extends Collection> = ToStringTuple<T['parent']>;
 export const schemaWithoutValidation = <T extends DocumentData>(): DocDataSchema<T> => ({
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- schema without validation
   validate: (data) => data as T,
+});
+
+/** Creates a schema from a Standard Schema validator (e.g. Zod, Valibot, ArkType) */
+export const schemaFromValidator = <Data extends DocumentData>(
+  schema: StandardSchemaV1<unknown, Data>,
+): DocDataSchema<Data> => ({
+  validate: (data) => {
+    const result = schema['~standard'].validate(data);
+    if (result instanceof Promise) {
+      throw new TypeError('Schema validation must be synchronous');
+    }
+    if (result.issues) {
+      throw new Error('validation failed');
+    }
+    return result.value;
+  },
 });
