@@ -97,7 +97,7 @@ describe('schema', () => {
           vendor: 'test',
           validate: () => Promise.resolve({ value: {} }),
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- mock type for testing
-          types: {} as { input: unknown; output: Record<string, never> },
+          types: {} as { input: Record<string, never>; output: Record<string, never> },
         },
       };
       const schema = schemaFromValidator(asyncSchema);
@@ -116,6 +116,11 @@ describe('schema', () => {
 
       // @ts-expect-error -- date output doesn't extend DocumentData
       schemaFromValidator(z.object({ field1: z.date() }));
+    });
+
+    it('rejects schema with transform (input !== output)', () => {
+      // @ts-expect-error -- transform changes output type, so input !== output
+      schemaFromValidator(z.object({ a: z.string() }).transform((v) => ({ a: Number(v.a) })));
     });
   });
 });

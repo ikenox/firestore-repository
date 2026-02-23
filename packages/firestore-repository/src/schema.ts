@@ -69,7 +69,7 @@ export const schemaWithoutValidation = <T extends DocumentData>(): DocDataSchema
 
 /** Creates a schema from a Standard Schema validator (e.g. Zod, Valibot, ArkType) */
 export const schemaFromValidator = <Data extends DocumentData>(
-  schema: StandardSchemaV1<unknown, Data>,
+  schema: StandardSchemaV1<Data, Data>,
 ): DocDataSchema<Data> => ({
   validate: (data) => {
     const result = schema['~standard'].validate(data);
