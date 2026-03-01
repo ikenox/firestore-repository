@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "noEmit": false, "outDir": "${configDir}/build/esm" },
-  "exclude": ["**/vitest.*.ts", "**/__test__/*", "**/*.test.ts"]
+  "exclude": ["**/vitest.*.ts", "**/__test__/*", "**/*.test.ts", "**/*.bench.ts"]
 }
