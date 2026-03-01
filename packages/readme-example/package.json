@@ -2,9 +2,6 @@
   "name": "@firestore-repository/readme-example",
   "private": true,
   "type": "module",
-  "scripts": {
-    "typecheck": "tsgo --noEmit"
-  },
   "dependencies": {
     "@firebase/app": "catalog:",
     "@firebase/firestore": "catalog:",
