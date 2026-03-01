@@ -1,0 +1,35 @@
+name: Setup Firestore Emulator
+description: Download, cache, start, and wait for the Firestore emulator
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '25'
+    - name: Cache Firestore emulator
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/firebase/emulators
+        key: firestore-emulator-v1.20.2
+    - name: Download Firestore emulator
+      shell: bash
+      run: |
+        JAR=~/.cache/firebase/emulators/cloud-firestore-emulator-v1.20.2.jar
+        if [ ! -f "$JAR" ]; then
+          mkdir -p ~/.cache/firebase/emulators
+          curl -o "$JAR" https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v1.20.2.jar
+        fi
+    - name: Start Firestore emulator
+      shell: bash
+      run: |
+        java -jar ~/.cache/firebase/emulators/cloud-firestore-emulator-v1.20.2.jar \
+          --host=0.0.0.0 --port=60001 &
+    - name: Wait for emulator
+      shell: bash
+      run: |
+        timeout 15 bash -c 'until nc -z localhost 60001; do sleep 0.5; done'
+        # Wait a bit more as the emulator is often not fully ready even after port is listening
+        sleep 3
