@@ -19,9 +19,8 @@ When making changes to the public API or usage patterns, refer to [coding-guidel
 
 ### Check / Fix
 
-- `pnpm check` - Run all checks (type checking, linting, and formatting)
-- `pnpm check:type` - Run TypeScript type checking (tsgo)
-- `pnpm check:lint` - Run oxlint linting
+- `pnpm check` - Run all checks (linting with type checking and formatting)
+- `pnpm check:lint` - Run oxlint linting with type checking
 - `pnpm check:fmt` - Run oxfmt formatting check
 - `pnpm fix` - Fix all auto-fixable issues
 
