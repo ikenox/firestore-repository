@@ -22,10 +22,7 @@ describe('query', () => {
   });
 
   bench('query with or filter', () => {
-    query(
-      { collection: authorsCollection },
-      where(or(eq('rank', 1), eq('rank', 2))),
-    );
+    query({ collection: authorsCollection }, where(or(eq('rank', 1), eq('rank', 2))));
   });
 
   bench('collection group query', () => {
@@ -33,9 +30,6 @@ describe('query', () => {
   });
 
   bench('subcollection query', () => {
-    query(
-      { collection: postsCollection, parent: ['author1'] as [string] },
-      orderBy('postedAt'),
-    );
+    query({ collection: postsCollection, parent: ['author1'] as [string] }, orderBy('postedAt'));
   });
 });

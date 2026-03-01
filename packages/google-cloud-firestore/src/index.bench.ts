@@ -39,9 +39,7 @@ describe('repository', () => {
   });
 
   bench('list with where', async () => {
-    await repository.list(
-      query({ collection: repository.collection }, where(eq('rank', 1))),
-    );
+    await repository.list(query({ collection: repository.collection }, where(eq('rank', 1))));
   });
 
   bench('batchGet', async () => {
