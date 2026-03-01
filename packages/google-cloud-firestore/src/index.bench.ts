@@ -10,8 +10,8 @@ import { repositoryWithMapper } from './index.js';
 
 describe('repository', () => {
   const db = new Firestore({
-    projectId: process.env['FIRESTORE_TEST_PROJECT'] ?? '',
-    databaseId: process.env['FIRESTORE_TEST_DB'] ?? '',
+    projectId: process.env['FIRESTORE_TEST_PROJECT']!,
+    databaseId: process.env['FIRESTORE_TEST_DB']!,
   });
 
   const collection = uniqueCollection(authorsCollection);

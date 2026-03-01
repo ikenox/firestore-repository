@@ -15,7 +15,7 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/__test__/**/*.ts"],
+      "files": ["**/*.test.ts", "**/*.bench.ts", "**/__test__/**/*.ts"],
       "rules": {
         "typescript/no-non-null-assertion": "off",
         "typescript/no-redundant-type-constituents": "off",
