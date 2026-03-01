@@ -11,3 +11,6 @@ packages/**/README.md
 .claude/settings.local.json
 
 .worktree
+
+output/*
+!output/.gitkeep

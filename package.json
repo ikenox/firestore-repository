@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "bench": "vitest bench --run --outputJson output/bench-results.json",
     "check": "pnpm run \"/check:.*/\"",
     "check:lint": "oxlint --type-aware --type-check",
     "check:fmt": "oxfmt --check .",
