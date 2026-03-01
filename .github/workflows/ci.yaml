@@ -1,14 +1,72 @@
-name: bench
-run-name: bench
-on:
-  push:
-    branches: [main]
-  pull_request:
+name: ci
+run-name: ci
+on: [push, pull_request]
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - run: pnpm build
+      - run: pnpm check
+  test:
+    runs-on: ubuntu-latest
+    env:
+      FIRESTORE_EMULATOR_VERSION: 1.20.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firestore-emulator-v${{ env.FIRESTORE_EMULATOR_VERSION }}
+      - name: Download Firestore emulator
+        run: |
+          JAR=~/.cache/firebase/emulators/cloud-firestore-emulator-v${FIRESTORE_EMULATOR_VERSION}.jar
+          if [ ! -f "$JAR" ]; then
+            mkdir -p ~/.cache/firebase/emulators
+            curl -o "$JAR" https://storage.googleapis.com/firebase-preview-drop/emulator/cloud-firestore-emulator-v${FIRESTORE_EMULATOR_VERSION}.jar
+          fi
+      - name: Start Firestore emulator
+        run: |
+          java -jar ~/.cache/firebase/emulators/cloud-firestore-emulator-v${FIRESTORE_EMULATOR_VERSION}.jar \
+            --host=0.0.0.0 --port=60001 &
+      - name: Wait for emulator
+        run: |
+          timeout 15 bash -c 'until nc -z localhost 60001; do sleep 0.5; done'
+          # Wait a bit more as the emulator is often not fully ready even after port is listening
+          sleep 3
+      - run: pnpm test
   bench:
     runs-on: ubuntu-latest
     env:
-      FIRESTORE_EMULATOR_VERSION: 1.19.8
+      FIRESTORE_EMULATOR_VERSION: 1.20.2
     permissions:
       pull-requests: write
       actions: read
@@ -29,7 +87,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
       - name: Cache Firestore emulator
         uses: actions/cache@v4
         with:
@@ -56,7 +114,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v9
         with:
           name: bench-results
-          workflow: bench.yaml
+          workflow: ci.yaml
           branch: main
           if_no_artifact_found: warn
           path: baseline
