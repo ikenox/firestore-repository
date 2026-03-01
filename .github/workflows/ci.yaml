@@ -20,6 +20,7 @@ jobs:
       - uses: ./.github/actions/setup-firestore-emulator
       - run: pnpm test
   bench:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
