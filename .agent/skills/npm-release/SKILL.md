@@ -22,7 +22,13 @@ pnpm check
 pnpm test
 ```
 
-### 2. Bump version numbers
+### 2. Bump version via PR
+
+Create a branch, bump versions, and open a PR:
+
+```bash
+git checkout -b release/vX.Y.Z
+```
 
 Update the `version` field to the same new version in all 3 `package.json` files:
 
@@ -30,15 +36,16 @@ Update the `version` field to the same new version in all 3 `package.json` files
 - `packages/google-cloud-firestore/package.json`
 - `packages/firebase-js-sdk/package.json`
 
-### 3. Commit and push to main
-
 ```bash
 git add packages/firestore-repository/package.json packages/google-cloud-firestore/package.json packages/firebase-js-sdk/package.json
 git commit -m "vX.Y.Z"
-git push origin main
+git push origin release/vX.Y.Z
+gh pr create --title "vX.Y.Z" --body ""
 ```
 
-### 4. Trigger GitHub Actions release workflow
+Merge the PR into main before proceeding.
+
+### 3. Trigger GitHub Actions release workflow
 
 ```bash
 gh workflow run release.yaml --ref main \
@@ -53,7 +60,7 @@ The workflow will:
 - Publish selected packages to npm
 - Create a GitHub Release with auto-generated release notes
 
-### 5. Verify
+### 4. Verify
 
 ```bash
 gh run list --workflow=release.yaml --limit 1
