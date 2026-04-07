@@ -1,14 +1,1 @@
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pnpm check"
-          }
-        ]
-      }
-    ]
-  }
-}
+{ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "pnpm fix || exit 2" }] }] } }

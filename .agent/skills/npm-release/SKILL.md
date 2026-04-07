@@ -57,6 +57,7 @@ gh workflow run release.yaml --ref main \
 To publish only specific packages, set unwanted ones to `false`.
 
 The workflow will:
+
 - Publish selected packages to npm
 - Create a GitHub Release with auto-generated release notes
 
