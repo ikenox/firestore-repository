@@ -31,10 +31,15 @@ import type {
 } from 'firestore-repository/repository';
 import { rootCollectionPlainMapper } from 'firestore-repository/repository';
 import {
+  array,
+  double,
+  literal,
+  map,
+  optional,
   type RootCollection,
-  type SubCollection,
   rootCollection,
-  schemaWithoutValidation,
+  string,
+  type SubCollection,
   subCollection,
 } from 'firestore-repository/schema';
 import { describe, it } from 'vitest';
@@ -48,17 +53,17 @@ const console = {
 // define a collection
 const users = rootCollection({
   name: 'Authors',
-  data: schemaWithoutValidation<{
-    name: string;
-    profile: { age: number; gender?: 'male' | 'female' };
-    tag: string[];
-  }>(),
+  schema: {
+    name: string(),
+    profile: map({ age: double(), gender: optional(literal('male', 'female')) }),
+    tag: array(string()),
+  },
 });
 
 // define a subcollection
 const posts = subCollection({
   name: 'Posts',
-  data: schemaWithoutValidation<{ title: string }>(),
+  schema: { title: string() },
   parent: ['Authors'] as const,
 });
 
@@ -241,8 +246,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
     const userMapper: Mapper<UsersCollection, AppModel<string, User, User>> = {
       toDocRef: (id) => [id],
-      fromFirestore: (doc, _deserializer) => ({ id: doc.ref[0], ...doc.data }),
-      toFirestore: (user, _serializer) => ({
+      fromFirestore: (doc) => ({ id: doc.ref[0], ...doc.data }),
+      toFirestore: (user) => ({
         ref: [user.id],
         data: { name: user.name, profile: user.profile, tag: user.tag },
       }),

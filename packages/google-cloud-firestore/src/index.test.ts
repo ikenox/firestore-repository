@@ -6,15 +6,10 @@ import {
 import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { query } from 'firestore-repository/query';
 import { type PlainModel, plainMapper } from 'firestore-repository/repository';
-import type { Doc } from 'firestore-repository/schema';
+import type { Doc } from 'firestore-repository/repository';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  createPlatformValueSerializer,
-  type Env,
-  type GoogleCloudFirestoreRepository,
-  repositoryWithMapper,
-} from './index.js';
+import { type Env, type GoogleCloudFirestoreRepository, repositoryWithMapper } from './index.js';
 import { offset } from './query.js';
 
 describe('repository', async () => {
@@ -37,7 +32,6 @@ describe('repository', async () => {
     createRepositoryWithMapper: (collection, mapper) =>
       repositoryWithMapper(db, collection, mapper),
     db: dbOps,
-    serializer: createPlatformValueSerializer(db),
     implementationSpecificTests: ({ newData, notExistDocId, collection }, setup) => {
       type TestCollection = typeof collection;
 
@@ -154,7 +148,7 @@ describe('repository', async () => {
         data: { name: 'author2', profile: { age: 40, gender: 'female' }, rank: 1, tag: ['b', 'c'] },
       },
       { ref: ['3'], data: { name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] } },
-    ] as const satisfies Doc<typeof authorsCollection>[];
+    ] as const satisfies Doc<typeof authorsCollection, 'write'>[];
 
     beforeAll(async () => {
       await repository.batchSet(items);

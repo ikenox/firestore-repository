@@ -33,7 +33,15 @@ npm install firestore-repository @firestore-repository/firebase-js-sdk
 ### Define a collection and its repository
 
 ```ts
-import { rootCollection, schemaWithoutValidation } from 'firestore-repository/schema';
+import {
+  rootCollection,
+  string,
+  double,
+  map,
+  optional,
+  literal,
+  array,
+} from 'firestore-repository/schema';
 
 // For backend
 import { Firestore } from '@google-cloud/firestore';
@@ -48,11 +56,11 @@ const db = getFirestore();
 // define a collection
 const users = rootCollection({
   name: 'Users',
-  data: schemaWithoutValidation<{
-    name: string;
-    profile: { age: number; gender?: 'male' | 'female' };
-    tag: string[];
-  }>(),
+  schema: {
+    name: string(),
+    profile: map({ age: double(), gender: optional(literal('male', 'female')) }),
+    tag: array(string()),
+  },
 });
 
 const repository = rootCollectionRepository(db, users);
@@ -199,7 +207,7 @@ await runTransaction(db, async (tx) => {
 Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (array of parent doc ID + doc ID). All other operations (query, batch, transaction, etc.) work the same.
 
 ```ts
-import { subCollection, schemaWithoutValidation } from 'firestore-repository/schema';
+import { subCollection, string } from 'firestore-repository/schema';
 
 // For backend
 import { subcollectionRepository } from '@firestore-repository/google-cloud-firestore';
@@ -209,7 +217,7 @@ import { subcollectionRepository } from '@firestore-repository/firebase-js-sdk';
 
 const posts = subCollection({
   name: 'Posts',
-  data: schemaWithoutValidation<{ title: string }>(),
+  schema: { title: string() },
   parent: ['Users'] as const,
 });
 

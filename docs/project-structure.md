@@ -155,7 +155,7 @@ firestore-repository/
 // Types are inferred from schema
 const users = rootCollection({
   name: 'Users',
-  data: schemaWithoutValidation<{ name: string; profile: { age: number } }>(),
+  schema: { name: string(), profile: map({ age: double() }) },
 });
 
 // Field path 'profile.age' is type-checked

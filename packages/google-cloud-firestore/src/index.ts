@@ -1,51 +1,27 @@
 import type * as firestore from '@google-cloud/firestore';
-import {
-  AggregateField,
-  DocumentReference as FirestoreDocumentReference,
-  FieldValue,
-  Filter,
-  GeoPoint as FirestoreGeoPoint,
-  Timestamp as FirestoreTimestamp,
-  Transaction,
-  VectorValue as FirestoreVectorValue,
-} from '@google-cloud/firestore';
+import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
-import type {
-  ArrayRemove,
-  ArrayUnion,
-  Bytes,
-  DocumentReference,
-  GeoPoint,
-  Increment,
-  ServerTimestamp,
-  Timestamp,
-  VectorValue,
-} from 'firestore-repository/document';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type { FilterExpression, Query } from 'firestore-repository/query';
 import {
   type AppModel,
-  type Mapper,
-  type PlainModel,
-  plainMapper,
-  type Repository,
-  type RootCollectionPlainModel,
-  rootCollectionPlainMapper,
-  type TransactionOption,
-  type Unsubscribe,
-  type PlatformValueDeserializer,
-  type PlatformValueSerializer,
-  type WriteTransactionOption,
-} from 'firestore-repository/repository';
-import type {
-  Collection,
   Doc,
   DocData,
   DocRef,
-  RootCollection,
-  SubCollection,
-} from 'firestore-repository/schema';
-import { assertNever, throwTypeMismatchError } from 'firestore-repository/util';
+  type Mapper,
+  plainMapper,
+  type PlainModel,
+  type Repository,
+  rootCollectionPlainMapper,
+  type RootCollectionPlainModel,
+  type TransactionOption,
+  type Unsubscribe,
+  type WriteTransactionOption,
+} from 'firestore-repository/repository';
+import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
+import { assertNever } from 'firestore-repository/util';
+
+import { buildDecodeSchema, buildEncodeSchema } from './codec.js';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -99,12 +75,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   collection: T,
   mapper: Mapper<T, Model>,
 ): GoogleCloudFirestoreRepository<T, Model> => {
-  const { toFirestore, fromFirestore, batchWriteOperation } = buildFirestoreUtilities(
+  const { toFirestore, fromFirestore, batchWriteOperation, encodeSchema } = buildFirestoreUtilities(
     db,
     collection,
   );
-  const serializer = createPlatformValueSerializer(db);
-  const deserializer = platformValueDeserializer;
+  // oxlint-disable-next-line typescript/no-explicit-any -- Zod output is passed to Firestore SDK
+  const encode = (data: unknown): any => encodeSchema.parse(data);
 
   return {
     collection,
@@ -119,7 +95,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       if (!doc) {
         return undefined;
       }
-      return mapper.fromFirestore(doc, deserializer);
+      return mapper.fromFirestore(doc);
     },
 
     getOnSnapshot: (
@@ -130,16 +106,14 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const docRef = toFirestore.docRef(mapper.toDocRef(ref));
       return docRef.onSnapshot((snapshot) => {
         const doc = fromFirestore.document(snapshot);
-        next(doc ? mapper.fromFirestore(doc, deserializer) : undefined);
+        next(doc ? mapper.fromFirestore(doc) : undefined);
       }, error);
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
       const firestoreQuery = toFirestore.query(query);
       const { docs } = await firestoreQuery.get();
-      return docs
-        .values()
-        .map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc), deserializer));
+      return docs.values().map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
     },
 
     listOnSnapshot: (
@@ -150,14 +124,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const firestoreQuery = toFirestore.query(query);
       return firestoreQuery.onSnapshot((snapshot) => {
         next(
-          snapshot.docs.map((doc) =>
-            mapper.fromFirestore(fromFirestore.documentMustExist(doc), deserializer),
-          ),
+          snapshot.docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
         );
       }, error);
     },
 
-    aggregate: async <U extends AggregateSpec<T>>(
+    aggregate: async <U extends AggregateSpec<T['schema']>>(
       query: Query<T>,
       spec: U,
     ): Promise<Aggregated<U>> => {
@@ -185,21 +157,21 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model, serializer);
+      const docToWrite = mapper.toFirestore(model);
       const docRef = toFirestore.docRef(docToWrite.ref);
-      await (options?.tx
-        ? options.tx.create(docRef, docToWrite.data)
-        : docRef.create(docToWrite.data));
+      const data = encode(docToWrite.data);
+      await (options?.tx ? options.tx.create(docRef, data) : docRef.create(data));
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docToWrite = mapper.toFirestore(model, serializer);
+      const docToWrite = mapper.toFirestore(model);
       const docRef = toFirestore.docRef(docToWrite.ref);
+      const data = encode(docToWrite.data);
       await (options?.tx
         ? options.tx instanceof Transaction
-          ? options.tx.set(docRef, docToWrite.data)
-          : options.tx.set(docRef, docToWrite.data)
-        : docRef.set(docToWrite.data));
+          ? options.tx.set(docRef, data)
+          : options.tx.set(docRef, data)
+        : docRef.set(data));
     },
 
     delete: async (ref: Model['id'], options?: WriteTransactionOption<Env>): Promise<void> => {
@@ -218,7 +190,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       const docs = await (options?.tx ? options.tx.getAll(...docRefs) : db.getAll(...docRefs));
       return docs.map((doc) => {
         const d = fromFirestore.document(doc);
-        return d ? mapper.fromFirestore(d, deserializer) : undefined;
+        return d ? mapper.fromFirestore(d) : undefined;
       });
     },
 
@@ -226,7 +198,10 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map((m) => mapper.toFirestore(m, serializer));
+      const docs = models.map((m) => {
+        const d = mapper.toFirestore(m);
+        return { ref: d.ref, data: encode(d.data) };
+      });
       await batchWriteOperation(
         docs,
         {
@@ -241,7 +216,10 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       models: Model['write'][],
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
-      const docs = models.map((m) => mapper.toFirestore(m, serializer));
+      const docs = models.map((m) => {
+        const d = mapper.toFirestore(m);
+        return { ref: d.ref, data: encode(d.data) };
+      });
       await batchWriteOperation(
         docs,
         {
@@ -270,6 +248,9 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
 };
 
 const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, collection: T) => {
+  const decodeSchema = buildDecodeSchema(collection.schema);
+  const encodeSchema = buildEncodeSchema(collection.schema, db);
+
   const toFirestore = {
     docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
     query: (query: Query<T>): firestore.Query => {
@@ -318,7 +299,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
         }, base) ?? base
       );
     },
-    filter: (expr: FilterExpression<T>): firestore.Filter => {
+    filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
       switch (expr.kind) {
         case 'fieldValueCondition':
           return Filter.where(expr.fieldPath, expr.opStr, expr.value);
@@ -332,15 +313,18 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     },
   };
   const fromFirestore = {
-    documentMustExist: (document: firestore.DocumentSnapshot): Doc<T> => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
-      const data = document.data() as DocData<T> | undefined;
+    documentMustExist: (document: firestore.DocumentSnapshot): Doc<T, 'read'> => {
+      const data = document.data();
       if (!data) {
         throw new Error('document must exist');
       }
-      return { ref: fromFirestore.docRef(document.ref), data };
+      return {
+        ref: fromFirestore.docRef(document.ref),
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by schema
+        data: decodeSchema.parse(data) as DocData<T['schema'], 'read'>,
+      };
     },
-    document: (document: firestore.DocumentSnapshot): Doc<T> | undefined => {
+    document: (document: firestore.DocumentSnapshot): Doc<T, 'read'> | undefined => {
       if (!document.exists) {
         return undefined;
       }
@@ -380,54 +364,5 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     }
   };
 
-  return { fromFirestore, toFirestore, batchWriteOperation };
-};
-
-// oxlint-disable typescript/no-unsafe-type-assertion -- SDK types are not structurally compatible with branded types
-export const createPlatformValueSerializer = (
-  db: firestore.Firestore,
-): PlatformValueSerializer => ({
-  timestamp: (date) => FirestoreTimestamp.fromDate(date) as unknown as Timestamp,
-  bytes: (bytes) => Buffer.from(bytes) as unknown as Bytes,
-  documentReference: (docRef) => db.doc(docRef.path) as unknown as DocumentReference,
-  geoPoint: (gp) => new FirestoreGeoPoint(gp.latitude, gp.longitude) as unknown as GeoPoint,
-  vectorValue: (vv) => FieldValue.vector(vv) as unknown as VectorValue,
-  serverTimestamp: () => FieldValue.serverTimestamp() as unknown as ServerTimestamp,
-  increment: (n) => FieldValue.increment(n) as unknown as Increment,
-  arrayUnion: (...elements) => FieldValue.arrayUnion(...elements) as unknown as ArrayUnion,
-  arrayRemove: (...elements) => FieldValue.arrayRemove(...elements) as unknown as ArrayRemove,
-});
-// oxlint-enable typescript/no-unsafe-type-assertion
-
-export const platformValueDeserializer: PlatformValueDeserializer = {
-  timestamp: (ts) => {
-    if (ts instanceof FirestoreTimestamp) {
-      return ts.toDate();
-    }
-    return throwTypeMismatchError(FirestoreTimestamp, ts);
-  },
-  bytes: (bytes) => {
-    if (bytes instanceof Buffer) {
-      return bytes;
-    }
-    return throwTypeMismatchError(Buffer, bytes);
-  },
-  documentReference: (ref) => {
-    if (ref instanceof FirestoreDocumentReference) {
-      return { path: ref.path };
-    }
-    return throwTypeMismatchError(FirestoreDocumentReference, ref);
-  },
-  geoPoint: (gp) => {
-    if (gp instanceof FirestoreGeoPoint) {
-      return { latitude: gp.latitude, longitude: gp.longitude };
-    }
-    return throwTypeMismatchError(FirestoreGeoPoint, gp);
-  },
-  vectorValue: (vv) => {
-    if (vv instanceof FirestoreVectorValue) {
-      return vv.toArray();
-    }
-    return throwTypeMismatchError(FirestoreVectorValue, vv);
-  },
+  return { fromFirestore, toFirestore, batchWriteOperation, encodeSchema };
 };

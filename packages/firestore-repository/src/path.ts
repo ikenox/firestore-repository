@@ -1,4 +1,5 @@
-import type { Collection, DocRef, ParentDocRef } from './schema.js';
+import { DocRef, ParentDocRef } from './repository.js';
+import type { Collection } from './schema.js';
 
 /**
  * Returns the fully-qualified path of a document

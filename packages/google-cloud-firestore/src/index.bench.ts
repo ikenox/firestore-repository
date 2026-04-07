@@ -2,8 +2,7 @@ import { Firestore } from '@google-cloud/firestore';
 import { authorsCollection } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
 import { eq, query, where } from 'firestore-repository/query';
-import { plainMapper } from 'firestore-repository/repository';
-import type { Doc } from 'firestore-repository/schema';
+import { Doc, plainMapper } from 'firestore-repository/repository';
 import { beforeAll, bench, describe } from 'vitest';
 
 import { repositoryWithMapper } from './index.js';
@@ -17,15 +16,15 @@ describe('repository', () => {
   const collection = uniqueCollection(authorsCollection);
   const repository = repositoryWithMapper(db, collection, plainMapper(collection));
 
-  const doc1: Doc<typeof collection> = {
+  const doc1: Doc<typeof collection, 'read'> = {
     ref: ['1'],
     data: { name: 'author1', profile: { age: 20 }, rank: 1, tag: ['a', 'b'] },
   };
-  const doc2: Doc<typeof collection> = {
+  const doc2: Doc<typeof collection, 'read'> = {
     ref: ['2'],
     data: { name: 'author2', profile: { age: 30 }, rank: 2, tag: ['b', 'c'] },
   };
-  const doc3: Doc<typeof collection> = {
+  const doc3: Doc<typeof collection, 'read'> = {
     ref: ['3'],
     data: { name: 'author3', profile: { age: 40 }, rank: 1, tag: ['c', 'd'] },
   };

@@ -9,7 +9,7 @@ import { defineRepositorySpecificationTests } from 'firestore-repository/__test_
 import { plainMapper } from 'firestore-repository/repository';
 import { describe } from 'vitest';
 
-import { createPlatformValueSerializer, type Env, repositoryWithMapper } from './index.js';
+import { type Env, repositoryWithMapper } from './index.js';
 
 describe('repository', async () => {
   const db = getFirestore(
@@ -37,6 +37,5 @@ describe('repository', async () => {
     createRepositoryWithMapper: (collection, mapper) =>
       repositoryWithMapper(db, collection, mapper),
     db: dbOps,
-    serializer: createPlatformValueSerializer(db),
   });
 });
