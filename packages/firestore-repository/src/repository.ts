@@ -1,21 +1,7 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
-import type {
-  ArrayRemove,
-  ArrayUnion,
-  Bytes,
-  DocumentReference,
-  GeoPoint,
-  Increment,
-  ServerTimestamp,
-  Timestamp,
-  DeserializedDocumentReference,
-  DeserializedGeoPoint,
-  DeserializedVectorValue,
-  VectorValue,
-  WriteDocumentData,
-} from './document.js';
 import type { Query } from './query.js';
-import type { Collection, Doc, DocData, DocRef, DocToWrite, RootCollection } from './schema.js';
+import { Collection, DocumentSchema, FieldValue, MapType, RootCollection } from './schema.js';
+import type { ToStringTuple } from './util.js';
 
 /**
  * A universal repository interface
@@ -58,7 +44,10 @@ export interface Repository<
   /**
    * Returns an aggregation result for the specified query
    */
-  aggregate: <U extends AggregateSpec<T>>(query: Query<T>, spec: U) => Promise<Aggregated<U>>;
+  aggregate: <U extends AggregateSpec<T['schema']>>(
+    query: Query<T>,
+    spec: U,
+  ) => Promise<Aggregated<U>>;
 
   /**
    * Creates or updates a document
@@ -84,38 +73,8 @@ export interface Repository<
 /** A mapper that converts between Firestore documents and application models */
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
-  fromFirestore: (doc: Doc<T>, deserializer: PlatformValueDeserializer) => Model['read'];
-  toFirestore: (model: Model['write'], serializer: PlatformValueSerializer) => DocToWrite<T>;
-};
-
-/**
- * Converts platform-specific Firestore value types into plain JavaScript values.
- * Used when reading documents from Firestore to transform SDK types (Timestamp, Bytes, etc.)
- * into application-friendly types (Date, ArrayBuffer, etc.).
- */
-export type PlatformValueDeserializer = {
-  timestamp: (timestamp: Timestamp) => Date;
-  bytes: (bytes: Bytes) => Uint8Array;
-  documentReference: (docRef: DocumentReference) => DeserializedDocumentReference;
-  geoPoint: (geoPoint: GeoPoint) => DeserializedGeoPoint;
-  vectorValue: (vectorValue: VectorValue) => DeserializedVectorValue;
-};
-
-/**
- * Converts plain JavaScript values into platform-specific Firestore value types.
- * Used when writing documents to Firestore to transform application values into SDK types.
- * Also provides special write-only sentinel values (serverTimestamp, increment, etc.).
- */
-export type PlatformValueSerializer = {
-  timestamp: (date: Date) => Timestamp;
-  bytes: (bytes: Uint8Array) => Bytes;
-  documentReference: (docRef: DeserializedDocumentReference) => DocumentReference;
-  geoPoint: (geoPoint: DeserializedGeoPoint) => GeoPoint;
-  vectorValue: (vectorValue: DeserializedVectorValue) => VectorValue;
-  serverTimestamp: () => ServerTimestamp;
-  increment: (n: number) => Increment;
-  arrayUnion: (...elements: unknown[]) => ArrayUnion;
-  arrayRemove: (...elements: unknown[]) => ArrayRemove;
+  fromFirestore: (doc: Doc<T, 'read'>) => Model['read'];
+  toFirestore: (model: Model['write']) => Doc<T, 'write'>;
 };
 
 /** An application model type definition with id, read, and write shapes */
@@ -144,16 +103,33 @@ export type PlainRepository<
 /** A model that directly uses Doc and DocRef without custom mapping */
 export type PlainModel<T extends Collection> = {
   id: DocRef<T>;
-  write: DocToWrite<T>;
-  read: Doc<T>;
+  write: Doc<T, 'write'>;
+  read: Doc<T, 'read'>;
+};
+
+export type Doc<T extends Collection, Mode extends 'read' | 'write'> = {
+  ref: DocRef<T>;
+  data: DocData<T['schema'], Mode>;
 };
 
 /** A plain model for root collections where the id is a single string */
 export type RootCollectionPlainModel<T extends Collection> = {
   id: string;
-  write: { ref: string; data: DocData<T> | WriteDocumentData<DocData<T>> };
-  read: { ref: string; data: DocData<T> };
+  write: { ref: string; data: DocData<T['schema'], 'write'> };
+  read: { ref: string; data: DocData<T['schema'], 'read'> };
 };
+
+/** A document reference represented as a tuple of document IDs */
+export type DocRef<T extends Collection> = [...ParentDocRef<T>, string];
+
+/** A parent document reference of a subcollection */
+export type ParentDocRef<T extends Collection> = ToStringTuple<T['parent']>;
+
+/** The resolved TypeScript type of  document's data, derived from a schema. In write mode, fields additionally accept server-side operations (e.g. ServerTimestamp, Increment). */
+export type DocData<
+  Schema extends DocumentSchema = DocumentSchema,
+  Mode extends 'read' | 'write' = 'read' | 'write',
+> = FieldValue<MapType<Schema>, Mode>;
 
 /** Creates a plain mapper that passes documents through without transformation */
 export const plainMapper = <T extends Collection>(_collection: T): Mapper<T, PlainModel<T>> => ({

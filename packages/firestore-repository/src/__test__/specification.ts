@@ -1,14 +1,6 @@
 import { assert, beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
 import { average, count, sum } from '../aggregate.js';
-import type {
-  Bytes,
-  DocumentReference,
-  FieldPath,
-  GeoPoint,
-  Timestamp,
-  VectorValue,
-} from '../document.js';
 import {
   and,
   arrayContains,
@@ -36,19 +28,36 @@ import {
 } from '../query.js';
 import type {
   AppModel,
+  Doc,
+  DocRef,
   FirestoreEnvironment,
   Mapper,
   PlainRepository,
-  PlatformValueSerializer,
   Repository,
 } from '../repository.js';
 import {
   type Collection,
-  type Doc,
-  type DocRef,
+  type FieldPath,
+  array,
+  bool,
+  bytes,
+  docRef,
+  double,
+  geoPoint,
+  literal,
+  map,
+  nullType,
+  optional,
   rootCollection,
-  schemaWithoutValidation,
+  string,
   subCollection,
+  timestamp,
+  union,
+  vector,
+  serverTimestamp,
+  increment,
+  arrayUnion,
+  arrayRemove,
 } from '../schema.js';
 import {
   expectArrayEqualsWithoutOrder,
@@ -63,22 +72,26 @@ import {
  */
 export const authorsCollection = rootCollection({
   name: 'Authors',
-  data: schemaWithoutValidation<{
-    name: string;
-    profile: { age: number; gender?: 'male' | 'female' };
-    rank: number;
-    tag: string[];
-  }>(),
+  schema: {
+    name: string(),
+    profile: map({ age: double(), gender: optional(literal('male', 'female')) }),
+    rank: double(),
+    tag: array(string()),
+  },
 });
+
+export type AuthorsCollection = typeof authorsCollection;
 
 /**
  * A subcollection for test
  */
 export const postsCollection = subCollection({
   name: 'Posts',
-  data: schemaWithoutValidation<{ title: string; postedAt: Timestamp }>(),
+  schema: { title: string(), postedAt: timestamp() },
   parent: ['Authors'] as const,
 });
+
+export type PostsCollection = typeof postsCollection;
 
 /**
  * List of specifications that repository implementations must satisfy
@@ -87,7 +100,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
   db,
   createRepository,
   createRepositoryWithMapper,
-  serializer,
   implementationSpecificTests,
 }: {
   createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
@@ -99,7 +111,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     writeBatch: () => Env['writeBatch'] & { commit(): Promise<unknown> };
     transaction: <T>(runner: (tx: Env['transaction']) => Promise<T>) => Promise<T>;
   };
-  serializer: PlatformValueSerializer;
   implementationSpecificTests?: <T extends Collection>(
     params: TestCollectionParams<T>,
     setup: () => RepositoryTestEnv<T, Env>,
@@ -107,7 +118,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 }) => {
   const defineTests = <T extends Collection>(params: TestCollectionParams<T>) => {
     const setup = (): RepositoryTestEnv<T, Env> => {
-      const items: [Doc<T>, Doc<T>, Doc<T>] = [
+      const items: [Doc<T, 'read'>, Doc<T, 'read'>, Doc<T, 'read'>] = [
         params.newData(),
         params.newData(),
         params.newData(),
@@ -135,7 +146,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       return {
         repository,
         items,
-        expectDb: async (expected: Doc<T>[]) => {
+        expectDb: async (expected: Doc<T, 'read'>[]) => {
           const items = (
             await currentRepository.list(
               query({ collection: currentRepository.collection, group: true }),
@@ -188,7 +199,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           () => repository.set(updated3),
         ];
 
-        const received: (Doc<T> | undefined)[] = [];
+        const received: (Doc<T, 'read'> | undefined)[] = [];
         const unsubscribe = repository.getOnSnapshot(items[0].ref, (snapshot) => {
           received.push(snapshot);
           const op = operations.shift();
@@ -238,7 +249,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           () => repository.delete(updated1.ref),
         ];
 
-        const received: Doc<T>[][] = [];
+        const received: Doc<T, 'read'>[][] = [];
         const unsubscribe = repository.listOnSnapshot(
           query({ collection: repository.collection, group: true }),
           (list) => {
@@ -494,7 +505,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const authorId = baseId++;
         return {
           ref: [`author${authorId}`, `${id}`],
-          data: { title: `post${id}`, postedAt: serializer.timestamp(new Date()) },
+          data: { title: `post${id}`, postedAt: new Date() },
         };
       },
       mutate: (data) => ({
@@ -506,7 +517,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const setup = <T extends Collection, const Items extends Doc<T>[]>(params: {
+      const setup = <T extends Collection, const Items extends Doc<T, 'read'>[]>(params: {
         collection: T;
         items: Items;
       }) => {
@@ -517,7 +528,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         return {
           repository,
           items: params.items,
-          expectQuery: async (query: Query<T>, expected: Doc<T>[]) => {
+          expectQuery: async (query: Query<T>, expected: Doc<T, 'read'>[]) => {
             const result = (await repository.list(query)).toArray();
             expect(result).toStrictEqual(expected);
           },
@@ -550,7 +561,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               ref: ['3'],
               data: { name: 'author3', profile: { age: 20 }, rank: 2, tag: ['c', 'd'] },
             },
-          ] as const satisfies Doc<typeof authorsCollection>[],
+          ] as const satisfies Doc<AuthorsCollection, 'read'>[],
         });
 
         it('query without condition', async () => {
@@ -570,8 +581,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             const tests: Record<
               string,
               [
-                condition: FilterExpression<typeof authorsCollection>,
-                expected: Doc<typeof authorsCollection>[],
+                condition: FilterExpression<AuthorsCollection['schema']>,
+                expected: Doc<AuthorsCollection, 'read'>[],
               ]
             > = {
               '==': [eq('name', 'author1'), [items[0]]],
@@ -788,12 +799,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           nested: ['profile.age'],
           multiple: ['rank', 'profile.age'],
           multipleOrderSingleCursor: ['rank', 'profile.age'],
-        } as const satisfies Record<string, FieldPath[]>;
+        } as const satisfies Record<string, FieldPath<AuthorsCollection['schema']>[]>;
         const defineQueryCursorTests = (
           cursorFunc: typeof startAt | typeof startAfter | typeof endAt | typeof endBefore,
           tests: Record<
             keyof typeof queryCursorTestCases,
-            [unknown[], Doc<typeof repository.collection>[]][]
+            [unknown[], Doc<typeof repository.collection, 'read'>[]][]
           >,
         ) => {
           describe(cursorFunc.name, () => {
@@ -802,7 +813,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 const orderByConstraints = queryCursorTestCases[
                   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Object.entries loses type information of object keys
                   testName as keyof typeof queryCursorTestCases
-                ].map((f) => orderBy<typeof repository.collection>(f));
+                ].map((f) => orderBy<(typeof repository.collection)['schema']>(f));
 
                 for (const [cursorValues, expected] of asserts) {
                   await expectQuery(
@@ -938,18 +949,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const { repository, expectQuery, items } = setup({
           collection: postsCollection,
           items: [
-            {
-              ref: ['author1', '1'],
-              data: { title: 'post1', postedAt: serializer.timestamp(new Date('2020-02-01')) },
-            },
-            {
-              ref: ['author1', '2'],
-              data: { title: 'post2', postedAt: serializer.timestamp(new Date('2020-01-01')) },
-            },
-            {
-              ref: ['author2', '3'],
-              data: { title: 'post3', postedAt: serializer.timestamp(new Date('2020-03-01')) },
-            },
+            { ref: ['author1', '1'], data: { title: 'post1', postedAt: new Date('2020-02-01') } },
+            { ref: ['author1', '2'], data: { title: 'post2', postedAt: new Date('2020-01-01') } },
+            { ref: ['author2', '3'], data: { title: 'post3', postedAt: new Date('2020-03-01') } },
           ],
         });
 
@@ -995,37 +997,38 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     describe('all field types', () => {
       const allFieldTypesCollection = rootCollection({
         name: `AllFieldTypes_${randomString()}`,
-        data: schemaWithoutValidation<{
-          array: (string | number)[];
-          boolean: boolean;
-          bytes: Bytes;
-          timestamp: Timestamp;
-          number: number;
-          getPoint: GeoPoint;
-          map: { a: number; b: string[] };
-          null: null;
-          docRef: DocumentReference;
-          string: string;
-          vector: VectorValue;
-        }>(),
+        schema: {
+          array: array(union(string(), double())),
+          boolean: bool(),
+          bytes: bytes(),
+          timestamp: timestamp(),
+          number: double(),
+          getPoint: geoPoint(),
+          map: map({ a: double(), b: array(string()) }),
+          null: nullType(),
+          docRef: docRef(authorsCollection),
+          str: string(),
+          vector: vector(),
+        },
       });
       const repository = createRepository(allFieldTypesCollection);
 
       it('set/get', async () => {
-        const value: Doc<typeof allFieldTypesCollection> = {
-          ref: [randomString()],
+        const docId = randomString();
+        const value = {
+          ref: [docId] as [string],
           data: {
-            array: [1, 2, 'foo', 3, 'bar'],
+            array: [1, 2, 'foo', 3, 'bar'] as (string | number)[],
             boolean: false,
-            bytes: serializer.bytes(Uint8Array.from([1, 2, 3, 4, 5])),
-            timestamp: serializer.timestamp(new Date()),
+            bytes: Uint8Array.from([1, 2, 3, 4, 5]),
+            timestamp: new Date(),
             number: randomNumber(),
-            getPoint: serializer.geoPoint({ latitude: 12.3, longitude: 45.6 }),
+            getPoint: { latitude: 12.3, longitude: 45.6 },
             map: { a: 123, b: ['foo', 'bar'] },
             null: null,
-            docRef: serializer.documentReference({ path: 'foo/a/bar/b' }),
-            string: randomString(),
-            vector: serializer.vectorValue([1, 2, 3, 4, 5]),
+            docRef: [randomString()] as [string],
+            str: randomString(),
+            vector: [1, 2, 3, 4, 5],
           },
         };
         await repository.set(value);
@@ -1033,33 +1036,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const dbValue = await repository.get(value.ref);
         assert(dbValue);
 
-        const {
-          data: { docRef, ...withoutDocRef },
-          ...rest
-        } = value;
-        const {
-          data: { docRef: dbDocRef, ...dbWithoutDocRef },
-          ...dbRest
-        } = dbValue;
-
-        expect({ ...dbRest, data: dbWithoutDocRef }).toStrictEqual({
-          ...rest,
-          data: withoutDocRef,
-        });
-        // @ts-expect-error -- Some private field values of DocumentReference will be different
-        expect(dbDocRef.path).toStrictEqual(docRef.path);
+        expect(dbValue).toStrictEqual(value);
       });
     });
 
     describe('custom mapper with serializer/deserializer', () => {
-      // Define a collection with Firestore types
+      // Define a collection with plain TypeScript types (Zod codec handles conversion)
       const testCollection = rootCollection({
         name: `CustomMapperTest_${randomString()}`,
-        data: schemaWithoutValidation<{
-          createdAt: Timestamp;
-          location: GeoPoint;
-          content: Bytes;
-        }>(),
+        schema: { createdAt: timestamp(), location: geoPoint(), content: bytes() },
       });
 
       // Define an application model with plain JavaScript types
@@ -1084,24 +1069,18 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           testCollection,
           {
             toDocRef: (id) => [id],
-            fromFirestore: (doc, deserializer) => ({
+            fromFirestore: (doc) => ({
               id: doc.ref[0],
-              createdAt: deserializer.timestamp(doc.data.createdAt),
-              location: {
-                lat: deserializer.geoPoint(doc.data.location).latitude,
-                lng: deserializer.geoPoint(doc.data.location).longitude,
-              },
-              content: deserializer.bytes(doc.data.content),
+              createdAt: doc.data.createdAt,
+              location: { lat: doc.data.location.latitude, lng: doc.data.location.longitude },
+              content: doc.data.content,
             }),
-            toFirestore: (model, serializer) => ({
+            toFirestore: (model) => ({
               ref: [model.id],
               data: {
-                createdAt: serializer.timestamp(model.createdAt),
-                location: serializer.geoPoint({
-                  latitude: model.location.lat,
-                  longitude: model.location.lng,
-                }),
-                content: serializer.bytes(model.content),
+                createdAt: model.createdAt,
+                location: { latitude: model.location.lat, longitude: model.location.lng },
+                content: model.content,
               },
             }),
           },
@@ -1136,77 +1115,39 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       describe('sentinel values', () => {
         const sentinelCollection = rootCollection({
           name: `SentinelTest_${randomString()}`,
-          data: schemaWithoutValidation<{
-            updatedAt: Timestamp;
-            counter: number;
-            tags: string[];
-          }>(),
+          schema: { updatedAt: timestamp(), counter: double(), tags: array(string()) },
         });
 
-        type SentinelAppModel = {
-          id: string;
-          read: { id: string; updatedAt: Date; counter: number; tags: string[] };
-          write: {
-            id: string;
-            updatedAt: Date | 'serverTimestamp';
-            counter: number | { increment: number };
-            tags: string[] | { arrayUnion: string[] } | { arrayRemove: string[] };
-          };
-        };
-
-        const repository = createRepositoryWithMapper<typeof sentinelCollection, SentinelAppModel>(
-          sentinelCollection,
-          {
-            toDocRef: (id) => [id],
-            fromFirestore: (doc, deserializer) => ({
-              id: doc.ref[0],
-              updatedAt: deserializer.timestamp(doc.data.updatedAt),
-              counter: doc.data.counter,
-              tags: doc.data.tags,
-            }),
-            toFirestore: (model, serializer) => ({
-              ref: [model.id],
-              data: {
-                updatedAt:
-                  model.updatedAt === 'serverTimestamp'
-                    ? serializer.serverTimestamp()
-                    : serializer.timestamp(model.updatedAt),
-                counter:
-                  typeof model.counter === 'object' && 'increment' in model.counter
-                    ? serializer.increment(model.counter.increment)
-                    : model.counter,
-                tags: Array.isArray(model.tags)
-                  ? model.tags
-                  : 'arrayUnion' in model.tags
-                    ? serializer.arrayUnion(...model.tags.arrayUnion)
-                    : serializer.arrayRemove(...model.tags.arrayRemove),
-              },
-            }),
-          },
-        );
+        const repository = createRepository(sentinelCollection);
 
         it('serverTimestamp', async () => {
           const id = randomString();
 
           const now = Date.now();
-          await repository.set({ id, updatedAt: 'serverTimestamp', counter: 1, tags: [] });
+          await repository.set({
+            ref: [id],
+            data: { updatedAt: serverTimestamp(), counter: 1, tags: [] },
+          });
 
-          const doc = await repository.get(id);
+          const doc = await repository.get([id]);
           assert(doc);
-          expect(doc.updatedAt.getTime()).toBeGreaterThanOrEqual(now - 1000);
-          expect(doc.updatedAt.getTime()).toBeLessThanOrEqual(now + 1000);
+          expect(doc.data.updatedAt.getTime()).toBeGreaterThanOrEqual(now - 1000);
+          expect(doc.data.updatedAt.getTime()).toBeLessThanOrEqual(now + 1000);
         });
 
         it('increment', async () => {
           const id = randomString();
 
           // Verify increment works with set() without runtime error
-          await repository.set({ id, updatedAt: new Date(), counter: { increment: 5 }, tags: [] });
+          await repository.set({
+            ref: [id],
+            data: { updatedAt: new Date(), counter: increment(5), tags: [] },
+          });
 
-          const doc = await repository.get(id);
+          const doc = await repository.get([id]);
           assert(doc);
           // increment with set() creates a new value (not adding to existing)
-          expect(doc.counter).toBe(5);
+          expect(doc.data.counter).toBe(5);
 
           // TODO: Test increment behavior with update/merge operation
           // Currently only testing that set() doesn't throw and overwrites with the increment value
@@ -1217,16 +1158,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           // Verify arrayUnion works with set() without runtime error
           await repository.set({
-            id,
-            updatedAt: new Date(),
-            counter: 0,
-            tags: { arrayUnion: ['tag1', 'tag2'] },
+            ref: [id],
+            data: { updatedAt: new Date(), counter: 0, tags: arrayUnion('tag1', 'tag2') },
           });
 
-          const doc = await repository.get(id);
+          const doc = await repository.get([id]);
           assert(doc);
           // arrayUnion with set() creates a new array (not merging with existing)
-          expect(doc.tags).toEqual(expect.arrayContaining(['tag1', 'tag2']));
+          expect(doc.data.tags).toEqual(expect.arrayContaining(['tag1', 'tag2']));
 
           // TODO: Test arrayUnion merge behavior with update/merge operation
           // Currently only testing that set() doesn't throw and overwrites with the union values
@@ -1236,21 +1175,22 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           const id = randomString();
 
           // First create a document with some tags
-          await repository.set({ id, updatedAt: new Date(), counter: 0, tags: ['tag1', 'tag2'] });
+          await repository.set({
+            ref: [id],
+            data: { updatedAt: new Date(), counter: 0, tags: ['tag1', 'tag2'] },
+          });
 
           // Verify arrayRemove works with set() without runtime error
           await repository.set({
-            id,
-            updatedAt: new Date(),
-            counter: 0,
-            tags: { arrayRemove: ['tag1'] },
+            ref: [id],
+            data: { updatedAt: new Date(), counter: 0, tags: arrayRemove('tag1') },
           });
 
-          const doc = await repository.get(id);
+          const doc = await repository.get([id]);
           assert(doc);
           // arrayRemove with set() replaces the array (behavior depends on implementation)
           // Just verify no runtime error occurred
-          expect(doc.tags).toBeDefined();
+          expect(doc.data.tags).toBeDefined();
 
           // TODO: Test arrayRemove merge behavior with update/merge operation
           // Currently only testing that set() doesn't throw and overwrites the array
@@ -1262,15 +1202,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
 export type RepositoryTestEnv<T extends Collection, Env extends FirestoreEnvironment> = {
   repository: PlainRepository<T, Env>;
-  items: [Doc<T>, Doc<T>, Doc<T>, ...Doc<T>[]];
-  expectDb: (expected: Doc<T>[]) => Promise<void>;
+  items: [Doc<T, 'read'>, Doc<T, 'read'>, Doc<T, 'read'>, ...Doc<T, 'read'>[]];
+  expectDb: (expected: Doc<T, 'read'>[]) => Promise<void>;
 };
 
 export type TestCollectionParams<T extends Collection = Collection> = {
   title: string;
   collection: T;
-  newData: () => Doc<T>;
-  mutate: (data: Doc<T>) => Doc<T>;
+  newData: () => Doc<T, 'read'>;
+  mutate: (data: Doc<T, 'read'>) => Doc<T, 'read'>;
   notExistDocId: () => DocRef<T>;
-  sortKey: (doc: Doc<T>) => string;
+  sortKey: (doc: Doc<T, 'read'>) => string;
 };

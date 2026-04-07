@@ -1,25 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { collectionPath, documentPath } from './path.js';
-import { rootCollection, schemaWithoutValidation, subCollection } from './schema.js';
+import { rootCollection, string, subCollection } from './schema.js';
 
 describe('path', () => {
   // Test collections
-  const users = rootCollection({
-    name: 'Users',
-    data: schemaWithoutValidation<{ name: string }>(),
-  });
-
-  const posts = subCollection({
-    name: 'Posts',
-    parent: ['Users'],
-    data: schemaWithoutValidation<{ title: string }>(),
-  });
-
+  const users = rootCollection({ name: 'Users', schema: { name: string() } });
+  const posts = subCollection({ name: 'Posts', parent: ['Users'], schema: { title: string() } });
   const comments = subCollection({
     name: 'Comments',
     parent: ['Users', 'Posts'],
-    data: schemaWithoutValidation<{ text: string }>(),
+    schema: { text: string() },
   });
 
   describe('collectionPath', () => {

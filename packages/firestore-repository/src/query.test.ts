@@ -2,6 +2,7 @@ import { describe, expectTypeOf, it } from 'vitest';
 
 import { authorsCollection, postsCollection } from './__test__/specification.js';
 import { type FilterOperand, limit, orderBy, query } from './query.js';
+import { ArrayType, Int64Type, NullType, StringType, UnionType } from './schema.js';
 
 describe('query', () => {
   describe('query function argument', () => {
@@ -36,40 +37,35 @@ describe('query', () => {
   });
 
   it('FilterOperand', () => {
-    expectTypeOf<FilterOperand<number, '<'>>().toEqualTypeOf<number>();
-    expectTypeOf<FilterOperand<number, '<='>>().toEqualTypeOf<number>();
-    expectTypeOf<FilterOperand<number, '=='>>().toEqualTypeOf<number>();
-    expectTypeOf<FilterOperand<number, '!='>>().toEqualTypeOf<number>();
-    expectTypeOf<FilterOperand<number, '>='>>().toEqualTypeOf<number>();
-    expectTypeOf<FilterOperand<number, '>'>>().toEqualTypeOf<number>();
+    expectTypeOf<FilterOperand<Int64Type, '<'>>().toEqualTypeOf<Int64Type>();
+    expectTypeOf<FilterOperand<Int64Type, '<='>>().toEqualTypeOf<Int64Type>();
+    expectTypeOf<FilterOperand<Int64Type, '=='>>().toEqualTypeOf<Int64Type>();
+    expectTypeOf<FilterOperand<Int64Type, '!='>>().toEqualTypeOf<Int64Type>();
+    expectTypeOf<FilterOperand<Int64Type, '>='>>().toEqualTypeOf<Int64Type>();
+    expectTypeOf<FilterOperand<Int64Type, '>'>>().toEqualTypeOf<Int64Type>();
+    expectTypeOf<FilterOperand<Int64Type, 'in'>>().toEqualTypeOf<ArrayType<Int64Type>>();
+    expectTypeOf<FilterOperand<Int64Type, 'not-in'>>().toEqualTypeOf<ArrayType<Int64Type>>();
     // cannot apply array operator for non-array value
-    expectTypeOf<FilterOperand<number, 'in'>>().toEqualTypeOf<number[]>();
-    expectTypeOf<FilterOperand<number, 'not-in'>>().toEqualTypeOf<number[]>();
-    expectTypeOf<FilterOperand<number, 'array-contains'>>().toEqualTypeOf<never>();
-    expectTypeOf<FilterOperand<number, 'array-contains-any'>>().toEqualTypeOf<never>();
+    expectTypeOf<FilterOperand<Int64Type, 'array-contains'>>().toEqualTypeOf<never>();
+    expectTypeOf<FilterOperand<Int64Type, 'array-contains-any'>>().toEqualTypeOf<never>();
 
     // nullable value
-    expectTypeOf<FilterOperand<number | null, '=='>>().toEqualTypeOf<number | null>();
-    expectTypeOf<FilterOperand<number | null, '>'>>().toEqualTypeOf<number | null>();
+    type NullableInt = UnionType<[Int64Type, NullType]>;
+    expectTypeOf<FilterOperand<NullableInt, '=='>>().toEqualTypeOf<NullableInt>();
+    expectTypeOf<FilterOperand<NullableInt, '>'>>().toEqualTypeOf<NullableInt>();
 
     // array
-    expectTypeOf<FilterOperand<string[], '=='>>().toEqualTypeOf<string[]>();
-    expectTypeOf<FilterOperand<string[], '!='>>().toEqualTypeOf<string[]>();
-    expectTypeOf<FilterOperand<string[], 'array-contains'>>().toEqualTypeOf<string>();
-    expectTypeOf<FilterOperand<string[], 'array-contains-any'>>().toEqualTypeOf<string[]>();
-
-    // tuple
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], '=='>>().toEqualTypeOf<[number, 'a' | 'b']>();
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], '!='>>().toEqualTypeOf<[number, 'a' | 'b']>();
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'in'>>().toEqualTypeOf<[number, 'a' | 'b'][]>();
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'not-in'>>().toEqualTypeOf<
-      [number, 'a' | 'b'][]
+    expectTypeOf<FilterOperand<ArrayType<StringType>, '=='>>().toEqualTypeOf<
+      ArrayType<StringType>
     >();
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'array-contains'>>().toEqualTypeOf<
-      number | 'a' | 'b'
+    expectTypeOf<FilterOperand<ArrayType<StringType>, '!='>>().toEqualTypeOf<
+      ArrayType<StringType>
     >();
-    expectTypeOf<FilterOperand<[number, 'a' | 'b'], 'array-contains-any'>>().toEqualTypeOf<
-      (number | 'a' | 'b')[]
+    expectTypeOf<
+      FilterOperand<ArrayType<StringType>, 'array-contains'>
+    >().toEqualTypeOf<StringType>();
+    expectTypeOf<FilterOperand<ArrayType<StringType>, 'array-contains-any'>>().toEqualTypeOf<
+      ArrayType<StringType>
     >();
   });
 });
