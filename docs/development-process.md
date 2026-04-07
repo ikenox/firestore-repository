@@ -27,3 +27,41 @@ When making changes to the public API or usage patterns, refer to [coding-guidel
 ### Build
 
 - `pnpm build` - Build all packages
+
+## Release
+
+### 1. Pre-release checks
+
+```bash
+pnpm check
+pnpm test
+```
+
+### 2. Bump version numbers
+
+Update the `version` field to the same new version in all 3 package files:
+
+- `packages/firestore-repository/package.json`
+- `packages/google-cloud-firestore/package.json`
+- `packages/firebase-js-sdk/package.json`
+
+### 3. Commit and push to main
+
+```bash
+git add packages/firestore-repository/package.json packages/google-cloud-firestore/package.json packages/firebase-js-sdk/package.json
+git commit -m "vX.Y.Z"
+git push origin main
+```
+
+### 4. Trigger GitHub Actions release workflow
+
+Go to **Actions → release → Run workflow**, or use the CLI:
+
+```bash
+gh workflow run release.yaml --ref main \
+  -f firestore-repository=true \
+  -f firebase-js-sdk=true \
+  -f google-cloud-firestore=true
+```
+
+The workflow will publish selected packages to npm and automatically create a GitHub Release with auto-generated release notes.
