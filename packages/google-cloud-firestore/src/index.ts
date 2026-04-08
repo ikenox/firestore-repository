@@ -158,14 +158,14 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
 
     create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite.ref);
+      const docRef = toFirestore.docRef(docToWrite.id);
       const data = encode(docToWrite.data);
       await (options?.tx ? options.tx.create(docRef, data) : docRef.create(data));
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite.ref);
+      const docRef = toFirestore.docRef(docToWrite.id);
       const data = encode(docToWrite.data);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -200,13 +200,13 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     ): Promise<void> => {
       const docs = models.map((m) => {
         const d = mapper.toFirestore(m);
-        return { ref: d.ref, data: encode(d.data) };
+        return { id: d.id, data: encode(d.data) };
       });
       await batchWriteOperation(
         docs,
         {
-          batch: (batch, doc) => batch.set(toFirestore.docRef(doc.ref), doc.data),
-          transaction: (tx, doc) => tx.set(toFirestore.docRef(doc.ref), doc.data),
+          batch: (batch, doc) => batch.set(toFirestore.docRef(doc.id), doc.data),
+          transaction: (tx, doc) => tx.set(toFirestore.docRef(doc.id), doc.data),
         },
         options,
       );
@@ -218,13 +218,13 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     ): Promise<void> => {
       const docs = models.map((m) => {
         const d = mapper.toFirestore(m);
-        return { ref: d.ref, data: encode(d.data) };
+        return { id: d.id, data: encode(d.data) };
       });
       await batchWriteOperation(
         docs,
         {
-          batch: (batch, doc) => batch.create(toFirestore.docRef(doc.ref), doc.data),
-          transaction: (tx, doc) => tx.create(toFirestore.docRef(doc.ref), doc.data),
+          batch: (batch, doc) => batch.create(toFirestore.docRef(doc.id), doc.data),
+          transaction: (tx, doc) => tx.create(toFirestore.docRef(doc.id), doc.data),
         },
         options,
       );
@@ -319,7 +319,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
         throw new Error('document must exist');
       }
       return {
-        ref: fromFirestore.docRef(document.ref),
+        id: fromFirestore.docRef(document.ref),
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by schema
         data: decodeSchema.parse(data) as DocData<T['schema'], 'read'>,
       };

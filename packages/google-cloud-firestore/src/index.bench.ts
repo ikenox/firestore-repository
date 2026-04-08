@@ -17,15 +17,15 @@ describe('repository', () => {
   const repository = repositoryWithMapper(db, collection, plainMapper(collection));
 
   const doc1: Doc<typeof collection, 'read'> = {
-    ref: ['1'],
+    id: ['1'],
     data: { name: 'author1', profile: { age: 20 }, rank: 1, tag: ['a', 'b'] },
   };
   const doc2: Doc<typeof collection, 'read'> = {
-    ref: ['2'],
+    id: ['2'],
     data: { name: 'author2', profile: { age: 30 }, rank: 2, tag: ['b', 'c'] },
   };
   const doc3: Doc<typeof collection, 'read'> = {
-    ref: ['3'],
+    id: ['3'],
     data: { name: 'author3', profile: { age: 40 }, rank: 1, tag: ['c', 'd'] },
   };
 
@@ -34,7 +34,7 @@ describe('repository', () => {
   });
 
   bench('get', async () => {
-    await repository.get(doc1.ref);
+    await repository.get(doc1.id);
   });
 
   bench('set', async () => {
@@ -50,6 +50,6 @@ describe('repository', () => {
   });
 
   bench('batchGet', async () => {
-    await repository.batchGet([doc1.ref, doc2.ref, doc3.ref]);
+    await repository.batchGet([doc1.id, doc2.id, doc3.id]);
   });
 });

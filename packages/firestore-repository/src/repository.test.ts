@@ -34,11 +34,11 @@ describe('repository', () => {
 
   it('Doc', () => {
     expectTypeOf<Doc<AuthorsCollection, 'read'>>().toEqualTypeOf<{
-      ref: [string];
+      id: [string];
       data: { name: string; registeredAt: Date };
     }>();
     expectTypeOf<Doc<AuthorsCollection, 'write'>>().toEqualTypeOf<{
-      ref: [string];
+      id: [string];
       data: { name: string; registeredAt: Date | ServerTimestamp };
     }>();
 

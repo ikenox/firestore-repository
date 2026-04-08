@@ -73,13 +73,13 @@ All operations are **type-safe** based on the schema you defined. The `data` fie
 ```ts
 // Set a document
 await repository.set({
-  ref: 'user1',
+  id: 'user1',
   data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
 });
 
 // Create a document (backend only)
 await repository.create({
-  ref: 'user2',
+  id: 'user2',
   data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
 });
 
@@ -139,8 +139,8 @@ const users = await repository.batchGet(['user1', 'user2']);
 
 // Set multiple documents
 await repository.batchSet([
-  { ref: 'user1', data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] } },
-  { ref: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+  { id: 'user1', data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] } },
+  { id: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
 ]);
 
 // Delete multiple documents
@@ -157,7 +157,7 @@ import { writeBatch } from '@firebase/firestore';
 const batch = writeBatch(db);
 
 await repository.set(
-  { ref: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+  { id: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
   { tx: batch },
 );
 await repository.batchSet(
@@ -189,8 +189,8 @@ await runTransaction(db, async (tx) => {
     await repository.set(doc, { tx });
     await repository.batchSet(
       [
-        { ...doc, ref: 'user2' },
-        { ...doc, ref: 'user3' },
+        { ...doc, id: 'user2' },
+        { ...doc, id: 'user3' },
       ],
       { tx },
     );
@@ -223,8 +223,8 @@ const posts = subCollection({
 
 const postRepository = subcollectionRepository(db, posts);
 
-// Set a document (ref is [parentDocId, docId])
-await postRepository.set({ ref: ['user1', 'post1'], data: { title: 'My first post' } });
+// Set a document (id is [parentDocId, docId])
+await postRepository.set({ id: ['user1', 'post1'], data: { title: 'My first post' } });
 
 // Get a document
 const post = await postRepository.get(['user1', 'post1']);
@@ -232,7 +232,7 @@ const post = await postRepository.get(['user1', 'post1']);
 
 ### Custom Mapper
 
-By default, `rootCollectionRepository` returns a repository with `{ ref: string, data: ... }` as its model type. If you want to use your own application model types, you can define a custom `Mapper` and use `repositoryWithMapper` to create a repository that automatically converts between Firestore documents and your models.
+By default, `rootCollectionRepository` returns a repository with `{ id: string, data: ... }` as its model type. If you want to use your own application model types, you can define a custom `Mapper` and use `repositoryWithMapper` to create a repository that automatically converts between Firestore documents and your models.
 
 A `Mapper` consists of three functions:
 
@@ -261,9 +261,9 @@ type User = {
 // Define a mapper
 const userMapper: Mapper<typeof users, AppModel<string, User, User>> = {
   toDocRef: (id) => [id],
-  fromFirestore: (doc) => ({ id: doc.ref[0], ...doc.data }),
+  fromFirestore: (doc) => ({ id: doc.id[0], ...doc.data }),
   toFirestore: (user) => ({
-    ref: [user.id],
+    id: [user.id],
     data: { name: user.name, profile: user.profile, tag: user.tag },
   }),
 };

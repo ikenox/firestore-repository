@@ -92,11 +92,11 @@ describe('repository', async () => {
         it('not empty', async () => {
           expect(
             await repository.batchGet([
-              items[0].ref,
-              items[2].ref,
-              items[1].ref,
+              items[0].id,
+              items[2].id,
+              items[1].id,
               notExistDocId(),
-              items[2].ref,
+              items[2].id,
             ]),
           ).toStrictEqual([items[0], items[2], items[1], undefined, items[2]]);
         });
@@ -104,7 +104,7 @@ describe('repository', async () => {
         it('transaction', async () => {
           const res = await db.runTransaction(async (tx) => {
             return await repository.batchGet(
-              [items[0].ref, items[2].ref, items[1].ref, notExistDocId(), items[2].ref],
+              [items[0].id, items[2].id, items[1].id, notExistDocId(), items[2].id],
               { tx },
             );
           });
@@ -140,14 +140,14 @@ describe('repository', async () => {
     const repository = repositoryWithMapper(db, coll, plainMapper(coll));
     const items = [
       {
-        ref: ['1'],
+        id: ['1'],
         data: { name: 'author1', profile: { age: 20, gender: 'male' }, rank: 1, tag: ['a', 'b'] },
       },
       {
-        ref: ['2'],
+        id: ['2'],
         data: { name: 'author2', profile: { age: 40, gender: 'female' }, rank: 1, tag: ['b', 'c'] },
       },
-      { ref: ['3'], data: { name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] } },
+      { id: ['3'], data: { name: 'author3', profile: { age: 60 }, rank: 2, tag: ['c', 'd'] } },
     ] as const satisfies Doc<typeof authorsCollection, 'write'>[];
 
     beforeAll(async () => {
