@@ -1020,10 +1020,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       it('set/get', async () => {
         const docId = randomString();
-        const value = {
-          ref: [docId] as [string],
+        const value: Doc<typeof allFieldTypesCollection, 'read'> = {
+          ref: [docId],
           data: {
-            array: [1, 2, 'foo', 3, 'bar'] as (string | number)[],
+            array: [1, 2, 'foo', 3, 'bar'],
             boolean: false,
             bytes: Uint8Array.from([1, 2, 3, 4, 5]),
             timestamp: new Date(),
@@ -1032,12 +1032,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             geoPoint: { latitude: 12.3, longitude: 45.6 },
             map: { a: 123, b: ['foo', 'bar'], nested: { c: 7 } },
             null: null,
-            docRef: [randomString()] as [string],
+            docRef: [randomString()],
             str: randomString(),
             vector: [1, 2, 3, 4, 5],
-            literalStr: 'foo' as 'foo' | 'bar' | 'baz',
+            literalStr: 'foo',
             optionalStr: 'hello',
-            unionField: null as string | null,
+            unionField: null,
           },
         };
         await repository.set(value);
