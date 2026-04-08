@@ -44,6 +44,7 @@ import {
   docRef,
   double,
   geoPoint,
+  int64,
   literal,
   map,
   nullType,
@@ -1003,32 +1004,40 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           bytes: bytes(),
           timestamp: timestamp(),
           number: double(),
-          getPoint: geoPoint(),
-          map: map({ a: double(), b: array(string()) }),
+          integer: int64(),
+          geoPoint: geoPoint(),
+          map: map({ a: double(), b: array(string()), nested: map({ c: int64() }) }),
           null: nullType(),
           docRef: docRef(authorsCollection),
           str: string(),
           vector: vector(),
+          literalStr: literal('foo', 'bar', 'baz'),
+          optionalStr: optional(string()),
+          unionField: union(string(), nullType()),
         },
       });
       const repository = createRepository(allFieldTypesCollection);
 
       it('set/get', async () => {
         const docId = randomString();
-        const value = {
-          ref: [docId] as [string],
+        const value: Doc<typeof allFieldTypesCollection, 'read'> = {
+          ref: [docId],
           data: {
-            array: [1, 2, 'foo', 3, 'bar'] as (string | number)[],
+            array: [1, 2, 'foo', 3, 'bar'],
             boolean: false,
             bytes: Uint8Array.from([1, 2, 3, 4, 5]),
             timestamp: new Date(),
             number: randomNumber(),
-            getPoint: { latitude: 12.3, longitude: 45.6 },
-            map: { a: 123, b: ['foo', 'bar'] },
+            integer: 42,
+            geoPoint: { latitude: 12.3, longitude: 45.6 },
+            map: { a: 123, b: ['foo', 'bar'], nested: { c: 7 } },
             null: null,
-            docRef: [randomString()] as [string],
+            docRef: [randomString()],
             str: randomString(),
             vector: [1, 2, 3, 4, 5],
+            literalStr: 'foo',
+            optionalStr: 'hello',
+            unionField: null,
           },
         };
         await repository.set(value);
