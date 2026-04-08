@@ -1,6 +1,6 @@
 import type { Aggregated, AggregateSpec } from './aggregate.js';
 import type { Query } from './query.js';
-import { Collection, DocumentSchema, FieldValue, MapType, RootCollection } from './schema.js';
+import { Collection, FieldValue, MapType, RootCollection } from './schema.js';
 import type { ToStringTuple } from './util.js';
 
 /**
@@ -73,7 +73,7 @@ export interface Repository<
 /** A mapper that converts between Firestore documents and application models */
 export type Mapper<T extends Collection = Collection, Model extends AppModel = AppModel> = {
   toDocRef: (id: Model['id']) => DocRef<T>;
-  fromFirestore: (doc: Doc<T, 'read'>) => Model['read'];
+  fromFirestore: (doc: Doc<T>) => Model['read'];
   toFirestore: (model: Model['write']) => Doc<T, 'write'>;
 };
 
@@ -104,20 +104,20 @@ export type PlainRepository<
 export type PlainModel<T extends Collection> = {
   id: DocRef<T>;
   write: Doc<T, 'write'>;
-  read: Doc<T, 'read'>;
+  read: Doc<T>;
 };
 
 /** A plain model for root collections where the id is a single string */
 export type RootCollectionPlainModel<T extends Collection> = {
   id: string;
-  write: { id: string; data: DocData<T['schema'], 'write'> };
-  read: { id: string; data: DocData<T['schema'], 'read'> };
+  write: { id: string; data: DocData<T, 'write'> };
+  read: { id: string; data: DocData<T> };
 };
 
 /** A Firestore document */
-export type Doc<T extends Collection, Mode extends 'read' | 'write'> = {
+export type Doc<T extends Collection, Mode extends 'read' | 'write' = 'read'> = {
   id: DocRef<T>;
-  data: DocData<T['schema'], Mode>;
+  data: DocData<T, Mode>;
 };
 
 /** A document reference represented as a tuple of document IDs */
@@ -126,11 +126,11 @@ export type DocRef<T extends Collection> = [...ParentDocRef<T>, string];
 /** A parent document reference of a subcollection */
 export type ParentDocRef<T extends Collection> = ToStringTuple<T['parent']>;
 
-/** The resolved TypeScript type of  document's data, derived from a schema. In write mode, fields additionally accept server-side operations (e.g. ServerTimestamp, Increment). */
+/** The resolved TypeScript type of the document's data, derived from a schema. In write mode, fields additionally accept server-side operations (e.g. ServerTimestamp, Increment). */
 export type DocData<
-  Schema extends DocumentSchema = DocumentSchema,
-  Mode extends 'read' | 'write' = 'read' | 'write',
-> = FieldValue<MapType<Schema>, Mode>;
+  T extends Collection = Collection,
+  Mode extends 'read' | 'write' = 'read',
+> = FieldValue<MapType<T['schema']>, Mode>;
 
 /** Creates a plain mapper that passes documents through without transformation */
 export const plainMapper = <T extends Collection>(_collection: T): Mapper<T, PlainModel<T>> => ({

@@ -309,7 +309,7 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
   };
 
   const fromFirestore = {
-    documentMustExist: (document: DocumentSnapshot): Doc<T, 'read'> => {
+    documentMustExist: (document: DocumentSnapshot): Doc<T> => {
       const data = document.data();
       if (!data) {
         throw new Error('document must exist');
@@ -317,10 +317,10 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
       return {
         id: fromFirestore.docRef(document.ref),
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by schema
-        data: decodeSchema.parse(data) as DocData<T['schema'], 'read'>,
+        data: decodeSchema.parse(data) as DocData<T>,
       };
     },
-    document: (document: DocumentSnapshot): Doc<T, 'read'> | undefined => {
+    document: (document: DocumentSnapshot): Doc<T> | undefined => {
       if (!document.exists()) {
         return undefined;
       }
