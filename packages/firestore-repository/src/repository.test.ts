@@ -33,7 +33,7 @@ describe('repository', () => {
   type CommentsCollection = typeof commentsCollection;
 
   it('Doc', () => {
-    expectTypeOf<Doc<AuthorsCollection, 'read'>>().toEqualTypeOf<{
+    expectTypeOf<Doc<AuthorsCollection>>().toEqualTypeOf<{
       id: [string];
       data: { name: string; registeredAt: Date };
     }>();
@@ -43,14 +43,14 @@ describe('repository', () => {
     }>();
 
     // read model type should be always compatible to write model
-    expectTypeOf<Doc<AuthorsCollection, 'read'>>().toExtend<Doc<AuthorsCollection, 'write'>>();
-    expectTypeOf<Doc<PostsCollection, 'read'>>().toExtend<Doc<PostsCollection, 'write'>>();
-    expectTypeOf<Doc<CommentsCollection, 'read'>>().toExtend<Doc<CommentsCollection, 'write'>>();
+    expectTypeOf<Doc<AuthorsCollection>>().toExtend<Doc<AuthorsCollection, 'write'>>();
+    expectTypeOf<Doc<PostsCollection>>().toExtend<Doc<PostsCollection, 'write'>>();
+    expectTypeOf<Doc<CommentsCollection>>().toExtend<Doc<CommentsCollection, 'write'>>();
 
     // TODO: this assertion should be passed
     (<T extends Collection>() => {
       // @ts-expect-error -- TODO: this assertion should be passed once generic constraint is resolved
-      expectTypeOf<Doc<T, 'read'>>().toExtend<Doc<T, 'write'>>();
+      expectTypeOf<Doc<T>>().toExtend<Doc<T, 'write'>>();
     })();
   });
 

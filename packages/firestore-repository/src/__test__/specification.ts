@@ -119,7 +119,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 }) => {
   const defineTests = <T extends Collection>(params: TestCollectionParams<T>) => {
     const setup = (): RepositoryTestEnv<T, Env> => {
-      const items: [Doc<T, 'read'>, Doc<T, 'read'>, Doc<T, 'read'>] = [
+      const items: [Doc<T>, Doc<T>, Doc<T>] = [
         params.newData(),
         params.newData(),
         params.newData(),
@@ -147,7 +147,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       return {
         repository,
         items,
-        expectDb: async (expected: Doc<T, 'read'>[]) => {
+        expectDb: async (expected: Doc<T>[]) => {
           const items = (
             await currentRepository.list(
               query({ collection: currentRepository.collection, group: true }),
@@ -200,7 +200,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           () => repository.set(updated3),
         ];
 
-        const received: (Doc<T, 'read'> | undefined)[] = [];
+        const received: (Doc<T> | undefined)[] = [];
         const unsubscribe = repository.getOnSnapshot(items[0].id, (snapshot) => {
           received.push(snapshot);
           const op = operations.shift();
@@ -250,7 +250,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           () => repository.delete(updated1.id),
         ];
 
-        const received: Doc<T, 'read'>[][] = [];
+        const received: Doc<T>[][] = [];
         const unsubscribe = repository.listOnSnapshot(
           query({ collection: repository.collection, group: true }),
           (list) => {
@@ -518,7 +518,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
     });
 
     describe('query', () => {
-      const setup = <T extends Collection, const Items extends Doc<T, 'read'>[]>(params: {
+      const setup = <T extends Collection, const Items extends Doc<T>[]>(params: {
         collection: T;
         items: Items;
       }) => {
@@ -529,7 +529,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         return {
           repository,
           items: params.items,
-          expectQuery: async (query: Query<T>, expected: Doc<T, 'read'>[]) => {
+          expectQuery: async (query: Query<T>, expected: Doc<T>[]) => {
             const result = (await repository.list(query)).toArray();
             expect(result).toStrictEqual(expected);
           },
@@ -562,7 +562,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               id: ['3'],
               data: { name: 'author3', profile: { age: 20 }, rank: 2, tag: ['c', 'd'] },
             },
-          ] as const satisfies Doc<AuthorsCollection, 'read'>[],
+          ] as const satisfies Doc<AuthorsCollection>[],
         });
 
         it('query without condition', async () => {
@@ -583,7 +583,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               string,
               [
                 condition: FilterExpression<AuthorsCollection['schema']>,
-                expected: Doc<AuthorsCollection, 'read'>[],
+                expected: Doc<AuthorsCollection>[],
               ]
             > = {
               '==': [eq('name', 'author1'), [items[0]]],
@@ -805,7 +805,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           cursorFunc: typeof startAt | typeof startAfter | typeof endAt | typeof endBefore,
           tests: Record<
             keyof typeof queryCursorTestCases,
-            [unknown[], Doc<typeof repository.collection, 'read'>[]][]
+            [unknown[], Doc<typeof repository.collection>[]][]
           >,
         ) => {
           describe(cursorFunc.name, () => {
@@ -1020,7 +1020,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       it('set/get', async () => {
         const docId = randomString();
-        const value: Doc<typeof allFieldTypesCollection, 'read'> = {
+        const value: Doc<typeof allFieldTypesCollection> = {
           id: [docId],
           data: {
             array: [1, 2, 'foo', 3, 'bar'],
@@ -1211,15 +1211,15 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
 export type RepositoryTestEnv<T extends Collection, Env extends FirestoreEnvironment> = {
   repository: PlainRepository<T, Env>;
-  items: [Doc<T, 'read'>, Doc<T, 'read'>, Doc<T, 'read'>, ...Doc<T, 'read'>[]];
-  expectDb: (expected: Doc<T, 'read'>[]) => Promise<void>;
+  items: [Doc<T>, Doc<T>, Doc<T>, ...Doc<T>[]];
+  expectDb: (expected: Doc<T>[]) => Promise<void>;
 };
 
 export type TestCollectionParams<T extends Collection = Collection> = {
   title: string;
   collection: T;
-  newData: () => Doc<T, 'read'>;
-  mutate: (data: Doc<T, 'read'>) => Doc<T, 'read'>;
+  newData: () => Doc<T>;
+  mutate: (data: Doc<T>) => Doc<T>;
   notExistDocId: () => DocRef<T>;
-  sortKey: (doc: Doc<T, 'read'>) => string;
+  sortKey: (doc: Doc<T>) => string;
 };
