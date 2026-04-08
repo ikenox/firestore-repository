@@ -105,14 +105,14 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   describe('Basic operations for a single document', () => {
     it('set', async () => {
       await repository.set({
-        ref: 'user1',
+        id: 'user1',
         data: { name: 'John Doe', profile: { age: 42, gender: 'male' }, tag: ['new'] },
       });
     });
 
     onlyGoogleCloudFirestore('create', async (repository) => {
       await repository.create({
-        ref: 'user2',
+        id: 'user2',
         data: { name: 'Charlie', profile: { age: 25, gender: 'male' }, tag: [] },
       });
     });
@@ -164,10 +164,10 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     it('batchSet', async () => {
       await repository.batchSet([
         {
-          ref: 'user1',
+          id: 'user1',
           data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: ['new'] },
         },
-        { ref: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+        { id: 'user2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
       ]);
     });
 
@@ -182,7 +182,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     it('include multiple different operations in a batch', async () => {
       const batch = db.writeBatch();
       await repository.set(
-        { ref: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+        { id: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
         { tx: batch },
       );
       await repository.batchSet(
@@ -206,8 +206,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
         await repository.set(doc, { tx });
         await repository.batchSet(
           [
-            { ...doc, ref: 'user2' },
-            { ...doc, ref: 'user3' },
+            { ...doc, id: 'user2' },
+            { ...doc, id: 'user3' },
           ],
           { tx },
         );
@@ -226,7 +226,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
     it('set', async () => {
       await subcollectionRepository.set({
-        ref: ['user1', 'post1'],
+        id: ['user1', 'post1'],
         data: { title: 'My first post' },
       });
     });
@@ -246,9 +246,9 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
     const userMapper: Mapper<UsersCollection, AppModel<string, User, User>> = {
       toDocRef: (id) => [id],
-      fromFirestore: (doc) => ({ id: doc.ref[0], ...doc.data }),
+      fromFirestore: (doc) => ({ id: doc.id[0], ...doc.data }),
       toFirestore: (user) => ({
-        ref: [user.id],
+        id: [user.id],
         data: { name: user.name, profile: user.profile, tag: user.tag },
       }),
     };

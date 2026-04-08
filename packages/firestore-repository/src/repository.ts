@@ -107,16 +107,17 @@ export type PlainModel<T extends Collection> = {
   read: Doc<T, 'read'>;
 };
 
-export type Doc<T extends Collection, Mode extends 'read' | 'write'> = {
-  ref: DocRef<T>;
-  data: DocData<T['schema'], Mode>;
-};
-
 /** A plain model for root collections where the id is a single string */
 export type RootCollectionPlainModel<T extends Collection> = {
   id: string;
-  write: { ref: string; data: DocData<T['schema'], 'write'> };
-  read: { ref: string; data: DocData<T['schema'], 'read'> };
+  write: { id: string; data: DocData<T['schema'], 'write'> };
+  read: { id: string; data: DocData<T['schema'], 'read'> };
+};
+
+/** A Firestore document */
+export type Doc<T extends Collection, Mode extends 'read' | 'write'> = {
+  id: DocRef<T>;
+  data: DocData<T['schema'], Mode>;
 };
 
 /** A document reference represented as a tuple of document IDs */
@@ -144,7 +145,7 @@ export const rootCollectionPlainMapper = <T extends RootCollection>(
 ): Mapper<T, RootCollectionPlainModel<T>> => ({
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- type system doesn't expand DocRef<T> into [string]
   toDocRef: (id) => [id] as unknown as DocRef<T>,
-  fromFirestore: (doc) => ({ ref: doc.ref[0], data: doc.data }),
+  fromFirestore: (doc) => ({ id: doc.id[0], data: doc.data }),
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- type system doesn't expand DocRef<T> into [string]
-  toFirestore: (model) => ({ ref: [model.ref] as unknown as DocRef<T>, data: model.data }),
+  toFirestore: (model) => ({ id: [model.id] as unknown as DocRef<T>, data: model.data }),
 });

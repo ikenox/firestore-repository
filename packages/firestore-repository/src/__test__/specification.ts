@@ -167,7 +167,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       describe('get', () => {
         it('exists', async () => {
-          expect(await repository.get(items[0].ref)).toStrictEqual(items[0]);
+          expect(await repository.get(items[0].id)).toStrictEqual(items[0]);
         });
 
         it('not found', async () => {
@@ -176,8 +176,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         it('transaction', async () => {
           const res = await db.transaction(async (tx) => {
-            const item0 = await repository.get(items[0].ref, { tx });
-            const item1 = await repository.get(items[1].ref, { tx });
+            const item0 = await repository.get(items[0].id, { tx });
+            const item1 = await repository.get(items[1].id, { tx });
             return [item0, item1];
           });
           expect(res).toStrictEqual([items[0], items[1]]);
@@ -196,12 +196,12 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const operations: (() => Promise<void>)[] = [
           () => repository.set(updated1),
           () => repository.set(updated2),
-          () => repository.delete(updated2.ref),
+          () => repository.delete(updated2.id),
           () => repository.set(updated3),
         ];
 
         const received: (Doc<T, 'read'> | undefined)[] = [];
-        const unsubscribe = repository.getOnSnapshot(items[0].ref, (snapshot) => {
+        const unsubscribe = repository.getOnSnapshot(items[0].id, (snapshot) => {
           received.push(snapshot);
           const op = operations.shift();
           if (op) {
@@ -247,7 +247,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           () => repository.set(newItem),
           () => repository.set(updated0),
           () => repository.set(updated1),
-          () => repository.delete(updated1.ref),
+          () => repository.delete(updated1.id),
         ];
 
         const received: Doc<T, 'read'>[][] = [];
@@ -381,7 +381,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       describe('delete', () => {
         it('success', async () => {
           const [target, ...rest] = items;
-          await repository.delete(target.ref);
+          await repository.delete(target.id);
           await expectDb(rest);
         });
 
@@ -393,16 +393,16 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         describe('transaction', () => {
           it('success', async () => {
             await db.transaction(async (tx) => {
-              await repository.delete(items[0].ref, { tx });
-              await repository.delete(items[1].ref, { tx });
+              await repository.delete(items[0].id, { tx });
+              await repository.delete(items[1].id, { tx });
             });
             await expectDb([items[2]]);
           });
 
           it('abort', async () => {
             const promise = db.transaction(async (tx) => {
-              await repository.delete(items[0].ref, { tx });
-              await repository.delete(items[1].ref, { tx });
+              await repository.delete(items[0].id, { tx });
+              await repository.delete(items[1].id, { tx });
               throw new Error('abort');
             });
             await expect(promise).rejects.toThrowError('abort');
@@ -412,8 +412,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         it('writeBatch', async () => {
           const batch = db.writeBatch();
-          await repository.delete(items[0].ref, { tx: batch });
-          await repository.delete(items[1].ref, { tx: batch });
+          await repository.delete(items[0].id, { tx: batch });
+          await repository.delete(items[1].id, { tx: batch });
           await expectDb(items);
           await batch.commit();
           await expectDb([items[2]]);
@@ -428,14 +428,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         });
 
         it('multi', async () => {
-          await repository.batchDelete([target1.ref, target2.ref, params.notExistDocId()]);
+          await repository.batchDelete([target1.id, target2.id, params.notExistDocId()]);
           await expectDb(rest);
         });
 
         describe('transaction', () => {
           it('success', async () => {
             await db.transaction(async (tx) => {
-              await repository.batchDelete([target1.ref, target2.ref, params.notExistDocId()], {
+              await repository.batchDelete([target1.id, target2.id, params.notExistDocId()], {
                 tx,
               });
             });
@@ -444,7 +444,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           it('abort', async () => {
             const promise = db.transaction(async (tx) => {
-              await repository.batchDelete([target1.ref, target2.ref, params.notExistDocId()], {
+              await repository.batchDelete([target1.id, target2.id, params.notExistDocId()], {
                 tx,
               });
               throw new Error('abort');
@@ -456,8 +456,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         it('writeBatch', async () => {
           const batch = db.writeBatch();
-          await repository.batchDelete([target1.ref], { tx: batch });
-          await repository.batchDelete([target2.ref], { tx: batch });
+          await repository.batchDelete([target1.id], { tx: batch });
+          await repository.batchDelete([target2.id], { tx: batch });
           await expectDb(items);
           await batch.commit();
           await expectDb(rest);
@@ -481,7 +481,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       newData: () => {
         const id = baseId++;
         return {
-          ref: [`author${id}`],
+          id: [`author${id}`],
           data: {
             name: `name${id}`,
             profile: { age: randomNumber(), gender: 'male' as const },
@@ -495,7 +495,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         data: { ...data.data, name: `${data.data.name}_updated_${randomString()}` },
       }),
       notExistDocId: () => ['not-exists'],
-      sortKey: (a) => a.ref[0],
+      sortKey: (a) => a.id[0],
     });
 
     defineTests({
@@ -505,7 +505,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const id = baseId++;
         const authorId = baseId++;
         return {
-          ref: [`author${authorId}`, `${id}`],
+          id: [`author${authorId}`, `${id}`],
           data: { title: `post${id}`, postedAt: new Date() },
         };
       },
@@ -514,7 +514,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         data: { ...data.data, title: `${data.data.title}_updated_${randomString()}` },
       }),
       notExistDocId: () => ['author0', `${randomNumber()}`],
-      sortKey: (doc) => `${doc.ref[1]}-${doc.ref[0]}`,
+      sortKey: (doc) => `${doc.id[1]}-${doc.id[0]}`,
     });
 
     describe('query', () => {
@@ -541,7 +541,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           collection: authorsCollection,
           items: [
             {
-              ref: ['1'],
+              id: ['1'],
               data: {
                 name: 'author1',
                 profile: { age: 40, gender: 'male' },
@@ -550,7 +550,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               },
             },
             {
-              ref: ['2'],
+              id: ['2'],
               data: {
                 name: 'author2',
                 profile: { age: 90, gender: 'female' },
@@ -559,7 +559,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               },
             },
             {
-              ref: ['3'],
+              id: ['3'],
               data: { name: 'author3', profile: { age: 20 }, rank: 2, tag: ['c', 'd'] },
             },
           ] as const satisfies Doc<AuthorsCollection, 'read'>[],
@@ -950,9 +950,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         const { repository, expectQuery, items } = setup({
           collection: postsCollection,
           items: [
-            { ref: ['author1', '1'], data: { title: 'post1', postedAt: new Date('2020-02-01') } },
-            { ref: ['author1', '2'], data: { title: 'post2', postedAt: new Date('2020-01-01') } },
-            { ref: ['author2', '3'], data: { title: 'post3', postedAt: new Date('2020-03-01') } },
+            { id: ['author1', '1'], data: { title: 'post1', postedAt: new Date('2020-02-01') } },
+            { id: ['author1', '2'], data: { title: 'post2', postedAt: new Date('2020-01-01') } },
+            { id: ['author2', '3'], data: { title: 'post3', postedAt: new Date('2020-03-01') } },
           ],
         });
 
@@ -1021,7 +1021,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       it('set/get', async () => {
         const docId = randomString();
         const value: Doc<typeof allFieldTypesCollection, 'read'> = {
-          ref: [docId],
+          id: [docId],
           data: {
             array: [1, 2, 'foo', 3, 'bar'],
             boolean: false,
@@ -1042,7 +1042,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         };
         await repository.set(value);
 
-        const dbValue = await repository.get(value.ref);
+        const dbValue = await repository.get(value.id);
         assert(dbValue);
 
         expect(dbValue).toStrictEqual(value);
@@ -1079,13 +1079,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           {
             toDocRef: (id) => [id],
             fromFirestore: (doc) => ({
-              id: doc.ref[0],
+              id: doc.id[0],
               createdAt: doc.data.createdAt,
               location: { lat: doc.data.location.latitude, lng: doc.data.location.longitude },
               content: doc.data.content,
             }),
             toFirestore: (model) => ({
-              ref: [model.id],
+              id: [model.id],
               data: {
                 createdAt: model.createdAt,
                 location: { latitude: model.location.lat, longitude: model.location.lng },
@@ -1134,7 +1134,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           const now = Date.now();
           await repository.set({
-            ref: [id],
+            id: [id],
             data: { updatedAt: serverTimestamp(), counter: 1, tags: [] },
           });
 
@@ -1149,7 +1149,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           // Verify increment works with set() without runtime error
           await repository.set({
-            ref: [id],
+            id: [id],
             data: { updatedAt: new Date(), counter: increment(5), tags: [] },
           });
 
@@ -1167,7 +1167,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           // Verify arrayUnion works with set() without runtime error
           await repository.set({
-            ref: [id],
+            id: [id],
             data: { updatedAt: new Date(), counter: 0, tags: arrayUnion('tag1', 'tag2') },
           });
 
@@ -1185,13 +1185,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           // First create a document with some tags
           await repository.set({
-            ref: [id],
+            id: [id],
             data: { updatedAt: new Date(), counter: 0, tags: ['tag1', 'tag2'] },
           });
 
           // Verify arrayRemove works with set() without runtime error
           await repository.set({
-            ref: [id],
+            id: [id],
             data: { updatedAt: new Date(), counter: 0, tags: arrayRemove('tag1') },
           });
 
