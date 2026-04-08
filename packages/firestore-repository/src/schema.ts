@@ -164,23 +164,6 @@ export const nullable = <T extends FieldType>(t: T): UnionType<[T, NullType]> =>
 export const optional = <T extends FieldType>(type: T): T & Optional =>
   buildType({ ...type, [_optional]: true });
 
-export const arrayRemove = <T>(...values: T[]): ArrayRemove<T> => ({
-  [serverOperation]: 'arrayRemove',
-  values,
-});
-
-export const arrayUnion = <T>(...values: T[]): ArrayUnion<T> => ({
-  [serverOperation]: 'arrayUnion',
-  values,
-});
-
-export const serverTimestamp = (): ServerTimestamp => ({ [serverOperation]: 'serverTimestamp' });
-
-export const increment = (amount: number): Increment => ({
-  [serverOperation]: 'increment',
-  amount,
-});
-
 /**
  * A type-safe field path of a document
  */
