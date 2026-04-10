@@ -55,11 +55,8 @@ import {
   timestamp,
   union,
   vector,
-  serverTimestamp,
-  increment,
-  arrayUnion,
-  arrayRemove,
 } from '../schema.js';
+import { arrayRemove, arrayUnion, increment, serverTimestamp } from '../server-value.js';
 import {
   expectArrayEqualsWithoutOrder,
   randomNumber,
