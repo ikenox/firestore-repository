@@ -48,7 +48,7 @@
   "dependencies": {
     "@firebase/firestore": "catalog:",
     "firestore-repository": "workspace:*",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@firebase/app": "catalog:"
