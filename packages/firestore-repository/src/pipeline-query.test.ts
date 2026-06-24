@@ -5,8 +5,9 @@ import {
   BuildSelection,
   equal,
   ExpressionWithAlias,
-  PipelineQuery,
+  Pipeline,
   pipelineQuery,
+  constant,
 } from "./pipeline-query.js";
 import type {
   ArrayType,
@@ -22,12 +23,22 @@ describe("pipeline-query", () => {
 
   it("where", () => {
     base.where((field) =>
-      equal(field("profile"), { gender: "female", age: 20 }),
+      equal(field("profile"), constant({ gender: "female", age: 20 })),
     );
   });
+
+  it("select", () => {
+    base.select((field) => [
+      "profile.gender",
+      field("name"),
+      field("name"),
+      equal(1, 2),
+    ]);
+  });
+
   it("wip", () => {
     expectTypeOf(base).toEqualTypeOf<
-      PipelineQuery<{
+      Pipeline<{
         name: StringType;
         profile: MapType<{
           age: DoubleType;
@@ -38,13 +49,13 @@ describe("pipeline-query", () => {
       }>
     >();
     expectTypeOf(base.select("name")).toEqualTypeOf<
-      PipelineQuery<{ name: StringType }>
+      Pipeline<{ name: StringType }>
     >();
     expectTypeOf(base.select("name", "tag")).toEqualTypeOf<
-      PipelineQuery<{ name: StringType; tag: ArrayType<StringType, [], []> }>
+      Pipeline<{ name: StringType; tag: ArrayType<StringType, [], []> }>
     >();
     expectTypeOf(base.select("profile")).toEqualTypeOf<
-      PipelineQuery<{
+      Pipeline<{
         profile: MapType<{
           age: DoubleType;
           gender: LiteralType<["male", "female"]> & Optional;
@@ -52,14 +63,14 @@ describe("pipeline-query", () => {
       }>
     >();
     expectTypeOf(base.select("profile.age")).toEqualTypeOf<
-      PipelineQuery<{ profile: MapType<{ age: DoubleType }> }>
+      Pipeline<{ profile: MapType<{ age: DoubleType }> }>
     >();
 
     // FIXME
-    expectTypeOf(base.select("__name__")).toEqualTypeOf<PipelineQuery<{}>>();
+    expectTypeOf(base.select("__name__")).toEqualTypeOf<Pipeline<{}>>();
 
     expectTypeOf(base.removeFields("name")).toEqualTypeOf<
-      PipelineQuery<{
+      Pipeline<{
         profile: MapType<{
           age: DoubleType;
           gender: LiteralType<["male", "female"]> & Optional;
@@ -69,7 +80,7 @@ describe("pipeline-query", () => {
       }>
     >();
     expectTypeOf(base.removeFields("name", "profile.age")).toEqualTypeOf<
-      PipelineQuery<{
+      Pipeline<{
         profile: MapType<{
           gender: LiteralType<["male", "female"]> & Optional;
         }>;

@@ -47,7 +47,8 @@ describe("repository", async () => {
       db
         .pipeline()
         .collection("a")
-        .where(equal(constant(1), constant(1))),
+        .where(constant("a").asBoolean())
+        .select(constant("a").asBoolean("f")),
     );
   });
 });

@@ -145,6 +145,20 @@ Getting an Enterprise database handle in other SDKs:
 - [type-functions](https://firebase.google.com/docs/firestore/pipelines/functions/type-functions)
 - [vector-functions](https://firebase.google.com/docs/firestore/pipelines/functions/vector-functions)
 
+## Empirical gotchas (not in docs)
+
+### `where` is permissive about non-boolean values
+
+The SDK requires a `BooleanExpression` at the TypeScript level, but `Expression.asBoolean()` is a pure type-tag wrap — wire-level the original expression's proto goes through unchanged. So you *can* push any expression into `where`, e.g. `where(field("flag").asBoolean())` even when `flag` may not be boolean.
+
+Tested behavior: the backend's `where` evaluates the expression per row and **silently drops the row if the result is anything other than `true`** — `false`, `null`, missing field, non-boolean values (number / string / map / etc.) all behave the same as `false`. The whole pipeline does NOT error out even when type mixed docs exist.
+
+Implication: this is JS-`if`-like truthy/falsy semantics, not strict SQL `WHERE`. Mixed-schema collections are tolerated by design.
+
+### `asBoolean()` does not change the wire format
+
+`Expression.asBoolean()` returns a `BooleanExpression` subclass that just stores `this._expr` and delegates `_toProto()`/`_readUserData()` to it. No `is_true` / `cast_bool` / `equal(_, true)` is inserted. It exists purely to satisfy the SDK's TypeScript type signature for `where`.
+
 ## How to investigate
 
 1. Read Get started first, then narrow down to the feature you need (aggregation, join, vector, text search, …).

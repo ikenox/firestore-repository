@@ -26,22 +26,23 @@ export type FieldProvider<Context extends Fields> = <
   path: Path,
 ) => Field<FieldTypeOfPath<Context, Path>, Path>;
 
-export type Expression<T extends FieldType> = {
-  kind: "expression";
+export type Expression<T extends FieldType = FieldType> =
+  | Equal
+  | Constant<T>
+  | Field<T>;
+
+export type Constant<T extends FieldType> = {
+  kind: "constant";
   type: T;
-  detail: Equal;
+  value: unknown; // TODO add type
 };
 
-export const equal = <T extends Field>(
-  field: T,
-  value: FieldValue<T["type"], "read">,
-): Expression<BoolType> => ({
-  kind: "expression",
-  type: bool(),
-  detail: { kind: "equal", field, value },
-});
-
-export type Equal = { kind: "equal"; field: Field; value: unknown };
+export type Equal = {
+  kind: "equal";
+  type: BoolType;
+  left: Expression;
+  right: Expression;
+};
 
 export type Field<
   T extends FieldType = FieldType,
@@ -51,6 +52,23 @@ export type Field<
   path: Path;
 };
 
+export const constant = <T extends FieldType>(value: unknown): Constant<T> => ({
+  kind: "constant",
+  type: "todo",
+  value,
+});
+
+export const equal = <T extends FieldType>(
+  left: Expression<T>,
+  // TODO: restrict `right` to expressions whose value type is compatible with `left`'s.
+  right: Expression,
+): Equal => ({
+  kind: "equal",
+  type: bool(),
+  left,
+  right,
+});
+
 export type ExpressionWithAlias<
   T extends FieldType = FieldType,
   Path extends string = string,
@@ -58,41 +76,6 @@ export type ExpressionWithAlias<
   type: T;
   path: Path;
 };
-
-export class PipelineQuery<Context extends Fields> {
-  constructor(
-    readonly schema: Context,
-    readonly stage: Stage,
-    readonly parent?: PipelineQuery<Fields>,
-  ) {}
-
-  where(
-    condition: (field: FieldProvider<Context>) => Expression<BoolType>,
-  ): PipelineQuery<Context> {
-    return 1 as any;
-  }
-  select<const Selections extends readonly Selection<Context>[]>(
-    ...selections: Selections
-  ): PipelineQuery<BuildSelection<Context, Selections>> {
-    return 1 as any;
-  }
-  addFields() {}
-  removeFields<const U extends FieldPath<Context>[]>(
-    ...fields: U
-  ): PipelineQuery<OmitPaths<Context, U[number]>> {
-    return 1 as any;
-  }
-  aggregate(): PipelineQuery<Fields> {
-    return 1 as any;
-  }
-  distinct(): PipelineQuery<Fields> {
-    return 1 as any;
-  }
-}
-
-export const pipelineQuery = <T extends Collection>(
-  collection: T,
-): PipelineQuery<T["schema"]> => ({}) as any;
 
 /** A single select argument: either an existing field path or an aliased expression. */
 type Selection<Context extends Fields> =
@@ -154,3 +137,38 @@ type MergeSchemas<A, B> = {
       ? B[K]
       : never;
 };
+
+export class Pipeline<Context extends Fields> {
+  constructor(
+    readonly schema: Context,
+    readonly stage: Stage,
+    readonly parent?: Pipeline<Fields>,
+  ) {}
+
+  where(
+    condition: (field: FieldProvider<Context>) => Expression<BoolType>,
+  ): Pipeline<Context> {
+    return 1 as any;
+  }
+  select<const Selections extends readonly Selection<Context>[]>(
+    selections: (field: FieldProvider<Context>) => Selections,
+  ): Pipeline<BuildSelection<Context, Selections>> {
+    return 1 as any;
+  }
+  addFields() {}
+  removeFields<const U extends FieldPath<Context>[]>(
+    ...fields: U
+  ): Pipeline<OmitPaths<Context, U[number]>> {
+    return 1 as any;
+  }
+  aggregate(): Pipeline<Fields> {
+    return 1 as any;
+  }
+  distinct(): Pipeline<Fields> {
+    return 1 as any;
+  }
+}
+
+export const pipelineQuery = <T extends Collection>(
+  collection: T,
+): Pipeline<T["schema"]> => ({}) as any;
