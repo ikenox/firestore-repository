@@ -1,6 +1,7 @@
-import { describe, expectTypeOf, it } from "vitest";
-import { authorsCollection } from "./__test__/specification.js";
-import { PipelineQuery, pipelineQuery } from "./pipeline-query.js";
+import { describe, expectTypeOf, it } from 'vitest';
+
+import { authorsCollection } from './__test__/specification.js';
+import { equal, PipelineQuery, pipelineQuery } from './pipeline-query.js';
 import type {
   ArrayType,
   DoubleType,
@@ -8,59 +9,49 @@ import type {
   MapType,
   Optional,
   StringType,
-} from "./schema.js";
+} from './schema.js';
 
-describe("pipeline-query", () => {
-  it("wip", () => {
-    const base = pipelineQuery(authorsCollection);
+describe('pipeline-query', () => {
+  const base = pipelineQuery(authorsCollection);
 
+  it('where', () => {
+    base.where((field) => equal(field('profile'), { gender: 'female', age: 20 }));
+  });
+  it('wip', () => {
     expectTypeOf(base).toEqualTypeOf<
       PipelineQuery<{
         name: StringType;
-        profile: MapType<{
-          age: DoubleType;
-          gender: LiteralType<["male", "female"]> & Optional;
-        }>;
+        profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
         tag: ArrayType<StringType, [], []>;
       }>
     >();
-    expectTypeOf(base.select("name")).toEqualTypeOf<
-      PipelineQuery<{ name: StringType }>
-    >();
-    expectTypeOf(base.select("name", "tag")).toEqualTypeOf<
+    expectTypeOf(base.select('name')).toEqualTypeOf<PipelineQuery<{ name: StringType }>>();
+    expectTypeOf(base.select('name', 'tag')).toEqualTypeOf<
       PipelineQuery<{ name: StringType; tag: ArrayType<StringType, [], []> }>
     >();
-    expectTypeOf(base.select("profile")).toEqualTypeOf<
+    expectTypeOf(base.select('profile')).toEqualTypeOf<
       PipelineQuery<{
-        profile: MapType<{
-          age: DoubleType;
-          gender: LiteralType<["male", "female"]> & Optional;
-        }>;
+        profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
       }>
     >();
-    expectTypeOf(base.select("profile.age")).toEqualTypeOf<
+    expectTypeOf(base.select('profile.age')).toEqualTypeOf<
       PipelineQuery<{ profile: MapType<{ age: DoubleType }> }>
     >();
 
     // FIXME
-    expectTypeOf(base.select("__name__")).toEqualTypeOf<PipelineQuery<{}>>();
+    expectTypeOf(base.select('__name__')).toEqualTypeOf<PipelineQuery<{}>>();
 
-    expectTypeOf(base.removeFields("name")).toEqualTypeOf<
+    expectTypeOf(base.removeFields('name')).toEqualTypeOf<
       PipelineQuery<{
-        profile: MapType<{
-          age: DoubleType;
-          gender: LiteralType<["male", "female"]> & Optional;
-        }>;
+        profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
         tag: ArrayType<StringType, [], []>;
       }>
     >();
-    expectTypeOf(base.removeFields("name", "profile.age")).toEqualTypeOf<
+    expectTypeOf(base.removeFields('name', 'profile.age')).toEqualTypeOf<
       PipelineQuery<{
-        profile: MapType<{
-          gender: LiteralType<["male", "female"]> & Optional;
-        }>;
+        profile: MapType<{ gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
         tag: ArrayType<StringType, [], []>;
       }>

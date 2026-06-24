@@ -162,4 +162,10 @@ describe('repository', async () => {
       expect(result).toStrictEqual(rest);
     });
   });
+
+  it('tmp: pipeline', () => {
+    db.pipeline() // PipelineSource
+      .collection('a') // Pipeline
+      .where(); // Pipeline
+  });
 });
