@@ -4,7 +4,8 @@ import type {
   FieldType,
   FieldTypeOfPath,
   MapType,
-} from '../schema.js';
+} from "../schema.js";
+import { Expression } from "./expression.js";
 
 type Fields = DocumentSchema;
 
@@ -12,36 +13,48 @@ export type ExpressionWithAlias<
   T extends FieldType = FieldType,
   Path extends string = string,
 > = {
-  type: T;
+  expression: Expression<T>;
   path: Path;
 };
 
 /** A single select argument: either an existing field path or an aliased expression. */
-export type Selection<Context extends Fields> = FieldPath<Context> | ExpressionWithAlias;
+export type Selection<Context extends Fields> =
+  | FieldPath<Context>
+  | ExpressionWithAlias;
 
 /** Folds a tuple of selections into a single nested schema via `MergeSchemas`. */
 export type BuildSelection<
   Context extends Fields,
   Args extends readonly Selection<Context>[],
-> = Args extends readonly [infer First, ...infer Rest extends readonly Selection<Context>[]]
-  ? MergeSchemas<SelectionToSchema<Context, First>, BuildSelection<Context, Rest>>
+> = Args extends readonly [
+  infer First,
+  ...infer Rest extends readonly Selection<Context>[],
+]
+  ? MergeSchemas<
+      SelectionToSchema<Context, First>,
+      BuildSelection<Context, Rest>
+    >
   : {};
 
 /** Resolves one selection into the partial schema it contributes to the output. */
-type SelectionToSchema<Context extends Fields, S> = S extends ExpressionWithAlias<infer T, infer P>
-  ? PathToSchema<P, T>
-  : S extends string
-    ? S extends FieldPath<Context>
-      ? PathToSchema<S, FieldTypeOfPath<Context, S>>
-      : {}
-    : {};
+type SelectionToSchema<Context extends Fields, S> =
+  S extends ExpressionWithAlias<infer T, infer P>
+    ? PathToSchema<P, T>
+    : S extends string
+      ? S extends FieldPath<Context>
+        ? PathToSchema<S, FieldTypeOfPath<Context, S>>
+        : {}
+      : {};
 
 /**
  * Builds a single-entry schema where dots in `Path` produce nested `MapType` layers.
  * `PathToSchema<"profile.age", DoubleType>` -> `{ profile: MapType<{ age: DoubleType }> }`.
  * `"__name__"` is dropped (it is not a real document field).
  */
-type PathToSchema<Path extends string, T extends FieldType> = Path extends '__name__'
+type PathToSchema<
+  Path extends string,
+  T extends FieldType,
+> = Path extends "__name__"
   ? {}
   : Path extends `${infer Head}.${infer Rest}`
     ? { [K in Head]: MapType<PathToSchema<Rest, T>> }

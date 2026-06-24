@@ -7,7 +7,13 @@ import {
 } from "@firebase/firestore";
 import { defineRepositorySpecificationTests } from "firestore-repository/__test__/specification";
 import { plainMapper } from "firestore-repository/repository";
-import { constant, equal, execute, field } from "@firebase/firestore/pipelines";
+import {
+  constant,
+  equal,
+  execute,
+  field,
+  mapSet,
+} from "@firebase/firestore/pipelines";
 import { describe, it } from "vitest";
 
 import { type Env, repositoryWithMapper } from "./index.js";
@@ -48,7 +54,7 @@ describe("repository", async () => {
         .pipeline()
         .collection("a")
         .where(constant("a").asBoolean())
-        .select(constant("a").asBoolean("f")),
+        .select(constant("a").asBoolean().toUpper().as("hoge")),
     );
   });
 });
