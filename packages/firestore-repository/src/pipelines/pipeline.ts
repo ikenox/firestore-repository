@@ -4,18 +4,20 @@ import type {
   FieldPath,
   FieldTypeOfPath,
   OmitPaths,
-} from '../schema.js';
-import type { Expression, Field } from './expression.js';
-import type { BuildSelection, Selection } from './selection.js';
-import type { Stage } from './stage.js';
+} from "../schema.js";
+import type { Expression, Field } from "./expression.js";
+import type { BuildSelection, Selection } from "./selection.js";
+import type { Stage } from "./stage.js";
 
 type Fields = DocumentSchema;
 
-export type FieldProvider<Context extends Fields> = <Path extends FieldPath<Context>>(
+export type FieldProvider<Context extends Fields> = <
+  Path extends FieldPath<Context>,
+>(
   path: Path,
 ) => Field<FieldTypeOfPath<Context, Path>, Path>;
 
-export class Pipeline<Context extends Fields> {
+export class Pipeline<Context extends Fields = Fields> {
   constructor(
     readonly schema: Context,
     readonly stage: Stage,
