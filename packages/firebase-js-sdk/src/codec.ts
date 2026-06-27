@@ -43,6 +43,10 @@ const isServerTimestamp = (v: unknown): v is ServerTimestamp => hasServerOp(v, '
 const isArrayRemove = (v: unknown): v is ArrayRemove<unknown> => hasServerOp(v, 'arrayRemove');
 const isArrayUnion = (v: unknown): v is ArrayUnion<unknown> => hasServerOp(v, 'arrayUnion');
 
+const isBytes = (v: unknown): v is FirestoreBytes => v instanceof FirestoreBytes;
+const isDocumentReference = (v: unknown): v is FirestoreDocumentReference =>
+  v instanceof FirestoreDocumentReference;
+
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
   return z.object(
     Object.fromEntries(
@@ -67,23 +71,21 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
       return z.null();
     case 'bytes':
       return z
-        .custom<FirestoreBytes>((v) => v instanceof FirestoreBytes)
+        .unknown()
+        .refine(isBytes)
         .transform((b) => b.toUint8Array());
     case 'timestamp':
-      return z
-        .custom<FirestoreTimestamp>((v) => v instanceof FirestoreTimestamp)
-        .transform((ts) => ts.toDate());
+      return z.instanceof(FirestoreTimestamp).transform((ts) => ts.toDate());
     case 'geoPoint':
       return z
-        .custom<FirestoreGeoPoint>((v) => v instanceof FirestoreGeoPoint)
+        .instanceof(FirestoreGeoPoint)
         .transform((gp) => ({ latitude: gp.latitude, longitude: gp.longitude }));
     case 'vector':
-      return z
-        .custom<FirestoreVectorValue>((v) => v instanceof FirestoreVectorValue)
-        .transform((vv) => vv.toArray());
+      return z.instanceof(FirestoreVectorValue).transform((vv) => vv.toArray());
     case 'docRef':
       return z
-        .custom<FirestoreDocumentReference>((v) => v instanceof FirestoreDocumentReference)
+        .unknown()
+        .refine(isDocumentReference)
         .transform((ref) => {
           const ids: string[] = [];
           let current: FirestoreDocumentReference | null = ref;

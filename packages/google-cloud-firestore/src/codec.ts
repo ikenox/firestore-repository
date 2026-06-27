@@ -37,6 +37,10 @@ const isServerTimestamp = (v: unknown): v is ServerTimestamp => hasServerOp(v, '
 const isArrayRemove = (v: unknown): v is ArrayRemove<unknown> => hasServerOp(v, 'arrayRemove');
 const isArrayUnion = (v: unknown): v is ArrayUnion<unknown> => hasServerOp(v, 'arrayUnion');
 
+const isVectorValue = (v: unknown): v is FirestoreVectorValue => v instanceof FirestoreVectorValue;
+const isDocumentReference = (v: unknown): v is FirestoreDocumentReference =>
+  v instanceof FirestoreDocumentReference;
+
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
   return z.object(
     Object.fromEntries(
@@ -69,11 +73,13 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
         .transform((gp) => ({ latitude: gp.latitude, longitude: gp.longitude }));
     case 'vector':
       return z
-        .custom<FirestoreVectorValue>((v) => v instanceof FirestoreVectorValue)
+        .unknown()
+        .refine(isVectorValue)
         .transform((vv) => vv.toArray());
     case 'docRef':
       return z
-        .custom<FirestoreDocumentReference>((v) => v instanceof FirestoreDocumentReference)
+        .unknown()
+        .refine(isDocumentReference)
         .transform((ref) => {
           const ids: string[] = [];
           let current: firestore.DocumentReference | null = ref;
