@@ -13,3 +13,13 @@ export const increment = (amount: number): Increment => ({
   [serverOperation]: 'increment',
   amount,
 });
+
+const hasServerOp = (v: unknown, op: string): boolean =>
+  v != null && typeof v === 'object' && Reflect.get(v, serverOperation) === op;
+
+export const isArrayRemove = (v: unknown): v is ArrayRemove<unknown> =>
+  hasServerOp(v, 'arrayRemove');
+export const isArrayUnion = (v: unknown): v is ArrayUnion<unknown> => hasServerOp(v, 'arrayUnion');
+export const isServerTimestamp = (v: unknown): v is ServerTimestamp =>
+  hasServerOp(v, 'serverTimestamp');
+export const isIncrement = (v: unknown): v is Increment => hasServerOp(v, 'increment');

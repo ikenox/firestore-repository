@@ -24,15 +24,22 @@ import type {
   MapType,
   UnionType,
 } from 'firestore-repository/schema';
-import { _optional, serverOperation } from 'firestore-repository/schema';
+import { _optional } from 'firestore-repository/schema';
+import {
+  isArrayRemove,
+  isArrayUnion,
+  isIncrement,
+  isServerTimestamp,
+} from 'firestore-repository/server-value';
 import { assertNever } from 'firestore-repository/util';
 import * as z from 'zod';
 
 // oxlint-disable-next-line typescript/no-explicit-any
 type ZodAny = z.ZodType<any, any>;
 
-const isServerOp = (v: unknown, op: string): boolean =>
-  v != null && typeof v === 'object' && Reflect.get(v, serverOperation) === op;
+export const isBytes = (v: unknown): v is FirestoreBytes => v instanceof FirestoreBytes;
+export const isDocumentReference = (v: unknown): v is FirestoreDocumentReference =>
+  v instanceof FirestoreDocumentReference;
 
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
   return z.object(
@@ -57,25 +64,22 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'null':
       return z.null();
     case 'bytes':
-      // oxlint-disable-next-line typescript/no-explicit-any
-      return z.custom<any>((v) => v instanceof FirestoreBytes).transform((b) => b.toUint8Array());
-    case 'timestamp':
-      // oxlint-disable-next-line typescript/no-explicit-any
-      return z.custom<any>((v) => v instanceof FirestoreTimestamp).transform((ts) => ts.toDate());
-    case 'geoPoint':
-      // oxlint-disable-next-line typescript/no-explicit-any
       return z
-        .custom<any>((v) => v instanceof FirestoreGeoPoint)
+        .unknown()
+        .refine(isBytes)
+        .transform((b) => b.toUint8Array());
+    case 'timestamp':
+      return z.instanceof(FirestoreTimestamp).transform((ts) => ts.toDate());
+    case 'geoPoint':
+      return z
+        .instanceof(FirestoreGeoPoint)
         .transform((gp) => ({ latitude: gp.latitude, longitude: gp.longitude }));
     case 'vector':
-      // oxlint-disable-next-line typescript/no-explicit-any
-      return z
-        .custom<any>((v) => v instanceof FirestoreVectorValue)
-        .transform((vv) => vv.toArray());
+      return z.instanceof(FirestoreVectorValue).transform((vv) => vv.toArray());
     case 'docRef':
-      // oxlint-disable-next-line typescript/no-explicit-any
       return z
-        .custom<any>((v) => v instanceof FirestoreDocumentReference)
+        .unknown()
+        .refine(isDocumentReference)
         .transform((ref) => {
           const ids: string[] = [];
           let current: FirestoreDocumentReference | null = ref;
@@ -152,19 +156,19 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
     case 'int64':
     case 'double':
       return zodUnion([
-        // oxlint-disable-next-line typescript/no-explicit-any
-        z
-          .custom<any>((v) => isServerOp(v, 'increment'))
-          .transform((v: any) => firestoreIncrement(v.amount)),
         z.number(),
+        z
+          .unknown()
+          .refine(isIncrement)
+          .transform((v) => firestoreIncrement(v.amount)),
       ]);
     case 'timestamp':
       return zodUnion([
-        // oxlint-disable-next-line typescript/no-explicit-any
-        z
-          .custom<any>((v) => isServerOp(v, 'serverTimestamp'))
-          .transform(() => firestoreServerTimestamp()),
         z.date().transform((d) => FirestoreTimestamp.fromDate(d)),
+        z
+          .unknown()
+          .refine(isServerTimestamp)
+          .transform(() => firestoreServerTimestamp()),
       ]);
     case 'docRef': {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -190,15 +194,15 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       const ft = fieldType as ArrayType;
       return zodUnion([
-        // oxlint-disable-next-line typescript/no-explicit-any
-        z
-          .custom<any>((v) => isServerOp(v, 'arrayRemove'))
-          .transform((v: any) => firestoreArrayRemove(...v.values)),
-        // oxlint-disable-next-line typescript/no-explicit-any
-        z
-          .custom<any>((v) => isServerOp(v, 'arrayUnion'))
-          .transform((v: any) => firestoreArrayUnion(...v.values)),
         z.array(buildEncodeField(ft.dynamicPart, db)),
+        z
+          .unknown()
+          .refine(isArrayRemove)
+          .transform((v) => firestoreArrayRemove(...v.values)),
+        z
+          .unknown()
+          .refine(isArrayUnion)
+          .transform((v) => firestoreArrayUnion(...v.values)),
       ]);
     }
     case 'union': {
