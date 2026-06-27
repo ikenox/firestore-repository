@@ -59,14 +59,12 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
         .instanceof(FirestoreGeoPoint)
         .transform((gp) => ({ latitude: gp.latitude, longitude: gp.longitude }));
     case 'vector':
-      // oxlint-disable-next-line typescript/no-explicit-any
       return z
-        .custom<any>((v) => v instanceof FirestoreVectorValue)
+        .custom<FirestoreVectorValue>((v) => v instanceof FirestoreVectorValue)
         .transform((vv) => vv.toArray());
     case 'docRef':
-      // oxlint-disable-next-line typescript/no-explicit-any
       return z
-        .custom<any>((v) => v instanceof FirestoreDocumentReference)
+        .custom<FirestoreDocumentReference>((v) => v instanceof FirestoreDocumentReference)
         .transform((ref) => {
           const ids: string[] = [];
           let current: firestore.DocumentReference | null = ref;
@@ -143,17 +141,15 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
     case 'int64':
     case 'double':
       return zodUnion([
-        // oxlint-disable-next-line typescript/no-explicit-any
         z
-          .custom<any>((v) => isServerOp(v, 'increment'))
-          .transform((v: any) => FieldValue.increment(v.amount)),
+          .custom<{ amount: number }>((v) => isServerOp(v, 'increment'))
+          .transform((v) => FieldValue.increment(v.amount)),
         z.number(),
       ]);
     case 'timestamp':
       return zodUnion([
-        // oxlint-disable-next-line typescript/no-explicit-any
         z
-          .custom<any>((v) => isServerOp(v, 'serverTimestamp'))
+          .custom<unknown>((v) => isServerOp(v, 'serverTimestamp'))
           .transform(() => FieldValue.serverTimestamp()),
         z.date().transform((d) => FirestoreTimestamp.fromDate(d)),
       ]);
@@ -181,14 +177,12 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       const ft = fieldType as ArrayType;
       return zodUnion([
-        // oxlint-disable-next-line typescript/no-explicit-any
         z
-          .custom<any>((v) => isServerOp(v, 'arrayRemove'))
-          .transform((v: any) => FieldValue.arrayRemove(...v.values)),
-        // oxlint-disable-next-line typescript/no-explicit-any
+          .custom<{ values: unknown[] }>((v) => isServerOp(v, 'arrayRemove'))
+          .transform((v) => FieldValue.arrayRemove(...v.values)),
         z
-          .custom<any>((v) => isServerOp(v, 'arrayUnion'))
-          .transform((v: any) => FieldValue.arrayUnion(...v.values)),
+          .custom<{ values: unknown[] }>((v) => isServerOp(v, 'arrayUnion'))
+          .transform((v) => FieldValue.arrayUnion(...v.values)),
         z.array(buildEncodeField(ft.dynamicPart, db)),
       ]);
     }
