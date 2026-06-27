@@ -16,16 +16,19 @@ A minimal and universal Firestore client (Repository Pattern) for TypeScript
 
 ## Installation
 
+The Firestore SDKs (`@google-cloud/firestore` / `@firebase/firestore`) are declared as peer
+dependencies, so install the one for your environment alongside this library.
+
 ### For backend (with [`@google-cloud/firestore`](https://www.npmjs.com/package/@google-cloud/firestore))
 
 ```shell
-npm install firestore-repository @firestore-repository/google-cloud-firestore
+npm install firestore-repository @firestore-repository/google-cloud-firestore @google-cloud/firestore
 ```
 
 ### For web frontend (with [`@firebase/firestore`](https://www.npmjs.com/package/@firebase/firestore))
 
 ```shell
-npm install firestore-repository @firestore-repository/firebase-js-sdk
+npm install firestore-repository @firestore-repository/firebase-js-sdk @firebase/firestore
 ```
 
 ## Usage

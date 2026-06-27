@@ -46,12 +46,15 @@
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "dependencies": {
-    "@firebase/firestore": "catalog:",
     "firestore-repository": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@firebase/app": "catalog:"
+    "@firebase/app": "catalog:",
+    "@firebase/firestore": "catalog:"
+  },
+  "peerDependencies": {
+    "@firebase/firestore": "^4.13.0"
   },
   "engines": {
     "node": ">=18"

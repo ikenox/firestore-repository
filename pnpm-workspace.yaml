@@ -6,13 +6,15 @@ catalog:
   oxlint-tsgolint: ^0.11.4
   oxfmt: ^0.28.0
   '@firebase/app': ^0.14.10
-  '@firebase/firestore': ^4.13.0
-  '@google-cloud/firestore': ^8.3.0
+  '@firebase/firestore': ^4.16.0
+  '@google-cloud/firestore': ^8.6.0
   '@types/node': 25.5.2
-  '@vitest/coverage-v8': ^4.0.18
+  '@vitest/coverage-v8': ^4.1.0
   '@typescript/native-preview': ^7.0.0-dev
+  esbuild: ^0.28.1
   typescript: ^6.0.2
-  vitest: ^4.0.18
+  vite: ^8.1.0
+  vitest: ^4.1.0
 
 minimumReleaseAge: 10080
 

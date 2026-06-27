@@ -47,9 +47,14 @@
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "dependencies": {
-    "@google-cloud/firestore": "catalog:",
     "firestore-repository": "workspace:*",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@google-cloud/firestore": "catalog:"
+  },
+  "peerDependencies": {
+    "@google-cloud/firestore": "^8.3.0"
   },
   "engines": {
     "node": ">=18"
