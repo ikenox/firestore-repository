@@ -119,6 +119,16 @@ Deferred to a later iteration (still tracked here, not currently in scope):
       `sort` (and by cursor lowering in `__PRIVATE_toPipeline`).
 - [ ] Type-level tests for `Ordering` / `AggregateFunction` along the lines
       of the existing `expression.test.ts` style.
+- [~] `ordering.ts` started: `Ordering` type + `asc` / `desc` factories;
+      `sort` now takes `(field) => Ordering[]`. Follow-ups:
+  - Decide factory naming (`asc` / `desc` vs the official
+    `ascending` / `descending`).
+  - `asc` / `desc` currently accept only `Expression`. The official SDK also
+    allows a bare field-name string; needs a standalone `field()` factory
+    (string -> `Field`) first, or an added overload.
+  - Add the `Ordering` / `sort` type tests noted above.
+  - Settle whether `Ordering` is imported as a value or `import type` in
+    `pipeline.ts` (it is currently a value import of a type).
 
 ## Expressions — remaining gaps
 

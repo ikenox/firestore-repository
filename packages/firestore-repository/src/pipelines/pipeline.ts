@@ -1,11 +1,24 @@
-import type { BoolType, DocumentSchema, FieldPath, FieldTypeOfPath, OmitPaths } from '../schema.js';
-import type { Expression, Field } from './expression.js';
-import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
-import type { Stage } from './stage.js';
+import type {
+  BoolType,
+  DocumentSchema,
+  FieldPath,
+  FieldTypeOfPath,
+  OmitPaths,
+} from "../schema.js";
+import type { Expression, Field } from "./expression.js";
+import { Ordering } from "./ordering.js";
+import type {
+  BuildAddFieldsSchema,
+  BuildSelectionSchema,
+  Selection,
+} from "./selection.js";
+import type { Stage } from "./stage.js";
 
 type Fields = DocumentSchema;
 
-export type FieldProvider<Context extends Fields> = <Path extends FieldPath<Context>>(
+export type FieldProvider<Context extends Fields> = <
+  Path extends FieldPath<Context>,
+>(
   path: Path,
 ) => Field<FieldTypeOfPath<Context, Path>, Path>;
 
@@ -22,7 +35,9 @@ export class Pipeline<Context extends Fields = Fields> {
     readonly parent?: Pipeline<Fields>,
   ) {}
 
-  where(_condition: (field: FieldProvider<Context>) => Expression<BoolType>): Pipeline<Context> {
+  where(
+    _condition: (field: FieldProvider<Context>) => Expression<BoolType>,
+  ): Pipeline<Context> {
     return unimplemented();
   }
   select<const Selections extends readonly Selection<Context>[]>(
@@ -40,7 +55,9 @@ export class Pipeline<Context extends Fields = Fields> {
   ): Pipeline<OmitPaths<Context, U[number]>> {
     return unimplemented();
   }
-  sort(..._orderings: unknown[]): Pipeline<Context> {
+  sort(
+    _orderings: (field: FieldProvider<Context>) => Ordering[],
+  ): Pipeline<Context> {
     return unimplemented();
   }
   limit(_limit: number): Pipeline<Context> {
