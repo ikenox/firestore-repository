@@ -1,4 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest';
+
 import type {
   ArrayType,
   DoubleType,
@@ -13,10 +14,7 @@ import type {
 
 type Schema = {
   name: StringType;
-  profile: MapType<{
-    age: DoubleType;
-    gender: LiteralType<['male', 'female']> & Optional;
-  }>;
+  profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
   rank: DoubleType;
   tag: ArrayType<StringType, [], []>;
 };
@@ -63,9 +61,7 @@ describe('PickPaths', () => {
   });
 
   it('preserves the Optional marker on a nested MapType', () => {
-    type S = {
-      profile: MapType<{ age: DoubleType; gender: StringType }> & Optional;
-    };
+    type S = { profile: MapType<{ age: DoubleType; gender: StringType }> & Optional };
     expectTypeOf<PickPaths<S, 'profile.age'>>().toEqualTypeOf<{
       profile: MapType<{ age: DoubleType }> & Optional;
     }>();
@@ -73,10 +69,7 @@ describe('PickPaths', () => {
 
   it('keeps an entire subtree when the top-level key is selected directly', () => {
     expectTypeOf<PickPaths<Schema, 'profile'>>().toEqualTypeOf<{
-      profile: MapType<{
-        age: DoubleType;
-        gender: LiteralType<['male', 'female']> & Optional;
-      }>;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
     }>();
   });
 
@@ -96,10 +89,7 @@ describe('PickPaths', () => {
 describe('OmitPaths', () => {
   it('removes a single top-level field', () => {
     expectTypeOf<OmitPaths<Schema, 'name'>>().toEqualTypeOf<{
-      profile: MapType<{
-        age: DoubleType;
-        gender: LiteralType<['male', 'female']> & Optional;
-      }>;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
       rank: DoubleType;
       tag: ArrayType<StringType, [], []>;
     }>();
@@ -115,9 +105,7 @@ describe('OmitPaths', () => {
   });
 
   it('preserves the Optional marker when removing a nested field', () => {
-    type S = {
-      profile: MapType<{ age: DoubleType; gender: StringType }> & Optional;
-    };
+    type S = { profile: MapType<{ age: DoubleType; gender: StringType }> & Optional };
     expectTypeOf<OmitPaths<S, 'profile.gender'>>().toEqualTypeOf<{
       profile: MapType<{ age: DoubleType }> & Optional;
     }>();
@@ -141,5 +129,31 @@ describe('OmitPaths', () => {
       rank: DoubleType;
       tag: ArrayType<StringType, [], []>;
     }>();
+  });
+
+  it('drops a map once its last field is removed', () => {
+    type S = { name: StringType; profile: MapType<{ age: DoubleType }> };
+    expectTypeOf<OmitPaths<S, 'profile.age'>>().toEqualTypeOf<{ name: StringType }>();
+  });
+
+  it('drops a map when all of its fields are removed at once', () => {
+    expectTypeOf<OmitPaths<Schema, 'profile.age' | 'profile.gender'>>().toEqualTypeOf<{
+      name: StringType;
+      rank: DoubleType;
+      tag: ArrayType<StringType, [], []>;
+    }>();
+  });
+
+  it('removes a deeply nested field while preserving its siblings', () => {
+    type S = { a: MapType<{ b: MapType<{ c: DoubleType; d: StringType }> }> };
+    expectTypeOf<OmitPaths<S, 'a.b.c'>>().toEqualTypeOf<{
+      a: MapType<{ b: MapType<{ d: StringType }> }>;
+    }>();
+  });
+
+  it('cascades the empty-map drop up through multiple levels', () => {
+    type S = { name: StringType; a: MapType<{ b: MapType<{ c: DoubleType }> }> };
+    // Removing the only leaf empties `a.b`, which empties `a`, dropping both.
+    expectTypeOf<OmitPaths<S, 'a.b.c'>>().toEqualTypeOf<{ name: StringType }>();
   });
 });

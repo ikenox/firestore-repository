@@ -2,5 +2,19 @@ export type Stage =
   | { kind: 'input' }
   | { kind: 'where' }
   | { kind: 'select' }
+  | { kind: 'addFields' }
+  | { kind: 'removeFields' }
+  | { kind: 'sort' }
+  | { kind: 'limit' }
+  | { kind: 'offset' }
+  | { kind: 'unnest' }
   | { kind: 'aggregate' }
-  | { kind: 'distinct' };
+  | { kind: 'distinct' }
+  | { kind: 'replaceWith' }
+  | { kind: 'union' }
+  | { kind: 'findNearest' }
+  | { kind: 'let' }
+  | { kind: 'search' }
+  | { kind: 'sample' }
+  | { kind: 'update' }
+  | { kind: 'delete' };

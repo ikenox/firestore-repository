@@ -46,13 +46,7 @@ export type FunctionCall<T extends FieldType = FieldType> = {
 type NumericType = Int64Type | DoubleType;
 
 /** Time units accepted by `timestampAdd` / `timestampSubtract`. */
-export type TimeUnit =
-  | 'microsecond'
-  | 'millisecond'
-  | 'second'
-  | 'minute'
-  | 'hour'
-  | 'day';
+export type TimeUnit = 'microsecond' | 'millisecond' | 'second' | 'minute' | 'hour' | 'day';
 
 /** Granularities accepted by `timestampTruncate`. Superset of {@link TimeUnit}. */
 export type TimeGranularity =
@@ -212,10 +206,7 @@ export function equalAny<T extends FieldType>(
   value: Expression<T>,
   ...candidates: Expression<T>[]
 ): FunctionCall<BoolType>;
-export function equalAny(
-  value: Expression,
-  ...candidates: Expression[]
-): FunctionCall<BoolType> {
+export function equalAny(value: Expression, ...candidates: Expression[]): FunctionCall<BoolType> {
   return fn('equalAny', bool(), [value, ...candidates]);
 }
 
@@ -510,9 +501,7 @@ export const reverse = <T extends ArrayType>(arr: Expression<T>): FunctionCall<T
 // TODO: most map operators are typed loosely because element-level types depend on the key.
 // ---------------------------------------------------------------------------
 
-export const map = (
-  entries: Record<string, Expression>,
-): FunctionCall<MapType<MapFields>> => {
+export const map = (entries: Record<string, Expression>): FunctionCall<MapType<MapFields>> => {
   const args: Expression[] = [];
   for (const [k, v] of Object.entries(entries)) {
     args.push(stringConstant(k), v);
@@ -618,17 +607,14 @@ export const timestampTruncate = (
     typeof granularity === 'string' ? stringConstant(granularity) : granularity,
   ]);
 
-export const timestampToUnixMicros = (
-  ts: Expression<TimestampType>,
-): FunctionCall<Int64Type> => fn('timestampToUnixMicros', int64(), [ts]);
+export const timestampToUnixMicros = (ts: Expression<TimestampType>): FunctionCall<Int64Type> =>
+  fn('timestampToUnixMicros', int64(), [ts]);
 
-export const timestampToUnixMillis = (
-  ts: Expression<TimestampType>,
-): FunctionCall<Int64Type> => fn('timestampToUnixMillis', int64(), [ts]);
+export const timestampToUnixMillis = (ts: Expression<TimestampType>): FunctionCall<Int64Type> =>
+  fn('timestampToUnixMillis', int64(), [ts]);
 
-export const timestampToUnixSeconds = (
-  ts: Expression<TimestampType>,
-): FunctionCall<Int64Type> => fn('timestampToUnixSeconds', int64(), [ts]);
+export const timestampToUnixSeconds = (ts: Expression<TimestampType>): FunctionCall<Int64Type> =>
+  fn('timestampToUnixSeconds', int64(), [ts]);
 
 export const unixMicrosToTimestamp = (
   micros: Expression<NumericType>,
@@ -650,10 +636,7 @@ export const isType = (
   value: Expression,
   typeName: FieldTypeName | Expression<StringType>,
 ): FunctionCall<BoolType> =>
-  fn('isType', bool(), [
-    value,
-    typeof typeName === 'string' ? stringConstant(typeName) : typeName,
-  ]);
+  fn('isType', bool(), [value, typeof typeName === 'string' ? stringConstant(typeName) : typeName]);
 
 export const isError = (value: Expression): FunctionCall<BoolType> =>
   fn('isError', bool(), [value]);
@@ -661,11 +644,9 @@ export const isError = (value: Expression): FunctionCall<BoolType> =>
 export const isAbsent = (value: Expression): FunctionCall<BoolType> =>
   fn('isAbsent', bool(), [value]);
 
-export const exists = (value: Expression): FunctionCall<BoolType> =>
-  fn('exists', bool(), [value]);
+export const exists = (value: Expression): FunctionCall<BoolType> => fn('exists', bool(), [value]);
 
-export const type = (value: Expression): FunctionCall<StringType> =>
-  fn('type', string(), [value]);
+export const type = (value: Expression): FunctionCall<StringType> => fn('type', string(), [value]);
 
 // ---------------------------------------------------------------------------
 // Control flow
@@ -693,4 +674,3 @@ export const documentId = (ref: Expression): FunctionCall<StringType> =>
 
 export const collectionId = (ref: Expression): FunctionCall<StringType> =>
   fn('collectionId', string(), [ref]);
-

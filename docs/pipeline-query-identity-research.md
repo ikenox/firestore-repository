@@ -26,24 +26,24 @@ records the observed behavior so we can encode it in the
 
 ## Result
 
-| Stage | n (results) | id | ref | createTime | updateTime | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| `collection()` (baseline) | 4 | ✓ | ✓ | ✓ | ✓ | |
-| `where(...)` | 2 | ✓ | ✓ | ✓ | ✓ | |
-| `sort(...)` | 4 | ✓ | ✓ | ✓ | ✓ | |
-| `limit(N)` | 2 | ✓ | ✓ | ✓ | ✓ | |
-| `offset(N)` | 3 | ✓ | ✓ | ✓ | ✓ | |
-| `addFields(...)` | 4 | ✓ | ✓ | ✓ | ✓ | Keeps identity even after deriving new fields. |
-| `removeFields(...)` | 4 | ✓ | ✓ | ✓ | ✓ | |
-| `unnest(...)` | 6 | ✓ | ✓ | ✓ | ✓ | **Same `id` repeated across the rows produced by one source document.** |
-| `select(...)` | 4 | ✗ | ✗ | ✗ | ✗ | **Drops identity, even for `select("name")` or `select(documentId().as("id"))`.** |
-| `distinct(...)` | 2 | ✗ | ✗ | ✗ | ✗ | |
-| `aggregate` (no groups) | 1 | ✗ | ✗ | ✗ | ✗ | |
-| `aggregate` (with groups) | 2 | ✗ | ✗ | ✗ | ✗ | |
-| `replaceWith(...)` | 4 | ✗ | ✗ | ✗ | ✗ | |
-| `where → select` | 2 | ✗ | ✗ | ✗ | ✗ | |
-| `select → where` | 2 | ✗ | ✗ | ✗ | ✗ | |
-| `aggregate → sort → limit` | 2 | ✗ | ✗ | ✗ | ✗ | |
+| Stage                      | n (results) | id  | ref | createTime | updateTime | Notes                                                                             |
+| -------------------------- | ----------- | --- | --- | ---------- | ---------- | --------------------------------------------------------------------------------- |
+| `collection()` (baseline)  | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
+| `where(...)`               | 2           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
+| `sort(...)`                | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
+| `limit(N)`                 | 2           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
+| `offset(N)`                | 3           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
+| `addFields(...)`           | 4           | ✓   | ✓   | ✓          | ✓          | Keeps identity even after deriving new fields.                                    |
+| `removeFields(...)`        | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
+| `unnest(...)`              | 6           | ✓   | ✓   | ✓          | ✓          | **Same `id` repeated across the rows produced by one source document.**           |
+| `select(...)`              | 4           | ✗   | ✗   | ✗          | ✗          | **Drops identity, even for `select("name")` or `select(documentId().as("id"))`.** |
+| `distinct(...)`            | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| `aggregate` (no groups)    | 1           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| `aggregate` (with groups)  | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| `replaceWith(...)`         | 4           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| `where → select`           | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| `select → where`           | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| `aggregate → sort → limit` | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
 
 ## Summary
 

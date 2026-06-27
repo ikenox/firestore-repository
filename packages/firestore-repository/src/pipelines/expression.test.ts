@@ -315,9 +315,7 @@ describe('string operators', () => {
     expectTypeOf(startsWith(stringField, stringField)).toEqualTypeOf<FunctionCall<BoolType>>();
     expectTypeOf(endsWith(stringField, stringField)).toEqualTypeOf<FunctionCall<BoolType>>();
     expectTypeOf(like(stringField, stringField)).toEqualTypeOf<FunctionCall<BoolType>>();
-    expectTypeOf(stringContains(stringField, stringField)).toEqualTypeOf<
-      FunctionCall<BoolType>
-    >();
+    expectTypeOf(stringContains(stringField, stringField)).toEqualTypeOf<FunctionCall<BoolType>>();
   });
 
   it('stringIndexOf returns Int64Type and accepts bytes search', () => {

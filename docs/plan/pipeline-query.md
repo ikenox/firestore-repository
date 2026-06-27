@@ -191,6 +191,12 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## Known issues / loose ends
 
+- [ ] **The schema-level type logic needs careful human review.** The
+      type-level transforms (e.g. `selection.ts`'s `BuildSelectionSchema` /
+      `BuildAddFieldsSchema` / `MergeSchemas` / `PathToSchema`, and the
+      `schema.ts` path helpers) are intricate and easy to get subtly wrong;
+      review the resolved types against intended semantics before relying on
+      them.
 - [ ] `pipeline-query.test.ts` (now `pipelines/pipeline.test.ts`) has a few
       WIP test cases that still fail typecheck after recent select-callback
       refactors. Clean up when stage signatures settle.

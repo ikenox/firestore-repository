@@ -149,7 +149,7 @@ Getting an Enterprise database handle in other SDKs:
 
 ### `where` is permissive about non-boolean values
 
-The SDK requires a `BooleanExpression` at the TypeScript level, but `Expression.asBoolean()` is a pure type-tag wrap — wire-level the original expression's proto goes through unchanged. So you *can* push any expression into `where`, e.g. `where(field("flag").asBoolean())` even when `flag` may not be boolean.
+The SDK requires a `BooleanExpression` at the TypeScript level, but `Expression.asBoolean()` is a pure type-tag wrap — wire-level the original expression's proto goes through unchanged. So you _can_ push any expression into `where`, e.g. `where(field("flag").asBoolean())` even when `flag` may not be boolean.
 
 Tested behavior: the backend's `where` evaluates the expression per row and **silently drops the row if the result is anything other than `true`** — `false`, `null`, missing field, non-boolean values (number / string / map / etc.) all behave the same as `false`. The whole pipeline does NOT error out even when type mixed docs exist.
 

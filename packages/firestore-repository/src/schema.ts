@@ -207,14 +207,8 @@ export type FieldValueOfPath<T extends DocumentSchema, U extends FieldPath<T>> =
 // Distributing via `infer M` is required: a non-distributive form like
 // `Extract<...> extends \`${K}.${infer R}\` ? R : never` causes `infer R`
 // to fall back to `string` when the Extract is `never`.
-export type TailPath<K extends string, P extends string> = Extract<
-  P,
-  `${K}.${string}`
-> extends infer M
-  ? M extends `${K}.${infer R}`
-    ? R
-    : never
-  : never;
+export type TailPath<K extends string, P extends string> =
+  Extract<P, `${K}.${string}`> extends infer M ? (M extends `${K}.${infer R}` ? R : never) : never;
 
 /**
  * Projects a schema down to the given dot-paths, preserving the nested MapType structure.
@@ -239,12 +233,22 @@ export type PickPaths<T extends DocumentSchema, P extends string> = MapType['fie
 /**
  * Removes the given dot-paths from a schema, preserving the nested MapType structure.
  * `OmitPaths<T, "profile.gender">` yields the schema with `profile.gender` removed.
- * A path that exactly matches a top-level key drops that whole subtree.
+ * A path that exactly matches a top-level key drops that whole subtree. When a
+ * nested removal empties a MapType, that now-empty map is dropped too (which can
+ * cascade up to its parents).
  */
 export type OmitPaths<T extends DocumentSchema, P extends string> = MapType['fields'] extends T
   ? T
   : {
-      [K in keyof T & string as K extends P ? never : K]: T[K] extends MapType<infer F>
+      [K in keyof T & string as K extends P
+        ? never
+        : T[K] extends MapType<infer F>
+          ? [TailPath<K, P>] extends [never]
+            ? K
+            : keyof OmitPaths<F, TailPath<K, P>> extends never
+              ? never // nested removal emptied this map -> drop the key
+              : K
+          : K]: T[K] extends MapType<infer F>
         ? [TailPath<K, P>] extends [never]
           ? T[K]
           : T[K] extends Optional
