@@ -15,13 +15,17 @@ import {
 import { documentPath } from 'firestore-repository/path';
 import type { DocRef } from 'firestore-repository/repository';
 import type {
+  ArrayRemove,
   ArrayType,
+  ArrayUnion,
   Collection,
   DocRefType,
   DocumentSchema,
   FieldType,
+  Increment,
   LiteralType,
   MapType,
+  ServerTimestamp,
   UnionType,
 } from 'firestore-repository/schema';
 import { _optional, serverOperation } from 'firestore-repository/schema';
@@ -31,8 +35,13 @@ import * as z from 'zod';
 // oxlint-disable-next-line typescript/no-explicit-any
 type ZodAny = z.ZodType<any, any>;
 
-const isServerOp = (v: unknown, op: string): boolean =>
+const hasServerOp = (v: unknown, op: string): boolean =>
   v != null && typeof v === 'object' && Reflect.get(v, serverOperation) === op;
+
+const isIncrement = (v: unknown): v is Increment => hasServerOp(v, 'increment');
+const isServerTimestamp = (v: unknown): v is ServerTimestamp => hasServerOp(v, 'serverTimestamp');
+const isArrayRemove = (v: unknown): v is ArrayRemove<unknown> => hasServerOp(v, 'arrayRemove');
+const isArrayUnion = (v: unknown): v is ArrayUnion<unknown> => hasServerOp(v, 'arrayUnion');
 
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
   return z.object(
@@ -152,14 +161,16 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
     case 'double':
       return zodUnion([
         z
-          .custom<{ amount: number }>((v) => isServerOp(v, 'increment'))
+          .unknown()
+          .refine(isIncrement)
           .transform((v) => firestoreIncrement(v.amount)),
         z.number(),
       ]);
     case 'timestamp':
       return zodUnion([
         z
-          .custom<unknown>((v) => isServerOp(v, 'serverTimestamp'))
+          .unknown()
+          .refine(isServerTimestamp)
           .transform(() => firestoreServerTimestamp()),
         z.date().transform((d) => FirestoreTimestamp.fromDate(d)),
       ]);
@@ -188,10 +199,12 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       const ft = fieldType as ArrayType;
       return zodUnion([
         z
-          .custom<{ values: unknown[] }>((v) => isServerOp(v, 'arrayRemove'))
+          .unknown()
+          .refine(isArrayRemove)
           .transform((v) => firestoreArrayRemove(...v.values)),
         z
-          .custom<{ values: unknown[] }>((v) => isServerOp(v, 'arrayUnion'))
+          .unknown()
+          .refine(isArrayUnion)
           .transform((v) => firestoreArrayUnion(...v.values)),
         z.array(buildEncodeField(ft.dynamicPart, db)),
       ]);
