@@ -6,7 +6,11 @@ import {
   writeBatch,
 } from '@firebase/firestore';
 import { constant, equal, execute, field, mapSet } from '@firebase/firestore/pipelines';
-import { defineRepositorySpecificationTests } from 'firestore-repository/__test__/specification';
+import {
+  authorsCollection,
+  defineRepositorySpecificationTests,
+} from 'firestore-repository/__test__/specification';
+import { collection } from 'firestore-repository/pipelines/source';
 import { plainMapper } from 'firestore-repository/repository';
 import { describe, it } from 'vitest';
 
@@ -46,7 +50,18 @@ describe('repository', async () => {
         .pipeline()
         .collection('a')
         .where(constant('a').asBoolean())
-        .select(constant('a').asBoolean().toUpper().as('hoge')),
+        .select(constant('a').asBoolean().toUpper().as('hoge'))
+        .sort(constant('a').ascending())
+        .limit(1)
+        .offset(2)
+        .unnest(selectable)
+        .search(options)
+        .aggregate(accumulator)
+        .distinct(group)
+        .replaceWith(fieldName)
+        .removeFields(fieldValue),
     );
   });
+
+  collection(authorsCollection).select(() => ['']);
 });

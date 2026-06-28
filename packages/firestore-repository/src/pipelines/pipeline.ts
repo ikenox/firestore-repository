@@ -1,15 +1,37 @@
-import type { BoolType, DocumentSchema, FieldPath, FieldTypeOfPath, OmitPaths } from '../schema.js';
-import { AggregateWithAlias } from './aggregate.js';
-import type { Expression, Field } from './expression.js';
-import { Ordering } from './ordering.js';
-import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
-import type { Stage } from './stage.js';
+import type {
+  BoolType,
+  DocumentSchema,
+  FieldPath,
+  FieldTypeOfPath,
+  MapFields,
+  MapType,
+  OmitPaths,
+} from "../schema.js";
+import { AggregateWithAlias } from "./aggregate.js";
+import type { Expression, Field } from "./expression.js";
+import { Ordering } from "./ordering.js";
+import type {
+  BuildAddFieldsSchema,
+  BuildSelectionSchema,
+  Selection,
+} from "./selection.js";
+import type { Stage } from "./stage.js";
 
 type Fields = DocumentSchema;
 
-export type FieldProvider<Context extends Fields> = <Path extends FieldPath<Context>>(
+export type FieldProvider<Context extends Fields> = <
+  Path extends FieldPath<Context>,
+>(
   path: Path,
 ) => Field<FieldTypeOfPath<Context, Path>, Path>;
+
+/**
+ * Conflict resolution for `merge` (the merge modes of the Firestore replace-with
+ * stage).
+ * - `overwrite`: the merged map's values win on overlap (`merge_overwrite_existing`).
+ * - `keep`: existing document values win on overlap (`merge_keep_existing`).
+ */
+export type MergeMode = "overwrite" | "keep";
 
 // TODO: placeholder return value used by stage stubs that are not implemented yet.
 // Returns a value (not `throw`) so the type tests, which evaluate stage calls at
@@ -24,7 +46,9 @@ export class Pipeline<Context extends Fields = Fields> {
     readonly parent?: Pipeline<Fields>,
   ) {}
 
-  where(_condition: (field: FieldProvider<Context>) => Expression<BoolType>): Pipeline<Context> {
+  where(
+    _condition: (field: FieldProvider<Context>) => Expression<BoolType>,
+  ): Pipeline<Context> {
     return unimplemented();
   }
   select<Selections extends readonly Selection<Context>[]>(
@@ -42,7 +66,9 @@ export class Pipeline<Context extends Fields = Fields> {
   ): Pipeline<OmitPaths<Context, U[number]>> {
     return unimplemented();
   }
-  sort(_orderings: (field: FieldProvider<Context>) => Ordering[]): Pipeline<Context> {
+  sort(
+    _orderings: (field: FieldProvider<Context>) => Ordering[],
+  ): Pipeline<Context> {
     return unimplemented();
   }
   limit(_limit: number): Pipeline<Context> {
@@ -68,28 +94,40 @@ export class Pipeline<Context extends Fields = Fields> {
   ): Pipeline<Fields> {
     return unimplemented();
   }
-  replaceWith(..._args: unknown[]): Pipeline<Fields> {
+  /** `full_replace`: the document becomes the given map value. */
+  fullReplaceWith<M extends MapFields>(
+    _map: (field: FieldProvider<Context>) => Expression<MapType<M>>,
+  ): Pipeline<M> {
     return unimplemented();
   }
-  union(..._args: unknown[]): Pipeline<Fields> {
+  // TODO: tighten the return Context — `overwrite` -> map wins over the existing
+  // Context, `keep` -> existing wins. Left loose for now.
+  mergeWith<M extends MapFields>(
+    _map: (field: FieldProvider<Context>) => Expression<MapType<M>>,
+    _mode: MergeMode,
+  ): Pipeline<Fields> {
     return unimplemented();
   }
-  findNearest(..._args: unknown[]): Pipeline<Context> {
-    return unimplemented();
-  }
-  let(..._args: unknown[]): Pipeline<Context> {
-    return unimplemented();
-  }
-  search(..._args: unknown[]): Pipeline<Context> {
-    return unimplemented();
-  }
-  sample(..._args: unknown[]): Pipeline<Context> {
-    return unimplemented();
-  }
-  update(..._args: unknown[]): Pipeline<Context> {
-    return unimplemented();
-  }
-  delete(..._args: unknown[]): Pipeline<Context> {
-    return unimplemented();
-  }
+  // TODO
+  // union(..._args: unknown[]): Pipeline<Fields> {
+  //   return unimplemented();
+  // }
+  // findNearest(..._args: unknown[]): Pipeline<Context> {
+  //   return unimplemented();
+  // }
+  // let(..._args: unknown[]): Pipeline<Context> {
+  //   return unimplemented();
+  // }
+  // search(..._args: unknown[]): Pipeline<Context> {
+  //   return unimplemented();
+  // }
+  // sample(..._args: unknown[]): Pipeline<Context> {
+  //   return unimplemented();
+  // }
+  // update(..._args: unknown[]): Pipeline<Context> {
+  //   return unimplemented();
+  // }
+  // delete(..._args: unknown[]): Pipeline<Context> {
+  //   return unimplemented();
+  // }
 }
