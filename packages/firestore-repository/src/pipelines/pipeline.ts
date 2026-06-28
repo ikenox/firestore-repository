@@ -6,38 +6,12 @@ import type {
   MapFields,
   MapType,
   OmitPaths,
-} from "../schema.js";
-import { AggregateWithAlias } from "./aggregate.js";
-import type { Expression, Field } from "./expression.js";
-import { Ordering } from "./ordering.js";
-import type {
-  BuildAddFieldsSchema,
-  BuildSelectionSchema,
-  Selection,
-} from "./selection.js";
-import type { Stage } from "./stage.js";
-
-type Fields = DocumentSchema;
-
-export type FieldProvider<Context extends Fields> = <
-  Path extends FieldPath<Context>,
->(
-  path: Path,
-) => Field<FieldTypeOfPath<Context, Path>, Path>;
-
-/**
- * Conflict resolution for `merge` (the merge modes of the Firestore replace-with
- * stage).
- * - `overwrite`: the merged map's values win on overlap (`merge_overwrite_existing`).
- * - `keep`: existing document values win on overlap (`merge_keep_existing`).
- */
-export type MergeMode = "overwrite" | "keep";
-
-// TODO: placeholder return value used by stage stubs that are not implemented yet.
-// Returns a value (not `throw`) so the type tests, which evaluate stage calls at
-// runtime via expectTypeOf, do not blow up.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stub return value
-const unimplemented = <T>(): T => undefined as T;
+} from '../schema.js';
+import { AggregateWithAlias } from './aggregate.js';
+import type { Expression, Field } from './expression.js';
+import { Ordering } from './ordering.js';
+import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
+import type { Stage } from './stage.js';
 
 export class Pipeline<Context extends Fields = Fields> {
   constructor(
@@ -46,9 +20,7 @@ export class Pipeline<Context extends Fields = Fields> {
     readonly parent?: Pipeline<Fields>,
   ) {}
 
-  where(
-    _condition: (field: FieldProvider<Context>) => Expression<BoolType>,
-  ): Pipeline<Context> {
+  where(_condition: (field: FieldProvider<Context>) => Expression<BoolType>): Pipeline<Context> {
     return unimplemented();
   }
   select<Selections extends readonly Selection<Context>[]>(
@@ -66,9 +38,7 @@ export class Pipeline<Context extends Fields = Fields> {
   ): Pipeline<OmitPaths<Context, U[number]>> {
     return unimplemented();
   }
-  sort(
-    _orderings: (field: FieldProvider<Context>) => Ordering[],
-  ): Pipeline<Context> {
+  sort(_orderings: (field: FieldProvider<Context>) => Ordering[]): Pipeline<Context> {
     return unimplemented();
   }
   limit(_limit: number): Pipeline<Context> {
@@ -131,3 +101,23 @@ export class Pipeline<Context extends Fields = Fields> {
   //   return unimplemented();
   // }
 }
+
+export type FieldProvider<Context extends Fields> = <Path extends FieldPath<Context>>(
+  path: Path,
+) => Field<FieldTypeOfPath<Context, Path>, Path>;
+
+/**
+ * Conflict resolution for `merge` (the merge modes of the Firestore replace-with
+ * stage).
+ * - `overwrite`: the merged map's values win on overlap (`merge_overwrite_existing`).
+ * - `keep`: existing document values win on overlap (`merge_keep_existing`).
+ */
+export type MergeMode = 'overwrite' | 'keep';
+
+// TODO: placeholder return value used by stage stubs that are not implemented yet.
+// Returns a value (not `throw`) so the type tests, which evaluate stage calls at
+// runtime via expectTypeOf, do not blow up.
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stub return value
+const unimplemented = <T>(): T => undefined as T;
+
+type Fields = DocumentSchema;
