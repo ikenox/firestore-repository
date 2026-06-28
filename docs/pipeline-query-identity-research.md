@@ -70,6 +70,43 @@ records the observed behavior so we can encode it in the
   elements — useful for "explode" patterns where you want to know which
   source document each emitted row came from.
 
+## Read-identity (row key) vs. `__name__` field / DML-capability
+
+Two distinct notions are easy to conflate:
+
+- **Read-identity** — whether `PipelineResult.id` / `ref` / `createTime` /
+  `updateTime` are populated. This is driven by the result row's
+  server-assigned **key** (`e.key?.path`), **not** by any `__name__` _data
+  field_. `select` drops the row key even when the projection carries the name
+  (tested with `documentId(field("__name__")).as("docId")`), so keeping
+  `__name__` as a field does **not** bring read-identity back.
+- **DML-capability** — whether an `update` / `delete` stage may be appended.
+  The [Pipeline DML docs](https://firebase.google.com/docs/firestore/pipelines/dml)
+  require the documents entering the DML stage to include the `__name__`
+  **field**, and allow only these stages before DML: `collection`,
+  `collection_group`, `where`, `select`, `add_fields`, `remove_fields`, `let`,
+  `sort`, `limit`, `offset` — disallowing `aggregate`, `distinct`, `unnest`,
+  `find_nearest`, and multi-query (`union` / joins / sub-queries).
+
+These two axes do **not** line up:
+
+- `select` is read-identity-breaking but DML-allowed (as long as `__name__` is
+  kept in the projection).
+- `unnest` is read-identity-preserving but DML-disallowed (one source document
+  fans out to many rows, so the key is no longer 1:1).
+
+So **DML-capability must be modeled as its own type state**, separate from the
+`IdentifiedPipeline` / `UnidentifiedPipeline` (read-identity) split.
+
+Open / untested (would need a probe to add as table rows):
+
+- Does `aggregate` grouped by `__name__` restore read-identity? The
+  `aggregate (with groups)` row above was not grouped by `__name__`; the
+  mechanism suggests no (aggregated rows are computed, not document-backed),
+  but this is unverified.
+- The table tests `select("name")` and `select(documentId(...).as("docId"))`,
+  but not `select("__name__")` (keeping the raw key field) as its own case.
+
 ## Implications for `firestore-repository`
 
 Split the pipeline-query type into two classes via inheritance:
