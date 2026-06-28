@@ -1,4 +1,5 @@
 import type { BoolType, DocumentSchema, FieldPath, FieldTypeOfPath, OmitPaths } from '../schema.js';
+import { AggregateWithAlias } from './aggregate.js';
 import type { Expression, Field } from './expression.js';
 import { Ordering } from './ordering.js';
 import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
@@ -26,12 +27,12 @@ export class Pipeline<Context extends Fields = Fields> {
   where(_condition: (field: FieldProvider<Context>) => Expression<BoolType>): Pipeline<Context> {
     return unimplemented();
   }
-  select<const Selections extends readonly Selection<Context>[]>(
+  select<Selections extends readonly Selection<Context>[]>(
     _selections: (field: FieldProvider<Context>) => Selections,
   ): Pipeline<BuildSelectionSchema<Context, Selections>> {
     return unimplemented();
   }
-  addFields<const Selections extends readonly Selection<Context>[]>(
+  addFields<Selections extends readonly Selection<Context>[]>(
     _fields: (field: FieldProvider<Context>) => Selections,
   ): Pipeline<BuildAddFieldsSchema<Context, Selections>> {
     return unimplemented();
@@ -50,13 +51,21 @@ export class Pipeline<Context extends Fields = Fields> {
   offset(_offset: number): Pipeline<Context> {
     return unimplemented();
   }
+  // TODO
   unnest(..._args: unknown[]): Pipeline<Fields> {
     return unimplemented();
   }
-  aggregate(..._args: unknown[]): Pipeline<Fields> {
+  aggregate(
+    _aggreate: (field: FieldProvider<Context>) => {
+      accumulators: AggregateWithAlias[];
+      options?: { groupBy: Expression[] };
+    },
+  ): Pipeline<Fields> {
     return unimplemented();
   }
-  distinct(..._args: unknown[]): Pipeline<Fields> {
+  distinct<Selections extends readonly Selection<Context>[]>(
+    _groups: (field: FieldProvider<Context>) => Selections,
+  ): Pipeline<Fields> {
     return unimplemented();
   }
   replaceWith(..._args: unknown[]): Pipeline<Fields> {
