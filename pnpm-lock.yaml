@@ -7,8 +7,8 @@ settings:
 catalogs:
   default:
     '@firebase/app':
-      specifier: ^0.14.10
-      version: 0.14.10
+      specifier: ^0.15.0
+      version: 0.15.0
     '@firebase/firestore':
       specifier: ^4.16.0
       version: 4.16.0
@@ -34,8 +34,8 @@ catalogs:
       specifier: ^0.11.4
       version: 0.11.4
     typescript:
-      specifier: ^6.0.2
-      version: 6.0.2
+      specifier: ^6.0.3
+      version: 6.0.3
     vite:
       specifier: ^8.1.0
       version: 8.1.0
@@ -67,7 +67,7 @@ importers:
         version: 0.11.4
       typescript:
         specifier: 'catalog:'
-        version: 6.0.2
+        version: 6.0.3
       vite:
         specifier: 'catalog:'
         version: 8.1.0(@types/node@24.10.1)(esbuild@0.28.1)
@@ -81,15 +81,15 @@ importers:
         specifier: workspace:*
         version: link:../firestore-repository
       zod:
-        specifier: ^4.3.6
-        version: 4.3.6
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.14.10
+        version: 0.15.0
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.16.0(@firebase/app@0.14.10)
+        version: 4.16.0(@firebase/app@0.15.0)
 
   packages/firestore-repository: {}
 
@@ -99,8 +99,8 @@ importers:
         specifier: workspace:*
         version: link:../firestore-repository
       zod:
-        specifier: ^4.3.6
-        version: 4.3.6
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@google-cloud/firestore':
         specifier: 'catalog:'
@@ -110,10 +110,10 @@ importers:
     dependencies:
       '@firebase/app':
         specifier: 'catalog:'
-        version: 0.14.10
+        version: 0.15.0
       '@firebase/firestore':
         specifier: 'catalog:'
-        version: 4.16.0(@firebase/app@0.14.10)
+        version: 4.16.0(@firebase/app@0.15.0)
       '@firestore-repository/firebase-js-sdk':
         specifier: workspace:*
         version: link:../firebase-js-sdk
@@ -327,12 +327,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@firebase/app@0.14.10':
-    resolution: {integrity: sha512-PlPhdtjgWUra+LImQTnXOUqUa/jcufZhizdR93ZjlQSS3ahCtDTG6pJw7j0OwFal18DQjICXfeVNsUUrcNisfA==}
-    engines: {node: '>=20.0.0'}
-
-  '@firebase/component@0.7.2':
-    resolution: {integrity: sha512-iyVDGc6Vjx7Rm0cAdccLH/NG6fADsgJak/XW9IA2lPf8AjIlsemOpFGKczYyPHxm4rnKdR8z6sK4+KEC7NwmEg==}
+  '@firebase/app@0.15.0':
+    resolution: {integrity: sha512-soIskolmGgbpi0K/MfrjtdpO1220qRCbXA4Z8Qx3lM+fVwA3q40m+OM+7zBHd2nuQCrLXb33L6Oc1aBH3Y26AQ==}
     engines: {node: '>=20.0.0'}
 
   '@firebase/component@0.7.3':
@@ -345,16 +341,8 @@ packages:
     peerDependencies:
       '@firebase/app': 0.x
 
-  '@firebase/logger@0.5.0':
-    resolution: {integrity: sha512-cGskaAvkrnh42b3BA3doDWeBmuHFO/Mx5A83rbRDYakPjO9bJtRL3dX7javzc2Rr/JHZf4HlterTW2lUkfeN4g==}
-    engines: {node: '>=20.0.0'}
-
   '@firebase/logger@0.5.1':
     resolution: {integrity: sha512-vZKLsqE1ABOy8OjQiE7cUTFn4gvaqlk88yp8N94Pk/sDpq61YqZGqmVFZTvOyflTwuYFcWirBdYGoJgbDaXKYQ==}
-    engines: {node: '>=20.0.0'}
-
-  '@firebase/util@1.15.0':
-    resolution: {integrity: sha512-AmWf3cHAOMbrCPG4xdPKQaj5iHnyYfyLKZxwz+Xf55bqKbpAmcYifB4jQinT2W9XhDRHISOoPyBOariJpCG6FA==}
     engines: {node: '>=20.0.0'}
 
   '@firebase/util@1.15.1':
@@ -1310,8 +1298,8 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
-  typescript@6.0.2:
-    resolution: {integrity: sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ==}
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -1442,8 +1430,8 @@ packages:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
 
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
 
@@ -1565,17 +1553,12 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@firebase/app@0.14.10':
+  '@firebase/app@0.15.0':
     dependencies:
-      '@firebase/component': 0.7.2
-      '@firebase/logger': 0.5.0
-      '@firebase/util': 1.15.0
+      '@firebase/component': 0.7.3
+      '@firebase/logger': 0.5.1
+      '@firebase/util': 1.15.1
       idb: 7.1.1
-      tslib: 2.8.1
-
-  '@firebase/component@0.7.2':
-    dependencies:
-      '@firebase/util': 1.15.0
       tslib: 2.8.1
 
   '@firebase/component@0.7.3':
@@ -1583,9 +1566,9 @@ snapshots:
       '@firebase/util': 1.15.1
       tslib: 2.8.1
 
-  '@firebase/firestore@4.16.0(@firebase/app@0.14.10)':
+  '@firebase/firestore@4.16.0(@firebase/app@0.15.0)':
     dependencies:
-      '@firebase/app': 0.14.10
+      '@firebase/app': 0.15.0
       '@firebase/component': 0.7.3
       '@firebase/logger': 0.5.1
       '@firebase/util': 1.15.1
@@ -1595,15 +1578,7 @@ snapshots:
       re2js: 0.4.3
       tslib: 2.8.1
 
-  '@firebase/logger@0.5.0':
-    dependencies:
-      tslib: 2.8.1
-
   '@firebase/logger@0.5.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@firebase/util@1.15.0':
     dependencies:
       tslib: 2.8.1
 
@@ -2515,7 +2490,7 @@ snapshots:
 
   tslib@2.8.1: {}
 
-  typescript@6.0.2: {}
+  typescript@6.0.3: {}
 
   undici-types@7.16.0: {}
 
@@ -2601,4 +2576,4 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 21.1.1
 
-  zod@4.3.6: {}
+  zod@4.4.3: {}
