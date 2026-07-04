@@ -1,20 +1,34 @@
-import type { DocRef } from '../repository.js';
+import type { DocRef } from "../repository.js";
 import type {
   BoolType,
   Collection,
-  DocumentSchema,
   DocFieldPath,
+  DocumentSchema,
   FieldTypeOfPath,
   FieldValue,
+  MapFieldPath,
   MapFields,
   MapType,
   OmitPaths,
-} from '../schema.js';
-import { AggregateWithAlias } from './aggregate.js';
-import type { Expression, Field } from './expression.js';
-import { Ordering } from './ordering.js';
-import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
-import type { Stage } from './stage.js';
+} from "../schema.js";
+import { AggregateWithAlias } from "./aggregate.js";
+import type { Expression, Field } from "./expression.js";
+import { Ordering } from "./ordering.js";
+import type {
+  BuildAddFieldsSchema,
+  BuildSelectionSchema,
+  Selection,
+} from "./selection.js";
+import type { Stage } from "./stage.js";
+
+/**
+ * Runs a pipeline and returns all of its result rows.
+ */
+export type PipelineQueryExecutor = {
+  execute: <Schema extends Fields, Id extends PipelineRowIdentity>(
+    _pipeline: Pipeline<Schema, Id>,
+  ) => Promise<PipelineResult<Schema, Id>[]>;
+};
 
 /**
  * A lazily-built Firestore Pipeline query.
@@ -43,7 +57,9 @@ export class Pipeline<
     readonly parent?: Pipeline<Fields>,
   ) {}
 
-  where(_condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
+  where(
+    _condition: (field: FieldProvider<Schema>) => Expression<BoolType>,
+  ): Pipeline<Schema, Id> {
     return unimplemented();
   }
   /**
@@ -69,12 +85,16 @@ export class Pipeline<
   ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
     return unimplemented();
   }
-  removeFields<const U extends DocFieldPath<Schema>[]>(
+  // `MapFieldPath` (data fields only), not `DocFieldPath`: the reserved
+  // `'__name__'` key is not a removable data field.
+  removeFields<const U extends MapFieldPath<Schema>[]>(
     ..._fields: U
   ): Pipeline<OmitPaths<Schema, U[number]>, Id> {
     return unimplemented();
   }
-  sort(_orderings: (field: FieldProvider<Schema>) => Ordering[]): Pipeline<Schema, Id> {
+  sort(
+    _orderings: (field: FieldProvider<Schema>) => Ordering[],
+  ): Pipeline<Schema, Id> {
     return unimplemented();
   }
   limit(_limit: number): Pipeline<Schema, Id> {
@@ -114,10 +134,6 @@ export class Pipeline<
   ): Pipeline<Fields, undefined> {
     return unimplemented();
   }
-  /** Run the pipeline and return its result rows. */
-  execute(): Promise<PipelineResult<Schema, Id>[]> {
-    return unimplemented();
-  }
   // TODO
   // union(..._args: unknown[]): Pipeline<Fields> {
   //   return unimplemented();
@@ -143,7 +159,7 @@ export class Pipeline<
 }
 
 /**
- * A row produced by {@link Pipeline.execute}.
+ * A row produced by {@link PipelineQueryExecutor}.
  *
  * `data` is the document's fields resolved from `Schema`. `id` (a source
  * document ref) is present **only when the pipeline preserved read-identity**
@@ -151,11 +167,16 @@ export class Pipeline<
  * run, `Id` is `undefined` and `id` is absent, so `result.id` becomes a
  * compile-time error. When identified, this mirrors `Doc<T>`.
  */
-export type PipelineResult<Schema extends Fields, Id extends PipelineRowIdentity> = {
-  data: FieldValue<MapType<Schema>, 'read'>;
+export type PipelineResult<
+  Schema extends Fields,
+  Id extends PipelineRowIdentity,
+> = {
+  data: FieldValue<MapType<Schema>, "read">;
 } & (Id extends undefined ? unknown : { readonly id: Id });
 
-export type FieldProvider<Schema extends Fields> = <Path extends DocFieldPath<Schema>>(
+export type FieldProvider<Schema extends Fields> = <
+  Path extends DocFieldPath<Schema>,
+>(
   path: Path,
 ) => Field<FieldTypeOfPath<Schema, Path>, Path>;
 
@@ -171,7 +192,7 @@ export type PipelineRowIdentity = DocRef<Collection> | undefined;
  * - `overwrite`: the merged map's values win on overlap (`merge_overwrite_existing`).
  * - `keep`: existing document values win on overlap (`merge_keep_existing`).
  */
-export type MergeMode = 'overwrite' | 'keep';
+export type MergeMode = "overwrite" | "keep";
 
 // TODO: placeholder return value used by stage stubs that are not implemented yet.
 // Returns a value (not `throw`) so the type tests, which evaluate stage calls at

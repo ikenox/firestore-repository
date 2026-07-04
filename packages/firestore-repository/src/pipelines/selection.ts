@@ -1,16 +1,27 @@
 import type {
   DocumentSchema,
-  DocFieldPath,
   FieldType,
   FieldTypeOfPath,
+  MapFieldPath,
   MapType,
 } from '../schema.js';
 import { Expression } from './expression.js';
 
 type Fields = DocumentSchema;
 
-/** A single select argument: either an existing field path or an aliased expression. */
-export type Selection<Context extends Fields> = DocFieldPath<Context> | ExpressionWithAlias;
+/**
+ * A single select argument: either a data field path or an aliased expression.
+ *
+ * Uses {@link MapFieldPath} (data fields only), **not** the document-level
+ * `DocFieldPath` — the reserved key `"__name__"` is intentionally not
+ * projectable here. Projecting `"__name__"` un-aliased would preserve the row's
+ * read-identity at runtime, but `select` is typed to always drop it
+ * (`Id = undefined`), so allowing it would make the type lie. Keep identity
+ * while reshaping via `addFields` / `removeFields`; `"__name__"` stays usable in
+ * `where` / `sort` (they go through `FieldProvider`, not `Selection`). See
+ * `docs/pipeline-query-identity-research.md`.
+ */
+export type Selection<Context extends Fields> = MapFieldPath<Context> | ExpressionWithAlias;
 
 export type ExpressionWithAlias<T extends FieldType = FieldType, Alias extends string = string> = {
   expression: Expression<T>;
@@ -28,9 +39,7 @@ export type ExpressionWithAlias<T extends FieldType = FieldType, Alias extends s
 export type BuildSelectionSchema<
   Context extends Fields,
   Args extends readonly Selection<Context>[],
-> = Args extends readonly Selection<Context>[]
-  ? FoldSelections<Context, DropOverriddenSelections<Args>>
-  : never;
+> = FoldSelections<Context, DropOverriddenSelections<Args>>;
 
 /** Merges an already conflict-free selection list into one nested schema. */
 type FoldSelections<
@@ -95,7 +104,7 @@ type SelectionToSchema<Context extends Fields, S> =
   S extends ExpressionWithAlias<infer T, infer P>
     ? PathToSchema<P, T>
     : S extends string
-      ? S extends DocFieldPath<Context>
+      ? S extends MapFieldPath<Context>
         ? PathToSchema<S, FieldTypeOfPath<Context, S>>
         : {}
       : {};

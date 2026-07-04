@@ -62,9 +62,22 @@ ratchet is structural: preserving stages thread `Id`, breaking stages reset to
       selection contents), `select` returns `Id = undefined` unconditionally **and**
       `Selection` excludes `"__name__"` (uses `MapFieldPath`, not the doc-level
       `DocFieldPath`), so the identity-preserving projection is simply not
-      expressible — the `undefined` never lies. Identity-preserving reshaping goes
-      through `addFields`/`removeFields`; `"__name__"` stays usable in
-      `where`/`sort`. See the JSDoc on `Pipeline.select` and `Selection`.
+      expressible — the `undefined` never lies. `removeFields` likewise takes
+      `MapFieldPath` (the key is not a removable data field). Identity-preserving
+      reshaping goes through `addFields`/`removeFields`; `"__name__"` stays usable
+      in `where`/`sort` (via `FieldProvider`, not `Selection`). Verified in both
+      tsc and oxlint that `select(() => ["__name__"])` / `removeFields("__name__")`
+      are type errors; covered by a `pipeline.test.ts` test using `@ts-expect-error`.
+      See the JSDoc on `Pipeline.select` and `Selection`.
+  - **Residual limitation:** for a **broad `DocumentSchema`** pipeline (the
+    `database()` / `documents()` / `literals()` sources, whose `Schema` is the
+    unconstrained `DocumentSchema`), `MapFieldPath<DocumentSchema>` collapses to
+    `string`, which includes `"__name__"` — TypeScript cannot subtract a literal
+    from `string`. So `select(() => ["__name__"])` is **not** rejected there.
+    `literals()` is `Id = undefined` anyway (no lie), but `database()` /
+    `documents()` are `Id = DocRef<Collection>`, so the type could still lie for
+    those. Not fixable at the type level; the real guard belongs at runtime
+    (reject / handle a `__name__` projection during `execute()` serialization).
 - [ ] **(Deferred) Model `select` conditional identity + `createTime` /
       `updateTime`.** The full behavior (probed): selecting `__name__` /
       `__create_time__` / `__update_time__` un-aliased re-attaches `id`/`ref` /
@@ -82,7 +95,9 @@ ratchet is structural: preserving stages thread `Id`, breaking stages reset to
       `subcollection` / `collectionGroup` → `DocRef<T>` (collectionGroup assumes
       collection names are unique DB-wide); `database` / `documents` →
       `DocRef<Collection>`; `literals(...)` → `undefined`.
-- [~] `execute(): Promise<PipelineResult<Context, Id>[]>` stubbed; runtime
+- [~] `execute(pipeline): Promise<PipelineResult<Schema, Id>[]>` — a
+  **standalone function** (not a `Pipeline` method; mirrors
+  `@firebase/firestore/pipelines`'s `execute(pipeline)`), stubbed; runtime
   deferred (see "`Pipeline` runtime / serialization" below).
 - [ ] Type-level tests covering the ratchet across each method (the
       `pipeline.test.ts` `wip` block asserts the `Id` part but still fails
@@ -93,8 +108,8 @@ ratchet is structural: preserving stages thread `Id`, breaking stages reset to
 - [x] `PipelineResult<Context, Id>` = `{ data }` intersected with
       `Id extends undefined ? unknown : { readonly id: Id }`, so `id` is
       present only when identified and mirrors `Doc<T>`'s `id: DocRef<T>`.
-- [x] `execute(): Promise<PipelineResult<Context, Id>[]>` signature in place
-      (runtime deferred).
+- [x] Standalone `execute(pipeline): Promise<PipelineResult<Schema, Id>[]>`
+      signature in place (runtime deferred).
 - [ ] Add `createTime` / `updateTime` if/when needed (the repository's
       `Doc<T>` currently collapses identity to `id: DocRef<T>` only).
 - [ ] Confirm shape compatibility with existing `Doc<C>` so `Mapper` reuse
@@ -212,7 +227,7 @@ Deferred to a later iteration (still tracked here, not currently in scope):
       `[Stage, ...]` with each Stage's `_toProto`-equivalent shape.
 - [ ] Serialize `Expression` AST (FunctionCall / Field / Constant) to the
       backend proto format. Use the SDK proto as reference.
-- [ ] `Pipeline.execute()` — actually call the backend
+- [ ] `execute(pipeline)` (standalone function) — actually call the backend
       (`ExecutePipeline`) and convert the response into `PipelineResult`s.
 - [ ] Decide whether to delegate execution to the per-package SDK
       (`@firebase/firestore/pipelines`, `@google-cloud/firestore/pipelines`)
@@ -220,8 +235,8 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## Per-SDK adapters (mirrors existing repository setup)
 
-- [ ] `packages/firebase-js-sdk/src/pipelines.ts` — wire `Pipeline.execute()`
-      against `@firebase/firestore/pipelines.execute`.
+- [ ] `packages/firebase-js-sdk/src/pipelines.ts` — provide the adapter's
+      `execute(pipeline)` against `@firebase/firestore/pipelines.execute`.
 - [ ] `packages/google-cloud-firestore/src/pipelines.ts` — wire against
       `@google-cloud/firestore/pipelines`.
 - [ ] Shared spec tests (in `packages/firestore-repository/src/__test__`)
@@ -248,7 +263,7 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       `id` / `ref`) and `FieldMapper<C, AppModel>` (data-only) so
       `UnidentifiedPipelineResult<C>` can still go through a mapper for
       field-only projection.
-- [ ] `pipeline.execute().asyncMap(mapper)` (or similar) — convenience for
+- [ ] `execute(pipeline).asyncMap(mapper)` (or similar) — convenience for
       mapping all results through a mapper.
 
 ## Tests
