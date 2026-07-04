@@ -37,7 +37,7 @@ import type {
 } from '../repository.js';
 import {
   type Collection,
-  type FieldPath,
+  type DocFieldPath,
   array,
   bool,
   bytes,
@@ -797,7 +797,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           nested: ['profile.age'],
           multiple: ['rank', 'profile.age'],
           multipleOrderSingleCursor: ['rank', 'profile.age'],
-        } as const satisfies Record<string, FieldPath<AuthorsCollection['schema']>[]>;
+        } as const satisfies Record<string, DocFieldPath<AuthorsCollection['schema']>[]>;
         const defineQueryCursorTests = (
           cursorFunc: typeof startAt | typeof startAfter | typeof endAt | typeof endBefore,
           tests: Record<

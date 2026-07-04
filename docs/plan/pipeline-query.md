@@ -40,32 +40,83 @@ Status markers:
       for `timestampAdd` / `timestampSubtract` / `timestampTruncate` /
       `isType`.
 
-## Identity ratchet (split `Pipeline` into two classes)
+## Identity ratchet (second type parameter on `Pipeline`)
 
-- [ ] Rename current `Pipeline<Context>` to base class
-      `UnidentifiedPipeline<Context>`.
-- [ ] Introduce `IdentifiedPipeline<Context> extends UnidentifiedPipeline<Context>`.
-- [ ] Override identity-preserving methods (`where`, `sort`, `limit`,
-      `offset`, `addFields`, `removeFields`, `unnest`) on
-      `IdentifiedPipeline` to narrow the return type back to
-      `IdentifiedPipeline`.
-- [ ] Leave `select` / `distinct` / `aggregate` / `replaceWith` unoverridden
-      so they fall through to the base and yield `UnidentifiedPipeline`.
-- [ ] `pipelineQuery(collection)` returns `IdentifiedPipeline<C>`.
-- [ ] `literals(...)` source factory returns `UnidentifiedPipeline<C>`.
-- [ ] Type-level tests covering the ratchet across each method.
+Decided against the two-class inheritance split in favor of a single
+`Pipeline<Context, Id>` where `Id extends DocRef<Collection> | undefined`
+carries read-identity (see `../pipeline-query-identity-research.md`). The
+ratchet is structural: preserving stages thread `Id`, breaking stages reset to
+`undefined`.
+
+- [x] Add `Id extends PipelineRowIdentity` (`= DocRef<Collection> | undefined`)
+      as the second type parameter of `Pipeline<Context, Id>`.
+- [x] Identity-preserving methods (`where`, `sort`, `limit`, `offset`,
+      `addFields`, `removeFields`, `unnest`) thread `Id` through unchanged.
+- [x] Identity-breaking methods (`select`, `distinct`, `aggregate`,
+      `fullReplaceWith`, `mergeWith`) return `Id = undefined`.
+- [x] **`select` always drops identity — made honest by forbidding `__name__`
+      (option A).** `select` is actually only conditionally identity-breaking: it
+      keeps `id`/`ref` iff `field("__name__")` is projected un-aliased (`"__name__"`
+      or `.as("__name__")`) — see research doc "select and the reserved metadata
+      fields". Rather than model that (which would make `Id` depend on the
+      selection contents), `select` returns `Id = undefined` unconditionally **and**
+      `Selection` excludes `"__name__"` (uses `MapFieldPath`, not the doc-level
+      `DocFieldPath`), so the identity-preserving projection is simply not
+      expressible — the `undefined` never lies. Identity-preserving reshaping goes
+      through `addFields`/`removeFields`; `"__name__"` stays usable in
+      `where`/`sort`. See the JSDoc on `Pipeline.select` and `Selection`.
+- [ ] **(Deferred) Model `select` conditional identity + `createTime` /
+      `updateTime`.** The full behavior (probed): selecting `__name__` /
+      `__create_time__` / `__update_time__` un-aliased re-attaches `id`/`ref` /
+      `createTime` / `updateTime` respectively. Doing this properly means
+      generalizing the second type parameter from `Id` (`DocRef | undefined`) to a
+      row-metadata record `{ ref; createTime; updateTime }`, threading it through
+      every source/stage, and adding `createTime`/`updateTime` (with a timestamp
+      value type — the repo's `Doc<T>` has none today) to `PipelineResult`. Same
+      mechanism for all three (`SelectionKeepsPath<Sel, Path>` — a helper that was
+      prototyped and removed). Wanted eventually; skipped now to avoid the
+      complexity. If revisited, also consider an explicit opt-in
+      (`select(..., { keepName: true })`) instead of type-level parsing of the
+      selection list.
+- [x] Source factories set the initial `Id`: `pipelineQuery` / `collection` /
+      `subcollection` / `collectionGroup` → `DocRef<T>` (collectionGroup assumes
+      collection names are unique DB-wide); `database` / `documents` →
+      `DocRef<Collection>`; `literals(...)` → `undefined`.
+- [~] `execute(): Promise<PipelineResult<Context, Id>[]>` stubbed; runtime
+  deferred (see "`Pipeline` runtime / serialization" below).
+- [ ] Type-level tests covering the ratchet across each method (the
+      `pipeline.test.ts` `wip` block asserts the `Id` part but still fails
+      typecheck on the unrelated `select` callback-vs-string mismatch).
 
 ## `PipelineResult` types
 
-- [ ] `UnidentifiedPipelineResult<Context>` — only `data()`-equivalent
-      access, no identity fields.
-- [ ] `IdentifiedPipelineResult<Context> extends UnidentifiedPipelineResult<Context>`
-      with `id: string` / `ref: DocumentReference` / `createTime: Timestamp`
-      / `updateTime: Timestamp` (all non-optional).
-- [ ] `execute()` overrides on the two pipeline classes that return the
-      matching result type.
-- [ ] Decide shape compatibility with existing `Doc<C>` so `Mapper` reuse
-      is straightforward (see "Mapper reuse" below).
+- [x] `PipelineResult<Context, Id>` = `{ data }` intersected with
+      `Id extends undefined ? unknown : { readonly id: Id }`, so `id` is
+      present only when identified and mirrors `Doc<T>`'s `id: DocRef<T>`.
+- [x] `execute(): Promise<PipelineResult<Context, Id>[]>` signature in place
+      (runtime deferred).
+- [ ] Add `createTime` / `updateTime` if/when needed (the repository's
+      `Doc<T>` currently collapses identity to `id: DocRef<T>` only).
+- [ ] Confirm shape compatibility with existing `Doc<C>` so `Mapper` reuse
+      is straightforward (see "Mapper reuse" below) — identified results are
+      already structurally `Doc<T>`.
+- [ ] **Reserved metadata fields (`__name__` / `__create_time__` /
+      `__update_time__`) need first-class handling.** They are the bridge
+      between pipeline `select` and result metadata (probed; see research doc
+      "select and the reserved metadata fields"):
+  - `__name__` un-aliased ↔ `id` / `ref` (`DocRef`); `__create_time__` ↔
+    `createTime`; `__update_time__` ↔ `updateTime`.
+  - When **aliased** to another name, the value instead lands in `data` (a path
+    string for `__name__`, a `Timestamp` for the time fields) — so they double
+    as ordinary selectable expressions.
+  - Decisions still open: whether to expose them as selectable paths at all,
+    how to type the un-aliased→metadata vs aliased→data split, and whether to
+    map them onto the result type's identity (`__name__` only, for now — see
+    the skipped `select` conditional-identity item above) or also onto
+    `createTime` / `updateTime` once those are modeled.
+  - Note: these time fields are **pipeline-only**; the Core query API cannot
+    `where`/`orderBy` on create/update time (official docs — only `__name__`,
+    via `documentId()`, is queryable there).
 
 ## Stages
 
@@ -175,6 +226,19 @@ Deferred to a later iteration (still tracked here, not currently in scope):
       `@google-cloud/firestore/pipelines`.
 - [ ] Shared spec tests (in `packages/firestore-repository/src/__test__`)
       that both adapters must satisfy.
+
+### `execute` / `stream` capability asymmetry (verified against the SDKs)
+
+The two SDKs differ on result materialization, mirroring their existing
+Query API (admin has `query.stream()`, web only `getDocs()`):
+
+| API         | `@firebase/firestore` (web, v4.16.0)                                   | `@google-cloud/firestore` (admin, v8.6.0)                                             |
+| ----------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `execute()` | ✓ `Promise<PipelineSnapshot>` — all results materialized in `.results` | ✓ same — all results materialized                                                     |
+| `stream()`  | ✗ **none** (only `execute`)                                            | ✓ `Pipeline.stream(): NodeJS.ReadableStream` emitting `PipelineResult`s incrementally |
+
+- Both `execute()` paths hold **all results in memory** (`PipelineSnapshot.results: PipelineResult[]`), bounded by the pipeline's 128 MiB materialization limit.
+- Implications for our API: make the **common** surface `execute()` (all-in-memory, both SDKs). Only the google-cloud adapter can add a streaming variant (e.g. `executeStream()` / async-iterator) — keep it adapter-specific, not part of the shared interface, so the web adapter isn't forced to fake it.
 
 ## Mapper reuse
 

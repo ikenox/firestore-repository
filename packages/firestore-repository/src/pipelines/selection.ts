@@ -1,14 +1,20 @@
-import type { DocumentSchema, FieldPath, FieldType, FieldTypeOfPath, MapType } from '../schema.js';
+import type {
+  DocumentSchema,
+  DocFieldPath,
+  FieldType,
+  FieldTypeOfPath,
+  MapType,
+} from '../schema.js';
 import { Expression } from './expression.js';
 
 type Fields = DocumentSchema;
 
 /** A single select argument: either an existing field path or an aliased expression. */
-export type Selection<Context extends Fields> = FieldPath<Context> | ExpressionWithAlias;
+export type Selection<Context extends Fields> = DocFieldPath<Context> | ExpressionWithAlias;
 
-export type ExpressionWithAlias<T extends FieldType = FieldType, Path extends string = string> = {
+export type ExpressionWithAlias<T extends FieldType = FieldType, Alias extends string = string> = {
   expression: Expression<T>;
-  path: Path;
+  alias: Alias;
 };
 
 /**
@@ -89,7 +95,7 @@ type SelectionToSchema<Context extends Fields, S> =
   S extends ExpressionWithAlias<infer T, infer P>
     ? PathToSchema<P, T>
     : S extends string
-      ? S extends FieldPath<Context>
+      ? S extends DocFieldPath<Context>
         ? PathToSchema<S, FieldTypeOfPath<Context, S>>
         : {}
       : {};

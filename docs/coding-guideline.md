@@ -18,8 +18,9 @@ Follow the project's linting and formatting rules enforced by `pnpm check`.
   headline concept first, then drills down into the supporting pieces.
 - Keep the same direction among the supporting declarations: more integrative
   above, more primitive / foundational below.
-- Example (`pipelines/pipeline.ts`): `Pipeline` (the API) → `FieldProvider` →
-  `MergeMode` → `unimplemented` (stub helper) → `Fields` (the base schema alias).
+- Example (`pipelines/pipeline.ts`): `Pipeline` (the API) → `PipelineResult`
+  (its output) → `FieldProvider` → `PipelineRowIdentity` → `MergeMode` →
+  `unimplemented` (stub helper) → `Fields` (the base schema alias).
 
 ## API Changes
 

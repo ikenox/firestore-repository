@@ -1,8 +1,11 @@
+import type { DocRef } from '../repository.js';
 import type {
   BoolType,
+  Collection,
   DocumentSchema,
-  FieldPath,
+  DocFieldPath,
   FieldTypeOfPath,
+  FieldValue,
   MapFields,
   MapType,
   OmitPaths,
@@ -13,98 +16,154 @@ import { Ordering } from './ordering.js';
 import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
 import type { Stage } from './stage.js';
 
-export class Pipeline<Context extends Fields = Fields> {
+/**
+ * A lazily-built Firestore Pipeline query.
+ *
+ * `Schema` is the schema of the document's `data` fields (it changes as stages
+ * reshape the document, and `execute()` resolves it into `PipelineResult.data`).
+ * `Id` carries the pipeline's **read-identity**: while the stage
+ * chain preserves identity it is a source document ref (`DocRef<T>`), and once
+ * an identity-breaking stage runs it ratchets to `undefined`. See
+ * `docs/pipeline-query-identity-research.md`.
+ *
+ * - Identity-preserving stages (`where` / `sort` / `limit` / `offset` /
+ *   `addFields` / `removeFields` / `unnest`) thread `Id` through unchanged.
+ * - Identity-breaking stages (`select` / `distinct` / `aggregate` /
+ *   `fullReplaceWith` / `mergeWith`) return `Id = undefined`. Because the
+ *   preserving stages thread whatever `Id` they receive, identity never comes
+ *   back once dropped.
+ */
+export class Pipeline<
+  Schema extends Fields = Fields,
+  Id extends PipelineRowIdentity = PipelineRowIdentity,
+> {
   constructor(
-    readonly schema: Context,
+    readonly schema: Schema,
     readonly stage: Stage,
     readonly parent?: Pipeline<Fields>,
   ) {}
 
-  where(_condition: (field: FieldProvider<Context>) => Expression<BoolType>): Pipeline<Context> {
+  where(_condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
     return unimplemented();
   }
-  select<Selections extends readonly Selection<Context>[]>(
-    _selections: (field: FieldProvider<Context>) => Selections,
-  ): Pipeline<BuildSelectionSchema<Context, Selections>> {
+  /**
+   * Projects the selections into a new document shape, dropping read-identity
+   * (`Id = undefined`).
+   *
+   * `select` genuinely always drops identity here: {@link Selection} excludes
+   * the reserved `'__name__'` key, so the one projection that would preserve the
+   * row key at runtime (selecting `__name__` un-aliased) is not expressible —
+   * the `Id = undefined` result never lies. To keep identity while reshaping,
+   * use `addFields` / `removeFields` (they preserve `Id`); `'__name__'` remains
+   * usable in `where` / `sort`. See `docs/pipeline-query-identity-research.md`
+   * (the fuller "conditionally preserve identity via `__name__`" model, plus
+   * `createTime` / `updateTime`, is deferred — see `docs/plan/pipeline-query.md`).
+   */
+  select<Selections extends readonly Selection<Schema>[]>(
+    _selections: (field: FieldProvider<Schema>) => Selections,
+  ): Pipeline<BuildSelectionSchema<Schema, Selections>, undefined> {
     return unimplemented();
   }
-  addFields<Selections extends readonly Selection<Context>[]>(
-    _fields: (field: FieldProvider<Context>) => Selections,
-  ): Pipeline<BuildAddFieldsSchema<Context, Selections>> {
+  addFields<Selections extends readonly Selection<Schema>[]>(
+    _fields: (field: FieldProvider<Schema>) => Selections,
+  ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
     return unimplemented();
   }
-  removeFields<const U extends FieldPath<Context>[]>(
+  removeFields<const U extends DocFieldPath<Schema>[]>(
     ..._fields: U
-  ): Pipeline<OmitPaths<Context, U[number]>> {
+  ): Pipeline<OmitPaths<Schema, U[number]>, Id> {
     return unimplemented();
   }
-  sort(_orderings: (field: FieldProvider<Context>) => Ordering[]): Pipeline<Context> {
+  sort(_orderings: (field: FieldProvider<Schema>) => Ordering[]): Pipeline<Schema, Id> {
     return unimplemented();
   }
-  limit(_limit: number): Pipeline<Context> {
+  limit(_limit: number): Pipeline<Schema, Id> {
     return unimplemented();
   }
-  offset(_offset: number): Pipeline<Context> {
+  offset(_offset: number): Pipeline<Schema, Id> {
     return unimplemented();
   }
   // TODO
-  unnest(..._args: unknown[]): Pipeline<Fields> {
+  unnest(..._args: unknown[]): Pipeline<Fields, Id> {
     return unimplemented();
   }
   aggregate(
-    _aggreate: (field: FieldProvider<Context>) => {
+    _aggreate: (field: FieldProvider<Schema>) => {
       accumulators: AggregateWithAlias[];
       options?: { groupBy: Expression[] };
     },
-  ): Pipeline<Fields> {
+  ): Pipeline<Fields, undefined> {
     return unimplemented();
   }
-  distinct<Selections extends readonly Selection<Context>[]>(
-    _groups: (field: FieldProvider<Context>) => Selections,
-  ): Pipeline<Fields> {
+  distinct<Selections extends readonly Selection<Schema>[]>(
+    _groups: (field: FieldProvider<Schema>) => Selections,
+  ): Pipeline<Fields, undefined> {
     return unimplemented();
   }
   /** `full_replace`: the document becomes the given map value. */
   fullReplaceWith<M extends MapFields>(
-    _map: (field: FieldProvider<Context>) => Expression<MapType<M>>,
-  ): Pipeline<M> {
+    _map: (field: FieldProvider<Schema>) => Expression<MapType<M>>,
+  ): Pipeline<M, undefined> {
     return unimplemented();
   }
-  // TODO: tighten the return Context — `overwrite` -> map wins over the existing
-  // Context, `keep` -> existing wins. Left loose for now.
+  // TODO: tighten the return Schema — `overwrite` -> map wins over the existing
+  // Schema, `keep` -> existing wins. Left loose for now.
   mergeWith<M extends MapFields>(
-    _map: (field: FieldProvider<Context>) => Expression<MapType<M>>,
+    _map: (field: FieldProvider<Schema>) => Expression<MapType<M>>,
     _mode: MergeMode,
-  ): Pipeline<Fields> {
+  ): Pipeline<Fields, undefined> {
+    return unimplemented();
+  }
+  /** Run the pipeline and return its result rows. */
+  execute(): Promise<PipelineResult<Schema, Id>[]> {
     return unimplemented();
   }
   // TODO
   // union(..._args: unknown[]): Pipeline<Fields> {
   //   return unimplemented();
   // }
-  // findNearest(..._args: unknown[]): Pipeline<Context> {
+  // findNearest(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
-  // let(..._args: unknown[]): Pipeline<Context> {
+  // let(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
-  // search(..._args: unknown[]): Pipeline<Context> {
+  // search(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
-  // sample(..._args: unknown[]): Pipeline<Context> {
+  // sample(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
-  // update(..._args: unknown[]): Pipeline<Context> {
+  // update(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
-  // delete(..._args: unknown[]): Pipeline<Context> {
+  // delete(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
 }
 
-export type FieldProvider<Context extends Fields> = <Path extends FieldPath<Context>>(
+/**
+ * A row produced by {@link Pipeline.execute}.
+ *
+ * `data` is the document's fields resolved from `Schema`. `id` (a source
+ * document ref) is present **only when the pipeline preserved read-identity**
+ * (`Id` is a `DocRef`, not `undefined`); once an identity-breaking stage has
+ * run, `Id` is `undefined` and `id` is absent, so `result.id` becomes a
+ * compile-time error. When identified, this mirrors `Doc<T>`.
+ */
+export type PipelineResult<Schema extends Fields, Id extends PipelineRowIdentity> = {
+  data: FieldValue<MapType<Schema>, 'read'>;
+} & (Id extends undefined ? unknown : { readonly id: Id });
+
+export type FieldProvider<Schema extends Fields> = <Path extends DocFieldPath<Schema>>(
   path: Path,
-) => Field<FieldTypeOfPath<Context, Path>, Path>;
+) => Field<FieldTypeOfPath<Schema, Path>, Path>;
+
+/**
+ * The read-identity a pipeline carries: a source document ref (`DocRef<T>`)
+ * while identity is preserved, or `undefined` after an identity-breaking stage.
+ */
+export type PipelineRowIdentity = DocRef<Collection> | undefined;
 
 /**
  * Conflict resolution for `merge` (the merge modes of the Firestore replace-with

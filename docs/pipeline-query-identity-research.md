@@ -26,42 +26,47 @@ records the observed behavior so we can encode it in the
 
 ## Result
 
-| Stage                      | n (results) | id  | ref | createTime | updateTime | Notes                                                                             |
-| -------------------------- | ----------- | --- | --- | ---------- | ---------- | --------------------------------------------------------------------------------- |
-| `collection()` (baseline)  | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
-| `where(...)`               | 2           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
-| `sort(...)`                | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
-| `limit(N)`                 | 2           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
-| `offset(N)`                | 3           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
-| `addFields(...)`           | 4           | ✓   | ✓   | ✓          | ✓          | Keeps identity even after deriving new fields.                                    |
-| `removeFields(...)`        | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                   |
-| `unnest(...)`              | 6           | ✓   | ✓   | ✓          | ✓          | **Same `id` repeated across the rows produced by one source document.**           |
-| `select(...)`              | 4           | ✗   | ✗   | ✗          | ✗          | **Drops identity, even for `select("name")` or `select(documentId().as("id"))`.** |
-| `distinct(...)`            | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
-| `aggregate` (no groups)    | 1           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
-| `aggregate` (with groups)  | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
-| `replaceWith(...)`         | 4           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
-| `where → select`           | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
-| `select → where`           | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
-| `aggregate → sort → limit` | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                   |
+| Stage                      | n (results) | id  | ref | createTime | updateTime | Notes                                                                                                                                                                                                                      |
+| -------------------------- | ----------- | --- | --- | ---------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `collection()` (baseline)  | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                                                                                                                                                            |
+| `where(...)`               | 2           | ✓   | ✓   | ✓          | ✓          |                                                                                                                                                                                                                            |
+| `sort(...)`                | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                                                                                                                                                            |
+| `limit(N)`                 | 2           | ✓   | ✓   | ✓          | ✓          |                                                                                                                                                                                                                            |
+| `offset(N)`                | 3           | ✓   | ✓   | ✓          | ✓          |                                                                                                                                                                                                                            |
+| `addFields(...)`           | 4           | ✓   | ✓   | ✓          | ✓          | Keeps identity even after deriving new fields.                                                                                                                                                                             |
+| `removeFields(...)`        | 4           | ✓   | ✓   | ✓          | ✓          |                                                                                                                                                                                                                            |
+| `unnest(...)`              | 6           | ✓   | ✓   | ✓          | ✓          | **Same `id` repeated across the rows produced by one source document.**                                                                                                                                                    |
+| `select(...)`              | 4           | ✗   | ✗   | ✗          | ✗          | Drops identity for ordinary field projections. **But selecting the reserved `__name__` / `__create_time__` / `__update_time__` fields un-aliased preserves the corresponding metadata — see the dedicated section below.** |
+| `distinct(...)`            | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
+| `aggregate` (no groups)    | 1           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
+| `aggregate` (with groups)  | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
+| `replaceWith(...)`         | 4           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
+| `where → select`           | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
+| `select → where`           | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
+| `aggregate → sort → limit` | 2           | ✗   | ✗   | ✗          | ✗          |                                                                                                                                                                                                                            |
 
 ## Summary
 
 - **Identity-preserving stages**: `where`, `sort`, `limit`, `offset`,
   `addFields`, `removeFields`, `unnest`.
-- **Identity-breaking stages**: `select`, `distinct`, `aggregate` (with or
-  without groups), `replaceWith`.
-- **Identity does not recover**: once any identity-breaking stage runs, every
-  downstream result is missing `id` / `ref` / `createTime` / `updateTime`. Both
-  `where → select` and `select → where` lose identity.
+- **Identity-breaking stages**: `distinct`, `aggregate` (with or without
+  groups), `replaceWith`, and `select` **unless** it carries the reserved
+  `__name__` / `__create_time__` / `__update_time__` fields un-aliased (see the
+  dedicated section below).
+- **Identity does not recover** once truly dropped: every downstream result is
+  missing `id` / `ref` / `createTime` / `updateTime`. The lone exception is
+  `select` re-attaching metadata via the reserved fields, but only if those
+  fields were carried through every preceding projection (`select → where` with
+  an ordinary projection still loses identity).
 
 ## Surprises vs. naive expectation
 
-- `select` is identity-breaking. A common assumption is "projection still
-  maps 1:1 to a source document", but the backend explicitly drops the row's
-  key when `select` is applied — even for `select("name")` (no rename, no
-  expression) and even when the projection includes
-  `documentId(field("__name__")).as("docId")`.
+- `select` is identity-breaking **for ordinary field projections** — the
+  backend drops the row's key for `select("name")` and even for
+  `documentId(field("__name__")).as("docId")` (wrapped + renamed). **However**,
+  selecting the reserved metadata fields _un-aliased_ preserves the matching
+  identity — see "select and the reserved metadata fields" below. So `select`
+  is conditionally, not unconditionally, identity-breaking.
 - `addFields` / `removeFields` are identity-preserving. So
   **"keep identity while reshaping fields" should be done via
   `addFields` / `removeFields`, not `select`.**
@@ -76,10 +81,9 @@ Two distinct notions are easy to conflate:
 
 - **Read-identity** — whether `PipelineResult.id` / `ref` / `createTime` /
   `updateTime` are populated. This is driven by the result row's
-  server-assigned **key** (`e.key?.path`), **not** by any `__name__` _data
-  field_. `select` drops the row key even when the projection carries the name
-  (tested with `documentId(field("__name__")).as("docId")`), so keeping
-  `__name__` as a field does **not** bring read-identity back.
+  server-assigned **key** (`e.key?.path`). A `documentId(field("__name__")).as("docId")`
+  projection (wrapped + renamed) does **not** bring it back, but selecting the
+  raw `field("__name__")` un-aliased **does** (see the dedicated section below).
 - **DML-capability** — whether an `update` / `delete` stage may be appended.
   The [Pipeline DML docs](https://firebase.google.com/docs/firestore/pipelines/dml)
   require the documents entering the DML stage to include the `__name__`
@@ -96,7 +100,63 @@ These two axes do **not** line up:
   fans out to many rows, so the key is no longer 1:1).
 
 So **DML-capability must be modeled as its own type state**, separate from the
-`IdentifiedPipeline` / `UnidentifiedPipeline` (read-identity) split.
+read-identity (`Id`) parameter.
+
+## `select` and the reserved metadata fields (`__name__` / `__create_time__` / `__update_time__`)
+
+`select` can re-attach result **metadata** by projecting reserved fields. The
+rule is symmetric across all three and depends on whether the field keeps its
+reserved name:
+
+| projection (inside `select`)                | `id`+`ref` | `createTime` | `updateTime` | lands in `data` as |
+| ------------------------------------------- | ---------- | ------------ | ------------ | ------------------ |
+| `field("__name__")` (un-aliased)            | ✓          | —            | —            | — (consumed)       |
+| `field("__create_time__")` (un-al.)         | —          | ✓            | —            | — (consumed)       |
+| `field("__update_time__")` (un-al.)         | —          | —            | ✓            | — (consumed)       |
+| all three un-aliased                        | ✓          | ✓            | ✓            | — (consumed)       |
+| `field("__name__").as("__name__")`          | ✓          | —            | —            | — (consumed)       |
+| `field("__name__").as("docId")`             | ✗          | —            | —            | `docId` (path str) |
+| `field("__create_time__").as("ct")`         | —          | ✗            | —            | `ct` (Timestamp)   |
+| `documentId(field("__name__")).as("docId")` | ✗          | —            | —            | `docId`            |
+
+Key points (probed on `enterprise-native-playground`, `@google-cloud/firestore@8.6.0`):
+
+- **Kept under its reserved name** (un-aliased, or `.as` back to the same
+  reserved name), each magic field restores its **result metadata** and
+  contributes nothing to `data`.
+- **Renamed** to any other alias, the field's value is projected into `data` as
+  an ordinary field (a path string for `__name__`, a `Timestamp` for the time
+  fields) and the metadata is **not** restored.
+- Wrapping in an expression (e.g. `documentId(...)`) and renaming also fails to
+  restore metadata.
+- **No recovery once dropped**: `select("name") → select("__name__")` yields no
+  identity (the first `select` already discarded `__name__`), whereas
+  `select("name", "__name__") → select("__name__")` keeps it. The ratchet holds
+  only as long as `__name__` is carried through **every** projection.
+- `where(...) → select(field("__name__"))` stays identified (where preserves,
+  and the `__name__` projection re-attaches the key).
+
+### Implication for the `Pipeline<Schema, Id>` type model
+
+`select` is **not** unconditionally `Id = undefined` at runtime — it preserves
+`id`/`ref` iff `__name__` is projected un-aliased. That makes a naive
+"`select` → `Id = undefined`" type a **lie** the moment `__name__` is
+projectable.
+
+**Chosen resolution (option A — honest by construction):** keep `select`
+returning `Id = undefined` unconditionally, and make the lie unrepresentable by
+**excluding `"__name__"` from `Selection`** (it uses `MapFieldPath`, the data
+fields, not the doc-level `DocFieldPath`). So the only projection that would keep
+the key can't be written; identity-preserving reshaping goes through
+`addFields` / `removeFields`, and `"__name__"` stays usable in `where` / `sort`
+(which don't project).
+
+**Deferred alternative (option B — model it):** preserve `Id` **iff** a
+selection's output path is `"__name__"`, generalizing to a row-metadata record
+`{ ref; createTime; updateTime }` so `__create_time__` / `__update_time__`
+re-attach `createTime` / `updateTime` the same way. This is the faithful model
+but needs a timestamp value type (the repo's `Doc<T>` has none) and threading
+the record through every stage. See `docs/plan/pipeline-query.md`.
 
 Open / untested (would need a probe to add as table rows):
 
@@ -104,67 +164,64 @@ Open / untested (would need a probe to add as table rows):
   `aggregate (with groups)` row above was not grouped by `__name__`; the
   mechanism suggests no (aggregated rows are computed, not document-backed),
   but this is unverified.
-- The table tests `select("name")` and `select(documentId(...).as("docId"))`,
-  but not `select("__name__")` (keeping the raw key field) as its own case.
 
 ## Implications for `firestore-repository`
 
-Split the pipeline-query type into two classes via inheritance:
-
-- `UnidentifiedPipeline<Context>` — base class. `execute()` returns
-  `PipelineResult<Context>` whose `id` / `ref` / `createTime` / `updateTime`
-  are absent (or typed `undefined`).
-- `IdentifiedPipeline<Context> extends UnidentifiedPipeline<Context>` —
-  `execute()` returns a `PipelineResult<Context>` with `id: string` /
-  `ref: DocumentReference` / `createTime: Timestamp` / `updateTime: Timestamp`.
-
-Identity-preserving methods are overridden on `IdentifiedPipeline` to narrow
-the return type back to `IdentifiedPipeline`. Identity-breaking methods are
-not overridden, so they fall through to the base and yield
-`UnidentifiedPipeline` — once that happens the chain stays unidentified
-(ratchet).
+Model read-identity as a **second type parameter** on a single `Pipeline`
+class, rather than splitting into two classes by inheritance. The parameter
+carries the identity's _real type_ — a source document ref `DocRef<T>` while
+identity is preserved, or `undefined` once it is dropped:
 
 ```ts
-class UnidentifiedPipeline<C extends DocumentSchema> {
-  where(...):       UnidentifiedPipeline<C>;
-  sort(...):        UnidentifiedPipeline<C>;
-  limit(N):         UnidentifiedPipeline<C>;
-  offset(N):        UnidentifiedPipeline<C>;
-  addFields(...):   UnidentifiedPipeline<C'>;
-  removeFields(...): UnidentifiedPipeline<C'>;
-  unnest(...):      UnidentifiedPipeline<C'>;
+type PipelineRowIdentity = DocRef<Collection> | undefined;
 
-  select(...):      UnidentifiedPipeline<C'>;
-  distinct(...):    UnidentifiedPipeline<C'>;
-  aggregate(...):   UnidentifiedPipeline<C'>;
-  replaceWith(...): UnidentifiedPipeline<C'>;
+class Pipeline<Context extends DocumentSchema, Id extends PipelineRowIdentity> {
+  // Identity-preserving stages thread `Id` through unchanged.
+  where(...):        Pipeline<C,  Id>;
+  sort(...):         Pipeline<C,  Id>;
+  limit(N):          Pipeline<C,  Id>;
+  offset(N):         Pipeline<C,  Id>;
+  addFields(...):    Pipeline<C', Id>;
+  removeFields(...): Pipeline<C', Id>;
+  unnest(...):       Pipeline<C', Id>;
 
-  execute(): Promise<UnidentifiedPipelineResult<C>[]>;
-}
+  // Identity-breaking stages reset `Id` to `undefined`.
+  select(...):          Pipeline<C', undefined>;
+  distinct(...):        Pipeline<C', undefined>;
+  aggregate(...):       Pipeline<C', undefined>;
+  fullReplaceWith(...): Pipeline<M,  undefined>;
+  mergeWith(...):       Pipeline<C', undefined>;
 
-class IdentifiedPipeline<C extends DocumentSchema> extends UnidentifiedPipeline<C> {
-  override where(...):        IdentifiedPipeline<C>;
-  override sort(...):         IdentifiedPipeline<C>;
-  override limit(N):          IdentifiedPipeline<C>;
-  override offset(N):         IdentifiedPipeline<C>;
-  override addFields(...):    IdentifiedPipeline<C'>;
-  override removeFields(...): IdentifiedPipeline<C'>;
-  override unnest(...):       IdentifiedPipeline<C'>;
-
-  // select / distinct / aggregate / replaceWith are NOT overridden — they
-  // fall through to the base and return UnidentifiedPipeline.
-
-  override execute(): Promise<IdentifiedPipelineResult<C>[]>;
+  execute(): Promise<PipelineResult<C, Id>[]>;
 }
 ```
 
-`PipelineResult` itself is split the same way:
-`IdentifiedPipelineResult<C> extends UnidentifiedPipelineResult<C>` and adds
-the four identity fields as non-optional.
+Because the preserving stages thread whatever `Id` they receive and the
+breaking stages hard-code `undefined`, identity never returns once dropped —
+the ratchet is **structural**, not maintained by hand. (Contrast the
+inheritance approach, where forgetting to override a preserving method on the
+identified subclass, or accidentally overriding a breaking one, silently
+corrupts the ratchet.)
 
-The pipeline entry point (`pipelineQuery(collection)`) returns
-`IdentifiedPipeline<C>`; only the `literals(...)` source starts as
-`UnidentifiedPipeline`.
+`PipelineResult` exposes `id` only when identified, via a conditional that
+mirrors the existing `Doc<T>` shape (`Doc<T> = { id: DocRef<T>; data }`):
 
-Accessing `result.id` after a `select` becomes a compile-time error rather
-than a runtime `undefined`.
+```ts
+type PipelineResult<Context, Id extends PipelineRowIdentity> = {
+  data: FieldValue<MapType<Context>, 'read'>;
+} & (Id extends undefined ? unknown : { readonly id: Id });
+```
+
+So an identified result is structurally a `Doc<T>`, which makes existing
+`Mapper<T, AppModel>` reuse straightforward. Accessing `result.id` after a
+`select` becomes a compile-time error rather than a runtime `undefined`.
+
+Sources set the initial `Id`: document-backed sources (`pipelineQuery` /
+`collection` / `subcollection` / `collectionGroup` → `DocRef<T>` —
+`collectionGroup` assumes collection names are unique DB-wide so the group
+resolves to one collection's type; `database` / `documents` →
+`DocRef<Collection>`) start identified; only `literals(...)` starts as
+`undefined`.
+
+> Note: `createTime` / `updateTime` are not modeled yet — the repository's
+> `Doc<T>` identity collapses to `id: DocRef<T>`. Add them later if needed.

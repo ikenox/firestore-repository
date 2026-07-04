@@ -90,17 +90,9 @@ describe('BuildSelectionSchema', () => {
     });
   });
 
-  describe('__name__', () => {
-    it('is dropped when selected alone', () => {
-      expectTypeOf<BuildSelectionSchema<Schema, ['__name__']>>().toEqualTypeOf<{}>();
-    });
-
-    it('is dropped when mixed with other selections', () => {
-      expectTypeOf<BuildSelectionSchema<Schema, ['__name__', 'name']>>().toEqualTypeOf<{
-        name: StringType;
-      }>();
-    });
-  });
+  // `__name__` is intentionally not a valid `Selection` (it uses `MapFieldPath`,
+  // not the doc-level `DocFieldPath`) — see `Selection`'s doc comment — so there is
+  // nothing to test here for `select`. It stays usable in `where` / `sort`.
 
   describe('ExpressionWithAlias', () => {
     type ScoreAlias = ExpressionWithAlias<DoubleType, 'score'>;
@@ -214,10 +206,8 @@ describe('BuildAddFieldsSchema', () => {
     it('adding an existing nested field by dotted path keeps siblings (no-op)', () => {
       expectTypeOf<BuildAddFieldsSchema<Schema, ['profile.age']>>().toEqualTypeOf<Schema>();
     });
-
-    it('drops __name__ (no-op)', () => {
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['__name__']>>().toEqualTypeOf<Schema>();
-    });
+    // `__name__` is not a valid `Selection`, so `addFields(['__name__'])` is a
+    // type error rather than a no-op (see `Selection`'s doc comment).
   });
 
   describe('adding new fields (existing fields preserved)', () => {

@@ -165,11 +165,34 @@ export const optional = <T extends FieldType>(type: T): T & Optional =>
   buildType({ ...type, [_optional]: true });
 
 /**
- * A type-safe field path of a document
+ * A type-safe path to anything addressable on a **document**: either one of its
+ * data fields ({@link MapFieldPath}) or the reserved document key `'__name__'`
+ * (the document's id / path).
+ *
+ * This is the document-level path — the superset that includes `'__name__'`.
+ * Use it wherever the key is legitimately addressable alongside data fields,
+ * e.g. `where` / `sort` / ordering may reference `'__name__'`. For contexts that
+ * may only touch data fields — notably `select` projections, which must not be
+ * able to re-project the key — use {@link MapFieldPath} instead (it omits
+ * `'__name__'`). See `pipelines/selection.ts`.
  */
-export type FieldPath<T extends DocumentSchema> = MapFieldPath<T> | '__name__';
+export type DocFieldPath<T extends DocumentSchema> = MapFieldPath<T> | '__name__';
 
-type MapFieldPath<T extends MapType['fields']> = MapType['fields'] extends T
+/**
+ * A type-safe path into a schema's **data** fields: a top-level field name, or a
+ * dotted path descending through nested `MapType` fields (e.g. `'profile.age'`).
+ *
+ * This is the "data only" base. It **excludes** the reserved document key
+ * `'__name__'`, which is a document-level concept, not a field of the data map;
+ * {@link DocFieldPath} adds it back. Keeping the two separate lets `select`
+ * accept `MapFieldPath` so the key is not projectable (projecting `'__name__'`
+ * un-aliased would silently preserve read-identity — see
+ * `pipelines/selection.ts` and `docs/pipeline-query-identity-research.md`).
+ *
+ * (Recurses through nested `MapType` fields; short-circuits to `string` for the
+ * unconstrained `DocumentSchema` to avoid infinite type instantiation.)
+ */
+export type MapFieldPath<T extends MapType['fields']> = MapType['fields'] extends T
   ? string // avoid circular deep type instantiation
   : {
       [K in keyof T & string]:
@@ -181,7 +204,7 @@ type MapFieldPath<T extends MapType['fields']> = MapType['fields'] extends T
  * Resolves field value type at the specified path
  * TODO: Field names containing dots are not handled correctly because dots are used as path separators.
  */
-export type FieldTypeOfPath<T extends DocumentSchema, U extends FieldPath<T>> = U extends keyof T
+export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>> = U extends keyof T
   ? // root field
     T[U]
   : U extends `${infer P}.${infer R}`
@@ -198,7 +221,7 @@ export type FieldTypeOfPath<T extends DocumentSchema, U extends FieldPath<T>> = 
 /**
  * Resolves field value type at the specified path
  */
-export type FieldValueOfPath<T extends DocumentSchema, U extends FieldPath<T>> = FieldValue<
+export type FieldValueOfPath<T extends DocumentSchema, U extends DocFieldPath<T>> = FieldValue<
   FieldTypeOfPath<T, U>,
   'read'
 >;

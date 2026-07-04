@@ -8,7 +8,7 @@ import {
   docRef,
   double,
   type DocumentSchema,
-  type FieldPath,
+  type DocFieldPath,
   type FieldTypeOfPath,
   type FieldValue,
   type FieldValueOfPath,
@@ -206,22 +206,24 @@ describe('schema', () => {
 });
 
 describe('document', () => {
-  describe('FieldPath', () => {
+  describe('DocFieldPath', () => {
     it('simple', () => {
       const schema = { a: int64(), b: string(), c: array(string()) } satisfies DocumentSchema;
-      expectTypeOf<FieldPath<typeof schema>>().toEqualTypeOf<'a' | 'b' | 'c' | '__name__'>();
+      expectTypeOf<DocFieldPath<typeof schema>>().toEqualTypeOf<'a' | 'b' | 'c' | '__name__'>();
     });
     it('complex', () => {
       const schema = {
         a: map({ b: string(), c: map({ d: int64(), e: array(map({ f: string() })) }) }),
       } satisfies DocumentSchema;
-      expectTypeOf<FieldPath<typeof schema>>().toEqualTypeOf<
+      expectTypeOf<DocFieldPath<typeof schema>>().toEqualTypeOf<
         'a' | 'a.b' | 'a.c' | 'a.c.d' | 'a.c.e' | '__name__'
       >();
     });
     it('map fields', () => {
-      expectTypeOf<FieldPath<DocumentSchema>>().toEqualTypeOf<string | '__name__'>();
-      expectTypeOf<FieldPath<{ a: MapType }>>().toEqualTypeOf<'a' | `a.${string}` | '__name__'>();
+      expectTypeOf<DocFieldPath<DocumentSchema>>().toEqualTypeOf<string | '__name__'>();
+      expectTypeOf<DocFieldPath<{ a: MapType }>>().toEqualTypeOf<
+        'a' | `a.${string}` | '__name__'
+      >();
     });
   });
 

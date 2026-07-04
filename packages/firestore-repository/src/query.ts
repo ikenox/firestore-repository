@@ -3,7 +3,7 @@ import type {
   ArrayType,
   Collection,
   DocumentSchema,
-  FieldPath,
+  DocFieldPath,
   FieldType,
   FieldTypeOfPath,
   FieldValue,
@@ -92,12 +92,12 @@ export type Where<T extends DocumentSchema = DocumentSchema> = {
 /** A constraint that sorts results by a field */
 export type OrderBy<T extends DocumentSchema> = {
   kind: 'orderBy';
-  field: FieldPath<T>;
+  field: DocFieldPath<T>;
   direction?: 'asc' | 'desc' | undefined;
 };
 /** Creates an orderBy constraint */
 export const orderBy = <T extends DocumentSchema>(
-  field: FieldPath<T>,
+  field: DocFieldPath<T>,
   direction?: 'asc' | 'desc' | undefined,
 ): OrderBy<T> => ({ kind: 'orderBy', field, direction });
 
@@ -164,7 +164,7 @@ export type FilterExpression<T extends DocumentSchema = DocumentSchema> =
  */
 export type FieldValueCondition<
   Schema extends DocumentSchema,
-  Path extends FieldPath<Schema> = FieldPath<Schema>,
+  Path extends DocFieldPath<Schema> = DocFieldPath<Schema>,
   Op extends WhereFilterOp = WhereFilterOp,
 > = {
   kind: 'fieldValueCondition';
@@ -175,7 +175,7 @@ export type FieldValueCondition<
 
 export type FilterOperandValue<
   Schema extends DocumentSchema,
-  Path extends FieldPath<Schema> = FieldPath<Schema>,
+  Path extends DocFieldPath<Schema> = DocFieldPath<Schema>,
   Op extends WhereFilterOp = WhereFilterOp,
 > = FieldValue<FilterOperand<FieldTypeOfPath<Schema, Path>, Op>, 'read'>;
 
@@ -202,7 +202,7 @@ export const where = <T extends DocumentSchema>(
  * @example
  * eq('status', 'active')
  */
-export const eq = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const eq = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '=='>,
 ): FieldValueCondition<T, Path, '=='> => fieldValueCondition(fieldPath, '==', value);
@@ -214,7 +214,7 @@ export const eq = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * ne('status', 'deleted')
  */
-export const ne = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const ne = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '!='>,
 ): FieldValueCondition<T, Path, '!='> => fieldValueCondition(fieldPath, '!=', value);
@@ -226,7 +226,7 @@ export const ne = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * lt('age', 18)
  */
-export const lt = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const lt = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '<'>,
 ): FieldValueCondition<T, Path, '<'> => fieldValueCondition(fieldPath, '<', value);
@@ -238,7 +238,7 @@ export const lt = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * lte('price', 100)
  */
-export const lte = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const lte = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '<='>,
 ): FieldValueCondition<T, Path, '<='> => fieldValueCondition(fieldPath, '<=', value);
@@ -250,7 +250,7 @@ export const lte = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * gt('score', 50)
  */
-export const gt = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const gt = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '>'>,
 ): FieldValueCondition<T, Path, '>'> => fieldValueCondition(fieldPath, '>', value);
@@ -262,7 +262,7 @@ export const gt = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * gte('age', 20)
  */
-export const gte = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const gte = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '>='>,
 ): FieldValueCondition<T, Path, '>='> => fieldValueCondition(fieldPath, '>=', value);
@@ -274,7 +274,7 @@ export const gte = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * arrayContains('tags', 'featured')
  */
-export const arrayContains = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const arrayContains = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'array-contains'>,
 ): FieldValueCondition<T, Path, 'array-contains'> =>
@@ -287,7 +287,7 @@ export const arrayContains = <T extends DocumentSchema, Path extends FieldPath<T
  * @example
  * arrayContainsAny('tags', ['featured', 'new'])
  */
-export const arrayContainsAny = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const arrayContainsAny = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'array-contains-any'>,
 ): FieldValueCondition<T, Path, 'array-contains-any'> =>
@@ -300,7 +300,7 @@ export const arrayContainsAny = <T extends DocumentSchema, Path extends FieldPat
  * @example
  * inArray('status', ['active', 'pending'])
  */
-export const inArray = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const inArray = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'in'>,
 ): FieldValueCondition<T, Path, 'in'> => fieldValueCondition(fieldPath, 'in', value);
@@ -312,14 +312,14 @@ export const inArray = <T extends DocumentSchema, Path extends FieldPath<T>>(
  * @example
  * notIn('status', ['deleted', 'archived'])
  */
-export const notIn = <T extends DocumentSchema, Path extends FieldPath<T>>(
+export const notIn = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'not-in'>,
 ): FieldValueCondition<T, Path, 'not-in'> => fieldValueCondition(fieldPath, 'not-in', value);
 
 const fieldValueCondition = <
   Schema extends DocumentSchema,
-  Path extends FieldPath<Schema>,
+  Path extends DocFieldPath<Schema>,
   Op extends WhereFilterOp,
 >(
   fieldPath: Path,
