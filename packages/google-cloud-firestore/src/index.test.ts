@@ -166,10 +166,10 @@ describe('repository', async () => {
   });
 
   // Pipeline queries require a Firestore Enterprise database (the emulator
-  // cannot run them). These tests run only when both FIRESTORE_ENTERPRISE_TEST_*
+  // cannot run them). These tests run only when both FIRESTORE_REPOSITORY_INTEGRATION_TEST_*
   // env vars are set; otherwise vitest reports them as skipped.
-  const enterpriseProject = process.env['FIRESTORE_ENTERPRISE_TEST_PROJECT'];
-  const enterpriseDbId = process.env['FIRESTORE_ENTERPRISE_TEST_DB'];
+  const enterpriseProject = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_PROJECT'];
+  const enterpriseDbId = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB'];
   describe.skipIf(!enterpriseProject || !enterpriseDbId)('pipeline', () => {
     // The Enterprise DB is not the emulator; construct it with the emulator env
     // temporarily removed so the admin SDK targets the real backend.

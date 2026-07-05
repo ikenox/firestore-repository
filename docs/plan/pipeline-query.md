@@ -71,8 +71,8 @@ pipelines):
 
 ```sh
 cd packages/google-cloud-firestore   # (or firebase-js-sdk)
-FIRESTORE_ENTERPRISE_TEST_PROJECT=ikenox-sunrise \
-FIRESTORE_ENTERPRISE_TEST_DB=enterprise-native-playground \
+FIRESTORE_REPOSITORY_INTEGRATION_TEST_PROJECT=ikenox-sunrise \
+FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB=enterprise-native-playground \
 pnpm exec vitest run -t 'pipeline specification'
 ```
 
@@ -342,7 +342,7 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 The repository tests run against the emulator; the pipeline tests need a real
 Enterprise DB. They coexist because the constructed `pipeline` describe builds a
-**separate** Firestore for the enterprise env (`FIRESTORE_ENTERPRISE_TEST_*`):
+**separate** Firestore for the enterprise env (`FIRESTORE_REPOSITORY_INTEGRATION_TEST_*`):
 
 - **google-cloud (admin):** reads `FIRESTORE_EMULATOR_HOST` **once, in the
   `Firestore` constructor** (`validateAndApplySettings`, frozen into
