@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { assert, beforeEach, describe, expect, it } from 'vitest';
 
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
@@ -70,7 +70,9 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     ): Promise<void> => {
       const results = await executor.execute(pipeline);
       if (options?.ordered === false) {
-        expect(sortByCanonicalKey(results)).toStrictEqual(sortByCanonicalKey(expected));
+        // The result order of an unordered query is unspecified — compare as a
+        // set (order-independent deep equality).
+        assert.sameDeepMembers(results, [...expected]);
       } else {
         expect(results).toStrictEqual(expected);
       }
@@ -109,14 +111,3 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     });
   });
 };
-
-/** Sorts a copy by a stable, content-derived key (object keys canonicalized). */
-const sortByCanonicalKey = <T>(rows: readonly T[]): T[] =>
-  [...rows].sort((a, b) => canonicalKey(a).localeCompare(canonicalKey(b)));
-
-const canonicalKey = (value: unknown): string =>
-  JSON.stringify(value, (_key, val: unknown) =>
-    val !== null && typeof val === 'object' && !Array.isArray(val)
-      ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)))
-      : val,
-  );
