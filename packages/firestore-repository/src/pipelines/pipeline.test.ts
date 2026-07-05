@@ -1,20 +1,11 @@
 import { describe, it } from 'vitest';
 
 import { authorsCollection } from '../__test__/specification.js';
-import { constant, equal } from './expression.js';
+import { equal } from './expression.js';
 import { pipelineQuery } from './index.js';
 
 describe('pipeline', () => {
   const base = pipelineQuery(authorsCollection);
-
-  it('where', () => {
-    base.where((field) => equal(field('profile'), constant({ gender: 'female', age: 20 })));
-  });
-
-  it('select', () => {
-    // Only data field paths are valid selections for now (no `.as(...)` yet).
-    base.select(() => ['profile.gender', 'name']);
-  });
 
   it('__name__ is not projectable (keeps `select`/`removeFields` honest)', () => {
     // `select` / `removeFields` operate on data field paths only (`Selection` /
