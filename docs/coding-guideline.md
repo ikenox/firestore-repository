@@ -9,6 +9,22 @@
 
 Follow the project's linting and formatting rules enforced by `pnpm check`.
 
+## Type assertions
+
+- **Do not use type assertions (`as`, `as unknown as`, non-null `!`).** They are
+  banned except when it is **theoretically impossible** to make the types line up
+  otherwise — i.e. a genuine TypeScript limitation, not merely inconvenient
+  typing. Before reaching for an assertion, restructure the code (generics,
+  narrowing, helper types) so the types check on their own.
+- A legitimate case is bridging an unavoidably-`unknown`/runtime value to a type
+  the compiler cannot statically prove (e.g. a value decoded from Firestore back
+  into a schema-derived type, or a phantom `input`/`output` field that exists
+  only at the type level). Prefer to isolate such an assertion to the single
+  narrowest spot (e.g. the returned value), not a whole function or object.
+- Every remaining assertion MUST carry an `oxlint-disable-next-line
+typescript/no-unsafe-type-assertion` comment stating the specific compiler
+  limitation that makes it unavoidable.
+
 ## Declaration order
 
 - Order declarations within a file **top-down by abstraction level** (the

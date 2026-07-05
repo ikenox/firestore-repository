@@ -24,7 +24,8 @@ describe('pipeline', () => {
   });
 
   it('select', () => {
-    base.select((field) => ['profile.gender', field('name'), field('name'), equal(1, 2)]);
+    // Only data field paths are valid selections for now (no `.as(...)` yet).
+    base.select(() => ['profile.gender', 'name']);
   });
 
   it('__name__ is not projectable (keeps `select`/`removeFields` honest)', () => {
@@ -59,27 +60,11 @@ describe('pipeline', () => {
         AuthorsId
       >
     >();
-    // `select` is identity-breaking: `Id` ratchets to `undefined`.
-    expectTypeOf(base.select('name')).toEqualTypeOf<Pipeline<{ name: StringType }, undefined>>();
-    expectTypeOf(base.select('name', 'tag')).toEqualTypeOf<
-      Pipeline<{ name: StringType; tag: ArrayType<StringType, [], []> }, undefined>
+    // `select` is identity-breaking: `Id` ratchets to `undefined`. (The output
+    // schema transform is covered exhaustively in `selection.test.ts`.)
+    expectTypeOf(base.select(() => ['name'])).toEqualTypeOf<
+      Pipeline<{ name: StringType }, undefined>
     >();
-    expectTypeOf(base.select('profile')).toEqualTypeOf<
-      Pipeline<
-        {
-          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
-        },
-        undefined
-      >
-    >();
-    expectTypeOf(base.select('profile.age')).toEqualTypeOf<
-      Pipeline<{ profile: MapType<{ age: DoubleType }> }, undefined>
-    >();
-
-    // `__name__` is intentionally NOT selectable (Selection uses MapFieldPath,
-    // not the doc-level DocFieldPath): projecting it un-aliased would preserve the
-    // row key at runtime, which `select`'s `Id = undefined` would then lie
-    // about. `select('__name__')` is therefore a type error.
 
     // `removeFields` is identity-preserving: `Id` is threaded through unchanged.
     expectTypeOf(base.removeFields('name')).toEqualTypeOf<

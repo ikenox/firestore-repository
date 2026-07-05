@@ -1,16 +1,25 @@
 import { describe, expectTypeOf, it } from 'vitest';
 
-import type {
-  ArrayType,
-  BoolType,
-  BytesType,
-  DoubleType,
-  Int64Type,
-  MapFields,
-  MapType,
-  StringType,
-  TimestampType,
-  VectorType,
+import {
+  type ArrayType,
+  array as arrayType,
+  bool,
+  type BoolType,
+  bytes,
+  type BytesType,
+  double,
+  type DoubleType,
+  int64,
+  type Int64Type,
+  type MapFields,
+  map as mapType,
+  type MapType,
+  string,
+  type StringType,
+  timestamp,
+  type TimestampType,
+  vector,
+  type VectorType,
 } from '../schema.js';
 import {
   abs,
@@ -42,6 +51,7 @@ import {
   euclideanDistance,
   exists,
   exp,
+  field,
   type Field,
   floor,
   type FunctionCall,
@@ -114,18 +124,24 @@ import {
   xor,
 } from './expression.js';
 
-// Shared fixtures.
-declare const stringField: Field<StringType>;
-declare const stringOrIntField: Field<StringType | Int64Type>;
-declare const intField: Field<Int64Type>;
-declare const doubleField: Field<DoubleType>;
-declare const boolField: Field<BoolType>;
-declare const timestampField: Field<TimestampType>;
-declare const bytesField: Field<BytesType>;
-declare const vectorField: Field<VectorType>;
-declare const stringArrayField: Field<ArrayType<StringType, [], []>>;
-declare const arrayField: Field<ArrayType>;
-declare const mapField: Field<MapType>;
+// Shared fixtures (real runtime nodes so operator calls can be evaluated).
+const stringField: Field<StringType> = field(string(), 'stringField');
+const stringOrIntField = field<StringType | Int64Type, 'stringOrIntField'>(
+  string(),
+  'stringOrIntField',
+);
+const intField: Field<Int64Type> = field(int64(), 'intField');
+const doubleField: Field<DoubleType> = field(double(), 'doubleField');
+const boolField: Field<BoolType> = field(bool(), 'boolField');
+const timestampField: Field<TimestampType> = field(timestamp(), 'timestampField');
+const bytesField: Field<BytesType> = field(bytes(), 'bytesField');
+const vectorField: Field<VectorType> = field(vector(), 'vectorField');
+const stringArrayField: Field<ArrayType<StringType, [], []>> = field(
+  arrayType(string()),
+  'stringArrayField',
+);
+const arrayField: Field<ArrayType> = field(arrayType(string()), 'arrayField');
+const mapField: Field<MapType> = field(mapType({}), 'mapField');
 
 // =============================================================================
 // Comparison

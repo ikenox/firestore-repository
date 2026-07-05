@@ -219,6 +219,39 @@ export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>>
       : never;
 
 /**
+ * Runtime counterpart of {@link FieldTypeOfPath}: resolves the `FieldType`
+ * descriptor stored in `schema` at `path` (dotted for nested maps; `'__name__'`
+ * resolves to a `StringType`, mirroring the type).
+ */
+export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath<T>>(
+  schema: T,
+  path: U,
+): FieldTypeOfPath<T, U> => {
+  const dot = path.indexOf('.');
+  let resolved: FieldType;
+  if (path === '__name__') {
+    resolved = string();
+  } else if (dot < 0) {
+    resolved = requireField(schema, path);
+  } else {
+    // A dotted path's head is a map (enforced by `DocFieldPath`).
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `FieldType` is the base type; narrowing it to `MapType` for the nested walk cannot be expressed structurally
+    const head = requireField(schema, path.slice(0, dot)) as MapType;
+    resolved = fieldTypeOfPath(head.fields, path.slice(dot + 1));
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime walk mirrors `FieldTypeOfPath`, but the compiler cannot connect a runtime schema value to the type-level result
+  return resolved as FieldTypeOfPath<T, U>;
+};
+
+const requireField = (schema: DocumentSchema, key: string): FieldType => {
+  const type = schema[key];
+  if (type === undefined) {
+    throw new Error(`schema has no field "${key}"`);
+  }
+  return type;
+};
+
+/**
  * Resolves field value type at the specified path
  */
 export type FieldValueOfPath<T extends DocumentSchema, U extends DocFieldPath<T>> = FieldValue<

@@ -1,5 +1,6 @@
 import type {
   AggregateSpec as FirestoreAggregateSpec,
+  DocumentData,
   DocumentSnapshot,
   Firestore,
   Query as FirestoreQuery,
@@ -216,7 +217,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   };
 };
 
-const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
+export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
   const decodeSchema = buildDecodeSchema(coll.schema);
   const encodeSchema = buildEncodeSchema(coll.schema, db);
 
@@ -314,17 +315,18 @@ const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) =
       if (!data) {
         throw new Error('document must exist');
       }
-      return {
-        id: fromFirestore.docRef(document.ref),
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by schema
-        data: decodeSchema.parse(data) as DocData<T>,
-      };
+      return { id: fromFirestore.docRef(document.ref), data: fromFirestore.decode(data) };
     },
     document: (document: DocumentSnapshot): Doc<T> | undefined => {
       if (!document.exists()) {
         return undefined;
       }
       return fromFirestore.documentMustExist(document);
+    },
+    /** Decodes raw Firestore document data into the schema's read type. */
+    decode: (data: DocumentData): DocData<T> => {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
+      return decodeSchema.parse(data) as DocData<T>;
     },
     docRef: (ref: FirestoreDocumentReference): DocRef<T> => {
       const docRef: string[] = [];

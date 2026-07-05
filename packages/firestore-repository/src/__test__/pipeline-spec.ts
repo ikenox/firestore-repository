@@ -1,15 +1,122 @@
-import { describe } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { Fields, Pipeline, pipelineQuery } from '../pipelines/index.js';
-import { authorsCollection } from './specification.js';
+import { asc, desc } from '../pipelines/ordering.js';
+import type {
+  Pipeline,
+  PipelineQueryExecutor,
+  PipelineResult,
+  PipelineRowIdentity,
+} from '../pipelines/pipeline.js';
+import { pipelineQuery } from '../pipelines/source.js';
+import type { Doc, DocRef, FirestoreEnvironment, PlainRepository } from '../repository.js';
+import type { Collection, DocumentSchema } from '../schema.js';
+import { type AuthorsCollection, authorsCollection } from './specification.js';
+import { uniqueCollection } from './util.js';
 
-export const definePipelineSpecificationTests = (
-  execute: <T extends Fields>(pipeline: Pipeline<T>) => Hoge<T>,
-) => {
+/**
+ * Behavioural spec that every pipeline-query adapter (`@firebase/firestore`,
+ * `@google-cloud/firestore`) must satisfy. Implementations pass their
+ * {@link PipelineQueryExecutor} plus a `createRepository` used only to seed data.
+ *
+ * Requires a Firestore **Enterprise** database — pipelines are Enterprise-only,
+ * so this cannot run against the emulator.
+ */
+export const definePipelineSpecificationTests = <Env extends FirestoreEnvironment>({
+  executor,
+  createRepository,
+}: {
+  executor: PipelineQueryExecutor;
+  createRepository: <T extends Collection>(collection: T) => PlainRepository<T, Env>;
+}) => {
+  // Seeded (re-written) into a fresh unique collection before each test.
+  const items: [Doc<AuthorsCollection>, Doc<AuthorsCollection>, Doc<AuthorsCollection>] = [
+    {
+      id: ['a1'],
+      data: { name: 'alice', profile: { age: 20, gender: 'female' }, rank: 1, tag: ['x'] },
+    },
+    { id: ['a2'], data: { name: 'bob', profile: { age: 30 }, rank: 2, tag: [] } },
+    {
+      id: ['a3'],
+      data: { name: 'carol', profile: { age: 40, gender: 'male' }, rank: 3, tag: ['y', 'z'] },
+    },
+  ];
+
+  const setup = () => {
+    let collection: AuthorsCollection;
+    beforeEach(async () => {
+      collection = uniqueCollection(authorsCollection);
+      await createRepository(collection).batchSet(items);
+    });
+
+    /** The input source (`pipelineQuery`) for the seeded collection. */
+    const source = (): Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> =>
+      pipelineQuery(collection);
+
+    /**
+     * Executes `pipeline` (built from {@link source}) and asserts the result rows
+     * equal `expected`.
+     *
+     * Order-sensitive by default (the result order is part of what a query
+     * asserts — e.g. `sort` / `limit`). For queries whose order is unspecified
+     * (e.g. a bare `collection` input, whose order is Firestore-internal), pass
+     * `{ ordered: false }` to compare as a set.
+     */
+    const expectPipeline = async <S extends DocumentSchema, Id extends PipelineRowIdentity>(
+      pipeline: Pipeline<S, Id>,
+      // `NoInfer` so `S`/`Id` are inferred from `pipeline` only, not from the
+      // expected rows (which would otherwise widen `S` to its constraint).
+      expected: readonly NoInfer<PipelineResult<S, Id>>[],
+      options?: { ordered?: boolean },
+    ): Promise<void> => {
+      const results = await executor.execute(pipeline);
+      if (options?.ordered === false) {
+        expect(sortByCanonicalKey(results)).toStrictEqual(sortByCanonicalKey(expected));
+      } else {
+        expect(results).toStrictEqual(expected);
+      }
+    };
+
+    return { items, source, expectPipeline };
+  };
+
   describe('pipeline specification', () => {
-    describe('expression', () => {
-      const q = pipelineQuery(authorsCollection);
-      // TODO
+    const { items, source, expectPipeline } = setup();
+
+    describe('input source (no transformation stages)', () => {
+      it('fetches all documents of a collection with their ids', async () => {
+        // A bare collection input has no defined order, so compare as a set.
+        await expectPipeline(source(), items, { ordered: false });
+      });
+    });
+
+    describe('sort', () => {
+      // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3.
+      const [a1, a2, a3] = items;
+
+      it('sorts by a field ascending', async () => {
+        await expectPipeline(
+          source().sort((field) => [asc(field('rank'))]),
+          [a1, a2, a3],
+        );
+      });
+
+      it('sorts by a field descending', async () => {
+        await expectPipeline(
+          source().sort((field) => [desc(field('rank'))]),
+          [a3, a2, a1],
+        );
+      });
     });
   });
 };
+
+/** Sorts a copy by a stable, content-derived key (object keys canonicalized). */
+const sortByCanonicalKey = <T>(rows: readonly T[]): T[] =>
+  [...rows].sort((a, b) => canonicalKey(a).localeCompare(canonicalKey(b)));
+
+const canonicalKey = (value: unknown): string =>
+  JSON.stringify(value, (_key, val: unknown) =>
+    val !== null && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)))
+      : val,
+  );

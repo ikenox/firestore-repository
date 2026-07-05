@@ -4,6 +4,20 @@ Working checklist for the Firestore Pipeline Query support. Detailed design is
 intentionally out of scope here; this doc is for tracking what needs to be in
 place and the status of each piece.
 
+## Branching / merge strategy
+
+Pipeline-query work does **not** merge directly to `main`. It is staged on the
+long-lived **`pipeline`** branch:
+
+- `pipeline` is the integration base for this feature.
+- Each piece of work is developed on a feature branch **checked out from
+  `pipeline`**, then merged **back into `pipeline`**.
+- Once the feature is complete (and stable enough), `pipeline` is merged into
+  `main` in one shot.
+
+So `pipeline` can carry WIP / unstable code (the `Pipeline` class is marked as
+such); only the final `pipeline` → `main` merge needs to be release-ready.
+
 Related research / decisions:
 
 - [`../pipeline-query-identity-research.md`](../pipeline-query-identity-research.md) — which stages preserve `id` / `ref` / `createTime` / `updateTime`.

@@ -1,4 +1,5 @@
 import { Firestore } from '@google-cloud/firestore';
+import { definePipelineSpecificationTests } from 'firestore-repository/__test__/pipeline-spec';
 import {
   authorsCollection,
   defineRepositorySpecificationTests,
@@ -10,6 +11,7 @@ import type { Doc } from 'firestore-repository/repository';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { type Env, type GoogleCloudFirestoreRepository, repositoryWithMapper } from './index.js';
+import { executor as pipelineExecutor } from './pipeline.js';
 import { offset } from './query.js';
 
 describe('repository', async () => {
@@ -163,9 +165,28 @@ describe('repository', async () => {
     });
   });
 
-  it('tmp: pipeline', () => {
-    db.pipeline() // PipelineSource
-      .collection('a') // Pipeline
-      .where(); // Pipeline
+  // Pipeline queries require a Firestore Enterprise database (the emulator
+  // cannot run them). These tests run only when both FIRESTORE_ENTERPRISE_TEST_*
+  // env vars are set; otherwise vitest reports them as skipped.
+  const enterpriseProject = process.env['FIRESTORE_ENTERPRISE_TEST_PROJECT'];
+  const enterpriseDbId = process.env['FIRESTORE_ENTERPRISE_TEST_DB'];
+  describe.skipIf(!enterpriseProject || !enterpriseDbId)('pipeline', () => {
+    // The Enterprise DB is not the emulator; construct it with the emulator env
+    // temporarily removed so the admin SDK targets the real backend.
+    const emulatorHost = process.env['FIRESTORE_EMULATOR_HOST'];
+    delete process.env['FIRESTORE_EMULATOR_HOST'];
+    const enterpriseDb = new Firestore({
+      projectId: enterpriseProject ?? '',
+      databaseId: enterpriseDbId ?? '(default)',
+    });
+    if (emulatorHost !== undefined) {
+      process.env['FIRESTORE_EMULATOR_HOST'] = emulatorHost;
+    }
+
+    definePipelineSpecificationTests<Env>({
+      executor: pipelineExecutor(enterpriseDb),
+      createRepository: (collection) =>
+        repositoryWithMapper(enterpriseDb, collection, plainMapper(collection)),
+    });
   });
 });

@@ -1,25 +1,22 @@
-import type { DocRef } from "../repository.js";
-import type {
-  BoolType,
-  Collection,
-  DocFieldPath,
-  DocumentSchema,
-  FieldTypeOfPath,
-  FieldValue,
-  MapFieldPath,
-  MapFields,
-  MapType,
-  OmitPaths,
-} from "../schema.js";
-import { AggregateWithAlias } from "./aggregate.js";
-import type { Expression, Field } from "./expression.js";
-import { Ordering } from "./ordering.js";
-import type {
-  BuildAddFieldsSchema,
-  BuildSelectionSchema,
-  Selection,
-} from "./selection.js";
-import type { Stage } from "./stage.js";
+import type { DocRef } from '../repository.js';
+import {
+  type BoolType,
+  type Collection,
+  type DocFieldPath,
+  type DocumentSchema,
+  fieldTypeOfPath,
+  type FieldTypeOfPath,
+  type FieldValue,
+  type MapFieldPath,
+  type MapFields,
+  type MapType,
+  type OmitPaths,
+} from '../schema.js';
+import { AggregateWithAlias } from './aggregate.js';
+import { field, type Expression, type Field } from './expression.js';
+import { Ordering } from './ordering.js';
+import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
+import type { Stage } from './stage.js';
 
 /**
  * Runs a pipeline and returns all of its result rows.
@@ -32,6 +29,12 @@ export type PipelineQueryExecutor = {
 
 /**
  * A lazily-built Firestore Pipeline query.
+ *
+ * **⚠️ Work in progress / unstable.** Pipeline-query support is under active
+ * development and incomplete — most stages are still stubs, and the public
+ * surface (method names, argument shapes, the `Schema` / `Id` type parameters,
+ * result types) is expected to change, likely with breaking changes. Do not
+ * rely on it yet.
  *
  * `Schema` is the schema of the document's `data` fields (it changes as stages
  * reshape the document, and `execute()` resolves it into `PipelineResult.data`).
@@ -54,12 +57,10 @@ export class Pipeline<
   constructor(
     readonly schema: Schema,
     readonly stage: Stage,
-    readonly parent?: Pipeline<Fields>,
+    readonly parent?: PipelineNode,
   ) {}
 
-  where(
-    _condition: (field: FieldProvider<Schema>) => Expression<BoolType>,
-  ): Pipeline<Schema, Id> {
+  where(_condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
     return unimplemented();
   }
   /**
@@ -75,12 +76,12 @@ export class Pipeline<
    * (the fuller "conditionally preserve identity via `__name__`" model, plus
    * `createTime` / `updateTime`, is deferred — see `docs/plan/pipeline-query.md`).
    */
-  select<Selections extends readonly Selection<Schema>[]>(
+  select<const Selections extends readonly Selection<Schema>[]>(
     _selections: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildSelectionSchema<Schema, Selections>, undefined> {
     return unimplemented();
   }
-  addFields<Selections extends readonly Selection<Schema>[]>(
+  addFields<const Selections extends readonly Selection<Schema>[]>(
     _fields: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
     return unimplemented();
@@ -92,10 +93,12 @@ export class Pipeline<
   ): Pipeline<OmitPaths<Schema, U[number]>, Id> {
     return unimplemented();
   }
-  sort(
-    _orderings: (field: FieldProvider<Schema>) => Ordering[],
-  ): Pipeline<Schema, Id> {
-    return unimplemented();
+  sort(orderings: (field: FieldProvider<Schema>) => Ordering[]): Pipeline<Schema, Id> {
+    return new Pipeline<Schema, Id>(
+      this.schema,
+      { kind: 'sort', orderings: orderings(fieldProvider(this.schema)) },
+      this,
+    );
   }
   limit(_limit: number): Pipeline<Schema, Id> {
     return unimplemented();
@@ -115,7 +118,7 @@ export class Pipeline<
   ): Pipeline<Fields, undefined> {
     return unimplemented();
   }
-  distinct<Selections extends readonly Selection<Schema>[]>(
+  distinct<const Selections extends readonly Selection<Schema>[]>(
     _groups: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<Fields, undefined> {
     return unimplemented();
@@ -167,16 +170,11 @@ export class Pipeline<
  * run, `Id` is `undefined` and `id` is absent, so `result.id` becomes a
  * compile-time error. When identified, this mirrors `Doc<T>`.
  */
-export type PipelineResult<
-  Schema extends Fields,
-  Id extends PipelineRowIdentity,
-> = {
-  data: FieldValue<MapType<Schema>, "read">;
+export type PipelineResult<Schema extends Fields, Id extends PipelineRowIdentity> = {
+  data: FieldValue<MapType<Schema>, 'read'>;
 } & (Id extends undefined ? unknown : { readonly id: Id });
 
-export type FieldProvider<Schema extends Fields> = <
-  Path extends DocFieldPath<Schema>,
->(
+export type FieldProvider<Schema extends Fields> = <Path extends DocFieldPath<Schema>>(
   path: Path,
 ) => Field<FieldTypeOfPath<Schema, Path>, Path>;
 
@@ -187,12 +185,35 @@ export type FieldProvider<Schema extends Fields> = <
 export type PipelineRowIdentity = DocRef<Collection> | undefined;
 
 /**
+ * The methods-free "AST node" view of a pipeline, used for the `parent` link.
+ * Structural (not the `Pipeline` class) so a `Pipeline<Schema, Id>` of any
+ * `Schema` / `Id` is assignable: `Pipeline` is invariant in `Schema` (methods
+ * take `FieldProvider<Schema>`), but the parent chain is only walked
+ * structurally by an executor, which reads `schema` / `stage` / `parent` only.
+ */
+export type PipelineNode = {
+  readonly schema: Fields;
+  readonly stage: Stage;
+  readonly parent?: PipelineNode | undefined;
+};
+
+/**
+ * Runtime {@link FieldProvider}: builds a {@link Field} AST node for a path,
+ * resolving the field's `type` from `schema` (via {@link fieldTypeOfPath}) so
+ * the expression carries a real type descriptor.
+ */
+const fieldProvider =
+  <Schema extends Fields>(schema: Schema): FieldProvider<Schema> =>
+  (path) =>
+    field(fieldTypeOfPath(schema, path), path);
+
+/**
  * Conflict resolution for `merge` (the merge modes of the Firestore replace-with
  * stage).
  * - `overwrite`: the merged map's values win on overlap (`merge_overwrite_existing`).
  * - `keep`: existing document values win on overlap (`merge_keep_existing`).
  */
-export type MergeMode = "overwrite" | "keep";
+export type MergeMode = 'overwrite' | 'keep';
 
 // TODO: placeholder return value used by stage stubs that are not implemented yet.
 // Returns a value (not `throw`) so the type tests, which evaluate stage calls at

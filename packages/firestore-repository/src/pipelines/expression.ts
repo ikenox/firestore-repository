@@ -25,9 +25,16 @@ import {
 export type Expression<T extends FieldType = FieldType> = FunctionCall<T> | Constant<T> | Field<T>;
 
 export type Field<T extends FieldType = FieldType, Path extends string = string> = {
+  kind: 'field';
   type: T;
   path: Path;
 };
+
+/** Builds a field-reference expression node carrying its resolved `type`. */
+export const field = <T extends FieldType, Path extends string>(
+  type: T,
+  path: Path,
+): Field<T, Path> => ({ kind: 'field', type, path });
 
 export type Constant<T extends FieldType> = {
   kind: 'constant';
@@ -112,6 +119,7 @@ const asStringExpr = (value: string | Expression<StringType>): Expression<String
 export const constant = <T extends FieldType>(value: unknown): Constant<T> => ({
   kind: 'constant',
   // TODO: derive the schema type from `value` (e.g. number -> DoubleType, string -> StringType).
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- placeholder result type until the TODO above is implemented (pipeline queries are WIP)
   type: 'todo' as unknown as T,
   value,
 });
