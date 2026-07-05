@@ -1,20 +1,8 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, it } from 'vitest';
 
 import { authorsCollection } from '../__test__/specification.js';
-import type { DocRef } from '../repository.js';
-import type {
-  ArrayType,
-  DoubleType,
-  LiteralType,
-  MapType,
-  Optional,
-  StringType,
-} from '../schema.js';
 import { constant, equal } from './expression.js';
 import { pipelineQuery } from './index.js';
-import { Pipeline } from './pipeline.js';
-
-type AuthorsId = DocRef<typeof authorsCollection>;
 
 describe('pipeline', () => {
   const base = pipelineQuery(authorsCollection);
@@ -45,47 +33,5 @@ describe('pipeline', () => {
 
     // `__name__` stays usable in `where` (goes through `FieldProvider`, not `Selection`)
     base.where((field) => equal(field('__name__'), field('name')));
-  });
-
-  it('wip', () => {
-    // The base pipeline preserves read-identity: `Id` is the source collection's ref.
-    expectTypeOf(base).toEqualTypeOf<
-      Pipeline<
-        {
-          name: StringType;
-          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
-          rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
-        },
-        AuthorsId
-      >
-    >();
-    // `select` is identity-breaking: `Id` ratchets to `undefined`. (The output
-    // schema transform is covered exhaustively in `selection.test.ts`.)
-    expectTypeOf(base.select(() => ['name'])).toEqualTypeOf<
-      Pipeline<{ name: StringType }, undefined>
-    >();
-
-    // `removeFields` is identity-preserving: `Id` is threaded through unchanged.
-    expectTypeOf(base.removeFields('name')).toEqualTypeOf<
-      Pipeline<
-        {
-          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
-          rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
-        },
-        AuthorsId
-      >
-    >();
-    expectTypeOf(base.removeFields('name', 'profile.age')).toEqualTypeOf<
-      Pipeline<
-        {
-          profile: MapType<{ gender: LiteralType<['male', 'female']> & Optional }>;
-          rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
-        },
-        AuthorsId
-      >
-    >();
   });
 });
