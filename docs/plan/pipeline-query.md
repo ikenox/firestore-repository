@@ -109,8 +109,11 @@ Status markers:
       nested schema synthesis for `select`, with type tests.
 - [x] `PickPaths` / `OmitPaths` in `schema.ts` with type tests.
 - [x] `Expression<T>` / `Field<T, Path>` / `Constant<T>` / `FunctionCall<T>`
-      AST + ~85 function factories covering all SDK expression categories
-      except aggregate / sort (deferred — see sections below).
+      AST. Previously had ~85 function factories covering all SDK expression
+      categories + type tests — **these were trimmed** (with `expression.test.ts`)
+      to the AST core plus `field` / `constant` / `equal` pending a rework. The
+      old factories + their type tests are recoverable from git history
+      (before the `pipeline-query` branch trim) if/when re-added.
 - [x] Comparison operators with overload-based group compatibility
       (Int64↔Double, union widening, cross-group rejection) + type tests.
 - [x] String / numeric / map / array / regex / timestamp / type-check /
