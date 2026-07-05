@@ -4,13 +4,13 @@
 
 # firestore-repository
 
-A minimal and universal Firestore client (Repository Pattern) for TypeScript
+A minimal, universal Firestore client for TypeScript, built around the Repository Pattern.
 
 ## Features
 
 - 🚀 **Minimal**: Only a few straightforward interfaces and classes. You can start using it immediately without a steep learning curve.
 - 🌐 **Universal**: You can share most code, including schema and query definitions, between backend and frontend.
-- 🤝 **Unopinionated**: This library does not introduce any additional concepts, and respects the vocabulary of the official Firestore client library.
+- 🤝 **Unopinionated**: This library introduces no additional concepts and follows the vocabulary of the official Firestore client libraries.
 - ✅ **Type-safe**: This library provides a type-safe interface. It also covers the untyped parts of the official Firestore library.
 - 🗄️ **Repository Pattern**: A simple and consistent way to access Firestore data.
 
@@ -71,7 +71,7 @@ const repository = rootCollectionRepository(db, users);
 
 ### Basic operations for a single document
 
-All operations are **type-safe** based on the schema you defined. The `data` field is typed according to your schema, so invalid data structures are caught at compile time.
+All operations are **type-safe** based on the schema you defined. The `data` field is typed according to your schema, so invalid data is caught at compile time.
 
 ```ts
 // Set a document
@@ -100,7 +100,7 @@ await repository.delete('user2');
 
 ### Query
 
-Field paths in query conditions are **automatically derived from the schema type**, not just plain strings — so typos and invalid paths are caught at compile time. The filter value is also **type-checked based on the field type and operator** (e.g., `array-contains` expects an element type of the array field).
+Field paths in query conditions are **automatically derived from the schema type**, not just plain strings — so typos and invalid paths are caught at compile time. The filter value is also **type-checked based on the field type and operator** (e.g., `array-contains` expects the element type of the array field).
 
 ```ts
 import { eq, gte, limit, query, where } from 'firestore-repository/query';
@@ -207,7 +207,7 @@ await runTransaction(db, async (tx) => {
 
 ### Subcollection
 
-Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (array of parent doc ID + doc ID). All other operations (query, batch, transaction, etc.) work the same.
+Subcollections are defined with `subCollection`, specifying the parent collection path. The only difference from root collections is that the document ref becomes a tuple (`[parentDocId, docId]`) instead of a plain string. All other operations (query, batch, transaction, etc.) work the same.
 
 ```ts
 import { subCollection, string } from 'firestore-repository/schema';
