@@ -1,14 +1,18 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { DocRef } from './repository.js';
 import {
   array,
+  type ArrayType,
   bool,
+  type BoolType,
   bytes,
   docRef,
   double,
+  type DoubleType,
   type DocumentSchema,
   type DocFieldPath,
+  fieldTypeOfPath,
   type FieldTypeOfPath,
   type FieldValue,
   type FieldValueOfPath,
@@ -21,11 +25,15 @@ import {
   literal,
   map,
   type MapType,
+  type OmitPaths,
   optional,
+  type Optional,
+  type PickPaths,
   rootCollection,
   ServerTimestamp,
   string,
   StringType,
+  type TailPath,
   timestamp,
   TimestampType,
   union,
@@ -267,5 +275,222 @@ describe('document', () => {
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optionalMap.f'>>().toEqualTypeOf<StringType>();
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optionalMap.g'>>().toExtend<Int64Type>();
     expectTypeOf<FieldTypeOfPath<Schema, '__name__'>>().toEqualTypeOf<StringType>();
+  });
+
+  // Comprehensive runtime tests for `fieldTypeOfPath` — its return type is bridged
+  // with a type assertion, so these tests are the safety net that the runtime walk
+  // actually mirrors the type-level `FieldTypeOfPath`.
+  describe('fieldTypeOfPath', () => {
+    const deep = map({ y: string() });
+    const nested = map({ x: int64(), deep });
+    const schema = {
+      s: string(),
+      n: double(),
+      i: int64(),
+      b: bool(),
+      t: timestamp(),
+      arr: array(string()),
+      m: nested,
+    } satisfies DocumentSchema;
+
+    it('resolves top-level fields to the exact schema descriptor', () => {
+      // Returns the actual descriptor object (reference equality), not a copy.
+      expect(fieldTypeOfPath(schema, 's')).toBe(schema.s);
+      expect(fieldTypeOfPath(schema, 'n')).toBe(schema.n);
+      expect(fieldTypeOfPath(schema, 'i')).toBe(schema.i);
+      expect(fieldTypeOfPath(schema, 'b')).toBe(schema.b);
+      expect(fieldTypeOfPath(schema, 't')).toBe(schema.t);
+      expect(fieldTypeOfPath(schema, 'arr')).toBe(schema.arr);
+      expect(fieldTypeOfPath(schema, 'm')).toBe(schema.m);
+    });
+
+    it('resolves top-level fields to the matching type', () => {
+      expectTypeOf(fieldTypeOfPath(schema, 's')).toEqualTypeOf<StringType>();
+      expectTypeOf(fieldTypeOfPath(schema, 'n')).toEqualTypeOf<DoubleType>();
+      expectTypeOf(fieldTypeOfPath(schema, 'i')).toEqualTypeOf<Int64Type>();
+      expectTypeOf(fieldTypeOfPath(schema, 'b')).toEqualTypeOf<BoolType>();
+      expectTypeOf(fieldTypeOfPath(schema, 't')).toEqualTypeOf<TimestampType>();
+      expectTypeOf(fieldTypeOfPath(schema, 'arr')).toEqualTypeOf<ArrayType<StringType, [], []>>();
+    });
+
+    it('resolves nested (dotted) fields', () => {
+      expect(fieldTypeOfPath(schema, 'm.x')).toBe(nested.fields.x);
+      expect(fieldTypeOfPath(schema, 'm.deep')).toBe(deep);
+      expect(fieldTypeOfPath(schema, 'm.deep.y')).toBe(deep.fields.y);
+
+      expectTypeOf(fieldTypeOfPath(schema, 'm.x')).toEqualTypeOf<Int64Type>();
+      expectTypeOf(fieldTypeOfPath(schema, 'm.deep')).toEqualTypeOf<typeof deep>();
+      expectTypeOf(fieldTypeOfPath(schema, 'm.deep.y')).toEqualTypeOf<StringType>();
+    });
+
+    it('resolves the reserved __name__ to a StringType', () => {
+      expect(fieldTypeOfPath(schema, '__name__')).toStrictEqual(string());
+      expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<StringType>();
+    });
+
+    it('throws for a path that does not exist at runtime (defensive guard)', () => {
+      expect(() =>
+        // @ts-expect-error -- deliberately invalid path to exercise the runtime guard
+        fieldTypeOfPath(schema, 'nope'),
+      ).toThrow();
+      expect(() =>
+        // @ts-expect-error -- deliberately invalid nested path
+        fieldTypeOfPath(schema, 'm.nope'),
+      ).toThrow();
+    });
+
+    it('resolves paths on a wide (unconstrained) DocumentSchema', () => {
+      const wide: DocumentSchema = schema;
+      expect(fieldTypeOfPath(wide, 's')).toBe(schema.s);
+      expect(fieldTypeOfPath(wide, 'm.deep.y')).toBe(deep.fields.y);
+    });
+  });
+
+  describe('path helpers', () => {
+    type Schema = {
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: DoubleType;
+      tag: ArrayType<StringType, [], []>;
+    };
+
+    describe('TailPath', () => {
+      it('returns never when no path under K exists in P', () => {
+        expectTypeOf<TailPath<'profile', 'name'>>().toEqualTypeOf<never>();
+        expectTypeOf<TailPath<'profile', never>>().toEqualTypeOf<never>();
+        expectTypeOf<TailPath<'profile', 'rank'>>().toEqualTypeOf<never>();
+      });
+
+      it('returns the suffix when P starts with `${K}.`', () => {
+        expectTypeOf<TailPath<'profile', 'profile.age'>>().toEqualTypeOf<'age'>();
+        expectTypeOf<TailPath<'profile', 'profile.x.y'>>().toEqualTypeOf<'x.y'>();
+      });
+
+      it('returns the union of suffixes when P is a union', () => {
+        expectTypeOf<
+          TailPath<'profile', 'name' | 'profile.age' | 'profile.gender' | 'rank'>
+        >().toEqualTypeOf<'age' | 'gender'>();
+      });
+
+      it('ignores an exact match of K (no trailing `.`)', () => {
+        expectTypeOf<TailPath<'profile', 'profile'>>().toEqualTypeOf<never>();
+      });
+    });
+
+    describe('PickPaths', () => {
+      it('picks a single top-level field', () => {
+        expectTypeOf<PickPaths<Schema, 'name'>>().toEqualTypeOf<{ name: StringType }>();
+      });
+
+      it('picks multiple top-level fields', () => {
+        expectTypeOf<PickPaths<Schema, 'name' | 'rank'>>().toEqualTypeOf<{
+          name: StringType;
+          rank: DoubleType;
+        }>();
+      });
+
+      it('picks a nested field and shrinks its MapType', () => {
+        expectTypeOf<PickPaths<Schema, 'profile.age'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType }>;
+        }>();
+      });
+
+      it('preserves the Optional marker on a nested MapType', () => {
+        type S = { profile: MapType<{ age: DoubleType; gender: StringType }> & Optional };
+        expectTypeOf<PickPaths<S, 'profile.age'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType }> & Optional;
+        }>();
+      });
+
+      it('keeps an entire subtree when the top-level key is selected directly', () => {
+        expectTypeOf<PickPaths<Schema, 'profile'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+        }>();
+      });
+
+      it('returns an empty schema when no path matches', () => {
+        // biome-ignore lint/complexity/noBannedTypes: empty type is the expected result
+        expectTypeOf<PickPaths<Schema, 'nonexistent'>>().toEqualTypeOf<{}>();
+      });
+
+      it('combines top-level and nested paths', () => {
+        expectTypeOf<PickPaths<Schema, 'name' | 'profile.age'>>().toEqualTypeOf<{
+          name: StringType;
+          profile: MapType<{ age: DoubleType }>;
+        }>();
+      });
+    });
+
+    describe('OmitPaths', () => {
+      it('removes a single top-level field', () => {
+        expectTypeOf<OmitPaths<Schema, 'name'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+          rank: DoubleType;
+          tag: ArrayType<StringType, [], []>;
+        }>();
+      });
+
+      it('removes a nested field while preserving the rest of the MapType', () => {
+        expectTypeOf<OmitPaths<Schema, 'profile.gender'>>().toEqualTypeOf<{
+          name: StringType;
+          profile: MapType<{ age: DoubleType }>;
+          rank: DoubleType;
+          tag: ArrayType<StringType, [], []>;
+        }>();
+      });
+
+      it('preserves the Optional marker when removing a nested field', () => {
+        type S = { profile: MapType<{ age: DoubleType; gender: StringType }> & Optional };
+        expectTypeOf<OmitPaths<S, 'profile.gender'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType }> & Optional;
+        }>();
+      });
+
+      it('drops the whole subtree when a top-level key matches exactly', () => {
+        expectTypeOf<OmitPaths<Schema, 'profile'>>().toEqualTypeOf<{
+          name: StringType;
+          rank: DoubleType;
+          tag: ArrayType<StringType, [], []>;
+        }>();
+      });
+
+      it('returns the original schema when no path matches', () => {
+        expectTypeOf<OmitPaths<Schema, 'nonexistent'>>().toEqualTypeOf<Schema>();
+      });
+
+      it('removes both top-level and nested fields at once', () => {
+        expectTypeOf<OmitPaths<Schema, 'name' | 'profile.gender'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType }>;
+          rank: DoubleType;
+          tag: ArrayType<StringType, [], []>;
+        }>();
+      });
+
+      it('drops a map once its last field is removed', () => {
+        type S = { name: StringType; profile: MapType<{ age: DoubleType }> };
+        expectTypeOf<OmitPaths<S, 'profile.age'>>().toEqualTypeOf<{ name: StringType }>();
+      });
+
+      it('drops a map when all of its fields are removed at once', () => {
+        expectTypeOf<OmitPaths<Schema, 'profile.age' | 'profile.gender'>>().toEqualTypeOf<{
+          name: StringType;
+          rank: DoubleType;
+          tag: ArrayType<StringType, [], []>;
+        }>();
+      });
+
+      it('removes a deeply nested field while preserving its siblings', () => {
+        type S = { a: MapType<{ b: MapType<{ c: DoubleType; d: StringType }> }> };
+        expectTypeOf<OmitPaths<S, 'a.b.c'>>().toEqualTypeOf<{
+          a: MapType<{ b: MapType<{ d: StringType }> }>;
+        }>();
+      });
+
+      it('cascades the empty-map drop up through multiple levels', () => {
+        type S = { name: StringType; a: MapType<{ b: MapType<{ c: DoubleType }> }> };
+        // Removing the only leaf empties `a.b`, which empties `a`, dropping both.
+        expectTypeOf<OmitPaths<S, 'a.b.c'>>().toEqualTypeOf<{ name: StringType }>();
+      });
+    });
   });
 });
