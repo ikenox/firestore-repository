@@ -22,6 +22,74 @@ Related research / decisions:
 
 - [`../pipeline-query-identity-research.md`](../pipeline-query-identity-research.md) — which stages preserve `id` / `ref` / `createTime` / `updateTime`.
 
+## Current status (snapshot — read this first)
+
+**What actually runs today (verified against a real Enterprise DB):**
+
+- `pipelineQuery(collection)` → `execute` returns all documents with their ids
+  (a bare collection input, no transformation stages).
+- `pipelineQuery(collection).sort((field) => [asc(field('rank')), desc(...)])`
+  → sorted results.
+
+Both work end-to-end through **both** adapters' executors; the spec suite
+(`fetch all` + `sort` asc/desc) passes against
+`ikenox-sunrise` / `enterprise-native-playground` via the google-cloud (admin,
+ADC) adapter. The firebase (client) adapter is wired identically but has **not**
+been run live — the client SDK needs real firebase credentials (apiKey / rules)
+to reach a non-emulator DB.
+
+**How the runtime AST works now** (the key shift this session):
+
+- `Pipeline` methods used to all return `unimplemented()` (no runtime value).
+  Now `pipelineQuery`/`collection`/... build an `input` stage carrying the
+  source (`{ kind: 'collection', collection }` — see `stage.ts` `InputSource`),
+  and **`sort` builds a real `{ kind: 'sort', orderings }` stage** linked to its
+  parent. **All other stages are still stubs** (`unimplemented()`), so a chain
+  like `.where(...).sort(...)` does NOT build a runtime AST yet — only
+  `input` and `sort` do.
+- The `parent` link is typed as `PipelineNode` (a methods-free structural view
+  of `Pipeline`) so `Pipeline<Schema, Id>` — which is invariant in `Schema` —
+  is assignable without a cast. An executor walks `parent` to collect stages.
+- `Field` gained `kind: 'field'` → `Expression` is now a discriminated union
+  (`field` / `constant` / `functionCall`). New `field(type, path)` factory in
+  `expression.ts`. The `sort` field provider resolves each field's real runtime
+  `type` via the new **`fieldTypeOfPath(schema, path)`** in `schema.ts` (the
+  runtime counterpart of the `FieldTypeOfPath` type), covered by
+  `schema.field-type-of-path.test.ts`.
+- `select` / `addFields` / `distinct` use `const` type params, so callback
+  selections infer as tuples without `as const`. Only bare data-field-path
+  string selections work so far (no `.as(...)` / aliased expressions yet).
+
+**Executors** (`packages/{firebase-js-sdk,google-cloud-firestore}/src/pipeline.ts`):
+`executor(db)` walks the stage chain into `db.pipeline()...`, translates `sort`
+to `field(path).ascending()/.descending()`, runs it, and converts each result
+via the existing per-adapter `fromFirestore.docRef` / `decode` (both now
+exported through `buildFirestoreUtilities`, with an added `decode` method).
+
+**Running the pipeline spec tests** (Enterprise-only; the emulator can't run
+pipelines):
+
+```sh
+cd packages/google-cloud-firestore   # (or firebase-js-sdk)
+FIRESTORE_ENTERPRISE_TEST_PROJECT=ikenox-sunrise \
+FIRESTORE_ENTERPRISE_TEST_DB=enterprise-native-playground \
+pnpm exec vitest run -t 'pipeline specification'
+```
+
+Without those two env vars the pipeline `describe` is `skipIf`-skipped. See the
+test-infra note under "Per-SDK adapters" for why the admin SDK can target the
+real backend while the repository tests still use the emulator in the same run.
+
+**Type assertions used** (all the `decode` class — runtime value → schema-derived
+type; policy in `docs/coding-guideline.md`): `fieldTypeOfPath` (2: `MapType`
+narrowing + the `FieldTypeOfPath` bridge) and each executor's result map
+(1 each: `... as PipelineResult<Schema, Id>`). The parent-invariance and the
+field-provider casts were **eliminated** (via `PipelineNode` and the resolver).
+
+**Repo state:** core `firestore-repository` is green (lint 0, fmt clean, 210
+tests pass). Adapter repository tests still need the emulator (not run in this
+snapshot). Ad-hoc probe scripts live in `./.ikenox/` (gitignored).
+
 ## Conventions
 
 Status markers:
@@ -53,6 +121,14 @@ Status markers:
 - [x] `TimeUnit` / `TimeGranularity` / `FieldTypeName` literal narrowing
       for `timestampAdd` / `timestampSubtract` / `timestampTruncate` /
       `isType`.
+- [x] Runtime AST building for `input` (collection source) + `sort`; `parent`
+      chain via `PipelineNode`; executors in both adapter packages.
+- [x] `field(type, path)` factory + `kind: 'field'` (Expression is a
+      discriminated union); runtime `fieldTypeOfPath(schema, path)` resolver
+      with exhaustive tests (`schema.field-type-of-path.test.ts`).
+- [x] `const` type params on `select` / `addFields` / `distinct`.
+- [x] `execute` modelled as `PipelineQueryExecutor.execute` (adapters implement
+      it); the core `Pipeline` only builds the AST.
 
 ## Identity ratchet (second type parameter on `Pipeline`)
 
@@ -151,15 +227,17 @@ ratchet is structural: preserving stages thread `Id`, breaking stages reset to
 
 Existing stubs need real schema/Context transitions and runtime construction.
 
-Input stages:
+Input stages (the `input` stage now carries an `InputSource` payload — see
+`stage.ts` — and the executors reconstruct it):
 
-- [ ] `collection(path | CollectionRef)` — returns `IdentifiedPipeline<C>`
-      where `C` comes from the collection's schema.
-- [ ] `collectionGroup(id)` — pipe id; identity-preserving start.
-- [ ] `database()`.
-- [ ] `documents([...refs])`.
-- [ ] `subcollection(...)` (matches `schema.ts`'s subcollection model).
-- [ ] `literals([...])` — `UnidentifiedPipeline<C>` (no source docs).
+- [~] `collection` / `pipelineQuery` / `subcollection` — build
+  `{ kind: 'collection', collection }`; **executor supports root
+  collections only** (throws for subcollections — needs parent doc ids).
+- [ ] `collectionGroup(id)` — builds `{ kind: 'collectionGroup', ... }`;
+      executor support not implemented.
+- [ ] `database()` / `documents([...refs])` — source payloads are stubbed
+      (`{ kind: 'database' | 'documents' }`, no data); executor throws.
+- [ ] `literals([...])` — stubbed (`{ kind: 'literals' }`); executor throws.
 
 Transformation stages already stubbed:
 
@@ -184,9 +262,11 @@ Output stages (Pipeline DML):
 
 Deferred to a later iteration (still tracked here, not currently in scope):
 
-- [ ] `sort(...)` — needs `Ordering` type (returned by
-      `ascending()` / `descending()`) plus a sort stage that does not change
-      Context but preserves identity.
+- [x] `sort(...)` — **implemented end-to-end** (identity- and schema-preserving).
+      `Pipeline.sort` builds `{ kind: 'sort', orderings }`; both executors
+      translate to `field(path).ascending()/.descending()`. Only **field**
+      orderings are supported (a computed-expression ordering throws in the
+      executor). Verified live. See the spec `sort` tests.
 - [ ] `aggregate(...)` — needs:
   - A separate `AggregateFunction` AST node (distinct from `Expression`).
   - Aggregate function factories: `sum`, `count`, `countAll`,
@@ -237,24 +317,45 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## `Pipeline` runtime / serialization
 
-- [ ] Walk the `Pipeline` AST to produce the wire-level proto:
-      `[Stage, ...]` with each Stage's `_toProto`-equivalent shape.
-- [ ] Serialize `Expression` AST (FunctionCall / Field / Constant) to the
-      backend proto format. Use the SDK proto as reference.
-- [ ] `execute(pipeline)` (standalone function) — actually call the backend
-      (`ExecutePipeline`) and convert the response into `PipelineResult`s.
-- [ ] Decide whether to delegate execution to the per-package SDK
-      (`@firebase/firestore/pipelines`, `@google-cloud/firestore/pipelines`)
-      or build our own RPC client.
+- [x] **Decided: delegate execution to each package's SDK** (`db.pipeline()...`),
+      NOT build our own proto/RPC. Each adapter walks our `Stage` AST into the
+      SDK's pipeline builder. So there is **no wire-level proto / `_toProto`**
+      work to do — the SDK serializes.
+- [~] Walk the AST → SDK builder: done for `input` (collection) + `sort`. Each
+  new stage/expression needs its translation added in both executors.
+- [ ] `Expression` → SDK translation is minimal so far (only `field(path)` for
+      sort orderings, via `expr.kind === 'field'`). `constant` / `functionCall`
+      translation is not written yet.
 
-## Per-SDK adapters (mirrors existing repository setup)
+## Per-SDK adapters (executor lives in each package's `pipeline.ts`)
 
-- [ ] `packages/firebase-js-sdk/src/pipelines.ts` — provide the adapter's
-      `execute(pipeline)` against `@firebase/firestore/pipelines.execute`.
-- [ ] `packages/google-cloud-firestore/src/pipelines.ts` — wire against
-      `@google-cloud/firestore/pipelines`.
-- [ ] Shared spec tests (in `packages/firestore-repository/src/__test__`)
-      that both adapters must satisfy.
+- [x] `packages/firebase-js-sdk/src/pipeline.ts` — `executor(db)` over
+      `@firebase/firestore/pipelines` (`execute` + `field`). Wired; not run live.
+- [x] `packages/google-cloud-firestore/src/pipeline.ts` — `executor(db)` over
+      `@google-cloud/firestore` `Pipelines` (`.execute()` + `Pipelines.field`).
+      Verified live.
+- [x] Shared spec `definePipelineSpecificationTests` in
+      `src/__test__/pipeline-spec.ts`; called from both `index.test.ts`, gated on
+      the enterprise env vars.
+
+### Test infra: emulator + real Enterprise DB in one run
+
+The repository tests run against the emulator; the pipeline tests need a real
+Enterprise DB. They coexist because the constructed `pipeline` describe builds a
+**separate** Firestore for the enterprise env (`FIRESTORE_ENTERPRISE_TEST_*`):
+
+- **google-cloud (admin):** reads `FIRESTORE_EMULATOR_HOST` **once, in the
+  `Firestore` constructor** (`validateAndApplySettings`, frozen into
+  `_settings`). So the pipeline describe temporarily `delete`s that env var,
+  constructs the enterprise `Firestore`, then restores it — the emulator-bound
+  repo `db` (built earlier) is unaffected. Verified safe.
+- **firebase (client):** never reads `FIRESTORE_EMULATOR_HOST` at all (emulator
+  is opt-in via `connectFirestoreEmulator`); the enterprise db simply doesn't
+  connect to the emulator. No env juggling needed — but it needs real client
+  credentials to actually reach the DB.
+- The cleaner long-term option (not needed for correctness) is a dedicated
+  vitest **project** with its own `test.env` (no emulator host) that includes
+  only pipeline test files — the repo already uses `projects: ['packages/*']`.
 
 ### `execute` / `stream` capability asymmetry (verified against the SDKs)
 
@@ -282,13 +383,19 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
 
 ## Tests
 
-- [ ] Spec tests for each implemented stage's behavior (against the
-      emulator-substitute / real Enterprise DB if needed).
-- [ ] Identity ratchet integration test — confirm
-      `IdentifiedPipeline` → `select` → `UnidentifiedPipeline`'s result
-      lacks `id` at both type and runtime levels.
+- [~] Behavioural spec (`pipeline-spec.ts`) with an `expectPipeline` helper
+  (order-sensitive by default; `{ ordered: false }` for unordered inputs).
+  Covers `fetch all` + `sort` asc/desc; add a case per new stage.
+- [x] `fieldTypeOfPath` runtime resolver unit tests
+      (`schema.field-type-of-path.test.ts`).
+- [ ] Identity ratchet integration test — confirm a `select` result lacks `id`
+      at runtime (type side is covered by `pipeline.test.ts`).
 - [ ] DML stage tests (`update` / `delete`).
 - [ ] Sub-pipeline / join behavior tests once that's implemented.
+- Note: `pipeline.test.ts` (type-level) tests only the identity ratchet on
+  `base` / `select` / `removeFields`; the `select` output-schema transforms live
+  in `selection.test.ts`. Only bare string-path selections compile today (no
+  `.as(...)`).
 
 ## Docs
 
@@ -305,11 +412,24 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       `schema.ts` path helpers) are intricate and easy to get subtly wrong;
       review the resolved types against intended semantics before relying on
       them.
-- [ ] `pipeline-query.test.ts` (now `pipelines/pipeline.test.ts`) has a few
-      WIP test cases that still fail typecheck after recent select-callback
-      refactors. Clean up when stage signatures settle.
-- [ ] `PipelineQuery` -> `Pipeline` rename has propagated; verify no stale
-      references remain across docs / comments.
+- [x] `pipelines/pipeline.test.ts` select-callback typecheck failures — cleaned
+      up (moved to callback form; schema coverage lives in `selection.test.ts`).
+- [ ] `constant(value)` still uses a placeholder `type` (`'todo' as unknown as T`,
+      with a lint-disable). TODO: derive the `FieldType` from the runtime value
+      (number → Double, string → String, ...). Needed before `constant` /
+      `functionCall` expressions can be serialized to the SDK.
+- [ ] **Stale editor diagnostics:** the LSP may flag imports of
+      `PipelineQueryExecutor` / `PipelineNode` etc. from
+      `firestore-repository/pipelines/pipeline` as "no exported member". This is
+      only the built `build/esm/*.d.ts` being out of date — `tsc`, `oxlint`, and
+      `vitest` resolve to `src` via the `@firestore-repository/source` export
+      condition, so it's harmless. Rebuild `firestore-repository` to clear it.
+- [ ] firebase adapter's pipeline spec is unverified — the client SDK needs real
+      firebase credentials (apiKey / security rules) to reach a non-emulator DB;
+      ADC (which the google-cloud adapter uses) is not enough.
 - [ ] Decide whether to expose the `pipelines` subpath in
       `packages/firestore-repository/package.json` `exports` (currently
       only the default entry is exported).
+- Enterprise probe DB for empirical checks: `ikenox-sunrise` /
+  `enterprise-native-playground` (Enterprise edition); ad-hoc probe scripts in
+  `./.ikenox/` (gitignored). See the memory note `enterprise-probe-db`.
