@@ -419,6 +419,20 @@ describe('document', () => {
           profile: MapType<{ age: DoubleType }>;
         }>();
       });
+
+      it('merges sibling nested paths into a single MapType', () => {
+        expectTypeOf<PickPaths<Schema, 'profile.age' | 'profile.gender'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+        }>();
+      });
+
+      it('keeps the whole subtree when a key and its nested path are both picked', () => {
+        // Selecting the map key directly subsumes the narrower nested path — the
+        // whole subtree wins (it is not shrunk down to just `age`).
+        expectTypeOf<PickPaths<Schema, 'profile' | 'profile.age'>>().toEqualTypeOf<{
+          profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+        }>();
+      });
     });
 
     describe('OmitPaths', () => {
