@@ -1,4 +1,10 @@
 {
   "auto_install_extensions": { "oxc": true },
-  "lsp": { "oxlint": { "initialization_options": { "settings": { "typeAware": true } } } }
+  "lsp": { "oxlint": { "initialization_options": { "settings": { "typeAware": true } } } },
+  "formatter": {
+    "external": {
+      "command": "pnpm",
+      "arguments": ["exec", "oxfmt", "--stdin-filepath", "{buffer_path}"]
+    }
+  }
 }
