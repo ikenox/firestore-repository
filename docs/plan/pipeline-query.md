@@ -26,9 +26,9 @@ Related research / decisions:
 
 **What actually runs today (verified against a real Enterprise DB):**
 
-- `pipelineQuery(collection)` → `execute` returns all documents with their ids
+- `collection(def)` → `execute` returns all documents with their ids
   (a bare collection input, no transformation stages).
-- `pipelineQuery(collection).sort((field) => [asc(field('rank')), desc(...)])`
+- `collection(def).sort((field) => [asc(field('rank')), desc(...)])`
   → sorted results.
 
 Both work end-to-end through **both** adapters' executors; the spec suite
@@ -41,7 +41,7 @@ to reach a non-emulator DB.
 **How the runtime AST works now** (the key shift this session):
 
 - `Pipeline` methods used to all return `unimplemented()` (no runtime value).
-  Now `pipelineQuery`/`collection`/... build an `input` stage carrying the
+  Now `collection`/`collectionGroup` build an input stage carrying the
   source (`{ kind: 'collection', collection }` — see `stage.ts` `InputSource`),
   and **`sort` builds a real `{ kind: 'sort', orderings }` stage** linked to its
   parent. **All other stages are still stubs** (`unimplemented()`), so a chain
@@ -184,8 +184,8 @@ ratchet is structural: preserving stages thread `Id`, breaking stages reset to
       complexity. If revisited, also consider an explicit opt-in
       (`select(..., { keepName: true })`) instead of type-level parsing of the
       selection list.
-- [x] Source factories set the initial `Id`: `pipelineQuery` / `collection` /
-      `subcollection` / `collectionGroup` → `DocRef<T>` (collectionGroup assumes
+- [x] Source factories set the initial `Id`: `collection` /
+      `collectionGroup` → `DocRef<T>` (collectionGroup assumes
       collection names are unique DB-wide); `database` / `documents` →
       `DocRef<Collection>`; `literals(...)` → `undefined`.
 - [~] `execute(pipeline): Promise<PipelineResult<Schema, Id>[]>` — a
@@ -233,9 +233,9 @@ Existing stubs need real schema/Context transitions and runtime construction.
 Input stages (the `input` stage now carries an `InputSource` payload — see
 `stage.ts` — and the executors reconstruct it):
 
-- [~] `collection` / `pipelineQuery` / `subcollection` — build
-  `{ kind: 'collection', collection }`; **executor supports root
-  collections only** (throws for subcollections — needs parent doc ids).
+- [x] `collection` — builds `{ kind: 'collection', collection, parent }`;
+      covers root collections and specific subcollection instances (the trailing
+      `parent` doc-ids argument is required iff the definition is a subcollection).
 - [ ] `collectionGroup(id)` — builds `{ kind: 'collectionGroup', ... }`;
       executor support not implemented.
 - [ ] `database()` / `documents([...refs])` — source payloads are stubbed

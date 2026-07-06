@@ -4,6 +4,7 @@ import {
   field,
   type Pipeline as SdkPipeline,
 } from '@firebase/firestore/pipelines';
+import { collectionPath } from 'firestore-repository/path';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
   Pipeline,
@@ -34,11 +35,8 @@ export const executor = (db: Firestore): PipelineQueryExecutor => {
     let sdk: SdkPipeline;
     switch (input.kind) {
       case 'collection':
-        if (input.collection.parent.length > 0) {
-          throw new Error('firebase pipeline executor: only root collections are supported yet');
-        }
         collection = input.collection;
-        sdk = db.pipeline().collection(collection.name);
+        sdk = db.pipeline().collection(collectionPath(collection, input.parent));
         break;
       case 'collectionGroup':
         collection = input.collection;

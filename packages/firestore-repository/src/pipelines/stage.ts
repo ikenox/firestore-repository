@@ -13,7 +13,15 @@ export type Stage = InputStage | TransformStage | OutputStage;
 
 /** Input stage: the data source that begins a pipeline (the chain head). */
 export type InputStage =
-  | { kind: 'collection'; collection: Collection }
+  /**
+   * A single collection instance. `parent` locates it when it is a
+   * subcollection (the parent document ids, pairing with
+   * `collection.parent`) — empty for a root collection. Executors resolve the
+   * full path via `collectionPath(collection, parent)`; there is no separate
+   * "subcollection" input stage kind (the official `subcollection` stage is
+   * sub-pipeline-only syntactic sugar and cannot start an executable pipeline).
+   */
+  | { kind: 'collection'; collection: Collection; parent: string[] }
   | { kind: 'collectionGroup'; collection: Collection }
   | { kind: 'database' }
   // TODO: carry the document refs / literal rows once those sources are implemented.

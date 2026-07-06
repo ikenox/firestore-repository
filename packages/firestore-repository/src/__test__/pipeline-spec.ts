@@ -7,7 +7,7 @@ import type {
   PipelineResult,
   PipelineRowIdentity,
 } from '../pipelines/pipeline.js';
-import { pipelineQuery } from '../pipelines/source.js';
+import { collection as collectionInput } from '../pipelines/source.js';
 import type { Doc, DocRef, FirestoreEnvironment, PlainRepository } from '../repository.js';
 import type { Collection, DocumentSchema } from '../schema.js';
 import { type AuthorsCollection, authorsCollection } from './specification.js';
@@ -48,9 +48,9 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       await createRepository(collection).batchSet(items);
     });
 
-    /** The input source (`pipelineQuery`) for the seeded collection. */
+    /** The input stage (`collection(...)`) for the seeded collection. */
     const source = (): Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> =>
-      pipelineQuery(collection);
+      collectionInput(collection);
 
     /**
      * Executes `pipeline` (built from {@link source}) and asserts the result rows

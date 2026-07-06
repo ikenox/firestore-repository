@@ -216,8 +216,8 @@ So an identified result is structurally a `Doc<T>`, which makes existing
 `Mapper<T, AppModel>` reuse straightforward. Accessing `result.id` after a
 `select` becomes a compile-time error rather than a runtime `undefined`.
 
-Sources set the initial `Id`: document-backed sources (`pipelineQuery` /
-`collection` / `subcollection` / `collectionGroup` → `DocRef<T>` —
+Sources set the initial `Id`: document-backed sources (`collection` /
+`collectionGroup` → `DocRef<T>` —
 `collectionGroup` assumes collection names are unique DB-wide so the group
 resolves to one collection's type; `database` / `documents` →
 `DocRef<Collection>`) start identified; only `literals(...)` starts as

@@ -1,4 +1,5 @@
 import { type Firestore, Pipelines } from '@google-cloud/firestore';
+import { collectionPath } from 'firestore-repository/path';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
   Pipeline,
@@ -29,13 +30,8 @@ export const executor = (db: Firestore): PipelineQueryExecutor => {
     let sdk: Pipelines.Pipeline;
     switch (input.kind) {
       case 'collection':
-        if (input.collection.parent.length > 0) {
-          throw new Error(
-            'google-cloud pipeline executor: only root collections are supported yet',
-          );
-        }
         collection = input.collection;
-        sdk = db.pipeline().collection(collection.name);
+        sdk = db.pipeline().collection(collectionPath(collection, input.parent));
         break;
       case 'collectionGroup':
         collection = input.collection;

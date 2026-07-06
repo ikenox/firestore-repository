@@ -1,4 +1,4 @@
-import type { DocRef } from '../repository.js';
+import type { DocRef, ParentDocRef } from '../repository.js';
 import type { Collection } from '../schema.js';
 import { Pipeline } from './pipeline.js';
 
@@ -7,23 +7,39 @@ import { Pipeline } from './pipeline.js';
 // documents so it starts unidentified. The input stage is the head of the chain,
 // so an executor can reconstruct it (e.g. `db.pipeline().collection(path)`).
 
-export const pipelineQuery = <T extends Collection>(
-  collection: T,
+/**
+ * The trailing `parent` argument of a collection-input factory: required for a
+ * subcollection (the parent document ids locating the instance), omitted for a
+ * root collection. Mirrors `QueryBaseInput`'s root/subcollection split.
+ */
+type ParentArg<T extends Collection> = T['parent']['length'] extends 0
+  ? []
+  : [parent: ParentDocRef<T>];
+
+/**
+ * Starts a pipeline that reads a single collection instance — the pipeline
+ * counterpart of the SDK's `db.pipeline().collection(path)` input stage. The
+ * resulting pipeline is identity-preserving: each result row carries a
+ * `DocRef<T>` of its source document.
+ *
+ * The trailing `parent` argument adapts to the collection definition
+ * (see {@link ParentArg}):
+ * - **Root collection** (`def.parent` is `[]`): no extra argument —
+ *   `collection(authorsCollection)`. Passing one is a compile error.
+ * - **Subcollection**: the parent document ids locating the instance are
+ *   required, with their tuple length checked against `def.parent` —
+ *   `collection(postsCollection, ['author1'])` reads `/Authors/author1/Posts`.
+ *
+ * To read all instances of a subcollection across the database regardless of
+ * parent, use {@link collectionGroup} instead.
+ */
+export const collection = <T extends Collection>(
+  def: T,
+  ...[parent]: ParentArg<T>
 ): Pipeline<T['schema'], DocRef<T>> =>
   new Pipeline<T['schema'], DocRef<T>>({
-    schema: collection.schema,
-    stage: { kind: 'collection', collection },
-  });
-
-export const collection = <T extends Collection>(def: T): Pipeline<T['schema'], DocRef<T>> =>
-  new Pipeline<T['schema'], DocRef<T>>({
     schema: def.schema,
-    stage: { kind: 'collection', collection: def },
-  });
-export const subcollection = <T extends Collection>(def: T): Pipeline<T['schema'], DocRef<T>> =>
-  new Pipeline<T['schema'], DocRef<T>>({
-    schema: def.schema,
-    stage: { kind: 'collection', collection: def },
+    stage: { kind: 'collection', collection: def, parent: parent ?? [] },
   });
 // Assumes collection names are unique across the database, so the group resolves
 // to a single collection's schema and ref type.
