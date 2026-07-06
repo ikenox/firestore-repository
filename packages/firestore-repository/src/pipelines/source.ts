@@ -1,8 +1,6 @@
 import type { DocRef } from '../repository.js';
-import type { Collection, DocumentSchema } from '../schema.js';
+import type { Collection } from '../schema.js';
 import { Pipeline } from './pipeline.js';
-
-type Fields = DocumentSchema;
 
 // Input source factories. Document-backed sources start identity-preserving
 // (the result rows carry a source document ref); `literals(...)` has no source
@@ -34,9 +32,8 @@ export const collectionGroup = <T extends Collection>(def: T): Pipeline<T['schem
     kind: 'input',
     source: { kind: 'collectionGroup', collection: def },
   });
-export const database = (..._args: unknown[]): Pipeline<Fields, DocRef<Collection>> =>
-  new Pipeline<Fields, DocRef<Collection>>({}, { kind: 'input', source: { kind: 'database' } });
-export const documents = (..._args: unknown[]): Pipeline<Fields, DocRef<Collection>> =>
-  new Pipeline<Fields, DocRef<Collection>>({}, { kind: 'input', source: { kind: 'documents' } });
-export const literals = (..._args: unknown[]): Pipeline<Fields, undefined> =>
-  new Pipeline<Fields, undefined>({}, { kind: 'input', source: { kind: 'literals' } });
+
+// TODO: implement the remaining input sources (`database`, `documents`,
+// `literals`). Their `InputSource` AST kinds already exist in stage.ts, but the
+// factories need a real argument/schema design (the earlier stubs took
+// `unknown[]` and an empty schema, so they were removed).
