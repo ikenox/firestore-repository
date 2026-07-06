@@ -16,7 +16,7 @@ import { AggregateWithAlias } from './aggregate.js';
 import { field, type Expression, type Field } from './expression.js';
 import { Ordering } from './ordering.js';
 import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
-import type { Stage } from './stage.js';
+import type { InputStage, TransformStage } from './stage.js';
 
 /**
  * Runs a pipeline and returns all of its result rows.
@@ -54,11 +54,33 @@ export class Pipeline<
   Schema extends Fields = Fields,
   Id extends PipelineRowIdentity = PipelineRowIdentity,
 > {
-  constructor(
-    readonly schema: Schema,
-    readonly stage: Stage,
-    readonly parent?: PipelineNode,
-  ) {}
+  /**
+   * The type-erased AST node this builder wraps. The class *has* a node rather
+   * than *being* one: `Pipeline` is a single class that can sit anywhere in the
+   * chain, but a node is either a source (the head) or a stage — so the class
+   * can't structurally be the discriminated {@link PipelineNode} union. Holding
+   * a node also keeps the builder (precise `Schema` / `Id`) cleanly separate
+   * from the erased AST an executor walks. The intersection pins the node's
+   * `schema` to this builder's `Schema` so stage methods stay well-typed.
+   */
+  constructor(readonly node: PipelineNode & { readonly schema: Schema }) {}
+
+  /**
+   * The pipeline's ordered stages, for an executor: the head {@link InputStage},
+   * then the {@link TransformStage}s in application order. Walks the `parent`
+   * chain (leaf → root); the walk is guaranteed to bottom out at an input stage
+   * by {@link PipelineNode}'s types. Output/DML stages will join this
+   * decomposition once the node model represents them.
+   */
+  stages(): PipelineStages {
+    const transforms: TransformStage[] = [];
+    let node: PipelineNode = this.node;
+    while (node.parent !== undefined) {
+      transforms.unshift(node.stage);
+      node = node.parent;
+    }
+    return { input: node.stage, transforms };
+  }
 
   where(_condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
     return unimplemented();
@@ -94,11 +116,11 @@ export class Pipeline<
     return unimplemented();
   }
   sort(orderings: (field: FieldProvider<Schema>) => Ordering[]): Pipeline<Schema, Id> {
-    return new Pipeline<Schema, Id>(
-      this.schema,
-      { kind: 'sort', orderings: orderings(fieldProvider(this.schema)) },
-      this,
-    );
+    return new Pipeline<Schema, Id>({
+      schema: this.node.schema,
+      stage: { kind: 'sort', orderings: orderings(fieldProvider(this.node.schema)) },
+      parent: this.node,
+    });
   }
   limit(_limit: number): Pipeline<Schema, Id> {
     return unimplemented();
@@ -185,16 +207,39 @@ export type FieldProvider<Schema extends Fields> = <Path extends DocFieldPath<Sc
 export type PipelineRowIdentity = DocRef<Collection> | undefined;
 
 /**
- * The methods-free "AST node" view of a pipeline, used for the `parent` link.
- * Structural (not the `Pipeline` class) so a `Pipeline<Schema, Id>` of any
- * `Schema` / `Id` is assignable: `Pipeline` is invariant in `Schema` (methods
- * take `FieldProvider<Schema>`), but the parent chain is only walked
- * structurally by an executor, which reads `schema` / `stage` / `parent` only.
+ * The methods-free, type-erased "AST node" view of a pipeline, walked by an
+ * executor (which reads `schema` / `stage` / `parent` only). A pipeline is a
+ * chain of these nodes, and **the head is always an {@link InputStageNode},
+ * guaranteed by the types**: following `parent` from any node bottoms out at an
+ * input stage, because a {@link TransformStageNode} always has a `parent` while an
+ * input stage never does. This makes "a pipeline starts with an input stage"
+ * un-representable-otherwise, so executors need no runtime check for it.
  */
-export type PipelineNode = {
+export type PipelineNode = InputStageNode | TransformStageNode;
+
+/** The head of a pipeline chain: an input stage, with no parent. */
+export type InputStageNode = {
   readonly schema: Fields;
-  readonly stage: Stage;
-  readonly parent?: PipelineNode | undefined;
+  readonly stage: InputStage;
+  readonly parent?: undefined;
+};
+
+/** A transformation stage applied to its `parent` node. */
+export type TransformStageNode = {
+  readonly schema: Fields;
+  readonly stage: TransformStage;
+  readonly parent: PipelineNode;
+};
+
+/**
+ * A pipeline's ordered stages (see {@link Pipeline.stages}): the
+ * {@link InputStage} head followed by the {@link TransformStage}s in
+ * application order.
+ */
+export type PipelineStages = {
+  readonly input: InputStage;
+  readonly transforms: readonly TransformStage[];
+  // TODO: add `output?: OutputStage` once output/DML stages are in the node model.
 };
 
 /**

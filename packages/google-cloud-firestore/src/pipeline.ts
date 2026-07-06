@@ -2,13 +2,13 @@ import { type Firestore, Pipelines } from '@google-cloud/firestore';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
   Pipeline,
-  PipelineNode,
   PipelineQueryExecutor,
   PipelineResult,
   PipelineRowIdentity,
 } from 'firestore-repository/pipelines/pipeline';
-import type { Stage } from 'firestore-repository/pipelines/stage';
-import type { DocumentSchema } from 'firestore-repository/schema';
+import type { TransformStage } from 'firestore-repository/pipelines/stage';
+import type { Collection, DocumentSchema } from 'firestore-repository/schema';
+import { assertNever } from 'firestore-repository/util';
 
 import { buildFirestoreUtilities } from './index.js';
 
@@ -17,35 +17,40 @@ import { buildFirestoreUtilities } from './index.js';
  * admin SDK (Enterprise edition). It walks the repository's `Pipeline` AST into
  * `db.pipeline()...` and runs it via the pipeline's `execute()`.
  *
- * Implemented so far: a bare collection input plus `sort`. Other sources /
- * stages throw.
+ * Implemented so far: `collection` / `collectionGroup` inputs plus `sort`.
+ * Other inputs / stages throw.
  */
 export const executor = (db: Firestore): PipelineQueryExecutor => {
   const execute = async <Schema extends DocumentSchema, Id extends PipelineRowIdentity>(
     pipeline: Pipeline<Schema, Id>,
   ): Promise<PipelineResult<Schema, Id>[]> => {
-    // Collect the stage chain from the input (root) to this leaf.
-    const stages: Stage[] = [];
-    for (let node: PipelineNode | undefined = pipeline; node !== undefined; node = node.parent) {
-      stages.unshift(node.stage);
+    const { input, transforms } = pipeline.stages();
+    let collection: Collection;
+    let sdk: Pipelines.Pipeline;
+    switch (input.kind) {
+      case 'collection':
+        if (input.collection.parent.length > 0) {
+          throw new Error(
+            'google-cloud pipeline executor: only root collections are supported yet',
+          );
+        }
+        collection = input.collection;
+        sdk = db.pipeline().collection(collection.name);
+        break;
+      case 'collectionGroup':
+        collection = input.collection;
+        sdk = db.pipeline().collectionGroup(collection.name);
+        break;
+      case 'database':
+      case 'documents':
+      case 'literals':
+        throw new Error(
+          `google-cloud pipeline executor: input stage "${input.kind}" not supported yet`,
+        );
+      default:
+        return assertNever(input);
     }
-
-    const input = stages[0];
-    if (input === undefined || input.kind !== 'input') {
-      throw new Error('google-cloud pipeline executor: pipeline must start with an input stage');
-    }
-    if (input.source.kind !== 'collection') {
-      throw new Error(
-        `google-cloud pipeline executor: input source "${input.source.kind}" not supported yet`,
-      );
-    }
-    const { collection } = input.source;
-    if (collection.parent.length > 0) {
-      throw new Error('google-cloud pipeline executor: only root collections are supported yet');
-    }
-
-    let sdk = db.pipeline().collection(collection.name);
-    for (const stage of stages.slice(1)) {
+    for (const stage of transforms) {
       sdk = applyStage(sdk, stage);
     }
 
@@ -61,23 +66,53 @@ export const executor = (db: Firestore): PipelineQueryExecutor => {
   return { execute };
 };
 
-const applyStage = (sdk: Pipelines.Pipeline, stage: Stage): Pipelines.Pipeline => {
+const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.Pipeline => {
   switch (stage.kind) {
     case 'sort': {
       const [first, ...rest] = stage.orderings.map(toSdkOrdering);
       return first === undefined ? sdk : sdk.sort(first, ...rest);
     }
-    default:
+    case 'where':
+    case 'select':
+    case 'addFields':
+    case 'removeFields':
+    case 'limit':
+    case 'offset':
+    case 'unnest':
+    case 'aggregate':
+    case 'distinct':
+    case 'replaceWith':
+    case 'union':
+    case 'findNearest':
+    case 'let':
+    case 'search':
+    case 'sample':
       throw new Error(`google-cloud pipeline executor: stage "${stage.kind}" not supported yet`);
+    default:
+      return assertNever(stage);
   }
 };
 
 const toSdkOrdering = (ordering: Ordering) => {
-  if (ordering.expression.kind !== 'field') {
-    throw new Error(
-      'google-cloud pipeline executor: only field orderings are supported in sort yet',
-    );
+  const { expression } = ordering;
+  switch (expression.kind) {
+    case 'field':
+      break;
+    case 'constant':
+    case 'functionCall':
+      throw new Error(
+        'google-cloud pipeline executor: only field orderings are supported in sort yet',
+      );
+    default:
+      return assertNever(expression);
   }
-  const f = Pipelines.field(ordering.expression.path);
-  return ordering.direction === 'ascending' ? f.ascending() : f.descending();
+  const f = Pipelines.field(expression.path);
+  switch (ordering.direction) {
+    case 'ascending':
+      return f.ascending();
+    case 'descending':
+      return f.descending();
+    default:
+      return assertNever(ordering.direction);
+  }
 };

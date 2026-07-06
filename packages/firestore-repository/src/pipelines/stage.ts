@@ -1,8 +1,27 @@
 import type { Collection } from '../schema.js';
 import type { Ordering } from './ordering.js';
 
-export type Stage =
-  | { kind: 'input'; source: InputSource }
+/**
+ * A pipeline stage. Firestore's official taxonomy groups every stage into one of
+ * three kinds — {@link InputStage} (the data source that begins a pipeline),
+ * {@link TransformStage} (row transformations), and {@link OutputStage} (DML
+ * writes) — and a pipeline is an input stage followed by zero or more transform
+ * stages and an optional output stage. Mirrors the SDK, where a `Pipeline` holds
+ * a flat list of stages and the source is simply the first one.
+ */
+export type Stage = InputStage | TransformStage | OutputStage;
+
+/** Input stage: the data source that begins a pipeline (the chain head). */
+export type InputStage =
+  | { kind: 'collection'; collection: Collection }
+  | { kind: 'collectionGroup'; collection: Collection }
+  | { kind: 'database' }
+  // TODO: carry the document refs / literal rows once those sources are implemented.
+  | { kind: 'documents' }
+  | { kind: 'literals' };
+
+/** Transformation stage: reshapes the rows flowing through the pipeline. */
+export type TransformStage =
   | { kind: 'where' }
   | { kind: 'select' }
   | { kind: 'addFields' }
@@ -18,15 +37,12 @@ export type Stage =
   | { kind: 'findNearest' }
   | { kind: 'let' }
   | { kind: 'search' }
-  | { kind: 'sample' }
-  | { kind: 'update' }
-  | { kind: 'delete' };
+  | { kind: 'sample' };
 
-/** The data source of a pipeline — the payload of the `input` stage. */
-export type InputSource =
-  | { kind: 'collection'; collection: Collection }
-  | { kind: 'collectionGroup'; collection: Collection }
-  | { kind: 'database' }
-  // TODO: carry the document refs / literal rows once those sources are implemented.
-  | { kind: 'documents' }
-  | { kind: 'literals' };
+/**
+ * Output stage: Pipeline DML. Appending one turns the pipeline into a write.
+ *
+ * TODO: not yet wired into the node model or the `Pipeline` builder — kept here
+ * so the taxonomy is complete and the `kind`s have a home.
+ */
+export type OutputStage = { kind: 'update' } | { kind: 'delete' };
