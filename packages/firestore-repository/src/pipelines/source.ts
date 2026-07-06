@@ -9,11 +9,13 @@ import { Pipeline } from './pipeline.js';
 
 /**
  * The trailing `parent` argument of a collection-input factory: required for a
- * subcollection (the parent document ids locating the instance), omitted for a
- * root collection. Mirrors `QueryBaseInput`'s root/subcollection split.
+ * subcollection (the parent document ids locating the instance), optional for a
+ * root collection (whose only valid value is the empty tuple `[]` — accepted so
+ * generic code can pass a `ParentDocRef` through uniformly). Mirrors
+ * `QueryBaseInput`'s root/subcollection split.
  */
 type ParentArg<T extends Collection> = T['parent']['length'] extends 0
-  ? []
+  ? [parent?: ParentDocRef<T>]
   : [parent: ParentDocRef<T>];
 
 /**
@@ -24,8 +26,8 @@ type ParentArg<T extends Collection> = T['parent']['length'] extends 0
  *
  * The trailing `parent` argument adapts to the collection definition
  * (see {@link ParentArg}):
- * - **Root collection** (`def.parent` is `[]`): no extra argument —
- *   `collection(authorsCollection)`. Passing one is a compile error.
+ * - **Root collection** (`def.parent` is `[]`): omitted, or the empty tuple —
+ *   `collection(authorsCollection)` / `collection(authorsCollection, [])`.
  * - **Subcollection**: the parent document ids locating the instance are
  *   required, with their tuple length checked against `def.parent` —
  *   `collection(postsCollection, ['author1'])` reads `/Authors/author1/Posts`.

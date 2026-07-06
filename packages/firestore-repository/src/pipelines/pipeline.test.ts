@@ -7,9 +7,10 @@ import { collection } from './index.js';
 describe('pipeline', () => {
   const base = collection(authorsCollection);
 
-  it('root collections take no parent; subcollections require one', () => {
-    // @ts-expect-error -- a root collection has no parent doc ref
-    collection(authorsCollection, []);
+  it('root collections take an optional empty parent; subcollections require one', () => {
+    collection(authorsCollection, []); // the empty tuple is a root's valid ParentDocRef: ok
+    // @ts-expect-error -- a root collection's parent doc ref is empty
+    collection(authorsCollection, ['extra']);
 
     // @ts-expect-error -- a subcollection requires its parent doc ref
     collection(postsCollection);
