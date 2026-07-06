@@ -25,6 +25,30 @@ Follow the project's linting and formatting rules enforced by `pnpm check`.
 typescript/no-unsafe-type-assertion` comment stating the specific compiler
   limitation that makes it unavoidable.
 
+## Union / enum-like value handling
+
+- **Always handle union-typed (or enum-like literal) values with an exhaustive
+  `switch`.** Enumerate every member explicitly — including the ones you don't
+  support yet (make those `case`s throw an "unsupported" error). Adding a new
+  member to the union must surface every handling site as a compile/lint error,
+  never fall through silently.
+- **The `default` clause may contain nothing but `assertNever(...)`** (from
+  `firestore-repository/util`). Never use `default` as a catch-all for "the
+  rest of the members"; a non-exhaustive `switch` is forbidden.
+- **Do not branch on union/enum-like values with `if` / ternary equality
+  comparisons** (e.g. `if (x.kind !== 'field')`, `dir === 'asc' ? a : b`).
+  Use an exhaustive `switch` instead. Comparisons that are not union-member
+  discrimination (e.g. `=== undefined` on an optional, numeric comparisons)
+  are fine.
+- Enforcement: `typescript/switch-exhaustiveness-check` (with
+  `considerDefaultExhaustiveForUnions: false`, `requireDefaultForNonUnion: true`)
+  in `.oxlintrc.json` enforces the `switch` rules. The `if`/ternary ban is
+  enforceable in principle (a type-aware rule could detect union-typed
+  operands), but no existing rule implements it — typescript-eslint has none,
+  oxlint's type-aware set (tsgolint) only ports existing typescript-eslint
+  rules, and oxlint's custom JS plugins don't expose type information. Until
+  such a rule exists, it is upheld by review.
+
 ## Declaration order
 
 - Order declarations within a file **top-down by abstraction level** (the
