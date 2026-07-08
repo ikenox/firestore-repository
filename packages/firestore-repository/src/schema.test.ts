@@ -323,6 +323,24 @@ describe('document', () => {
       expectTypeOf(fieldTypeOfPath(schema, 'm.deep.y')).toEqualTypeOf<StringType>();
     });
 
+    it('resolves paths through an optional map head', () => {
+      // `optional(map(...))` is `MapType & Optional` (an intersection, not a
+      // wrapper), so it still structurally satisfies the `extends MapType`
+      // checks in `MapFieldPath` / `FieldTypeOfPath`, and the runtime walk's
+      // `head.fields` access works unchanged.
+      const om = optional(map({ z: string() }));
+      const s = { om } satisfies DocumentSchema;
+
+      expect(fieldTypeOfPath(s, 'om')).toBe(om);
+      expect(fieldTypeOfPath(s, 'om.z')).toBe(om.fields.z);
+
+      expectTypeOf(fieldTypeOfPath(s, 'om')).toEqualTypeOf<typeof om>();
+      // NOTE: the leaf resolves to a plain StringType — the parent map's
+      // optionality is NOT propagated to descendant paths. A document without
+      // `om` simply has no `om.z` field at read time.
+      expectTypeOf(fieldTypeOfPath(s, 'om.z')).toEqualTypeOf<StringType>();
+    });
+
     it('resolves the reserved __name__ to a StringType', () => {
       expect(fieldTypeOfPath(schema, '__name__')).toStrictEqual(string());
       expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<StringType>();
