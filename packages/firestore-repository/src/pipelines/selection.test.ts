@@ -1,17 +1,26 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import type {
-  ArrayType,
-  DoubleType,
-  LiteralType,
-  MapType,
-  Optional,
-  StringType,
+import {
+  array,
+  type ArrayType,
+  type DocumentSchema,
+  double,
+  type DoubleType,
+  literal,
+  type LiteralType,
+  map,
+  type MapType,
+  optional,
+  type Optional,
+  string,
+  type StringType,
 } from '../schema.js';
-import type {
-  BuildAddFieldsSchema,
-  BuildSelectionSchema,
-  ExpressionWithAlias,
+import { field } from './expression.js';
+import {
+  type BuildAddFieldsSchema,
+  type BuildSelectionSchema,
+  buildSelectionSchema,
+  type ExpressionWithAlias,
 } from './selection.js';
 
 type Schema = {
@@ -328,5 +337,67 @@ describe('BuildAddFieldsSchema', () => {
         tag: ArrayType<StringType, [], []>;
       }>();
     });
+  });
+});
+
+// Runtime mirror of the `BuildSelectionSchema` type tests above — the value
+// returned by `buildSelectionSchema` is bridged to the type-level result with
+// an assertion, so these tests are the safety net that the runtime fold
+// actually matches.
+describe('buildSelectionSchema (runtime)', () => {
+  const gender = optional(literal('male', 'female'));
+  const profile = map({ age: double(), gender });
+  const schema = {
+    name: string(),
+    profile,
+    rank: double(),
+    tag: array(string()),
+  } satisfies DocumentSchema;
+
+  it('returns {} for an empty selection list', () => {
+    expect(buildSelectionSchema(schema, [])).toStrictEqual({});
+  });
+
+  it('picks top-level fields (the exact descriptors)', () => {
+    expect(buildSelectionSchema(schema, ['name', 'rank'])).toStrictEqual({
+      name: schema.name,
+      rank: schema.rank,
+    });
+  });
+
+  it('builds a nested map from a dotted path', () => {
+    expect(buildSelectionSchema(schema, ['profile.age'])).toStrictEqual({
+      profile: map({ age: profile.fields.age }),
+    });
+  });
+
+  it('merges sibling dotted paths into one map', () => {
+    expect(buildSelectionSchema(schema, ['profile.age', 'profile.gender'])).toStrictEqual({
+      profile: map({ age: profile.fields.age, gender }),
+    });
+  });
+
+  it('resolves an aliased expression to its expression type at the alias', () => {
+    const selection = field(schema.rank, 'rank').as('points');
+    expect(buildSelectionSchema(schema, ['name', selection])).toStrictEqual({
+      name: schema.name,
+      points: schema.rank,
+    });
+  });
+
+  it('last-wins: the same output name selected twice', () => {
+    expect(
+      buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('name')]),
+    ).toStrictEqual({ name: schema.rank });
+  });
+
+  it('last-wins: a child path after its parent replaces the parent subtree', () => {
+    expect(buildSelectionSchema(schema, ['profile', 'profile.age'])).toStrictEqual({
+      profile: map({ age: profile.fields.age }),
+    });
+  });
+
+  it('last-wins: a parent path after its child replaces with the full subtree', () => {
+    expect(buildSelectionSchema(schema, ['profile.age', 'profile'])).toStrictEqual({ profile });
   });
 });

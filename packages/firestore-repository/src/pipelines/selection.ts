@@ -1,11 +1,17 @@
-import type {
-  DocumentSchema,
-  FieldType,
-  FieldTypeOfPath,
-  MapFieldPath,
-  MapType,
+import {
+  type DocumentSchema,
+  type FieldType,
+  type FieldTypeOfPath,
+  fieldTypeOfPath,
+  map,
+  type MapFieldPath,
+  type MapType,
 } from '../schema.js';
-import { Expression } from './expression.js';
+import type { ExpressionWithAlias } from './expression.js';
+
+// Re-exported for consumers of the selection model; the type itself lives in
+// `expression.ts` (it is produced by `Expression.as(...)`).
+export type { ExpressionWithAlias } from './expression.js';
 
 type Fields = DocumentSchema;
 
@@ -22,11 +28,6 @@ type Fields = DocumentSchema;
  * `docs/pipeline-query-identity-research.md`.
  */
 export type Selection<Context extends Fields> = MapFieldPath<Context> | ExpressionWithAlias;
-
-export type ExpressionWithAlias<T extends FieldType = FieldType, Alias extends string = string> = {
-  expression: Expression<T>;
-  alias: Alias;
-};
 
 /**
  * Folds a tuple of selections into a single nested output schema.
@@ -136,4 +137,100 @@ type MergeSchemas<A, B> = {
     : K extends keyof B
       ? B[K]
       : never;
+};
+
+// ---------------------------------------------------------------------------
+// Runtime counterparts. Each helper mirrors the type-level operator of the same
+// name above; `buildSelectionSchema` is the entry point used by
+// `Pipeline.select` to compute the projected runtime schema.
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime counterpart of {@link BuildSelectionSchema}: folds the selections
+ * into the projected output schema (last-wins conflicts, nested deep-merge).
+ * The result feeds the next stage's field resolution and the executors' row
+ * decoding, so it must mirror the type-level result exactly — the type tests
+ * in `selection.test.ts` plus the pipeline spec are the safety net for the
+ * bridging assertion.
+ */
+export const buildSelectionSchema = <
+  Context extends Fields,
+  const Selections extends readonly Selection<Context>[],
+>(
+  schema: Context,
+  selections: Selections,
+): BuildSelectionSchema<Context, Selections> => {
+  let result: Fields = {};
+  // Right-to-left to mirror `FoldSelections`' `MergeSchemas<First, Fold<Rest>>`
+  // associativity (`A` wins in `MergeSchemas`, so earlier selections win over
+  // the accumulated later ones — conflicts are already dropped, this only
+  // affects nothing but keeps the shapes aligned).
+  for (const s of [...dropOverriddenSelections(selections)].reverse()) {
+    const path = selectionPath(s);
+    if (path === '__name__') {
+      continue; // `PathToSchema` drops the reserved key — not a data field.
+    }
+    const type =
+      typeof s === 'string' ? fieldTypeOfPath<Fields, string>(schema, s) : s.expression.type;
+    result = mergeSchemas(pathToSchema(path, type), result);
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `BuildSelectionSchema`, but the compiler cannot connect a runtime schema value to the type-level result
+  return result as BuildSelectionSchema<Context, Selections>;
+};
+
+/**
+ * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection
+ * only if no later selection conflicts with it (last-wins).
+ */
+export const dropOverriddenSelections = <S extends string | ExpressionWithAlias>(
+  selections: readonly S[],
+): S[] =>
+  selections.filter(
+    (s, i) =>
+      !selections
+        .slice(i + 1)
+        .some((later) => pathsConflict(selectionPath(s), selectionPath(later))),
+  );
+
+/** Runtime counterpart of {@link SelectionPath}. */
+const selectionPath = (s: string | ExpressionWithAlias): string =>
+  typeof s === 'string' ? s : s.alias;
+
+/** Runtime counterpart of {@link PathsConflict}. */
+const pathsConflict = (a: string, b: string): boolean =>
+  a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+
+/** Runtime counterpart of {@link PathToSchema}. */
+const pathToSchema = (path: string, type: FieldType): Fields => {
+  const dot = path.indexOf('.');
+  return dot < 0
+    ? { [path]: type }
+    : { [path.slice(0, dot)]: map(pathToSchema(path.slice(dot + 1), type)) };
+};
+
+/** Runtime counterpart of {@link MergeSchemas} (`a` wins on non-map conflicts). */
+const mergeSchemas = (a: Fields, b: Fields): Fields => {
+  const result: Record<string, FieldType> = { ...b, ...a };
+  for (const key of Object.keys(a)) {
+    const va = a[key];
+    const vb = b[key];
+    if (va !== undefined && vb !== undefined && isMapType(va) && isMapType(vb)) {
+      result[key] = map(mergeSchemas(va.fields, vb.fields));
+    }
+  }
+  return result;
+};
+
+/**
+ * Narrows a `FieldType` descriptor to `MapType`. `FieldType` is an open
+ * structural base (`type: string`), not a closed union, so this is a `switch`
+ * on a plain string with a type-predicate bridge.
+ */
+const isMapType = (t: FieldType): t is MapType => {
+  switch (t.type) {
+    case 'map':
+      return true;
+    default:
+      return false;
+  }
 };

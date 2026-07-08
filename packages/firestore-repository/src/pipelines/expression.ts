@@ -7,30 +7,56 @@ import { bool, type BoolType, type DoubleType, type FieldType, type Int64Type } 
 
 export type Expression<T extends FieldType = FieldType> = FunctionCall<T> | Constant<T> | Field<T>;
 
+/**
+ * An expression bound to an output name — the aliased form of a `select` /
+ * `addFields` selection (mirrors the SDK's `expr.as(alias)` selectable).
+ */
+export type ExpressionWithAlias<T extends FieldType = FieldType, Alias extends string = string> = {
+  expression: Expression<T>;
+  alias: Alias;
+};
+
+/**
+ * SDK-style aliasing carried by every expression node:
+ * `field('rank').as('r')` / `equal(...).as('flag')` build an
+ * {@link ExpressionWithAlias} usable as a `select` / `addFields` selection.
+ */
+type Aliasable<T extends FieldType> = {
+  as<Alias extends string>(alias: Alias): ExpressionWithAlias<T, Alias>;
+};
+
 export type Field<T extends FieldType = FieldType, Path extends string = string> = {
   kind: 'field';
   type: T;
   path: Path;
-};
+} & Aliasable<T>;
 
 /** Builds a field-reference expression node carrying its resolved `type`. */
 export const field = <T extends FieldType, Path extends string>(
   type: T,
   path: Path,
-): Field<T, Path> => ({ kind: 'field', type, path });
+): Field<T, Path> => {
+  const node: Field<T, Path> = {
+    kind: 'field',
+    type,
+    path,
+    as: (alias) => ({ expression: node, alias }),
+  };
+  return node;
+};
 
 export type Constant<T extends FieldType> = {
   kind: 'constant';
   type: T;
   value: unknown; // TODO add type
-};
+} & Aliasable<T>;
 
 export type FunctionCall<T extends FieldType = FieldType> = {
   kind: 'functionCall';
   name: string;
   type: T;
   args: readonly Expression[];
-};
+} & Aliasable<T>;
 
 /** Convenience union for numeric expression inputs. */
 type NumericType = Int64Type | DoubleType;
@@ -39,15 +65,28 @@ const fn = <T extends FieldType>(
   name: string,
   type: T,
   args: readonly Expression[],
-): FunctionCall<T> => ({ kind: 'functionCall', name, type, args });
+): FunctionCall<T> => {
+  const node: FunctionCall<T> = {
+    kind: 'functionCall',
+    name,
+    type,
+    args,
+    as: (alias) => ({ expression: node, alias }),
+  };
+  return node;
+};
 
-export const constant = <T extends FieldType>(value: unknown): Constant<T> => ({
-  kind: 'constant',
-  // TODO: derive the schema type from `value` (e.g. number -> DoubleType, string -> StringType).
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- placeholder result type until the TODO above is implemented (pipeline queries are WIP)
-  type: 'todo' as unknown as T,
-  value,
-});
+export const constant = <T extends FieldType>(value: unknown): Constant<T> => {
+  const node: Constant<T> = {
+    kind: 'constant',
+    // TODO: derive the schema type from `value` (e.g. number -> DoubleType, string -> StringType).
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- placeholder result type until the TODO above is implemented (pipeline queries are WIP)
+    type: 'todo' as unknown as T,
+    value,
+    as: (alias) => ({ expression: node, alias }),
+  };
+  return node;
+};
 
 // A comparison op has two overloads:
 //   1) numeric-pair — lets Int64 and Double mix while rejecting numeric-vs-other.

@@ -57,8 +57,10 @@ to reach a non-emulator DB.
   runtime counterpart of the `FieldTypeOfPath` type), covered by
   `schema.field-type-of-path.test.ts`.
 - `select` / `addFields` / `distinct` use `const` type params, so callback
-  selections infer as tuples without `as const`. Only bare data-field-path
-  string selections work so far (no `.as(...)` / aliased expressions yet).
+  selections infer as tuples without `as const`. `select` is fully implemented
+  (bare paths, nested dotted paths, `.as(...)` aliased expressions, last-wins
+  conflicts) and verified live; every expression node now carries an SDK-style
+  `.as(alias)` producing an `ExpressionWithAlias`.
 
 **Executors** (`packages/{firebase-js-sdk,google-cloud-firestore}/src/pipeline.ts`):
 `executor(db)` walks the stage chain into `db.pipeline()...`, translates `sort`
@@ -236,8 +238,8 @@ Input stages (the `input` stage now carries an `InputSource` payload — see
 - [x] `collection` — builds `{ kind: 'collection', collection, parent }`;
       covers root collections and specific subcollection instances (the trailing
       `parent` doc-ids argument is required iff the definition is a subcollection).
-- [ ] `collectionGroup(id)` — builds `{ kind: 'collectionGroup', ... }`;
-      executor support not implemented.
+- [x] `collectionGroup(id)` — builds `{ kind: 'collectionGroup', ... }`;
+      executors run it via `db.pipeline().collectionGroup(name)`.
 - [ ] `database()` / `documents([...refs])` — source payloads are stubbed
       (`{ kind: 'database' | 'documents' }`, no data); executor throws.
 - [ ] `literals([...])` — stubbed (`{ kind: 'literals' }`); executor throws.
@@ -245,7 +247,12 @@ Input stages (the `input` stage now carries an `InputSource` payload — see
 Transformation stages already stubbed:
 
 - [ ] `where(condition)` — real runtime + AST node + tests.
-- [ ] `select(...)` — runtime + identity break + tests.
+- [x] `select(...)` — runtime schema fold (`buildSelectionSchema`, the runtime
+      mirror of `BuildSelectionSchema`), stage AST carries conflict-resolved
+      selections, executors translate to `sdk.select(...)`, rows decode with
+      the pipeline's leaf schema. Verified live (nested dotted selects come
+      back **nested**, matching `PathToSchema`; last-wins matches the type
+      tests; `.as()` field + computed `equal` expressions work).
 - [ ] `addFields(...)` — Context augmentation + identity preserve.
 - [ ] `removeFields(...)` — Context shrinkage + identity preserve.
 - [ ] `distinct(...)` — Context shrinkage + identity break.
