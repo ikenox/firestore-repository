@@ -137,6 +137,9 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
 const toSdkFunctionCall = (expression: FunctionCall): SdkExpression => {
   switch (expression.name) {
     case 'equal': {
+      // TODO: this runtime arity guard disappears once FunctionCall is
+      // restructured into shape-grouped classes with typed payload fields —
+      // see "Restructure FunctionCall" in docs/plan/pipeline-query.md.
       const [left, right] = expression.args;
       if (left === undefined || right === undefined) {
         throw new Error('firebase pipeline executor: equal requires two arguments');
