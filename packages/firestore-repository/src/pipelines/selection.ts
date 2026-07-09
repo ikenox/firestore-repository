@@ -3,6 +3,7 @@ import {
   type FieldType,
   type FieldTypeOfPath,
   fieldTypeOfPath,
+  isMapType,
   map,
   type MapFieldPath,
   type MapType,
@@ -237,18 +238,4 @@ const mergeSchemas = (a: Fields, b: Fields): Fields => {
     }
   }
   return result;
-};
-
-/**
- * Narrows a `FieldType` descriptor to `MapType`. `FieldType` is an open
- * structural base (`type: string`), not a closed union, so this is a `switch`
- * on a plain string with a type-predicate bridge.
- */
-const isMapType = (t: FieldType): t is MapType => {
-  switch (t.type) {
-    case 'map':
-      return true;
-    default:
-      return false;
-  }
 };

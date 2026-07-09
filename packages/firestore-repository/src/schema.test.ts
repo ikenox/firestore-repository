@@ -26,7 +26,9 @@ import {
   map,
   type MapType,
   type OmitPaths,
+  omitPaths,
   optional,
+  _optional,
   type Optional,
   type PickPaths,
   rootCollection,
@@ -522,6 +524,89 @@ describe('document', () => {
         type S = { name: StringType; a: MapType<{ b: MapType<{ c: DoubleType }> }> };
         // Removing the only leaf empties `a.b`, which empties `a`, dropping both.
         expectTypeOf<OmitPaths<S, 'a.b.c'>>().toEqualTypeOf<{ name: StringType }>();
+      });
+    });
+
+    // Runtime mirror of the `OmitPaths` type tests above. Each case asserts one
+    // hand-written oracle on both sides (`toStrictEqual` for the runtime value,
+    // `expectTypeOf` for the type-level computation) — see "Type-level /
+    // runtime mirroring" in docs/coding-guideline.md.
+    describe('omitPaths (runtime)', () => {
+      const gender = optional(literal('male', 'female'));
+      const profile = map({ age: double(), gender });
+      const schema = {
+        name: string(),
+        profile,
+        rank: double(),
+        tag: array(string()),
+      } satisfies DocumentSchema;
+
+      it('removes a single top-level field', () => {
+        const oracle = { profile, rank: schema.rank, tag: schema.tag };
+        const actual = omitPaths(schema, ['name']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
+      });
+
+      it('removes a nested field while preserving the rest of the MapType', () => {
+        const oracle = {
+          name: schema.name,
+          profile: map({ age: profile.fields.age }),
+          rank: schema.rank,
+          tag: schema.tag,
+        };
+        const actual = omitPaths(schema, ['profile.gender']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
+      });
+
+      it('preserves the Optional marker when removing a nested field', () => {
+        const s = { profile: optional(map({ age: double(), gender: string() })) };
+        const oracle = { profile: optional(map({ age: s.profile.fields.age })) };
+        const actual = omitPaths(s, ['profile.gender']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
+        // `toStrictEqual` does not compare symbol keys, so pin the marker explicitly.
+        expect(_optional in actual.profile).toBe(true);
+      });
+
+      it('drops the whole subtree when a top-level key matches exactly', () => {
+        const oracle = { name: schema.name, rank: schema.rank, tag: schema.tag };
+        const actual = omitPaths(schema, ['profile']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
+      });
+
+      it('returns the original schema entries when no path matches', () => {
+        const actual = omitPaths(schema, ['nonexistent']);
+        expect(actual).toStrictEqual(schema);
+        expectTypeOf(actual).toEqualTypeOf(schema);
+      });
+
+      it('removes both top-level and nested fields at once', () => {
+        const oracle = {
+          profile: map({ age: profile.fields.age }),
+          rank: schema.rank,
+          tag: schema.tag,
+        };
+        const actual = omitPaths(schema, ['name', 'profile.gender']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
+      });
+
+      it('drops a map when all of its fields are removed at once', () => {
+        const oracle = { name: schema.name, rank: schema.rank, tag: schema.tag };
+        const actual = omitPaths(schema, ['profile.age', 'profile.gender']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
+      });
+
+      it('cascades the empty-map drop up through multiple levels', () => {
+        const s = { name: string(), a: map({ b: map({ c: double() }) }) };
+        const oracle = { name: s.name };
+        const actual = omitPaths(s, ['a.b.c']);
+        expect(actual).toStrictEqual(oracle);
+        expectTypeOf(actual).toEqualTypeOf(oracle);
       });
     });
   });

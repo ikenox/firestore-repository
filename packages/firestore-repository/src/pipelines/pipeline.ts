@@ -11,6 +11,7 @@ import {
   type MapFields,
   type MapType,
   type OmitPaths,
+  omitPaths,
 } from '../schema.js';
 import { AggregateWithAlias } from './aggregate.js';
 import { field, type Expression, type Field } from './expression.js';
@@ -133,11 +134,16 @@ export class Pipeline<
     return unimplemented();
   }
   // `MapFieldPath` (data fields only), not `DocFieldPath`: the reserved
-  // `'__name__'` key is not a removable data field.
-  removeFields<const U extends MapFieldPath<Schema>[]>(
-    ..._fields: U
+  // `'__name__'` key is not a removable data field. At least one field is
+  // required (mirrors the SDK's `removeFields(field, ...rest)` signature).
+  removeFields<const U extends [MapFieldPath<Schema>, ...MapFieldPath<Schema>[]]>(
+    ...fields: U
   ): Pipeline<OmitPaths<Schema, U[number]>, Id> {
-    return unimplemented();
+    return new Pipeline<OmitPaths<Schema, U[number]>, Id>({
+      schema: omitPaths(this.node.schema, fields),
+      stage: { kind: 'removeFields', fields },
+      parent: this.node,
+    });
   }
   sort(orderings: (field: FieldProvider<Schema>) => Ordering[]): Pipeline<Schema, Id> {
     return new Pipeline<Schema, Id>({
