@@ -78,6 +78,14 @@ FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB=enterprise-native-playground \
 pnpm exec vitest run -t 'pipeline specification'
 ```
 
+The firebase (client) adapter's pipeline suite additionally requires
+`FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY` (a real Firebase API
+key): the client SDK cannot reach a non-emulator DB without one (and is
+subject to security rules), unlike the admin SDK which authenticates via ADC
+and bypasses rules. Without the extra var the firebase pipeline suite is
+skipped, so a root-level `pnpm test` with only the two shared vars runs the
+admin adapter live and skips the client adapter instead of failing.
+
 Without those two env vars the pipeline `describe` is `skipIf`-skipped. See the
 test-infra note under "Per-SDK adapters" for why the admin SDK can target the
 real backend while the repository tests still use the emulator in the same run.
