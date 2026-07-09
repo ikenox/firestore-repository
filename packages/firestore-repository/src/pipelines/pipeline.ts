@@ -61,6 +61,17 @@ export class Pipeline<
   Id extends PipelineRowIdentity = PipelineRowIdentity,
 > {
   /**
+   * Type-level anchor for `Id` (never exists at runtime — `declare` emits
+   * nothing). Without it `Id` would appear only in recursive method-return
+   * positions, which TypeScript compares coinductively, making every
+   * `Pipeline<Schema, *>` mutually assignable — so an identity-dropped
+   * pipeline could be assigned to an identity-preserving type and `execute()`
+   * would claim an `id` that does not exist at runtime. Anchoring `Id` in a
+   * (covariant) property position makes such assignments compile errors.
+   */
+  declare private readonly _rowIdentity: Id;
+
+  /**
    * The type-erased AST node this builder wraps. The class *has* a node rather
    * than *being* one: `Pipeline` is a single class that can sit anywhere in the
    * chain, but a node is either a source (the head) or a stage — so the class
