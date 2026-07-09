@@ -565,8 +565,6 @@ describe('document', () => {
         const actual = omitPaths(s, ['profile.gender']);
         expect(actual).toStrictEqual(oracle);
         expectTypeOf(actual).toEqualTypeOf(oracle);
-        // The plain-property marker is covered by `toStrictEqual` itself (a
-        // symbol key would be invisible to it).
       });
 
       it('drops the whole subtree when a top-level key matches exactly', () => {
