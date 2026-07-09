@@ -61,8 +61,16 @@ export type MapType<T extends MapFields = MapFields> = {
   input: ResolveMapValue<T, 'write'>;
   output: ResolveMapValue<T, 'read'>;
 };
-export type MapFields = Record<string, FieldType & { [_optional]?: boolean }>;
-export type Optional = { [_optional]: true };
+export type MapFields = Record<string, FieldType & { optional?: boolean }>;
+/**
+ * Marks a field descriptor as optional. A plain (string-keyed) property, not a
+ * symbol: descriptors are a library-controlled closed structure with no
+ * collision risk, and a plain key stays visible to deep-equality assertions
+ * (`toStrictEqual`) and survives `structuredClone` — a symbol key does
+ * neither. (Contrast with `serverOperation`, which marks *document values*
+ * that mix with user data, where a symbol is the right call.)
+ */
+export type Optional = { optional: true };
 export type ArrayType<
   DynamicPart extends FieldType = FieldType,
   HeadFixedPart extends FieldType[] = FieldType[],
@@ -97,7 +105,7 @@ export type ResolveMapValue<
   Mode extends 'read' | 'write',
 > = MakeSomeFieldsOptional<
   { [K in keyof T]: FieldValue<T[K], Mode> },
-  { [K in keyof T]: T[K][typeof _optional] extends true ? K : never }[keyof T]
+  { [K in keyof T]: T[K]['optional'] extends true ? K : never }[keyof T]
 >;
 
 // TODO: support tuple
@@ -122,8 +130,6 @@ type MakeSomeFieldsOptional<T extends Record<string, unknown>, OptFields extends
   Pick<{ [K in keyof T]?: T[K] }, OptFields> & Omit<T, OptFields>
 >;
 type Merge<T> = { [K in keyof T]: T[K] };
-
-export const _optional: unique symbol = Symbol();
 
 export const serverOperation: unique symbol = Symbol();
 
@@ -162,7 +168,7 @@ export const nullable = <T extends FieldType>(t: T): UnionType<[T, NullType]> =>
   union(t, nullType());
 
 export const optional = <T extends FieldType>(type: T): T & Optional =>
-  buildType({ ...type, [_optional]: true });
+  buildType({ ...type, optional: true });
 
 /**
  * A type-safe path to anything addressable on a **document**: either one of its
@@ -332,6 +338,9 @@ export const omitPaths = <T extends DocumentSchema, const P extends readonly str
       continue; // exact match drops the whole subtree
     }
     const tail = tailPath(key, paths);
+    // Read the marker before `isMapType` narrows the descriptor to `MapType`
+    // (narrowing drops the `optional?` part of the `MapFields` intersection).
+    const markedOptional = fieldType.optional === true;
     if (!isMapType(fieldType) || tail.length === 0) {
       result[key] = fieldType;
       continue;
@@ -341,7 +350,7 @@ export const omitPaths = <T extends DocumentSchema, const P extends readonly str
       continue; // nested removal emptied this map -> drop the key
     }
     const nestedMap = map(nested);
-    result[key] = _optional in fieldType ? optional(nestedMap) : nestedMap;
+    result[key] = markedOptional ? optional(nestedMap) : nestedMap;
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime walk mirrors the type-level `OmitPaths`, but the compiler cannot connect a runtime schema value to the type-level result
   return result as OmitPaths<T, P[number]>;

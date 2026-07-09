@@ -18,7 +18,6 @@ import type {
   MapType,
   UnionType,
 } from 'firestore-repository/schema';
-import { _optional } from 'firestore-repository/schema';
 import {
   isArrayRemove,
   isArrayUnion,
@@ -41,7 +40,7 @@ export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawS
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildDecodeField(v);
-        return [k, v[_optional] ? s.optional() : s];
+        return [k, v.optional ? s.optional() : s];
       }),
     ),
   );
@@ -92,7 +91,7 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
         Object.fromEntries(
           Object.entries(ft.fields).map(([k, v]) => {
             const s = buildDecodeField(v);
-            return [k, v[_optional] ? s.optional() : s];
+            return [k, v.optional ? s.optional() : s];
           }),
         ),
       );
@@ -126,7 +125,7 @@ export function buildEncodeSchema(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildEncodeField(v, db);
-        return [k, v[_optional] ? s.optional() : s];
+        return [k, v.optional ? s.optional() : s];
       }),
     ),
   );
@@ -180,7 +179,7 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
         Object.fromEntries(
           Object.entries(ft.fields).map(([k, v]) => {
             const s = buildEncodeField(v, db);
-            return [k, v[_optional] ? s.optional() : s];
+            return [k, v.optional ? s.optional() : s];
           }),
         ),
       );
