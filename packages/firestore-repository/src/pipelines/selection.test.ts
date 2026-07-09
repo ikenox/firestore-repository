@@ -413,15 +413,12 @@ describe('buildSelectionSchema (runtime)', () => {
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
-  it("rejects '__name__' as an alias; a nested '__name__' is an ordinary key", () => {
-    // The backend refuses aliasing to the reserved top-level `'__name__'`
-    // (`INVALID_ARGUMENT: field name '__name__' is reserved and can not be
-    // overwritten` — verified live), so it is a compile error; a nested
-    // `'__name__'` segment is just a map key and passes through unchanged.
-
-    // @ts-expect-error -- the reserved '__name__' cannot be used as an alias
-    field(schema.name, 'name').as('__name__');
-
+  it("treats '__name__' in an alias like any other key (no special-casing)", () => {
+    // The reserved-name rule is deliberately not modelled client-side:
+    // aliasing to top-level `'__name__'` is rejected by the backend itself
+    // (`INVALID_ARGUMENT`, verified live), and a nested `'__name__'` segment
+    // is an ordinary map key there — so the schema fold treats both as plain
+    // keys. See `ExpressionBase.as`.
     const oracle = { a: map({ __name__: schema.name }) };
     const actual = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
     expect(actual).toStrictEqual(oracle);

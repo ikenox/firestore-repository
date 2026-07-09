@@ -35,30 +35,24 @@ type WithAlias<E, Alias extends string> = { expression: E; alias: Alias };
 export abstract class ExpressionBase {
   /**
    * Binds this expression to an output name, forming a `select` / `addFields`
-   * selection. The reserved `'__name__'` is rejected at the type level: the
-   * backend refuses overwriting it with any other value (`INVALID_ARGUMENT:
-   * field name '__name__' is reserved and can not be overwritten` — verified
-   * live). The one call the backend does allow —
-   * `field('__name__').as('__name__')`, an identity re-attach — is rejected
-   * too, deliberately: `select` is currently modelled as always
-   * identity-dropping (`Id = undefined`), and permitting it would make that
-   * type lie (the conditional-identity model is deferred — see
-   * `docs/pipeline-query-identity-research.md`). A **nested** `'__name__'`
-   * segment (e.g. `'a.__name__'`) is an ordinary map key and stays allowed.
+   * selection.
+   *
+   * The reserved `'__name__'` alias is deliberately NOT modelled here — no
+   * type guard, no runtime guard: the backend rejects overwriting it
+   * (`INVALID_ARGUMENT: field name '__name__' is reserved and can not be
+   * overwritten` — verified live), loudly and at the source of truth, so a
+   * client-side check would only duplicate that validation. (Contrast with
+   * bare `'__name__'` selections, which the backend *accepts* while
+   * re-attaching identity — those ARE type-banned in `Selection`, because
+   * they would silently succeed against `select`'s `Id = undefined` model.
+   * The rule: ban what would silently succeed against the type model; leave
+   * what fails loudly to the backend. See
+   * `docs/pipeline-query-identity-research.md`.)
    */
-  as<Alias extends string>(alias: Alias & ReservedAliasGuard<Alias>): WithAlias<this, Alias> {
+  as<Alias extends string>(alias: Alias): WithAlias<this, Alias> {
     return { expression: this, alias };
   }
 }
-
-/**
- * Compile-time rejection of the reserved `'__name__'` alias (see
- * {@link ExpressionBase.as}); the message string becomes the type the invalid
- * literal fails to satisfy.
- */
-type ReservedAliasGuard<Alias extends string> = Alias extends '__name__'
-  ? "the reserved '__name__' cannot be used as an alias"
-  : unknown;
 
 export class Field<
   T extends FieldType = FieldType,
