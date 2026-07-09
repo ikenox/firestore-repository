@@ -36,7 +36,7 @@ export type TransformStage =
   // `Pipeline.select`), so an executor can translate it 1:1.
   | { kind: 'select'; selections: readonly (string | ExpressionWithAlias)[] }
   | { kind: 'addFields' }
-  | { kind: 'removeFields' }
+  | { kind: 'removeFields'; fields: readonly string[] }
   | { kind: 'sort'; orderings: Ordering[] }
   | { kind: 'limit' }
   | { kind: 'offset' }

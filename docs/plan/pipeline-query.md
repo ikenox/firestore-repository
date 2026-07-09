@@ -262,7 +262,10 @@ Transformation stages already stubbed:
       back **nested**, matching `PathToSchema`; last-wins matches the type
       tests; `.as()` field + computed `equal` expressions work).
 - [ ] `addFields(...)` — Context augmentation + identity preserve.
-- [ ] `removeFields(...)` — Context shrinkage + identity preserve.
+- [x] `removeFields(...)` — runtime schema shrink (`omitPaths`, the runtime
+      mirror of `OmitPaths`, incl. the Optional marker and the empty-map cascade),
+      stage carries the field paths, executors translate to `sdk.removeFields(...)`,
+      identity preserved (`Id` threads through). Verified live.
 - [ ] `distinct(...)` — Context shrinkage + identity break.
 - [ ] `limit(N)` / `offset(N)` — Context unchanged + identity preserve.
 - [ ] `unnest(...)` — Context augmentation + identity preserve.

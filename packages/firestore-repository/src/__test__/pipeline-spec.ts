@@ -236,5 +236,79 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
     });
+
+    describe('removeFields', () => {
+      it('removes a top-level field, keeping row identity', async () => {
+        // `removeFields` is identity-preserving: rows keep their `id`.
+        await expectPipeline(
+          source().removeFields('rank'),
+          [
+            {
+              id: ['a1'],
+              data: { name: 'alice', profile: { age: 20, gender: 'female' }, tag: ['x'] },
+            },
+            { id: ['a2'], data: { name: 'bob', profile: { age: 30 }, tag: [] } },
+            {
+              id: ['a3'],
+              data: { name: 'carol', profile: { age: 40, gender: 'male' }, tag: ['y', 'z'] },
+            },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('removes a nested (dotted) field', async () => {
+        // Removing an optional field that is absent on a document (a2's
+        // `gender`) is a no-op for that document.
+        await expectPipeline(
+          source().removeFields('profile.gender'),
+          [
+            { id: ['a1'], data: { name: 'alice', profile: { age: 20 }, rank: 1, tag: ['x'] } },
+            { id: ['a2'], data: { name: 'bob', profile: { age: 30 }, rank: 2, tag: [] } },
+            { id: ['a3'], data: { name: 'carol', profile: { age: 40 }, rank: 3, tag: ['y', 'z'] } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('removes multiple fields at once', async () => {
+        await expectPipeline(
+          source().removeFields('rank', 'tag', 'profile.gender'),
+          [
+            { id: ['a1'], data: { name: 'alice', profile: { age: 20 } } },
+            { id: ['a2'], data: { name: 'bob', profile: { age: 30 } } },
+            { id: ['a3'], data: { name: 'carol', profile: { age: 40 } } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('drops a map emptied by removing all of its fields', async () => {
+        // Mirrors `OmitPaths`' empty-map cascade: removing every field of
+        // `profile` drops the `profile` key from the schema itself.
+        await expectPipeline(
+          source().removeFields('profile.age', 'profile.gender'),
+          [
+            { id: ['a1'], data: { name: 'alice', rank: 1, tag: ['x'] } },
+            { id: ['a2'], data: { name: 'bob', rank: 2, tag: [] } },
+            { id: ['a3'], data: { name: 'carol', rank: 3, tag: ['y', 'z'] } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('composes with a subsequent sort over the narrowed schema', async () => {
+        await expectPipeline(
+          source()
+            .removeFields('profile', 'tag')
+            .sort((field) => [desc(field('rank'))]),
+          [
+            { id: ['a3'], data: { name: 'carol', rank: 3 } },
+            { id: ['a2'], data: { name: 'bob', rank: 2 } },
+            { id: ['a1'], data: { name: 'alice', rank: 1 } },
+          ],
+        );
+      });
+    });
   });
 };

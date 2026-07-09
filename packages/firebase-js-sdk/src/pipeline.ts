@@ -93,9 +93,15 @@ const applyStage = (sdk: SdkPipeline, stage: TransformStage): SdkPipeline => {
       }
       return sdk.select(first, ...rest);
     }
+    case 'removeFields': {
+      const [first, ...rest] = stage.fields;
+      if (first === undefined) {
+        throw new Error('firebase pipeline executor: removeFields requires at least one field');
+      }
+      return sdk.removeFields(first, ...rest);
+    }
     case 'where':
     case 'addFields':
-    case 'removeFields':
     case 'limit':
     case 'offset':
     case 'unnest':

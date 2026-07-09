@@ -312,3 +312,55 @@ export type OmitPaths<T extends DocumentSchema, P extends string> = MapType['fie
             : MapType<OmitPaths<F, TailPath<K, P>>>
         : T[K];
     };
+
+/**
+ * Runtime counterpart of {@link OmitPaths} (the type's `P` union of paths is
+ * the `paths` array), decomposed the same way — `tailPath` mirrors
+ * {@link TailPath}, and the branch structure follows the mapped type
+ * branch-for-branch: an exact key match drops the subtree, a nested removal
+ * recurses into the map (preserving an `Optional` marker), and a map emptied
+ * by the removal is dropped too. The `buildOmitPathsSchema`-style oracle tests
+ * in `schema.test.ts` assert value and type against one oracle.
+ */
+export const omitPaths = <T extends DocumentSchema, const P extends readonly string[]>(
+  schema: T,
+  paths: P,
+): OmitPaths<T, P[number]> => {
+  const result: Record<string, FieldType> = {};
+  for (const [key, fieldType] of Object.entries(schema)) {
+    if (paths.includes(key)) {
+      continue; // exact match drops the whole subtree
+    }
+    const tail = tailPath(key, paths);
+    if (!isMapType(fieldType) || tail.length === 0) {
+      result[key] = fieldType;
+      continue;
+    }
+    const nested = omitPaths(fieldType.fields, tail);
+    if (Object.keys(nested).length === 0) {
+      continue; // nested removal emptied this map -> drop the key
+    }
+    const nestedMap = map(nested);
+    result[key] = _optional in fieldType ? optional(nestedMap) : nestedMap;
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime walk mirrors the type-level `OmitPaths`, but the compiler cannot connect a runtime schema value to the type-level result
+  return result as OmitPaths<T, P[number]>;
+};
+
+/** Runtime counterpart of {@link TailPath}: the sub-paths of `paths` nested under `key`. */
+const tailPath = (key: string, paths: readonly string[]): string[] =>
+  paths.filter((p) => p.startsWith(`${key}.`)).map((p) => p.slice(key.length + 1));
+
+/**
+ * Narrows a `FieldType` descriptor to `MapType`. `FieldType` is an open
+ * structural base (`type: string`), not a closed union, so this is a `switch`
+ * on a plain string with a type-predicate bridge.
+ */
+export const isMapType = (t: FieldType): t is MapType => {
+  switch (t.type) {
+    case 'map':
+      return true;
+    default:
+      return false;
+  }
+};
