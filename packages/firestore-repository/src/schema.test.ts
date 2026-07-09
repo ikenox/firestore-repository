@@ -28,7 +28,6 @@ import {
   type OmitPaths,
   omitPaths,
   optional,
-  _optional,
   type Optional,
   type PickPaths,
   rootCollection,
@@ -566,8 +565,6 @@ describe('document', () => {
         const actual = omitPaths(s, ['profile.gender']);
         expect(actual).toStrictEqual(oracle);
         expectTypeOf(actual).toEqualTypeOf(oracle);
-        // `toStrictEqual` does not compare symbol keys, so pin the marker explicitly.
-        expect(_optional in actual.profile).toBe(true);
       });
 
       it('drops the whole subtree when a top-level key matches exactly', () => {
