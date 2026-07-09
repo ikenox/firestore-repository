@@ -1,6 +1,6 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
-import { alias, constant, equal } from '../pipelines/expression.js';
+import { constant, equal } from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
   Pipeline,
@@ -164,7 +164,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
       it('projects a field expression bound to an alias', async () => {
         await expectPipeline(
-          source().select((field) => [alias(field('name'), 'authorName')]),
+          source().select((field) => [field('name').as('authorName')]),
           [
             { data: { authorName: 'alice' } },
             { data: { authorName: 'bob' } },
@@ -176,10 +176,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
       it('projects a computed expression bound to an alias', async () => {
         await expectPipeline(
-          source().select((field) => [
-            'name',
-            alias(equal(field('rank'), constant(2)), 'isSecond'),
-          ]),
+          source().select((field) => ['name', equal(field('rank'), constant(2)).as('isSecond')]),
           [
             { data: { name: 'alice', isSecond: false } },
             { data: { name: 'bob', isSecond: true } },
@@ -196,7 +193,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('last-wins: the same output name selected twice', async () => {
         // The later aliased expression replaces the earlier field selection.
         await expectPipeline(
-          source().select((field) => ['name', alias(field('rank'), 'name')]),
+          source().select((field) => ['name', field('rank').as('name')]),
           [{ data: { name: 1 } }, { data: { name: 2 } }, { data: { name: 3 } }],
           { ordered: false },
         );

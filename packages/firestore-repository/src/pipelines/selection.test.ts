@@ -15,7 +15,7 @@ import {
   string,
   type StringType,
 } from '../schema.js';
-import { alias, field } from './expression.js';
+import { field } from './expression.js';
 import {
   type BuildAddFieldsSchema,
   type BuildSelectionSchema,
@@ -378,7 +378,7 @@ describe('buildSelectionSchema (runtime)', () => {
   });
 
   it('resolves an aliased expression to its expression type at the alias', () => {
-    const selection = alias(field(schema.rank, 'rank'), 'points');
+    const selection = field(schema.rank, 'rank').as('points');
     expect(buildSelectionSchema(schema, ['name', selection])).toStrictEqual({
       name: schema.name,
       points: schema.rank,
@@ -387,7 +387,7 @@ describe('buildSelectionSchema (runtime)', () => {
 
   it('last-wins: the same output name selected twice', () => {
     expect(
-      buildSelectionSchema(schema, ['name', alias(field(schema.rank, 'rank'), 'name')]),
+      buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('name')]),
     ).toStrictEqual({ name: schema.rank });
   });
 

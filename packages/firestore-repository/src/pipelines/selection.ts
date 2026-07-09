@@ -10,7 +10,7 @@ import {
 import type { ExpressionWithAlias } from './expression.js';
 
 // Re-exported for consumers of the selection model; the type itself lives in
-// `expression.ts` (it is produced by the `alias(...)` factory).
+// `expression.ts` (it is produced by `Expression.as(...)`).
 export type { ExpressionWithAlias } from './expression.js';
 
 type Fields = DocumentSchema;
