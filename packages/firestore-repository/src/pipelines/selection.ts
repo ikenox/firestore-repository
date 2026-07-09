@@ -113,13 +113,16 @@ type SelectionToSchema<Context extends Fields, S> =
 /**
  * Builds a single-entry schema where dots in `Path` produce nested `MapType` layers.
  * `PathToSchema<"profile.age", DoubleType>` -> `{ profile: MapType<{ age: DoubleType }> }`.
- * `"__name__"` is dropped (it is not a real document field).
+ * No `'__name__'` special case: the reserved alias is rejected at construction
+ * (`ExpressionBase.as`), and a **nested** `'__name__'` segment is an ordinary
+ * map key on the backend (verified live).
  */
-type PathToSchema<Path extends string, T extends FieldType> = Path extends '__name__'
-  ? {}
-  : Path extends `${infer Head}.${infer Rest}`
-    ? { [K in Head]: MapType<PathToSchema<Rest, T>> }
-    : { [K in Path]: T };
+type PathToSchema<
+  Path extends string,
+  T extends FieldType,
+> = Path extends `${infer Head}.${infer Rest}`
+  ? { [K in Head]: MapType<PathToSchema<Rest, T>> }
+  : { [K in Path]: T };
 
 /**
  * Recursively merges two schemas. When the same key carries a `MapType` on both
@@ -215,15 +218,8 @@ const selectionPath = (s: string | ExpressionWithAlias): string =>
 const pathsConflict = (a: string, b: string): boolean =>
   a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
 
-/**
- * Runtime counterpart of {@link PathToSchema}, including its `'__name__'` →
- * `{}` branch — checked at every recursion level, exactly like the type
- * (so e.g. an alias of `'a.__name__'` yields `{ a: map({}) }` on both sides).
- */
+/** Runtime counterpart of {@link PathToSchema}. */
 const pathToSchema = (path: string, type: FieldType): Fields => {
-  if (path === '__name__') {
-    return {};
-  }
   const dot = path.indexOf('.');
   return dot < 0
     ? { [path]: type }

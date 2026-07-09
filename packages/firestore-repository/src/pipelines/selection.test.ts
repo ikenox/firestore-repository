@@ -413,19 +413,18 @@ describe('buildSelectionSchema (runtime)', () => {
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
-  it("drops '__name__' at every path level, like PathToSchema", () => {
-    // A top-level `'__name__'` alias contributes nothing; a nested one keeps
-    // the parent layers but contributes no leaf (`{ a: map({}) }`) — the
-    // runtime check sits inside `pathToSchema`'s recursion, exactly like the
-    // type's per-level `Path extends '__name__'` branch.
-    const topOracle = {};
-    const top = buildSelectionSchema(schema, [field(schema.name, 'name').as('__name__')]);
-    expect(top).toStrictEqual(topOracle);
-    expectTypeOf(top).toEqualTypeOf(topOracle);
+  it("rejects '__name__' as an alias; a nested '__name__' is an ordinary key", () => {
+    // The backend refuses aliasing to the reserved top-level `'__name__'`
+    // (`INVALID_ARGUMENT: field name '__name__' is reserved and can not be
+    // overwritten` — verified live), so it is a compile error; a nested
+    // `'__name__'` segment is just a map key and passes through unchanged.
 
-    const nestedOracle = { a: map({}) };
-    const nested = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
-    expect(nested).toStrictEqual(nestedOracle);
-    expectTypeOf(nested).toEqualTypeOf(nestedOracle);
+    // @ts-expect-error -- the reserved '__name__' cannot be used as an alias
+    field(schema.name, 'name').as('__name__');
+
+    const oracle = { a: map({ __name__: schema.name }) };
+    const actual = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 });
