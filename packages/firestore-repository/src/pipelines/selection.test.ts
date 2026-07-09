@@ -340,10 +340,13 @@ describe('BuildAddFieldsSchema', () => {
   });
 });
 
-// Runtime mirror of the `BuildSelectionSchema` type tests above — the value
-// returned by `buildSelectionSchema` is bridged to the type-level result with
-// an assertion, so these tests are the safety net that the runtime fold
-// actually matches.
+// Runtime mirror of the `BuildSelectionSchema` type tests above. Each case
+// asserts the SAME hand-written oracle on both sides — `toStrictEqual` checks
+// the runtime value and `expectTypeOf(...).toEqualTypeOf(oracle)` checks the
+// type-level computation (the function's return type IS
+// `BuildSelectionSchema<...>`) — so a divergence between the type operators
+// and their runtime counterparts fails one of the two assertions. This is the
+// safety net for the bridging assertion inside `buildSelectionSchema`.
 describe('buildSelectionSchema (runtime)', () => {
   const gender = optional(literal('male', 'female'));
   const profile = map({ age: double(), gender });
@@ -355,49 +358,74 @@ describe('buildSelectionSchema (runtime)', () => {
   } satisfies DocumentSchema;
 
   it('returns {} for an empty selection list', () => {
-    expect(buildSelectionSchema(schema, [])).toStrictEqual({});
+    const oracle = {};
+    const actual = buildSelectionSchema(schema, []);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('picks top-level fields (the exact descriptors)', () => {
-    expect(buildSelectionSchema(schema, ['name', 'rank'])).toStrictEqual({
-      name: schema.name,
-      rank: schema.rank,
-    });
+    const oracle = { name: schema.name, rank: schema.rank };
+    const actual = buildSelectionSchema(schema, ['name', 'rank']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('builds a nested map from a dotted path', () => {
-    expect(buildSelectionSchema(schema, ['profile.age'])).toStrictEqual({
-      profile: map({ age: profile.fields.age }),
-    });
+    const oracle = { profile: map({ age: profile.fields.age }) };
+    const actual = buildSelectionSchema(schema, ['profile.age']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('merges sibling dotted paths into one map', () => {
-    expect(buildSelectionSchema(schema, ['profile.age', 'profile.gender'])).toStrictEqual({
-      profile: map({ age: profile.fields.age, gender }),
-    });
+    const oracle = { profile: map({ age: profile.fields.age, gender }) };
+    const actual = buildSelectionSchema(schema, ['profile.age', 'profile.gender']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('resolves an aliased expression to its expression type at the alias', () => {
-    const selection = field(schema.rank, 'rank').as('points');
-    expect(buildSelectionSchema(schema, ['name', selection])).toStrictEqual({
-      name: schema.name,
-      points: schema.rank,
-    });
+    const oracle = { name: schema.name, points: schema.rank };
+    const actual = buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('points')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('last-wins: the same output name selected twice', () => {
-    expect(
-      buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('name')]),
-    ).toStrictEqual({ name: schema.rank });
+    const oracle = { name: schema.rank };
+    const actual = buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('name')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('last-wins: a child path after its parent replaces the parent subtree', () => {
-    expect(buildSelectionSchema(schema, ['profile', 'profile.age'])).toStrictEqual({
-      profile: map({ age: profile.fields.age }),
-    });
+    const oracle = { profile: map({ age: profile.fields.age }) };
+    const actual = buildSelectionSchema(schema, ['profile', 'profile.age']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
   it('last-wins: a parent path after its child replaces with the full subtree', () => {
-    expect(buildSelectionSchema(schema, ['profile.age', 'profile'])).toStrictEqual({ profile });
+    const oracle = { profile };
+    const actual = buildSelectionSchema(schema, ['profile.age', 'profile']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it("drops '__name__' at every path level, like PathToSchema", () => {
+    // A top-level `'__name__'` alias contributes nothing; a nested one keeps
+    // the parent layers but contributes no leaf (`{ a: map({}) }`) — the
+    // runtime check sits inside `pathToSchema`'s recursion, exactly like the
+    // type's per-level `Path extends '__name__'` branch.
+    const topOracle = {};
+    const top = buildSelectionSchema(schema, [field(schema.name, 'name').as('__name__')]);
+    expect(top).toStrictEqual(topOracle);
+    expectTypeOf(top).toEqualTypeOf(topOracle);
+
+    const nestedOracle = { a: map({}) };
+    const nested = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
+    expect(nested).toStrictEqual(nestedOracle);
+    expectTypeOf(nested).toEqualTypeOf(nestedOracle);
   });
 });

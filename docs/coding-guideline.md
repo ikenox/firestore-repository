@@ -49,6 +49,32 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
   rules, and oxlint's custom JS plugins don't expose type information. Until
   such a rule exists, it is upheld by review.
 
+## Type-level / runtime mirroring
+
+Some computations exist twice: once in the type system (e.g.
+`BuildSelectionSchema`) and once at runtime (e.g. `buildSelectionSchema`),
+bridged by a type assertion. The two MUST stay in lockstep — a divergence makes
+the types lie about runtime values. To keep them checkable:
+
+- **Mirror the decomposition, not just the result.** Give every type-level
+  operator a runtime counterpart with the same name and the same structure:
+  if the type is `FoldSelections<Context, DropOverriddenSelections<Args>>`,
+  the runtime is `foldSelections(schema, dropOverriddenSelections(args))` —
+  each helper pairs 1:1 with its type-level twin
+  (`PathToSchema`/`pathToSchema`, `MergeSchemas`/`mergeSchemas`, ...), so each
+  step can be reviewed against its twin, including branch-for-branch behavior
+  (e.g. a per-recursion-level guard in the type must sit at the same level in
+  the runtime helper).
+- **Confine the bridging assertion to the entry point** (the one function that
+  returns the type-level result), never inside the helpers.
+- **Test both sides against one oracle.** For each case, write a single
+  hand-written expected value and assert it twice: `toStrictEqual(oracle)`
+  checks the runtime value, `expectTypeOf(actual).toEqualTypeOf(oracle)`
+  checks the type-level computation (the function's return type IS the
+  type-level operator applied to the inputs). If either side drifts, one of
+  the two assertions fails. See `buildSelectionSchema (runtime)` in
+  `pipelines/selection.test.ts`.
+
 ## Declaration order
 
 - Order declarations within a file **top-down by abstraction level** (the

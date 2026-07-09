@@ -146,12 +146,13 @@ type MergeSchemas<A, B> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Runtime counterpart of {@link BuildSelectionSchema}: folds the selections
- * into the projected output schema (last-wins conflicts, nested deep-merge).
- * The result feeds the next stage's field resolution and the executors' row
- * decoding, so it must mirror the type-level result exactly — the type tests
- * in `selection.test.ts` plus the pipeline spec are the safety net for the
- * bridging assertion.
+ * Runtime counterpart of {@link BuildSelectionSchema}: computed with the same
+ * decomposition as the type — `foldSelections(schema, dropOverriddenSelections(args))`
+ * mirrors `FoldSelections<Context, DropOverriddenSelections<Args>>`, so each
+ * step can be checked against its type-level twin. The result feeds the next
+ * stage's field resolution and the executors' row decoding, so it must mirror
+ * the type-level result exactly — the type tests in `selection.test.ts` plus
+ * the pipeline spec are the safety net for the bridging assertion.
  */
 export const buildSelectionSchema = <
   Context extends Fields,
@@ -159,24 +160,12 @@ export const buildSelectionSchema = <
 >(
   schema: Context,
   selections: Selections,
-): BuildSelectionSchema<Context, Selections> => {
-  let result: Fields = {};
-  // Right-to-left to mirror `FoldSelections`' `MergeSchemas<First, Fold<Rest>>`
-  // associativity (`A` wins in `MergeSchemas`, so earlier selections win over
-  // the accumulated later ones — conflicts are already dropped, this only
-  // affects nothing but keeps the shapes aligned).
-  for (const s of [...dropOverriddenSelections(selections)].reverse()) {
-    const path = selectionPath(s);
-    if (path === '__name__') {
-      continue; // `PathToSchema` drops the reserved key — not a data field.
-    }
-    const type =
-      typeof s === 'string' ? fieldTypeOfPath<Fields, string>(schema, s) : s.expression.type;
-    result = mergeSchemas(pathToSchema(path, type), result);
-  }
+): BuildSelectionSchema<Context, Selections> =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `BuildSelectionSchema`, but the compiler cannot connect a runtime schema value to the type-level result
-  return result as BuildSelectionSchema<Context, Selections>;
-};
+  foldSelections(schema, dropOverriddenSelections(selections)) as BuildSelectionSchema<
+    Context,
+    Selections
+  >;
 
 /**
  * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection
@@ -192,6 +181,32 @@ export const dropOverriddenSelections = <S extends string | ExpressionWithAlias>
         .some((later) => pathsConflict(selectionPath(s), selectionPath(later))),
   );
 
+/**
+ * Runtime counterpart of {@link FoldSelections}: the same
+ * `MergeSchemas<SelectionToSchema<First>, FoldSelections<Rest>>` recursion.
+ */
+const foldSelections = (
+  schema: Fields,
+  selections: readonly (string | ExpressionWithAlias)[],
+): Fields => {
+  const [first, ...rest] = selections;
+  return first === undefined
+    ? {}
+    : mergeSchemas(selectionToSchema(schema, first), foldSelections(schema, rest));
+};
+
+/**
+ * Runtime counterpart of {@link SelectionToSchema}. Where the type resolves a
+ * path's field type via `FieldTypeOfPath`, the runtime uses `fieldTypeOfPath`
+ * (which throws for unknown paths — the type-level `{}` fallback for non-path
+ * strings is unreachable through the typed API, so a throw is the defensive
+ * equivalent).
+ */
+const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fields =>
+  typeof s === 'string'
+    ? pathToSchema(s, fieldTypeOfPath<Fields, string>(schema, s))
+    : pathToSchema(s.alias, s.expression.type);
+
 /** Runtime counterpart of {@link SelectionPath}. */
 const selectionPath = (s: string | ExpressionWithAlias): string =>
   typeof s === 'string' ? s : s.alias;
@@ -200,8 +215,15 @@ const selectionPath = (s: string | ExpressionWithAlias): string =>
 const pathsConflict = (a: string, b: string): boolean =>
   a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
 
-/** Runtime counterpart of {@link PathToSchema}. */
+/**
+ * Runtime counterpart of {@link PathToSchema}, including its `'__name__'` →
+ * `{}` branch — checked at every recursion level, exactly like the type
+ * (so e.g. an alias of `'a.__name__'` yields `{ a: map({}) }` on both sides).
+ */
 const pathToSchema = (path: string, type: FieldType): Fields => {
+  if (path === '__name__') {
+    return {};
+  }
   const dot = path.indexOf('.');
   return dot < 0
     ? { [path]: type }
