@@ -15,7 +15,13 @@ import {
 import { AggregateWithAlias } from './aggregate.js';
 import { field, type Expression, type Field } from './expression.js';
 import { Ordering } from './ordering.js';
-import type { BuildAddFieldsSchema, BuildSelectionSchema, Selection } from './selection.js';
+import {
+  type BuildAddFieldsSchema,
+  type BuildSelectionSchema,
+  buildSelectionSchema,
+  dropOverriddenSelections,
+  type Selection,
+} from './selection.js';
 import type { InputStage, TransformStage } from './stage.js';
 
 /**
@@ -54,6 +60,17 @@ export class Pipeline<
   Schema extends Fields = Fields,
   Id extends PipelineRowIdentity = PipelineRowIdentity,
 > {
+  /**
+   * Type-level anchor for `Id` (never exists at runtime — `declare` emits
+   * nothing). Without it `Id` would appear only in recursive method-return
+   * positions, which TypeScript compares coinductively, making every
+   * `Pipeline<Schema, *>` mutually assignable — so an identity-dropped
+   * pipeline could be assigned to an identity-preserving type and `execute()`
+   * would claim an `id` that does not exist at runtime. Anchoring `Id` in a
+   * (covariant) property position makes such assignments compile errors.
+   */
+  declare private readonly _rowIdentity: Id;
+
   /**
    * The type-erased AST node this builder wraps. The class *has* a node rather
    * than *being* one: `Pipeline` is a single class that can sit anywhere in the
@@ -99,9 +116,16 @@ export class Pipeline<
    * `createTime` / `updateTime`, is deferred — see `docs/plan/pipeline-query.md`).
    */
   select<const Selections extends readonly Selection<Schema>[]>(
-    _selections: (field: FieldProvider<Schema>) => Selections,
+    selections: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildSelectionSchema<Schema, Selections>, undefined> {
-    return unimplemented();
+    const resolved = selections(fieldProvider(this.node.schema));
+    return new Pipeline<BuildSelectionSchema<Schema, Selections>, undefined>({
+      schema: buildSelectionSchema(this.node.schema, resolved),
+      // Resolve last-wins here so the stage carries a conflict-free list that
+      // matches the schema (and executors translate it 1:1).
+      stage: { kind: 'select', selections: dropOverriddenSelections(resolved) },
+      parent: this.node,
+    });
   }
   addFields<const Selections extends readonly Selection<Schema>[]>(
     _fields: (field: FieldProvider<Schema>) => Selections,

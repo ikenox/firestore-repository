@@ -1,11 +1,31 @@
 import { describe, it } from 'vitest';
 
-import { authorsCollection, postsCollection } from '../__test__/specification.js';
+import {
+  type AuthorsCollection,
+  authorsCollection,
+  postsCollection,
+} from '../__test__/specification.js';
+import type { DocRef } from '../repository.js';
+import type { StringType } from '../schema.js';
 import { equal } from './expression.js';
-import { collection } from './index.js';
+import { collection, type Pipeline } from './index.js';
 
 describe('pipeline', () => {
   const base = collection(authorsCollection);
+
+  it('Id is structurally anchored: pipelines with different identities do not interchange', () => {
+    // `Id` appears in a (phantom) property position, not only in recursive
+    // method returns — otherwise TypeScript's coinductive comparison would make
+    // every `Pipeline<Schema, *>` mutually assignable and an identity-dropped
+    // pipeline could pose as identity-preserving (claiming an `id` that does
+    // not exist at runtime).
+    const selected = base.select(() => ['name']);
+
+    // @ts-expect-error -- identity-dropped (`Id = undefined`) cannot pose as identity-preserving
+    const _lie: Pipeline<{ name: StringType }, DocRef<AuthorsCollection>> = selected;
+    // @ts-expect-error -- nor can identity-preserving pose as identity-dropped
+    const _widen: Pipeline<AuthorsCollection['schema'], undefined> = base;
+  });
 
   it('root collections take an optional empty parent; subcollections require one', () => {
     collection(authorsCollection, []); // the empty tuple is a root's valid ParentDocRef: ok

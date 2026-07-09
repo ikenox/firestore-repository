@@ -1,5 +1,6 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
+import { constant, equal } from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
   Pipeline,
@@ -106,6 +107,132 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         await expectPipeline(
           source().sort((field) => [desc(field('rank'))]),
           [a3, a2, a1],
+        );
+      });
+    });
+
+    describe('select', () => {
+      it('projects a single top-level field, dropping row identity', async () => {
+        // `select` breaks read-identity: the result rows carry no `id`.
+        await expectPipeline(
+          source().select(() => ['name']),
+          [{ data: { name: 'alice' } }, { data: { name: 'bob' } }, { data: { name: 'carol' } }],
+          { ordered: false },
+        );
+      });
+
+      it('projects multiple fields', async () => {
+        await expectPipeline(
+          source().select(() => ['name', 'rank']),
+          [
+            { data: { name: 'alice', rank: 1 } },
+            { data: { name: 'bob', rank: 2 } },
+            { data: { name: 'carol', rank: 3 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('projects a nested (dotted) field, keeping the nested shape', async () => {
+        // A dotted path selects the nested value at its original position —
+        // `{ profile: { age } }`, not a flat `'profile.age'` key (mirrors
+        // `BuildSelectionSchema` / `PathToSchema`).
+        await expectPipeline(
+          source().select(() => ['profile.age']),
+          [
+            { data: { profile: { age: 20 } } },
+            { data: { profile: { age: 30 } } },
+            { data: { profile: { age: 40 } } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('merges sibling selections under the same parent map', async () => {
+        // Two dotted paths sharing a parent deep-merge into one nested map
+        // (mirrors `MergeSchemas`). `gender` is optional and absent on a2.
+        await expectPipeline(
+          source().select(() => ['profile.age', 'profile.gender']),
+          [
+            { data: { profile: { age: 20, gender: 'female' } } },
+            { data: { profile: { age: 30 } } },
+            { data: { profile: { age: 40, gender: 'male' } } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('projects a field expression bound to an alias', async () => {
+        await expectPipeline(
+          source().select((field) => [field('name').as('authorName')]),
+          [
+            { data: { authorName: 'alice' } },
+            { data: { authorName: 'bob' } },
+            { data: { authorName: 'carol' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('projects a computed expression bound to an alias', async () => {
+        await expectPipeline(
+          source().select((field) => ['name', equal(field('rank'), constant(2)).as('isSecond')]),
+          [
+            { data: { name: 'alice', isSecond: false } },
+            { data: { name: 'bob', isSecond: true } },
+            { data: { name: 'carol', isSecond: false } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      // The three last-wins cases mirror the `BuildSelectionSchema` type tests
+      // in `selection.test.ts` — the runtime rows must match what the type
+      // computes.
+
+      it('last-wins: the same output name selected twice', async () => {
+        // The later aliased expression replaces the earlier field selection.
+        await expectPipeline(
+          source().select((field) => ['name', field('rank').as('name')]),
+          [{ data: { name: 1 } }, { data: { name: 2 } }, { data: { name: 3 } }],
+          { ordered: false },
+        );
+      });
+
+      it('last-wins: a child path after its parent narrows to the child', async () => {
+        await expectPipeline(
+          source().select(() => ['profile', 'profile.age']),
+          [
+            { data: { profile: { age: 20 } } },
+            { data: { profile: { age: 30 } } },
+            { data: { profile: { age: 40 } } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('last-wins: a parent path after its child selects the full subtree', async () => {
+        await expectPipeline(
+          source().select(() => ['profile.age', 'profile']),
+          [
+            { data: { profile: { age: 20, gender: 'female' } } },
+            { data: { profile: { age: 30 } } },
+            { data: { profile: { age: 40, gender: 'male' } } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('composes with a subsequent sort over the projected schema', async () => {
+        await expectPipeline(
+          source()
+            .select(() => ['name', 'rank'])
+            .sort((field) => [desc(field('rank'))]),
+          [
+            { data: { name: 'carol', rank: 3 } },
+            { data: { name: 'bob', rank: 2 } },
+            { data: { name: 'alice', rank: 1 } },
+          ],
         );
       });
     });

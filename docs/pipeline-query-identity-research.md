@@ -129,6 +129,20 @@ Key points (probed on `enterprise-native-playground`, `@google-cloud/firestore@8
   fields) and the metadata is **not** restored.
 - Wrapping in an expression (e.g. `documentId(...)`) and renaming also fails to
   restore metadata.
+- **Overwriting a reserved name with any other value is an error** (probed
+  2026-07): `field("name").as("__name__")` →
+  `INVALID_ARGUMENT: Stage 'select': field name '__name__' is reserved and can
+not be overwritten.` — the `.as("__name__")` row in the table above works
+  only because the source is `field("__name__")` itself. The repository
+  deliberately does **not** guard this (neither type- nor runtime-level): the
+  backend's own validation is authoritative and fails loudly, so a client
+  check would only duplicate it. The guiding rule: type-ban only what would
+  **silently succeed** against the type model (bare `'__name__'` selections,
+  which re-attach identity while `select` claims `Id = undefined`); leave
+  loud failures to the backend.
+- **A nested `'__name__'` path segment is NOT special** (probed 2026-07):
+  `field("name").as("a.__name__")` succeeds and lands as an ordinary map key —
+  `{ a: { __name__: "alice" } }`. Only the top-level output name is reserved.
 - **No recovery once dropped**: `select("name") → select("__name__")` yields no
   identity (the first `select` already discarded `__name__`), whereas
   `select("name", "__name__") → select("__name__")` keeps it. The ratchet holds

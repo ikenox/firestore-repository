@@ -1,4 +1,5 @@
 import type { Collection } from '../schema.js';
+import type { ExpressionWithAlias } from './expression.js';
 import type { Ordering } from './ordering.js';
 
 /**
@@ -31,7 +32,9 @@ export type InputStage =
 /** Transformation stage: reshapes the rows flowing through the pipeline. */
 export type TransformStage =
   | { kind: 'where' }
-  | { kind: 'select' }
+  // `selections` is already conflict-resolved (last-wins applied by
+  // `Pipeline.select`), so an executor can translate it 1:1.
+  | { kind: 'select'; selections: readonly (string | ExpressionWithAlias)[] }
   | { kind: 'addFields' }
   | { kind: 'removeFields' }
   | { kind: 'sort'; orderings: Ordering[] }

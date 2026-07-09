@@ -42,14 +42,22 @@ describe('repository', async () => {
   });
 
   // Pipeline queries require a Firestore Enterprise database (the emulator
-  // cannot run them). These tests run only when both FIRESTORE_REPOSITORY_INTEGRATION_TEST_*
-  // env vars are set; otherwise vitest reports them as skipped.
+  // cannot run them). Unlike the admin SDK (which authenticates via ADC and
+  // bypasses security rules), the client SDK needs a real Firebase API key —
+  // so these tests additionally require FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY
+  // on top of the FIRESTORE_REPOSITORY_INTEGRATION_TEST_* vars; otherwise
+  // vitest reports them as skipped (and a root `pnpm test` with only the two
+  // shared vars set still runs the admin adapter live without failing here).
   const enterpriseProject = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_PROJECT'];
   const enterpriseDbId = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB'];
-  describe.skipIf(!enterpriseProject || !enterpriseDbId)('pipeline', () => {
+  const clientApiKey = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY'];
+  describe.skipIf(!enterpriseProject || !enterpriseDbId || !clientApiKey)('pipeline', () => {
     // A separate app/db targeting the real Enterprise backend (not the emulator).
     const enterpriseDb = getFirestore(
-      initializeApp({ projectId: enterpriseProject ?? '' }, 'pipeline-enterprise'),
+      initializeApp(
+        { projectId: enterpriseProject ?? '', apiKey: clientApiKey ?? '' },
+        'pipeline-enterprise',
+      ),
       enterpriseDbId ?? '(default)',
     );
     definePipelineSpecificationTests<Env>({

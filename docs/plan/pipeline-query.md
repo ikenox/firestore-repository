@@ -57,8 +57,10 @@ to reach a non-emulator DB.
   runtime counterpart of the `FieldTypeOfPath` type), covered by
   `schema.field-type-of-path.test.ts`.
 - `select` / `addFields` / `distinct` use `const` type params, so callback
-  selections infer as tuples without `as const`. Only bare data-field-path
-  string selections work so far (no `.as(...)` / aliased expressions yet).
+  selections infer as tuples without `as const`. `select` is fully implemented
+  (bare paths, nested dotted paths, `.as(...)` aliased expressions, last-wins
+  conflicts) and verified live; every expression node now carries an SDK-style
+  `.as(alias)` producing an `ExpressionWithAlias`.
 
 **Executors** (`packages/{firebase-js-sdk,google-cloud-firestore}/src/pipeline.ts`):
 `executor(db)` walks the stage chain into `db.pipeline()...`, translates `sort`
@@ -75,6 +77,14 @@ FIRESTORE_REPOSITORY_INTEGRATION_TEST_PROJECT=ikenox-sunrise \
 FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB=enterprise-native-playground \
 pnpm exec vitest run -t 'pipeline specification'
 ```
+
+The firebase (client) adapter's pipeline suite additionally requires
+`FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY` (a real Firebase API
+key): the client SDK cannot reach a non-emulator DB without one (and is
+subject to security rules), unlike the admin SDK which authenticates via ADC
+and bypasses rules. Without the extra var the firebase pipeline suite is
+skipped, so a root-level `pnpm test` with only the two shared vars runs the
+admin adapter live and skips the client adapter instead of failing.
 
 Without those two env vars the pipeline `describe` is `skipIf`-skipped. See the
 test-infra note under "Per-SDK adapters" for why the admin SDK can target the
@@ -236,8 +246,8 @@ Input stages (the `input` stage now carries an `InputSource` payload — see
 - [x] `collection` — builds `{ kind: 'collection', collection, parent }`;
       covers root collections and specific subcollection instances (the trailing
       `parent` doc-ids argument is required iff the definition is a subcollection).
-- [ ] `collectionGroup(id)` — builds `{ kind: 'collectionGroup', ... }`;
-      executor support not implemented.
+- [x] `collectionGroup(id)` — builds `{ kind: 'collectionGroup', ... }`;
+      executors run it via `db.pipeline().collectionGroup(name)`.
 - [ ] `database()` / `documents([...refs])` — source payloads are stubbed
       (`{ kind: 'database' | 'documents' }`, no data); executor throws.
 - [ ] `literals([...])` — stubbed (`{ kind: 'literals' }`); executor throws.
@@ -245,7 +255,12 @@ Input stages (the `input` stage now carries an `InputSource` payload — see
 Transformation stages already stubbed:
 
 - [ ] `where(condition)` — real runtime + AST node + tests.
-- [ ] `select(...)` — runtime + identity break + tests.
+- [x] `select(...)` — runtime schema fold (`buildSelectionSchema`, the runtime
+      mirror of `BuildSelectionSchema`), stage AST carries conflict-resolved
+      selections, executors translate to `sdk.select(...)`, rows decode with
+      the pipeline's leaf schema. Verified live (nested dotted selects come
+      back **nested**, matching `PathToSchema`; last-wins matches the type
+      tests; `.as()` field + computed `equal` expressions work).
 - [ ] `addFields(...)` — Context augmentation + identity preserve.
 - [ ] `removeFields(...)` — Context shrinkage + identity preserve.
 - [ ] `distinct(...)` — Context shrinkage + identity break.
@@ -300,6 +315,25 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## Expressions — remaining gaps
 
+- [ ] **Restructure `FunctionCall` into shape-grouped classes when the ~85
+      factories return.** Decided design (2026-07): don't do one class per
+      function (SDK-style, ~85 classes, giant `Expression` union) and don't
+      keep the current single `FunctionCall` with untyped `args: Expression[]`
+      (forces runtime arity guards in every executor — see
+      `toSdkFunctionCall`'s `left === undefined` checks). Instead, one class
+      per **shape** (`UnaryFunction` / `BinaryFunction` / `VariadicFunction` /
+      individual classes for irregulars like `findNearest` / `cond`), each
+      with typed payload fields (`left` / `right` / `operands`) and a
+      per-shape `name: <Shape>FunctionName` string-literal union. - Executors then translate each shape with a
+      `Record<BinaryFunctionName, (l, r) => SdkExpr>` lookup table — the
+      `Record` requires every key, giving the same exhaustiveness guarantee
+      as `assertNever` without per-function `case`s, and the arity guards
+      disappear into the types. - Rationale: a Visitor and a `name` string-union switch are the same
+      case-analysis over a closed sum (same side of the expression problem);
+      the only substantive win available is typed payloads, and shape
+      granularity gets it with ~5 classes instead of ~85. Per-function
+      individuality (operand/return typing like `equal`'s overloads) stays
+      in the factory signatures.
 - [ ] Per-op numeric return type refinement (Int64-pair → Int64 vs
       auto-widen to Double) — TODO comments already in `expression.ts`.
 - [ ] Improve `constant(value)` type inference from runtime value

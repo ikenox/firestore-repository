@@ -1,17 +1,26 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import type {
-  ArrayType,
-  DoubleType,
-  LiteralType,
-  MapType,
-  Optional,
-  StringType,
+import {
+  array,
+  type ArrayType,
+  type DocumentSchema,
+  double,
+  type DoubleType,
+  literal,
+  type LiteralType,
+  map,
+  type MapType,
+  optional,
+  type Optional,
+  string,
+  type StringType,
 } from '../schema.js';
-import type {
-  BuildAddFieldsSchema,
-  BuildSelectionSchema,
-  ExpressionWithAlias,
+import { field } from './expression.js';
+import {
+  type BuildAddFieldsSchema,
+  type BuildSelectionSchema,
+  buildSelectionSchema,
+  type ExpressionWithAlias,
 } from './selection.js';
 
 type Schema = {
@@ -328,5 +337,91 @@ describe('BuildAddFieldsSchema', () => {
         tag: ArrayType<StringType, [], []>;
       }>();
     });
+  });
+});
+
+// Runtime mirror of the `BuildSelectionSchema` type tests above. Each case
+// asserts the SAME hand-written oracle on both sides — `toStrictEqual` checks
+// the runtime value and `expectTypeOf(...).toEqualTypeOf(oracle)` checks the
+// type-level computation (the function's return type IS
+// `BuildSelectionSchema<...>`) — so a divergence between the type operators
+// and their runtime counterparts fails one of the two assertions. This is the
+// safety net for the bridging assertion inside `buildSelectionSchema`.
+describe('buildSelectionSchema (runtime)', () => {
+  const gender = optional(literal('male', 'female'));
+  const profile = map({ age: double(), gender });
+  const schema = {
+    name: string(),
+    profile,
+    rank: double(),
+    tag: array(string()),
+  } satisfies DocumentSchema;
+
+  it('returns {} for an empty selection list', () => {
+    const oracle = {};
+    const actual = buildSelectionSchema(schema, []);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('picks top-level fields (the exact descriptors)', () => {
+    const oracle = { name: schema.name, rank: schema.rank };
+    const actual = buildSelectionSchema(schema, ['name', 'rank']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('builds a nested map from a dotted path', () => {
+    const oracle = { profile: map({ age: profile.fields.age }) };
+    const actual = buildSelectionSchema(schema, ['profile.age']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('merges sibling dotted paths into one map', () => {
+    const oracle = { profile: map({ age: profile.fields.age, gender }) };
+    const actual = buildSelectionSchema(schema, ['profile.age', 'profile.gender']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('resolves an aliased expression to its expression type at the alias', () => {
+    const oracle = { name: schema.name, points: schema.rank };
+    const actual = buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('points')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('last-wins: the same output name selected twice', () => {
+    const oracle = { name: schema.rank };
+    const actual = buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('name')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('last-wins: a child path after its parent replaces the parent subtree', () => {
+    const oracle = { profile: map({ age: profile.fields.age }) };
+    const actual = buildSelectionSchema(schema, ['profile', 'profile.age']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('last-wins: a parent path after its child replaces with the full subtree', () => {
+    const oracle = { profile };
+    const actual = buildSelectionSchema(schema, ['profile.age', 'profile']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it("treats '__name__' in an alias like any other key (no special-casing)", () => {
+    // The reserved-name rule is deliberately not modelled client-side:
+    // aliasing to top-level `'__name__'` is rejected by the backend itself
+    // (`INVALID_ARGUMENT`, verified live), and a nested `'__name__'` segment
+    // is an ordinary map key there — so the schema fold treats both as plain
+    // keys. See `ExpressionBase.as`.
+    const oracle = { a: map({ __name__: schema.name }) };
+    const actual = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 });
