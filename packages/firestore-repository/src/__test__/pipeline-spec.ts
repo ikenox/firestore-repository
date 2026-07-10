@@ -8,7 +8,10 @@ import type {
   PipelineResult,
   PipelineRowIdentity,
 } from '../pipelines/pipeline.js';
-import { collection as collectionInput } from '../pipelines/source.js';
+import {
+  collection as collectionInput,
+  collectionGroup as collectionGroupInput,
+} from '../pipelines/source.js';
 import type { Doc, DocRef, FirestoreEnvironment, PlainRepository } from '../repository.js';
 import {
   type Collection,
@@ -19,7 +22,12 @@ import {
   rootCollection,
   string,
 } from '../schema.js';
-import { type AuthorsCollection, authorsCollection } from './specification.js';
+import {
+  type AuthorsCollection,
+  authorsCollection,
+  type PostsCollection,
+  postsCollection,
+} from './specification.js';
 import { uniqueCollection } from './util.js';
 
 /**
@@ -97,6 +105,39 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('fetches all documents of a collection with their ids', async () => {
         // A bare collection input has no defined order, so compare as a set.
         await expectPipeline(source(), items, { ordered: false });
+      });
+    });
+
+    describe('input stages (subcollection / collection group)', () => {
+      // `postsCollection` is a subcollection under `Authors`. `uniqueCollection`
+      // renames only the collection itself, so instances land under
+      // `Authors/<parent id>/<unique name>` and the group id is unique per run.
+      const postItems: [Doc<PostsCollection>, Doc<PostsCollection>] = [
+        {
+          id: ['author1', 'p1'],
+          data: { title: 'first', postedAt: new Date('2024-01-01T00:00:00Z') },
+        },
+        {
+          id: ['author2', 'p2'],
+          data: { title: 'second', postedAt: new Date('2024-02-01T00:00:00Z') },
+        },
+      ];
+
+      let posts: PostsCollection;
+      beforeEach(async () => {
+        posts = uniqueCollection(postsCollection);
+        await createRepository(posts).batchSet(postItems);
+      });
+
+      it('reads a specific subcollection instance located by its parent doc ref', async () => {
+        // Only author1's posts; the row ids are full (parent-inclusive) refs.
+        await expectPipeline(collectionInput(posts, ['author1']), [postItems[0]], {
+          ordered: false,
+        });
+      });
+
+      it('reads every instance of a subcollection via a collection group', async () => {
+        await expectPipeline(collectionGroupInput(posts), postItems, { ordered: false });
       });
     });
 
