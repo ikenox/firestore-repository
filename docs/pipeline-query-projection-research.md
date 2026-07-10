@@ -98,6 +98,14 @@ Matches the SDK's documented "overwrite existing ones" phrasing, refined:
 the overwrite is **per-leaf** (nested maps merge), not per-top-level-key,
 unless the added value itself is not a map.
 
+The dotted-name materialization rule applies to `add_fields` too:
+`addFields(field('meta.x').as('meta.x'))` on a document **without** `meta`
+adds `meta: {}` to the row — a self-alias of an existing path is therefore
+NOT a no-op when the path crosses an optional map. This is why the library
+rejects bare field paths in `addFields` at the type level (its schema would
+compute "unchanged" while the row mutates); the official SDK's `addFields`
+accepts only `Selectable`s as well (probed via `probe-addfields-barepath.mjs`).
+
 ## How these findings were obtained
 
 Ad-hoc probe scripts (gitignored) under `./.ikenox/`:
