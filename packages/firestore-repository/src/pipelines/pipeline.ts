@@ -102,8 +102,18 @@ export class Pipeline<
     return { input: node.stage, transforms };
   }
 
-  where(_condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
-    return unimplemented();
+  /**
+   * Filters rows to those where `condition` evaluates to exactly `true`.
+   * Identity-preserving; chained `where` stages conjoin (AND). Rows where the
+   * condition evaluates to anything else — `false`, `null`, a missing field,
+   * a non-boolean — are silently dropped (Firestore's truthy-only semantics).
+   */
+  where(condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
+    return new Pipeline<Schema, Id>({
+      schema: this.node.schema,
+      stage: { kind: 'where', condition: condition(fieldProvider(this.node.schema)) },
+      parent: this.node,
+    });
   }
   /**
    * Projects the selections into a new document shape, dropping read-identity

@@ -293,6 +293,70 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
+    describe('where', () => {
+      // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3.
+      const [a1, _a2, a3] = items;
+
+      it('filters rows by an equality condition, keeping row identity', async () => {
+        await expectPipeline(
+          source().where((field) => equal(field('rank'), constant(1))),
+          [a1],
+          { ordered: false },
+        );
+      });
+
+      it('filters by a nested (dotted) field', async () => {
+        await expectPipeline(
+          source().where((field) => equal(field('profile.age'), constant(40))),
+          [a3],
+          { ordered: false },
+        );
+      });
+
+      it('silently drops rows where the condition does not evaluate to true', async () => {
+        // a2 has no `profile.gender`, so the comparison does not evaluate to
+        // `true` for it — the row is dropped rather than erroring (Firestore's
+        // truthy-only `where` semantics; mixed/missing fields are tolerated).
+        await expectPipeline(
+          source().where((field) => equal(field('profile.gender'), constant('male'))),
+          [a3],
+          { ordered: false },
+        );
+      });
+
+      it('chained where stages conjoin (AND)', async () => {
+        // Each condition matches a row on its own (gender=female -> a1,
+        // rank=3 -> a3), but no row satisfies both — a disjunction would
+        // return two rows, a conjunction none.
+        await expectPipeline(
+          source()
+            .where((field) => equal(field('profile.gender'), constant('female')))
+            .where((field) => equal(field('rank'), constant(3))),
+          [],
+          { ordered: false },
+        );
+
+        // A row satisfying both conditions passes through the chain.
+        await expectPipeline(
+          source()
+            .where((field) => equal(field('profile.gender'), constant('male')))
+            .where((field) => equal(field('rank'), constant(3))),
+          [a3],
+          { ordered: false },
+        );
+      });
+
+      it('composes with a subsequent select over the filtered rows', async () => {
+        await expectPipeline(
+          source()
+            .where((field) => equal(field('rank'), constant(2)))
+            .select(() => ['name']),
+          [{ data: { name: 'bob' } }],
+          { ordered: false },
+        );
+      });
+    });
+
     describe('removeFields', () => {
       it('removes a top-level field, keeping row identity', async () => {
         // `removeFields` is identity-preserving: rows keep their `id`.
