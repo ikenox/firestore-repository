@@ -434,7 +434,7 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
   Covers `fetch all` + `sort` asc/desc; add a case per new stage.
 - [x] `fieldTypeOfPath` runtime resolver unit tests
       (`schema.field-type-of-path.test.ts`).
-- [ ] Identity ratchet integration test — confirm a `select` result lacks `id`
+- [x] Identity ratchet integration test — confirm a `select` result lacks `id`
       at runtime (type side is covered by `pipeline.test.ts`).
 - [ ] DML stage tests (`update` / `delete`).
 - [ ] Sub-pipeline / join behavior tests once that's implemented.
