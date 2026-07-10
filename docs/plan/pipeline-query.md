@@ -261,7 +261,12 @@ Transformation stages already stubbed:
       the pipeline's leaf schema. Verified live (nested dotted selects come
       back **nested**, matching `PathToSchema`; last-wins matches the type
       tests; `.as()` field + computed `equal` expressions work).
-- [ ] `addFields(...)` — Context augmentation + identity preserve.
+- [x] `addFields(...)` — runtime schema merge (`buildAddFieldsSchema`, the
+      runtime mirror of `BuildAddFieldsSchema`), stage carries conflict-resolved
+      selections, executors translate to `sdk.addFields(...)` (bare paths become
+      `field(p).as(p)`), identity preserved. Backend semantics probed: added
+      fields win on overlap, dotted aliases deep-merge into existing maps, a
+      scalar added under a map's name replaces the map. Verified live.
 - [x] `removeFields(...)` — runtime schema shrink (`omitPaths`, the runtime
       mirror of `OmitPaths`, incl. the Optional marker and the empty-map cascade),
       stage carries the field paths, executors translate to `sdk.removeFields(...)`,

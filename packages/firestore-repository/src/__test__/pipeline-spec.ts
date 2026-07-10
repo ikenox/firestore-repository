@@ -366,5 +366,74 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
     });
+
+    describe('addFields', () => {
+      it('adds an aliased computed field, keeping identity and existing fields', async () => {
+        // `addFields` is identity-preserving and keeps every existing field.
+        await expectPipeline(
+          source()
+            .removeFields('profile', 'tag') // narrow the rows to keep the expectations readable
+            .addFields((field) => [equal(field('rank'), constant(2)).as('isSecond')]),
+          [
+            { id: ['a1'], data: { name: 'alice', rank: 1, isSecond: false } },
+            { id: ['a2'], data: { name: 'bob', rank: 2, isSecond: true } },
+            { id: ['a3'], data: { name: 'carol', rank: 3, isSecond: false } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('deep-merges a dotted alias into an existing map', async () => {
+        // Adding under an existing map merges with its fields (verified against
+        // the backend), mirroring `MergeSchemas`.
+        await expectPipeline(
+          source()
+            .removeFields('rank', 'tag')
+            .addFields((field) => [field('name').as('profile.author')]),
+          [
+            {
+              id: ['a1'],
+              data: { name: 'alice', profile: { age: 20, gender: 'female', author: 'alice' } },
+            },
+            { id: ['a2'], data: { name: 'bob', profile: { age: 30, author: 'bob' } } },
+            {
+              id: ['a3'],
+              data: { name: 'carol', profile: { age: 40, gender: 'male', author: 'carol' } },
+            },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('an added field overwrites an existing one on name overlap', async () => {
+        // The added field wins (the SDK's "overwrite existing ones" behavior);
+        // `rank` becomes a string here, which `BuildAddFieldsSchema` tracks.
+        await expectPipeline(
+          source()
+            .removeFields('profile', 'tag')
+            .addFields((field) => [field('name').as('rank')]),
+          [
+            { id: ['a1'], data: { name: 'alice', rank: 'alice' } },
+            { id: ['a2'], data: { name: 'bob', rank: 'bob' } },
+            { id: ['a3'], data: { name: 'carol', rank: 'carol' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('composes with a subsequent sort over the added field', async () => {
+        await expectPipeline(
+          source()
+            .removeFields('profile', 'tag')
+            .addFields((field) => [field('rank').as('score')])
+            .sort((field) => [desc(field('score'))]),
+          [
+            { id: ['a3'], data: { name: 'carol', rank: 3, score: 3 } },
+            { id: ['a2'], data: { name: 'bob', rank: 2, score: 2 } },
+            { id: ['a1'], data: { name: 'alice', rank: 1, score: 1 } },
+          ],
+        );
+      });
+    });
   });
 };

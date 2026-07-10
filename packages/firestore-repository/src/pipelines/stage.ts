@@ -35,7 +35,10 @@ export type TransformStage =
   // `selections` is already conflict-resolved (last-wins applied by
   // `Pipeline.select`), so an executor can translate it 1:1.
   | { kind: 'select'; selections: readonly (string | ExpressionWithAlias)[] }
-  | { kind: 'addFields' }
+  // `selections` is already conflict-resolved (last-wins applied by
+  // `Pipeline.addFields`), so an executor can translate it 1:1. Aliased
+  // expressions only — see `BuildAddFieldsSchema`.
+  | { kind: 'addFields'; selections: readonly ExpressionWithAlias[] }
   | { kind: 'removeFields'; fields: readonly string[] }
   | { kind: 'sort'; orderings: Ordering[] }
   | { kind: 'limit' }

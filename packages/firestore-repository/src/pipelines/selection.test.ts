@@ -18,6 +18,7 @@ import {
 import { field } from './expression.js';
 import {
   type BuildAddFieldsSchema,
+  buildAddFieldsSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   type ExpressionWithAlias,
@@ -203,20 +204,10 @@ describe('BuildSelectionSchema', () => {
 });
 
 describe('BuildAddFieldsSchema', () => {
-  describe('empty / no-op', () => {
+  describe('empty', () => {
     it('returns the context unchanged for an empty list', () => {
       expectTypeOf<BuildAddFieldsSchema<Schema, []>>().toEqualTypeOf<Schema>();
     });
-
-    it('adding an existing top-level field by string path is a no-op', () => {
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['name']>>().toEqualTypeOf<Schema>();
-    });
-
-    it('adding an existing nested field by dotted path keeps siblings (no-op)', () => {
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['profile.age']>>().toEqualTypeOf<Schema>();
-    });
-    // `__name__` is not a valid `Selection`, so `addFields(['__name__'])` is a
-    // type error rather than a no-op (see `Selection`'s doc comment).
   });
 
   describe('adding new fields (existing fields preserved)', () => {
@@ -300,10 +291,11 @@ describe('BuildAddFieldsSchema', () => {
 
   describe('properties (additions merge into the existing context)', () => {
     it('same field name twice among additions: the later one wins', () => {
+      type NameString = ExpressionWithAlias<StringType, 'name'>;
       type NameDouble = ExpressionWithAlias<DoubleType, 'name'>;
       // The later addition (DoubleType) wins over both the earlier addition and
       // the existing context field (StringType).
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['name', NameDouble]>>().toEqualTypeOf<{
+      expectTypeOf<BuildAddFieldsSchema<Schema, [NameString, NameDouble]>>().toEqualTypeOf<{
         name: DoubleType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
@@ -328,9 +320,14 @@ describe('BuildAddFieldsSchema', () => {
     });
 
     it('parent/child conflict among additions still keeps existing siblings', () => {
+      type ProfileAlias = ExpressionWithAlias<
+        MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>,
+        'profile'
+      >;
+      type AgeAlias = ExpressionWithAlias<DoubleType, 'profile.age'>;
       // Within the args `profile.age` wins over `profile`; but addFields also
       // preserves existing context fields, so `gender` remains.
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['profile', 'profile.age']>>().toEqualTypeOf<{
+      expectTypeOf<BuildAddFieldsSchema<Schema, [ProfileAlias, AgeAlias]>>().toEqualTypeOf<{
         name: StringType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
@@ -409,6 +406,38 @@ describe('buildSelectionSchema (runtime)', () => {
   it('last-wins: a parent path after its child replaces with the full subtree', () => {
     const oracle = { profile };
     const actual = buildSelectionSchema(schema, ['profile.age', 'profile']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: keeps the context and adds the selection schema on top', () => {
+    const oracle = {
+      name: schema.name,
+      profile,
+      rank: schema.rank,
+      tag: schema.tag,
+      points: schema.rank,
+    };
+    const actual = buildAddFieldsSchema(schema, [field(schema.rank, 'rank').as('points')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: an added field wins over an existing one on name overlap', () => {
+    const oracle = { name: schema.name, profile, rank: schema.name, tag: schema.tag };
+    const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('rank')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: a dotted alias deep-merges into the existing map', () => {
+    const oracle = {
+      name: schema.name,
+      profile: map({ author: schema.name, age: profile.fields.age, gender }),
+      rank: schema.rank,
+      tag: schema.tag,
+    };
+    const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('profile.author')]);
     expect(actual).toStrictEqual(oracle);
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
