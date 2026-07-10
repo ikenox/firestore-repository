@@ -172,6 +172,25 @@ export const buildSelectionSchema = <
   >;
 
 /**
+ * Runtime counterpart of {@link BuildAddFieldsSchema}: the same
+ * `MergeSchemas<BuildSelectionSchema<Context, Args>, Context>` composition
+ * (the added fields' schema wins on overlap, deep-merging nested maps —
+ * verified against the backend).
+ */
+export const buildAddFieldsSchema = <
+  Context extends Fields,
+  const Selections extends readonly Selection<Context>[],
+>(
+  schema: Context,
+  selections: Selections,
+): BuildAddFieldsSchema<Context, Selections> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `BuildAddFieldsSchema`, but the compiler cannot connect a runtime schema value to the type-level result
+  mergeSchemas(
+    foldSelections(schema, dropOverriddenSelections(selections)),
+    schema,
+  ) as BuildAddFieldsSchema<Context, Selections>;
+
+/**
  * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection
  * only if no later selection conflicts with it (last-wins).
  */

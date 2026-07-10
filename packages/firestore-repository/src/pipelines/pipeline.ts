@@ -18,6 +18,7 @@ import { field, type Expression, type Field } from './expression.js';
 import { Ordering } from './ordering.js';
 import {
   type BuildAddFieldsSchema,
+  buildAddFieldsSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   dropOverriddenSelections,
@@ -128,10 +129,23 @@ export class Pipeline<
       parent: this.node,
     });
   }
+  /**
+   * Adds the selections on top of the existing fields, keeping read-identity.
+   * On name overlap the added field wins; a dotted alias deep-merges into the
+   * existing map (both verified against the backend — see
+   * {@link BuildAddFieldsSchema}).
+   */
   addFields<const Selections extends readonly Selection<Schema>[]>(
-    _fields: (field: FieldProvider<Schema>) => Selections,
+    fields: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
-    return unimplemented();
+    const resolved = fields(fieldProvider(this.node.schema));
+    return new Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id>({
+      schema: buildAddFieldsSchema(this.node.schema, resolved),
+      // Resolve last-wins here so the stage carries a conflict-free list that
+      // matches the schema (and executors translate it 1:1).
+      stage: { kind: 'addFields', selections: dropOverriddenSelections(resolved) },
+      parent: this.node,
+    });
   }
   // `MapFieldPath` (data fields only), not `DocFieldPath`: the reserved
   // `'__name__'` key is not a removable data field. At least one field is

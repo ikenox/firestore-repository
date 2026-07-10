@@ -18,6 +18,7 @@ import {
 import { field } from './expression.js';
 import {
   type BuildAddFieldsSchema,
+  buildAddFieldsSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   type ExpressionWithAlias,
@@ -411,6 +412,44 @@ describe('buildSelectionSchema (runtime)', () => {
     const actual = buildSelectionSchema(schema, ['profile.age', 'profile']);
     expect(actual).toStrictEqual(oracle);
     expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: keeps the context and adds the selection schema on top', () => {
+    const oracle = {
+      name: schema.name,
+      profile,
+      rank: schema.rank,
+      tag: schema.tag,
+      points: schema.rank,
+    };
+    const actual = buildAddFieldsSchema(schema, [field(schema.rank, 'rank').as('points')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: an added field wins over an existing one on name overlap', () => {
+    const oracle = { name: schema.name, profile, rank: schema.name, tag: schema.tag };
+    const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('rank')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: a dotted alias deep-merges into the existing map', () => {
+    const oracle = {
+      name: schema.name,
+      profile: map({ author: schema.name, age: profile.fields.age, gender }),
+      rank: schema.rank,
+      tag: schema.tag,
+    };
+    const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('profile.author')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('addFields: a bare path selection is a schema no-op', () => {
+    const actual = buildAddFieldsSchema(schema, ['profile.age']);
+    expect(actual).toStrictEqual(schema);
+    expectTypeOf(actual).toEqualTypeOf(schema);
   });
 
   it("treats '__name__' in an alias like any other key (no special-casing)", () => {

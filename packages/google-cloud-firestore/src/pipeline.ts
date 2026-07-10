@@ -91,8 +91,14 @@ const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.P
       }
       return sdk.removeFields(first, ...rest);
     }
+    case 'addFields': {
+      const [first, ...rest] = stage.selections.map(toSdkSelectable);
+      if (first === undefined) {
+        throw new Error('google-cloud pipeline executor: addFields requires at least one field');
+      }
+      return sdk.addFields(first, ...rest);
+    }
     case 'where':
-    case 'addFields':
     case 'limit':
     case 'offset':
     case 'unnest':
@@ -110,9 +116,14 @@ const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.P
   }
 };
 
-/** Translates a selection (bare path or aliased expression) into an SDK selectable. */
-const toSdkSelectable = (s: string | ExpressionWithAlias): Pipelines.Selectable | string =>
-  typeof s === 'string' ? s : toSdkExpression(s.expression).as(s.alias);
+/**
+ * Translates a selection (bare path or aliased expression) into an SDK
+ * selectable. A bare path becomes `field(path).as(path)` — exactly what the
+ * SDK's own string handling does for `select`, and the only form `addFields`
+ * accepts.
+ */
+const toSdkSelectable = (s: string | ExpressionWithAlias): Pipelines.Selectable =>
+  typeof s === 'string' ? Pipelines.field(s).as(s) : toSdkExpression(s.expression).as(s.alias);
 
 /** Translates the repository expression AST into an SDK expression. */
 const toSdkExpression = (expression: Expression): Pipelines.Expression => {
