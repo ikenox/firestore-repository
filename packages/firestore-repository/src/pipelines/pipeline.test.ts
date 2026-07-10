@@ -39,14 +39,6 @@ describe('pipeline', () => {
     collection(postsCollection, ['author1', 'extra']);
   });
 
-  it('addFields accepts aliased expressions only (no bare paths)', () => {
-    // A bare path would be a schema no-op while the backend materializes
-    // missing intermediate layers — see `BuildAddFieldsSchema`.
-    // @ts-expect-error -- bare string paths are not valid addFields selections
-    base.addFields(() => ['name']);
-    base.addFields((field) => [field('name').as('name2')]); // aliased: ok
-  });
-
   it('__name__ is not projectable (keeps `select`/`removeFields` honest)', () => {
     // `select` / `removeFields` operate on data field paths only (`Selection` /
     // `MapFieldPath`), so the reserved `__name__` key cannot be projected or

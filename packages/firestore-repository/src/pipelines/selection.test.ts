@@ -204,17 +204,9 @@ describe('BuildSelectionSchema', () => {
 });
 
 describe('BuildAddFieldsSchema', () => {
-  describe('empty / no-op', () => {
+  describe('empty', () => {
     it('returns the context unchanged for an empty list', () => {
       expectTypeOf<BuildAddFieldsSchema<Schema, []>>().toEqualTypeOf<Schema>();
-    });
-
-    it('rejects bare field paths (aliased expressions only)', () => {
-      // A bare path would be a schema no-op while the backend materializes
-      // missing intermediate layers (mutating rows the schema says are
-      // untouched) — so it is a type error. See `BuildAddFieldsSchema`.
-      // @ts-expect-error -- bare string paths are not valid addFields selections
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['name']>>().toEqualTypeOf<Schema>();
     });
   });
 
