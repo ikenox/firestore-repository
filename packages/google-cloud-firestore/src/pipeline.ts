@@ -99,6 +99,9 @@ const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.P
       return sdk.addFields(first, ...rest);
     }
     case 'where':
+      // `asBoolean()` is a type-tag wrap for the SDK's `BooleanExpression`
+      // parameter — it does not change the wire proto.
+      return sdk.where(toSdkExpression(stage.condition).asBoolean());
     case 'limit':
     case 'offset':
     case 'unnest':

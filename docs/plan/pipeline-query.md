@@ -255,7 +255,11 @@ Input stages (the `input` stage now carries an `InputSource` payload — see
 
 Transformation stages already stubbed:
 
-- [ ] `where(condition)` — real runtime + AST node + tests.
+- [x] `where(condition)` — stage carries the `Expression<BoolType>` condition,
+      executors translate via `sdk.where(expr.asBoolean())` (a type-tag wrap, no
+      wire change), identity preserved. Verified live incl. chained-where
+      conjunction (AND) and the truthy-only row-drop semantics (missing operand
+      fields drop the row silently).
 - [x] `select(...)` — runtime schema fold (`buildSelectionSchema`, the runtime
       mirror of `BuildSelectionSchema`), stage AST carries conflict-resolved
       selections, executors translate to `sdk.select(...)`, rows decode with
