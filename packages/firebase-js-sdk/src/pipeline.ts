@@ -127,12 +127,12 @@ const applyStage = (sdk: SdkPipeline, stage: TransformStage): SdkPipeline => {
 
 /**
  * Translates a selection (bare path or aliased expression) into an SDK
- * selectable. A bare path becomes `field(path).as(path)` — exactly what the
- * SDK's own string handling does for `select`, and the only form `addFields`
- * accepts.
+ * selectable. A bare path becomes a `Field`, which implements `Selectable`
+ * with its own path as the alias — the same wire proto as the SDK's string
+ * handling for `select`, in the form `addFields` also accepts.
  */
 const toSdkSelectable = (s: string | ExpressionWithAlias): SdkSelectable =>
-  typeof s === 'string' ? field(s).as(s) : toSdkExpression(s.expression).as(s.alias);
+  typeof s === 'string' ? field(s) : toSdkExpression(s.expression).as(s.alias);
 
 /** Translates the repository expression AST into an SDK expression. */
 const toSdkExpression = (expression: Expression): SdkExpression => {
