@@ -442,6 +442,21 @@ describe('buildSelectionSchema (runtime)', () => {
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
+  // TODO(#202): un-skip once ancestor optionality propagates to the selected
+  // leaf. The `@ts-expect-error` marks the type-level expectation the current
+  // (wrong) `BuildSelectionSchema` rejects; the fix will turn it into an
+  // unused directive, forcing this test to be revisited.
+  it.skip('propagates an ancestor Optional marker to the selected leaf (#202)', () => {
+    const s = { name: string(), meta: optional(map({ x: double() })) } satisfies DocumentSchema;
+    // The backend materializes intermediate layers and omits only the leaf, so
+    // the projected `meta` is required while `x` becomes optional.
+    const oracle = { meta: map({ x: optional(double()) }) };
+    const actual = buildSelectionSchema(s, ['meta.x']);
+    expect(actual).toStrictEqual(oracle);
+    // @ts-expect-error -- #202: BuildSelectionSchema does not yet propagate ancestor optionality
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
   it("treats '__name__' in an alias like any other key (no special-casing)", () => {
     // The reserved-name rule is deliberately not modelled client-side:
     // aliasing to top-level `'__name__'` is rejected by the backend itself
