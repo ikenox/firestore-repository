@@ -21,6 +21,7 @@ such); only the final `pipeline` → `main` merge needs to be release-ready.
 Related research / decisions:
 
 - [`../pipeline-query-identity-research.md`](../pipeline-query-identity-research.md) — which stages preserve `id` / `ref` / `createTime` / `updateTime`.
+- [`../pipeline-query-projection-research.md`](../pipeline-query-projection-research.md) — `select` / `add_fields` output shaping (dotted-name materialization, conflict rejection vs the library's last-wins, add_fields merge rules).
 
 ## Current status (snapshot — read this first)
 
