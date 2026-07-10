@@ -209,15 +209,13 @@ describe('BuildAddFieldsSchema', () => {
       expectTypeOf<BuildAddFieldsSchema<Schema, []>>().toEqualTypeOf<Schema>();
     });
 
-    it('adding an existing top-level field by string path is a no-op', () => {
+    it('rejects bare field paths (aliased expressions only)', () => {
+      // A bare path would be a schema no-op while the backend materializes
+      // missing intermediate layers (mutating rows the schema says are
+      // untouched) — so it is a type error. See `BuildAddFieldsSchema`.
+      // @ts-expect-error -- bare string paths are not valid addFields selections
       expectTypeOf<BuildAddFieldsSchema<Schema, ['name']>>().toEqualTypeOf<Schema>();
     });
-
-    it('adding an existing nested field by dotted path keeps siblings (no-op)', () => {
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['profile.age']>>().toEqualTypeOf<Schema>();
-    });
-    // `__name__` is not a valid `Selection`, so `addFields(['__name__'])` is a
-    // type error rather than a no-op (see `Selection`'s doc comment).
   });
 
   describe('adding new fields (existing fields preserved)', () => {
@@ -301,10 +299,11 @@ describe('BuildAddFieldsSchema', () => {
 
   describe('properties (additions merge into the existing context)', () => {
     it('same field name twice among additions: the later one wins', () => {
+      type NameString = ExpressionWithAlias<StringType, 'name'>;
       type NameDouble = ExpressionWithAlias<DoubleType, 'name'>;
       // The later addition (DoubleType) wins over both the earlier addition and
       // the existing context field (StringType).
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['name', NameDouble]>>().toEqualTypeOf<{
+      expectTypeOf<BuildAddFieldsSchema<Schema, [NameString, NameDouble]>>().toEqualTypeOf<{
         name: DoubleType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
@@ -329,9 +328,14 @@ describe('BuildAddFieldsSchema', () => {
     });
 
     it('parent/child conflict among additions still keeps existing siblings', () => {
+      type ProfileAlias = ExpressionWithAlias<
+        MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>,
+        'profile'
+      >;
+      type AgeAlias = ExpressionWithAlias<DoubleType, 'profile.age'>;
       // Within the args `profile.age` wins over `profile`; but addFields also
       // preserves existing context fields, so `gender` remains.
-      expectTypeOf<BuildAddFieldsSchema<Schema, ['profile', 'profile.age']>>().toEqualTypeOf<{
+      expectTypeOf<BuildAddFieldsSchema<Schema, [ProfileAlias, AgeAlias]>>().toEqualTypeOf<{
         name: StringType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
@@ -444,12 +448,6 @@ describe('buildSelectionSchema (runtime)', () => {
     const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('profile.author')]);
     expect(actual).toStrictEqual(oracle);
     expectTypeOf(actual).toEqualTypeOf(oracle);
-  });
-
-  it('addFields: a bare path selection is a schema no-op', () => {
-    const actual = buildAddFieldsSchema(schema, ['profile.age']);
-    expect(actual).toStrictEqual(schema);
-    expectTypeOf(actual).toEqualTypeOf(schema);
   });
 
   it("treats '__name__' in an alias like any other key (no special-casing)", () => {

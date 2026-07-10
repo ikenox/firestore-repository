@@ -22,6 +22,7 @@ import {
   type BuildSelectionSchema,
   buildSelectionSchema,
   dropOverriddenSelections,
+  type ExpressionWithAlias,
   type Selection,
 } from './selection.js';
 import type { InputStage, TransformStage } from './stage.js';
@@ -134,8 +135,11 @@ export class Pipeline<
    * On name overlap the added field wins; a dotted alias deep-merges into the
    * existing map (both verified against the backend — see
    * {@link BuildAddFieldsSchema}).
+   *
+   * Aliased expressions only — bare field paths are rejected at the type
+   * level (see {@link BuildAddFieldsSchema} for why they are a foot-gun).
    */
-  addFields<const Selections extends readonly Selection<Schema>[]>(
+  addFields<const Selections extends readonly ExpressionWithAlias[]>(
     fields: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
     const resolved = fields(fieldProvider(this.node.schema));

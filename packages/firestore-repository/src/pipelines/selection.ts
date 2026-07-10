@@ -91,13 +91,20 @@ type DropOverriddenSelections<Args extends readonly unknown[]> = Args extends re
  * fields. Unlike `select` (which keeps only the selections), `addFields` keeps
  * all existing fields; on name overlap the added field wins, matching the
  * official SDK's "overwrite existing ones" behavior.
+ *
+ * Accepts **aliased expressions only** — no bare field paths (unlike
+ * `select`). A bare path would be a schema no-op at best, and for a path
+ * through an optional map it would silently mutate rows (the backend
+ * materializes the missing intermediate layers as empty maps — verified
+ * live), so the schema would lie. The official SDK's `addFields` accepts only
+ * `Selectable`s too.
  */
 export type BuildAddFieldsSchema<
   Context extends Fields,
-  Args extends readonly Selection<Context>[],
+  Args extends readonly ExpressionWithAlias[],
   // The `Args extends ...` guard is always true; it defers evaluation so the
   // result is accepted as a `DocumentSchema` (same trick as BuildSelectionSchema).
-> = Args extends readonly Selection<Context>[]
+> = Args extends readonly ExpressionWithAlias[]
   ? MergeSchemas<BuildSelectionSchema<Context, Args>, Context>
   : never;
 
@@ -179,7 +186,7 @@ export const buildSelectionSchema = <
  */
 export const buildAddFieldsSchema = <
   Context extends Fields,
-  const Selections extends readonly Selection<Context>[],
+  const Selections extends readonly ExpressionWithAlias[],
 >(
   schema: Context,
   selections: Selections,
