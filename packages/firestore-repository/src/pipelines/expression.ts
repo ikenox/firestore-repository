@@ -409,7 +409,9 @@ type StringValued = FieldType & { output: string };
 //   1) number-domain pair — Int64 / Double / numeric literals mix freely.
 //   2) string-domain pair — string / string-literal / string-union operands
 //      unify (e.g. a `literal('male','female')` field against `constant('male')`).
-//   3) generic same-`T` — every other group; cross-group pairs match nothing.
+//   3) generic same-`T` — every other group, requiring IDENTICAL descriptor
+//      types (no union-vs-narrow widening — pinned in expression.test.ts);
+//      cross-group pairs match nothing.
 
 export function equal(
   left: Expression<NumberValued>,

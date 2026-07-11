@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+  array,
   bool,
   type BoolType,
   bytes,
@@ -8,10 +9,11 @@ import {
   geoPoint,
   int64,
   literal,
-  nullType,
-  array,
   map,
+  nullable,
+  nullType,
   string,
+  type StringType,
   timestamp,
   union,
   vector,
@@ -19,19 +21,23 @@ import {
 import {
   and,
   BinaryFunction,
+  Constant,
   constant,
-  geoPointValue,
-  vectorValue,
   equal,
+  type ExpressionWithAlias,
+  Field,
   field,
+  geoPointValue,
   greaterThan,
   greaterThanOrEqual,
   lessThan,
+  lessThanOrEqual,
   not,
   notEqual,
   or,
   UnaryFunction,
   VariadicFunction,
+  vectorValue,
 } from './expression.js';
 
 describe('expression factories', () => {
@@ -154,5 +160,174 @@ describe('expression factories', () => {
     const both = and(flag, cmp, neg);
     expect(both).toStrictEqual(new VariadicFunction('and', bool(), [flag, cmp, neg]));
     expectTypeOf(both).toEqualTypeOf<VariadicFunction<BoolType>>();
+  });
+});
+
+describe('aliasing (.as)', () => {
+  it('binds every node kind to an alias as plain data', () => {
+    const f = field(string(), 'name');
+    expect(f.as('x')).toStrictEqual({ expression: f, alias: 'x' });
+
+    const c = constant(1);
+    expect(c.as('n')).toStrictEqual({ expression: c, alias: 'n' });
+
+    const g = geoPointValue(1, 2);
+    expect(g.as('g')).toStrictEqual({ expression: g, alias: 'g' });
+
+    const v = vectorValue([1]);
+    expect(v.as('v')).toStrictEqual({ expression: v, alias: 'v' });
+
+    const cmp = equal(field(double(), 'rank'), constant(1));
+    expect(cmp.as('b')).toStrictEqual({ expression: cmp, alias: 'b' });
+  });
+
+  it('preserves literal types: the alias and the field path', () => {
+    const aliased = field(string(), 'a.b').as('x');
+    expectTypeOf(aliased.alias).toEqualTypeOf<'x'>();
+    expectTypeOf(aliased.expression).toEqualTypeOf<Field<StringType, 'a.b'>>();
+    // The pair satisfies the selection-facing shape.
+    const asSelection: ExpressionWithAlias<StringType, 'x'> = aliased;
+    expect(asSelection.alias).toBe('x');
+  });
+});
+
+describe('constant edges', () => {
+  it('non-finite and signed-zero numbers are doubles', () => {
+    for (const n of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0]) {
+      expect(constant(n).type).toStrictEqual(double());
+    }
+  });
+
+  it('Buffer is bytes (it is a Uint8Array)', () => {
+    expect(constant(Buffer.from([1, 2])).type).toStrictEqual(bytes());
+  });
+
+  it('an empty map is valid (unlike an empty array)', () => {
+    const empty = constant({});
+    const oracle = map({});
+    expect(empty.type).toStrictEqual(oracle);
+    expectTypeOf(empty.type).toEqualTypeOf(oracle);
+  });
+
+  it('undefined is rejected on both layers', () => {
+    expect(() =>
+      // @ts-expect-error -- undefined is not a ConstantValue
+      constant(undefined),
+    ).toThrow();
+  });
+
+  it('only geopoint/vector nodes are composite leaves — no other expressions', () => {
+    // @ts-expect-error -- a Field expression is not a constant value
+    constant({ x: field(string(), 'name') });
+    // @ts-expect-error -- a computed expression is not a constant value
+    constant({ x: equal(field(string(), 'n'), constant('a')) });
+  });
+
+  it('the constructor is sealed; the factory is sugar for Constant.of', () => {
+    // @ts-expect-error -- the constructor is private; construction goes through Constant.of
+    new Constant(double(), 1);
+    expect(Constant.of(5)).toStrictEqual(constant(5));
+  });
+
+  it('dedups array element descriptors ignoring map key order', () => {
+    const c = constant([
+      { a: 1, b: 2 },
+      { b: 3, a: 4 },
+    ]);
+    const oracle = array(map({ a: double(), b: double() }));
+    expect(c.type).toStrictEqual(oracle);
+    expectTypeOf(c.type).toEqualTypeOf(oracle);
+  });
+
+  it('vectorValue copies its input defensively', () => {
+    const source = [1, 2];
+    const v = vectorValue(source);
+    source.push(3);
+    expect(v.values).toStrictEqual([1, 2]);
+  });
+});
+
+describe('comparison operators (table-driven over all six)', () => {
+  const rank = field(double(), 'rank');
+  const count = field(int64(), 'count');
+  const name = field(string(), 'name');
+
+  const table = [
+    ['equal', equal],
+    ['notEqual', notEqual],
+    ['lessThan', lessThan],
+    ['lessThanOrEqual', lessThanOrEqual],
+    ['greaterThan', greaterThan],
+    ['greaterThanOrEqual', greaterThanOrEqual],
+  ] as const;
+
+  it('every comparison shares the same operand domains', () => {
+    for (const [fnName, cmp] of table) {
+      // number domain (int64 / double / numeric literal / number constant)
+      expect(cmp(rank, count)).toStrictEqual(new BinaryFunction(fnName, bool(), rank, count));
+      expect(cmp(field(literal(1, 2), 'lv'), constant(2)).name).toBe(fnName);
+      // string domain (plain / literal)
+      expect(cmp(field(literal('x', 'y'), 's'), constant('x')).name).toBe(fnName);
+      // same-T pairs for the remaining groups
+      expect(cmp(field(timestamp(), 'at'), constant(new Date(0))).name).toBe(fnName);
+      expect(cmp(field(bytes(), 'raw'), constant(new Uint8Array([1]))).name).toBe(fnName);
+      expect(cmp(field(geoPoint(), 'geo'), geoPointValue(1, 2)).name).toBe(fnName);
+      expect(cmp(field(vector(), 'vec'), vectorValue([1])).name).toBe(fnName);
+      expect(cmp(field(nullType(), 'z'), constant(null)).name).toBe(fnName);
+      // function operands nest (bool same-T)
+      expect(cmp(equal(rank, count), constant(true)).name).toBe(fnName);
+    }
+  });
+
+  it('every comparison rejects cross-group operands', () => {
+    // @ts-expect-error -- string vs number
+    equal(name, rank);
+    // @ts-expect-error -- string vs number
+    notEqual(name, rank);
+    // @ts-expect-error -- string vs number
+    lessThan(name, rank);
+    // @ts-expect-error -- string vs number
+    lessThanOrEqual(name, rank);
+    // @ts-expect-error -- string vs number
+    greaterThan(name, rank);
+    // @ts-expect-error -- string vs number
+    greaterThanOrEqual(name, rank);
+  });
+
+  it('same-T requires identical descriptors — no union-vs-narrow widening', () => {
+    // Empirically disproved a stale comment: the same-T fallback does NOT
+    // unify a union-typed operand with a narrower one.
+    const u1 = field(union(string(), double()), 'u1');
+    const u2 = field(union(string(), double()), 'u2');
+    equal(u1, u2); // identical union descriptors: ok
+    // @ts-expect-error -- a narrower operand does not widen into the union
+    equal(u1, field(string(), 's'));
+  });
+
+  it('pins the current nullable contract (to change with null-tolerant domains)', () => {
+    const ns = field(nullable(string()), 'ns');
+    // Identical nullable descriptors unify via same-T...
+    equal(ns, ns);
+    // ...but a plain string constant does not (strict domains today).
+    // @ts-expect-error -- nullable strings are outside the string domain
+    equal(ns, constant('x'));
+  });
+});
+
+describe('logical operator edges', () => {
+  const flag = field(bool(), 'flag');
+
+  it('takes many operands and nests', () => {
+    const cmp = equal(field(double(), 'rank'), constant(1));
+    const five = and(flag, cmp, not(flag), or(flag, cmp), not(not(flag)));
+    expect(five.operands).toHaveLength(5);
+    expect(five.name).toBe('and');
+  });
+
+  it('pins the current exact-BoolType contract for conditions', () => {
+    // A literal(true, false) field is a LiteralType, not BoolType — rejected
+    // today (to change with the planned BooleanValued domain).
+    // @ts-expect-error -- literal booleans are not Expression<BoolType>
+    and(flag, field(literal(true, false), 'lit'));
   });
 });
