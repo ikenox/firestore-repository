@@ -120,20 +120,17 @@ describe('expression factories', () => {
   });
 
   it('builds shape-grouped nodes with typed payloads', () => {
+    // Whole-instance comparison: `toStrictEqual` checks the constructor and
+    // every own field, so a payload field added later cannot silently escape.
     const cmp = lessThan(rank, count);
-    expect(cmp.kind).toBe('binaryFunction');
-    expect(cmp.name).toBe('lessThan');
-    expect(cmp.left).toBe(rank);
-    expect(cmp.right).toBe(count);
+    expect(cmp).toStrictEqual(new BinaryFunction('lessThan', bool(), rank, count));
 
     const neg = not(flag);
-    expect(neg.kind).toBe('unaryFunction');
-    expect(neg.operand).toBe(flag);
+    expect(neg).toStrictEqual(new UnaryFunction('not', bool(), flag));
     expectTypeOf(neg).toEqualTypeOf<UnaryFunction<BoolType>>();
 
     const both = and(flag, cmp, neg);
-    expect(both.kind).toBe('variadicFunction');
-    expect(both.operands).toStrictEqual([flag, cmp, neg]);
+    expect(both).toStrictEqual(new VariadicFunction('and', bool(), [flag, cmp, neg]));
     expectTypeOf(both).toEqualTypeOf<VariadicFunction<BoolType>>();
   });
 });
