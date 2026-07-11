@@ -1,9 +1,11 @@
 import { type Firestore, Pipelines } from '@google-cloud/firestore';
 import { collectionPath } from 'firestore-repository/path';
 import type {
+  BinaryFunctionName,
   Expression,
   ExpressionWithAlias,
-  FunctionCall,
+  UnaryFunctionName,
+  VariadicFunctionName,
 } from 'firestore-repository/pipelines/expression';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
@@ -138,32 +140,57 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
     case 'constant':
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `Constant.value` is untyped (TODO in expression.ts); the SDK's `constant` overloads want a concrete primitive, but the raw value passes through unchanged at runtime
       return Pipelines.constant(expression.value as string);
-    case 'functionCall':
-      return toSdkFunctionCall(expression);
+    case 'unaryFunction':
+      return unaryFns[expression.name](toSdkExpression(expression.operand));
+    case 'binaryFunction':
+      return binaryFns[expression.name](
+        toSdkExpression(expression.left),
+        toSdkExpression(expression.right),
+      );
+    case 'variadicFunction': {
+      const [first, second, ...rest] = expression.operands;
+      return variadicFns[expression.name](
+        toSdkExpression(first),
+        toSdkExpression(second),
+        ...rest.map(toSdkExpression),
+      );
+    }
     default:
       return assertNever(expression);
   }
 };
 
-// `FunctionCall.name` is an open string (not a union), so `default` is the
-// unsupported-function guard rather than `assertNever`.
-const toSdkFunctionCall = (expression: FunctionCall): Pipelines.Expression => {
-  switch (expression.name) {
-    case 'equal': {
-      // TODO: this runtime arity guard disappears once FunctionCall is
-      // restructured into shape-grouped classes with typed payload fields —
-      // see "Restructure FunctionCall" in docs/plan/pipeline-query.md.
-      const [left, right] = expression.args;
-      if (left === undefined || right === undefined) {
-        throw new Error('google-cloud pipeline executor: equal requires two arguments');
-      }
-      return Pipelines.equal(toSdkExpression(left), toSdkExpression(right));
-    }
-    default:
-      throw new Error(
-        `google-cloud pipeline executor: function "${expression.name}" not supported yet`,
-      );
-  }
+// Per-shape translation tables: `Record` over the name union requires every
+// key, so a newly added function name fails to compile here until translated.
+// (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
+// type-tag only, no wire change.)
+
+const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines.Expression> = {
+  not: (o) => Pipelines.not(o.asBoolean()),
+};
+
+const binaryFns: Record<
+  BinaryFunctionName,
+  (l: Pipelines.Expression, r: Pipelines.Expression) => Pipelines.Expression
+> = {
+  equal: Pipelines.equal,
+  notEqual: Pipelines.notEqual,
+  lessThan: Pipelines.lessThan,
+  lessThanOrEqual: Pipelines.lessThanOrEqual,
+  greaterThan: Pipelines.greaterThan,
+  greaterThanOrEqual: Pipelines.greaterThanOrEqual,
+};
+
+const variadicFns: Record<
+  VariadicFunctionName,
+  (
+    first: Pipelines.Expression,
+    second: Pipelines.Expression,
+    ...rest: Pipelines.Expression[]
+  ) => Pipelines.Expression
+> = {
+  and: (f, s, ...r) => Pipelines.and(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
+  or: (f, s, ...r) => Pipelines.or(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
 };
 
 const toSdkOrdering = (ordering: Ordering) => {
@@ -172,7 +199,9 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'functionCall':
+    case 'unaryFunction':
+    case 'binaryFunction':
+    case 'variadicFunction':
       throw new Error(
         'google-cloud pipeline executor: only field orderings are supported in sort yet',
       );

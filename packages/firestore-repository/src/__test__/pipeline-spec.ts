@@ -1,6 +1,15 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
-import { constant, equal } from '../pipelines/expression.js';
+import {
+  and,
+  constant,
+  equal,
+  greaterThanOrEqual,
+  lessThan,
+  not,
+  notEqual,
+  or,
+} from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
   Pipeline,
@@ -424,7 +433,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
     describe('where', () => {
       // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3.
-      const [a1, _a2, a3] = items;
+      const [a1, a2, a3] = items;
 
       it('filters rows by an equality condition, keeping row identity', async () => {
         await expectPipeline(
@@ -449,6 +458,47 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         await expectPipeline(
           source().where((field) => equal(field('profile.gender'), constant('male'))),
           [a3],
+          { ordered: false },
+        );
+      });
+
+      it('filters with ordering comparisons', async () => {
+        await expectPipeline(
+          source().where((field) => greaterThanOrEqual(field('rank'), constant(2))),
+          [a2, a3],
+          { ordered: false },
+        );
+      });
+
+      it('combines conditions with and / or', async () => {
+        await expectPipeline(
+          source().where((field) =>
+            and(
+              equal(field('profile.gender'), constant('female')),
+              lessThan(field('rank'), constant(2)),
+            ),
+          ),
+          [a1],
+          { ordered: false },
+        );
+        await expectPipeline(
+          source().where((field) =>
+            or(equal(field('rank'), constant(1)), equal(field('rank'), constant(3))),
+          ),
+          [a1, a3],
+          { ordered: false },
+        );
+      });
+
+      it('negates conditions with not / notEqual', async () => {
+        await expectPipeline(
+          source().where((field) => not(equal(field('rank'), constant(2)))),
+          [a1, a3],
+          { ordered: false },
+        );
+        await expectPipeline(
+          source().where((field) => notEqual(field('rank'), constant(2))),
+          [a1, a3],
           { ordered: false },
         );
       });

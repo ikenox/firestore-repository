@@ -11,7 +11,12 @@ import { bool, type BoolType, type DoubleType, type FieldType, type Int64Type } 
  * public type, so `switch (expr.kind)` narrowing and `assertNever`
  * exhaustiveness keep working (a base-class-typed value would not narrow).
  */
-export type Expression<T extends FieldType = FieldType> = FunctionCall<T> | Constant<T> | Field<T>;
+export type Expression<T extends FieldType = FieldType> =
+  | Field<T>
+  | Constant<T>
+  | UnaryFunction<T>
+  | BinaryFunction<T>
+  | VariadicFunction<T>;
 
 /**
  * An expression bound to an output name — the aliased form of a `select` /
@@ -91,37 +96,153 @@ export const constant = <T extends FieldType>(value: unknown): Constant<T> =>
     value,
   );
 
-export class FunctionCall<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'functionCall';
+// Function-call nodes are grouped by SHAPE (arity), not one class per
+// function: each shape carries typed payload fields (no untyped `args` array,
+// so executors need no runtime arity guards), and its `name` is a
+// string-literal union so an executor can translate a whole shape with an
+// exhaustive `Record<Name, ...>` lookup. Per-function individuality (operand
+// compatibility, return types) lives in the factory signatures. See
+// "Restructure FunctionCall" in docs/plan/pipeline-query.md.
+
+/** A function call with a single operand. */
+export class UnaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'unaryFunction';
   constructor(
-    readonly name: string,
+    readonly name: UnaryFunctionName,
     readonly type: T,
-    readonly args: readonly Expression[],
+    readonly operand: Expression,
   ) {
     super();
   }
 }
+export type UnaryFunctionName = 'not';
+
+/** A function call with exactly two operands. */
+export class BinaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'binaryFunction';
+  constructor(
+    readonly name: BinaryFunctionName,
+    readonly type: T,
+    readonly left: Expression,
+    readonly right: Expression,
+  ) {
+    super();
+  }
+}
+export type BinaryFunctionName =
+  | 'equal'
+  | 'notEqual'
+  | 'lessThan'
+  | 'lessThanOrEqual'
+  | 'greaterThan'
+  | 'greaterThanOrEqual';
+
+/** A function call with two or more uniform operands. */
+export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'variadicFunction';
+  constructor(
+    readonly name: VariadicFunctionName,
+    readonly type: T,
+    readonly operands: readonly [Expression, Expression, ...Expression[]],
+  ) {
+    super();
+  }
+}
+export type VariadicFunctionName = 'and' | 'or';
 
 /** Convenience union for numeric expression inputs. */
 type NumericType = Int64Type | DoubleType;
 
-const fn = <T extends FieldType>(
-  name: string,
-  type: T,
-  args: readonly Expression[],
-): FunctionCall<T> => new FunctionCall(name, type, args);
-
 // A comparison op has two overloads:
 //   1) numeric-pair — lets Int64 and Double mix while rejecting numeric-vs-other.
 //   2) generic same-`T` — every other group plus union-vs-narrow widening.
+
 export function equal(
   left: Expression<NumericType>,
   right: Expression<NumericType>,
-): FunctionCall<BoolType>;
+): BinaryFunction<BoolType>;
 export function equal<T extends FieldType>(
   left: Expression<T>,
   right: Expression<T>,
-): FunctionCall<BoolType>;
-export function equal(left: Expression, right: Expression): FunctionCall<BoolType> {
-  return fn('equal', bool(), [left, right]);
+): BinaryFunction<BoolType>;
+export function equal(left: Expression, right: Expression): BinaryFunction<BoolType> {
+  return new BinaryFunction('equal', bool(), left, right);
 }
+
+export function notEqual(
+  left: Expression<NumericType>,
+  right: Expression<NumericType>,
+): BinaryFunction<BoolType>;
+export function notEqual<T extends FieldType>(
+  left: Expression<T>,
+  right: Expression<T>,
+): BinaryFunction<BoolType>;
+export function notEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
+  return new BinaryFunction('notEqual', bool(), left, right);
+}
+
+export function lessThan(
+  left: Expression<NumericType>,
+  right: Expression<NumericType>,
+): BinaryFunction<BoolType>;
+export function lessThan<T extends FieldType>(
+  left: Expression<T>,
+  right: Expression<T>,
+): BinaryFunction<BoolType>;
+export function lessThan(left: Expression, right: Expression): BinaryFunction<BoolType> {
+  return new BinaryFunction('lessThan', bool(), left, right);
+}
+
+export function lessThanOrEqual(
+  left: Expression<NumericType>,
+  right: Expression<NumericType>,
+): BinaryFunction<BoolType>;
+export function lessThanOrEqual<T extends FieldType>(
+  left: Expression<T>,
+  right: Expression<T>,
+): BinaryFunction<BoolType>;
+export function lessThanOrEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
+  return new BinaryFunction('lessThanOrEqual', bool(), left, right);
+}
+
+export function greaterThan(
+  left: Expression<NumericType>,
+  right: Expression<NumericType>,
+): BinaryFunction<BoolType>;
+export function greaterThan<T extends FieldType>(
+  left: Expression<T>,
+  right: Expression<T>,
+): BinaryFunction<BoolType>;
+export function greaterThan(left: Expression, right: Expression): BinaryFunction<BoolType> {
+  return new BinaryFunction('greaterThan', bool(), left, right);
+}
+
+export function greaterThanOrEqual(
+  left: Expression<NumericType>,
+  right: Expression<NumericType>,
+): BinaryFunction<BoolType>;
+export function greaterThanOrEqual<T extends FieldType>(
+  left: Expression<T>,
+  right: Expression<T>,
+): BinaryFunction<BoolType>;
+export function greaterThanOrEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
+  return new BinaryFunction('greaterThanOrEqual', bool(), left, right);
+}
+
+/** Logical conjunction of two or more boolean expressions. */
+export const and = (
+  first: Expression<BoolType>,
+  second: Expression<BoolType>,
+  ...rest: Expression<BoolType>[]
+): VariadicFunction<BoolType> => new VariadicFunction('and', bool(), [first, second, ...rest]);
+
+/** Logical disjunction of two or more boolean expressions. */
+export const or = (
+  first: Expression<BoolType>,
+  second: Expression<BoolType>,
+  ...rest: Expression<BoolType>[]
+): VariadicFunction<BoolType> => new VariadicFunction('or', bool(), [first, second, ...rest]);
+
+/** Logical negation of a boolean expression. */
+export const not = (condition: Expression<BoolType>): UnaryFunction<BoolType> =>
+  new UnaryFunction('not', bool(), condition);

@@ -286,7 +286,9 @@ const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fie
     case 'field':
       return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
     case 'constant':
-    case 'functionCall':
+    case 'unaryFunction':
+    case 'binaryFunction':
+    case 'variadicFunction':
       return pathToSchema(alias, expression.type);
     default:
       return assertNever(expression);
