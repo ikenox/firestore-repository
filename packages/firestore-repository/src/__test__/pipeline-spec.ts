@@ -1,6 +1,17 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
-import { constant, equal } from '../pipelines/expression.js';
+import {
+  and,
+  constant,
+  equal,
+  geoPointValue,
+  vectorValue,
+  greaterThanOrEqual,
+  lessThan,
+  not,
+  notEqual,
+  or,
+} from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
   Pipeline,
@@ -216,6 +227,59 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
+    describe('constant expressions', () => {
+      it('projects constants of every supported value type', async () => {
+        // One batched round trip verifies inference, translation and decode
+        // for the whole ConstantValue domain.
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .limit(1)
+            .addFields(() => [
+              constant('text').as('s'),
+              constant(2.5).as('n'),
+              constant(true).as('b'),
+              constant(null).as('z'),
+              constant(new Date('2024-01-02T03:04:05.678Z')).as('t'),
+              constant(new Uint8Array([1, 2, 3])).as('by'),
+              geoPointValue(35.68, 139.69).as('g'),
+              vectorValue([0.5, 0.25]).as('v'),
+              constant([1, 2, 3]).as('arr'),
+              constant([1, 'a', true]).as('mixed'),
+              constant({
+                x: 1,
+                s: 'a',
+                inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
+                spot: geoPointValue(1, 3),
+              }).as('m'),
+            ])
+            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v', 'arr', 'mixed', 'm']),
+          [
+            {
+              data: {
+                s: 'text',
+                n: 2.5,
+                b: true,
+                z: null,
+                t: new Date('2024-01-02T03:04:05.678Z'),
+                by: new Uint8Array([1, 2, 3]),
+                g: { latitude: 35.68, longitude: 139.69 },
+                v: [0.5, 0.25],
+                arr: [1, 2, 3],
+                mixed: [1, 'a', true],
+                m: {
+                  x: 1,
+                  s: 'a',
+                  inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
+                  spot: { latitude: 1, longitude: 3 },
+                },
+              },
+            },
+          ],
+        );
+      });
+    });
+
     describe('limit / offset', () => {
       // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3; sort first so
       // the truncation point is deterministic.
@@ -424,7 +488,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
     describe('where', () => {
       // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3.
-      const [a1, _a2, a3] = items;
+      const [a1, a2, a3] = items;
 
       it('filters rows by an equality condition, keeping row identity', async () => {
         await expectPipeline(
@@ -449,6 +513,47 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         await expectPipeline(
           source().where((field) => equal(field('profile.gender'), constant('male'))),
           [a3],
+          { ordered: false },
+        );
+      });
+
+      it('filters with magnitude comparisons (lessThan / greaterThanOrEqual / ...)', async () => {
+        await expectPipeline(
+          source().where((field) => greaterThanOrEqual(field('rank'), constant(2))),
+          [a2, a3],
+          { ordered: false },
+        );
+      });
+
+      it('combines conditions with and / or', async () => {
+        await expectPipeline(
+          source().where((field) =>
+            and(
+              equal(field('profile.gender'), constant('female')),
+              lessThan(field('rank'), constant(2)),
+            ),
+          ),
+          [a1],
+          { ordered: false },
+        );
+        await expectPipeline(
+          source().where((field) =>
+            or(equal(field('rank'), constant(1)), equal(field('rank'), constant(3))),
+          ),
+          [a1, a3],
+          { ordered: false },
+        );
+      });
+
+      it('negates conditions with not / notEqual', async () => {
+        await expectPipeline(
+          source().where((field) => not(equal(field('rank'), constant(2)))),
+          [a1, a3],
+          { ordered: false },
+        );
+        await expectPipeline(
+          source().where((field) => notEqual(field('rank'), constant(2))),
+          [a1, a3],
           { ordered: false },
         );
       });

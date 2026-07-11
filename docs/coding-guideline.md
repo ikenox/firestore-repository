@@ -49,6 +49,19 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
   rules, and oxlint's custom JS plugins don't expose type information. Until
   such a rule exists, it is upheld by review.
 
+## Test assertions
+
+- **Compare whole values, not field lists.** Assert a result against a single
+  hand-written expected value with `toStrictEqual` (which also checks the
+  constructor for class instances) instead of enumerating per-field
+  assertions. A field list silently stops covering the value when a new field
+  is added later; a whole-value oracle cannot miss it, and it shows the
+  reader the complete expected shape in one place.
+- Use reference equality (`toBe`) only where the API's contract IS identity —
+  e.g. `fieldTypeOfPath` returning the schema's own descriptor instance. When
+  both sides are freshly constructed there is no canonical instance and
+  `toStrictEqual` is the right tool.
+
 ## Type-level / runtime mirroring
 
 Some computations exist twice: once in the type system (e.g.

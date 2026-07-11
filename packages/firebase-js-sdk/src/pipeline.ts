@@ -1,18 +1,34 @@
-import type { Firestore } from '@firebase/firestore';
+import { Bytes, type Firestore, GeoPoint, vector } from '@firebase/firestore';
 import {
+  and as sdkAnd,
+  array as sdkArray,
   constant as sdkConstant,
   equal as sdkEqual,
   execute as executePipeline,
   field,
+  greaterThan as sdkGreaterThan,
+  greaterThanOrEqual as sdkGreaterThanOrEqual,
+  lessThan as sdkLessThan,
+  lessThanOrEqual as sdkLessThanOrEqual,
+  map as sdkMap,
+  not as sdkNot,
+  notEqual as sdkNotEqual,
+  or as sdkOr,
   type Expression as SdkExpression,
   type Pipeline as SdkPipeline,
   type Selectable as SdkSelectable,
 } from '@firebase/firestore/pipelines';
 import { collectionPath } from 'firestore-repository/path';
-import type {
-  Expression,
+import {
+  type BinaryFunctionName,
+  type Constant,
+  type ConstantArray,
+  type Expression,
+  GeoPointValue,
+  VectorValue,
   ExpressionWithAlias,
-  FunctionCall,
+  UnaryFunctionName,
+  VariadicFunctionName,
 } from 'firestore-repository/pipelines/expression';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
@@ -145,34 +161,110 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
     case 'field':
       return field(expression.path);
     case 'constant':
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `Constant.value` is untyped (TODO in expression.ts); the SDK's `constant` overloads want a concrete primitive, but the raw value passes through unchanged at runtime
-      return sdkConstant(expression.value as string);
-    case 'functionCall':
-      return toSdkFunctionCall(expression);
+      return toSdkConstant(expression.value);
+    case 'geoPointValue':
+    case 'vectorValue':
+      // Value nodes also appear as constant-composite leaves; toSdkConstant
+      // is the single home for their translation.
+      return toSdkConstant(expression);
+    case 'unaryFunction':
+      return unaryFns[expression.name](toSdkExpression(expression.operand));
+    case 'binaryFunction':
+      return binaryFns[expression.name](
+        toSdkExpression(expression.left),
+        toSdkExpression(expression.right),
+      );
+    case 'variadicFunction': {
+      const [first, second, ...rest] = expression.operands;
+      return variadicFns[expression.name](
+        toSdkExpression(first),
+        toSdkExpression(second),
+        ...rest.map(toSdkExpression),
+      );
+    }
     default:
       return assertNever(expression);
   }
 };
 
-// `FunctionCall.name` is an open string (not a union), so `default` is the
-// unsupported-function guard rather than `assertNever`.
-const toSdkFunctionCall = (expression: FunctionCall): SdkExpression => {
-  switch (expression.name) {
-    case 'equal': {
-      // TODO: this runtime arity guard disappears once FunctionCall is
-      // restructured into shape-grouped classes with typed payload fields —
-      // see "Restructure FunctionCall" in docs/plan/pipeline-query.md.
-      const [left, right] = expression.args;
-      if (left === undefined || right === undefined) {
-        throw new Error('firebase pipeline executor: equal requires two arguments');
-      }
-      return sdkEqual(toSdkExpression(left), toSdkExpression(right));
-    }
-    default:
-      throw new Error(
-        `firebase pipeline executor: function "${expression.name}" not supported yet`,
-      );
+/**
+ * Recursively translates a constant value tree into SDK expressions —
+ * composites translate node-wise (the SDK's `array()` / `map()` accept
+ * nested expressions), so conversions like `Uint8Array` → `Bytes` apply at
+ * any depth. `Constant` payload shapes are unambiguous: geopoints and
+ * vectors are dedicated nodes, so an array is always an array constant and a
+ * plain object always a map constant.
+ */
+const toSdkConstant = (value: Constant['value']): SdkExpression => {
+  if (value === null) {
+    return sdkConstant(value);
   }
+  if (value instanceof Date) {
+    return sdkConstant(value);
+  }
+  if (value instanceof Uint8Array) {
+    return sdkConstant(Bytes.fromUint8Array(value));
+  }
+  if (value instanceof GeoPointValue) {
+    return sdkConstant(new GeoPoint(value.latitude, value.longitude));
+  }
+  if (value instanceof VectorValue) {
+    return sdkConstant(vector([...value.values]));
+  }
+  if (isConstantArrayValue(value)) {
+    return sdkArray(value.map(toSdkConstant));
+  }
+  switch (typeof value) {
+    case 'string':
+      return sdkConstant(value);
+    case 'number':
+      return sdkConstant(value);
+    case 'boolean':
+      return sdkConstant(value);
+    case 'object':
+      return sdkMap(
+        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkConstant(v)])),
+      );
+    case 'bigint':
+    case 'symbol':
+    case 'undefined':
+    case 'function':
+      // Impossible for a ConstantValue — `value` is narrowed to `never` here.
+      return assertNever(value);
+    default:
+      return assertNever(value);
+  }
+};
+
+/** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
+const isConstantArrayValue = (value: Constant['value']): value is ConstantArray =>
+  Array.isArray(value);
+
+// Per-shape translation tables: `Record` over the name union requires every
+// key, so a newly added function name fails to compile here until translated.
+// (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
+// type-tag only, no wire change.)
+
+const unaryFns: Record<UnaryFunctionName, (o: SdkExpression) => SdkExpression> = {
+  not: (o) => sdkNot(o.asBoolean()),
+};
+
+const binaryFns: Record<BinaryFunctionName, (l: SdkExpression, r: SdkExpression) => SdkExpression> =
+  {
+    equal: sdkEqual,
+    notEqual: sdkNotEqual,
+    lessThan: sdkLessThan,
+    lessThanOrEqual: sdkLessThanOrEqual,
+    greaterThan: sdkGreaterThan,
+    greaterThanOrEqual: sdkGreaterThanOrEqual,
+  };
+
+const variadicFns: Record<
+  VariadicFunctionName,
+  (first: SdkExpression, second: SdkExpression, ...rest: SdkExpression[]) => SdkExpression
+> = {
+  and: (f, s, ...r) => sdkAnd(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
+  or: (f, s, ...r) => sdkOr(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
 };
 
 const toSdkOrdering = (ordering: Ordering) => {
@@ -181,7 +273,11 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'functionCall':
+    case 'geoPointValue':
+    case 'vectorValue':
+    case 'unaryFunction':
+    case 'binaryFunction':
+    case 'variadicFunction':
       throw new Error('firebase pipeline executor: only field orderings are supported in sort yet');
     default:
       return assertNever(expression);

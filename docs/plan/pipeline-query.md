@@ -18,6 +18,11 @@ long-lived **`pipeline`** branch:
 So `pipeline` can carry WIP / unstable code (the `Pipeline` class is marked as
 such); only the final `pipeline` → `main` merge needs to be release-ready.
 
+Related plans:
+
+- [`pipeline-query-expressions.md`](./pipeline-query-expressions.md) — the
+  expression-function restoration plan (class tree, inventory, rollout slices).
+
 Related research / decisions:
 
 - [`../pipeline-query-identity-research.md`](../pipeline-query-identity-research.md) — which stages preserve `id` / `ref` / `createTime` / `updateTime`.
@@ -331,29 +336,34 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## Expressions — remaining gaps
 
-- [ ] **Restructure `FunctionCall` into shape-grouped classes when the ~85
-      factories return.** Decided design (2026-07): don't do one class per
-      function (SDK-style, ~85 classes, giant `Expression` union) and don't
-      keep the current single `FunctionCall` with untyped `args: Expression[]`
-      (forces runtime arity guards in every executor — see
-      `toSdkFunctionCall`'s `left === undefined` checks). Instead, one class
-      per **shape** (`UnaryFunction` / `BinaryFunction` / `VariadicFunction` /
-      individual classes for irregulars like `findNearest` / `cond`), each
-      with typed payload fields (`left` / `right` / `operands`) and a
-      per-shape `name: <Shape>FunctionName` string-literal union. - Executors then translate each shape with a
-      `Record<BinaryFunctionName, (l, r) => SdkExpr>` lookup table — the
-      `Record` requires every key, giving the same exhaustiveness guarantee
-      as `assertNever` without per-function `case`s, and the arity guards
-      disappear into the types. - Rationale: a Visitor and a `name` string-union switch are the same
-      case-analysis over a closed sum (same side of the expression problem);
-      the only substantive win available is typed payloads, and shape
-      granularity gets it with ~5 classes instead of ~85. Per-function
-      individuality (operand/return typing like `equal`'s overloads) stays
-      in the factory signatures.
+- [~] **Restructure `FunctionCall` into shape-grouped classes when the ~85
+  factories return.** DONE for the structure plus the comparison
+  (`equal` / `notEqual` / `lessThan` / `lessThanOrEqual` / `greaterThan` /
+  `greaterThanOrEqual`) and logical (`and` / `or` / `not`) factories;
+  remaining categories (arithmetic / string / array / map / timestamp /
+  vector / ...) slot into the same shapes as they return. Decided design
+  (2026-07): don't do one class per
+  function (SDK-style, ~85 classes, giant `Expression` union) and don't
+  keep the current single `FunctionCall` with untyped `args: Expression[]`
+  (forces runtime arity guards in every executor — see
+  `toSdkFunctionCall`'s `left === undefined` checks). Instead, one class
+  per **shape** (`UnaryFunction` / `BinaryFunction` / `VariadicFunction` /
+  individual classes for irregulars like `findNearest` / `cond`), each
+  with typed payload fields (`left` / `right` / `operands`) and a
+  per-shape `name: <Shape>FunctionName` string-literal union. - Executors then translate each shape with a
+  `Record<BinaryFunctionName, (l, r) => SdkExpr>` lookup table — the
+  `Record` requires every key, giving the same exhaustiveness guarantee
+  as `assertNever` without per-function `case`s, and the arity guards
+  disappear into the types. - Rationale: a Visitor and a `name` string-union switch are the same
+  case-analysis over a closed sum (same side of the expression problem);
+  the only substantive win available is typed payloads, and shape
+  granularity gets it with ~5 classes instead of ~85. Per-function
+  individuality (operand/return typing like `equal`'s overloads) stays
+  in the factory signatures.
 - [ ] Per-op numeric return type refinement (Int64-pair → Int64 vs
       auto-widen to Double) — TODO comments already in `expression.ts`.
-- [ ] Improve `constant(value)` type inference from runtime value
-      (`number → DoubleType`, `string → StringType`, ...).
+- [x] Improve `constant(value)` type inference from runtime value — see the
+      expressions plan, slice 1.
 - [ ] Tighten `arrayGet` return type via element typing.
 - [ ] Tighten `mapGet` return type via key-aware lookup (subschema).
 - [ ] Tighten `array(...)` / `map({...})` constructor return types from
