@@ -143,12 +143,18 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
 
 - [x] **0. Shapes + comparison + logical core** (#213).
 - [x] **1. `constant` type inference.** `ConstantTypeOf<V>` (type) mirrored by
-      `constantTypeOf` (runtime); `ConstantValue = string | number | boolean |
-null | Date | Uint8Array | GeoPoint` (doc refs / arrays / maps / vectors
-      deferred to their constructors). All numbers map to `DoubleType` (wire
-      integer encoding is the SDK's concern). This fixed the reachable
-      descriptor-lie crash (`type: 'todo'`) and pulled the comparison
-      operators onto value-domain predicates (`NumberValued` / `StringValued`
+      `constantTypeOf` (runtime). Classification: everything with an
+      unambiguous plain-JS representation goes through `constant()` — scalars
+      (`string | number | boolean | null | Date | Uint8Array`), non-empty
+      homogeneous arrays (heterogeneous elements rejected at the type level,
+      runtime twin guarding nested occurrences), and plain-object maps
+      (recursive). Firestore types WITHOUT their own JS representation are
+      dedicated nodes: `GeoPointValue` / `VectorValue` — a plain object is
+      always a map constant, a `number[]` always an array constant. All
+      numbers map to `DoubleType` (wire integer encoding is the SDK's
+      concern). This fixed the reachable descriptor-lie crash
+      (`type: 'todo'`) and pulled the comparison operators onto value-domain
+      predicates (`NumberValued` / `StringValued`
       overloads before the same-`T` fallback) so literal-typed fields compare
       against plain constants. Executors translate per value type (plain
       `GeoPoint` → SDK class; `Uint8Array` → `Bytes` on the client SDK).
