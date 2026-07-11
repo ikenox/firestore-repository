@@ -385,15 +385,12 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
-    // TODO(#202): un-skip once ancestor optionality propagates to the selected
-    // leaf. Selecting through an optional map currently types the leaf as
-    // required, but the backend materializes the intermediate layers and omits
-    // only the leaf (`{ meta: {} }` for a doc without `meta`) — so decoding
-    // real data throws (confirmed live: both tests fail with a ZodError when
-    // un-skipped). The `@ts-expect-error`s below mark expectations the current
-    // (wrong) types reject; the fix will turn them into unused directives,
-    // forcing this suite to be revisited.
-    describe('select through an optional map (#202)', () => {
+    // Ancestor optionality moves onto the projected leaf: the backend
+    // materializes a dotted selection's intermediate layers and omits only the
+    // leaf, so a path through an optional map yields an optional leaf (and an
+    // aliased read of it an optional key). See
+    // docs/pipeline-query-projection-research.md.
+    describe('select through an optional map', () => {
       const optionalMetaCollection = rootCollection({
         name: 'OptionalMeta',
         schema: { name: string(), meta: optional(map({ x: double() })) },
@@ -408,26 +405,18 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         ]);
       });
 
-      it.skip('a dotted path through an optional map yields an optional leaf', async () => {
+      it('a dotted path through an optional map yields an optional leaf', async () => {
         await expectPipeline(
           collectionInput(coll).select(() => ['meta.x']),
-          [
-            { data: { meta: { x: 1 } } },
-            // @ts-expect-error -- #202: the leaf must become optional; the backend returns `{ meta: {} }` here
-            { data: { meta: {} } },
-          ],
+          [{ data: { meta: { x: 1 } } }, { data: { meta: {} } }],
           { ordered: false },
         );
       });
 
-      it.skip('an alias of a field under an optional map yields an optional key', async () => {
+      it('an alias of a field under an optional map yields an optional key', async () => {
         await expectPipeline(
           collectionInput(coll).select((field) => ['name', field('meta.x').as('mx')]),
-          [
-            { data: { name: 'with-meta', mx: 1 } },
-            // @ts-expect-error -- #202: `mx` must become optional; the backend omits the key here
-            { data: { name: 'without-meta' } },
-          ],
+          [{ data: { name: 'with-meta', mx: 1 } }, { data: { name: 'without-meta' } }],
           { ordered: false },
         );
       });

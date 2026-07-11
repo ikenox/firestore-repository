@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   array,
   type ArrayType,
+  bool,
   type DocumentSchema,
   double,
   type DoubleType,
@@ -15,7 +16,7 @@ import {
   string,
   type StringType,
 } from '../schema.js';
-import { field } from './expression.js';
+import { constant, equal, field } from './expression.js';
 import {
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
@@ -442,18 +443,50 @@ describe('buildSelectionSchema (runtime)', () => {
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
-  // TODO(#202): un-skip once ancestor optionality propagates to the selected
-  // leaf. The `@ts-expect-error` marks the type-level expectation the current
-  // (wrong) `BuildSelectionSchema` rejects; the fix will turn it into an
-  // unused directive, forcing this test to be revisited.
-  it.skip('propagates an ancestor Optional marker to the selected leaf (#202)', () => {
+  it('propagates an ancestor Optional marker to the selected leaf', () => {
     const s = { name: string(), meta: optional(map({ x: double() })) } satisfies DocumentSchema;
     // The backend materializes intermediate layers and omits only the leaf, so
     // the projected `meta` is required while `x` becomes optional.
     const oracle = { meta: map({ x: optional(double()) }) };
     const actual = buildSelectionSchema(s, ['meta.x']);
     expect(actual).toStrictEqual(oracle);
-    // @ts-expect-error -- #202: BuildSelectionSchema does not yet propagate ancestor optionality
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('propagates a mid-path Optional marker from deeper nesting', () => {
+    const s = { a: map({ b: optional(map({ c: double() })) }) } satisfies DocumentSchema;
+    // The optional segment is in the middle: output layers are required maps,
+    // only the leaf carries the conditionality.
+    const oracle = { a: map({ b: map({ c: optional(double()) }) }) };
+    const actual = buildSelectionSchema(s, ['a.b.c']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('marks an aliased Field of a conditional path optional; computed expressions stay required', () => {
+    const s = { name: string(), meta: optional(map({ x: double() })) } satisfies DocumentSchema;
+
+    const aliased = buildSelectionSchema(s, [field(s.meta.fields.x, 'meta.x').as('mx')]);
+    const aliasedOracle = { mx: optional(double()) };
+    expect(aliased).toStrictEqual(aliasedOracle);
+    expectTypeOf(aliased).toEqualTypeOf(aliasedOracle);
+
+    // A computed expression always produces a value — no conditionality.
+    const computed = buildSelectionSchema(s, [
+      equal(field(s.meta.fields.x, 'meta.x'), constant(1)).as('isOne'),
+    ]);
+    const computedOracle = { isOne: bool() };
+    expect(computed).toStrictEqual(computedOracle);
+    expectTypeOf(computed).toEqualTypeOf(computedOracle);
+  });
+
+  it('selecting a whole optional map keeps the key itself optional', () => {
+    const s = { name: string(), meta: optional(map({ x: double() })) } satisfies DocumentSchema;
+    // Whole-key selection: absence stays on the key (the backend omits it),
+    // not on the leaves inside.
+    const oracle = { meta: s.meta };
+    const actual = buildSelectionSchema(s, ['meta']);
+    expect(actual).toStrictEqual(oracle);
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 

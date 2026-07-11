@@ -7,8 +7,11 @@ import {
   map,
   type MapFieldPath,
   type MapType,
+  type Optional,
+  optional,
 } from '../schema.js';
-import type { ExpressionWithAlias } from './expression.js';
+import { assertNever } from '../util.js';
+import type { ExpressionWithAlias, Field } from './expression.js';
 
 // Re-exported for consumers of the selection model; the type itself lives in
 // `expression.ts` (it is produced by `Expression.as(...)`).
@@ -108,15 +111,54 @@ export type BuildAddFieldsSchema<
   ? MergeSchemas<BuildSelectionSchema<Context, Args>, Context>
   : never;
 
-/** Resolves one selection into the partial schema it contributes to the output. */
-type SelectionToSchema<Context extends Fields, S> =
-  S extends ExpressionWithAlias<infer T, infer P>
+/**
+ * Resolves one selection into the partial schema it contributes to the output.
+ * Selections that read a source **field path** (bare paths, and aliases whose
+ * expression is a `Field`) mark the projected leaf `Optional` when the path
+ * crosses an optional ancestor ({@link WithConditionality}); computed
+ * expressions always produce a value and stay as-is.
+ */
+type SelectionToSchema<Context extends Fields, S> = S extends {
+  expression: Field<infer T, infer P>;
+  alias: infer A extends string;
+}
+  ? PathToSchema<A, WithConditionality<Context, P, T>>
+  : S extends ExpressionWithAlias<infer T, infer P>
     ? PathToSchema<P, T>
     : S extends string
       ? S extends MapFieldPath<Context>
-        ? PathToSchema<S, FieldTypeOfPath<Context, S>>
+        ? PathToSchema<S, WithConditionality<Context, S, FieldTypeOfPath<Context, S>>>
         : {}
       : {};
+
+/**
+ * Marks the resolved leaf type `Optional` when its source path is conditional
+ * ({@link IsConditionalPath}). The backend materializes the intermediate
+ * output layers of a dotted selection and omits only the leaf, so the
+ * projection moves ancestor optionality onto the leaf — see
+ * `docs/pipeline-query-projection-research.md`.
+ */
+type WithConditionality<Context extends Fields, P extends string, T extends FieldType> =
+  IsConditionalPath<Context, P> extends true ? T & Optional : T;
+
+/**
+ * Whether the value at `P` can be absent even though the path is well-typed:
+ * true when any **ancestor** segment carries the `Optional` marker. The leaf's
+ * own marker is not this type's concern — it already survives through
+ * `FieldTypeOfPath`.
+ */
+type IsConditionalPath<
+  Context extends Fields,
+  P extends string,
+> = P extends `${infer Head}.${infer Rest}`
+  ? Head extends keyof Context
+    ? Context[Head] extends Optional
+      ? true
+      : Context[Head] extends MapType<infer F>
+        ? IsConditionalPath<F, Rest>
+        : false
+    : false
+  : false;
 
 /**
  * Builds a single-entry schema where dots in `Path` produce nested `MapType` layers.
@@ -232,10 +274,46 @@ const foldSelections = (
  * strings is unreachable through the typed API, so a throw is the defensive
  * equivalent).
  */
-const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fields =>
-  typeof s === 'string'
-    ? pathToSchema(s, fieldTypeOfPath<Fields, string>(schema, s))
-    : pathToSchema(s.alias, s.expression.type);
+const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fields => {
+  if (typeof s === 'string') {
+    return pathToSchema(
+      s,
+      withConditionality(schema, s, fieldTypeOfPath<Fields, string>(schema, s)),
+    );
+  }
+  const { expression, alias } = s;
+  switch (expression.kind) {
+    case 'field':
+      return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
+    case 'constant':
+    case 'functionCall':
+      return pathToSchema(alias, expression.type);
+    default:
+      return assertNever(expression);
+  }
+};
+
+/** Runtime counterpart of {@link WithConditionality}. */
+const withConditionality = (schema: Fields, path: string, type: FieldType): FieldType =>
+  isConditionalPath(schema, path) ? optional(type) : type;
+
+/** Runtime counterpart of {@link IsConditionalPath}. */
+const isConditionalPath = (schema: Fields, path: string): boolean => {
+  const dot = path.indexOf('.');
+  if (dot < 0) {
+    return false;
+  }
+  const head = schema[path.slice(0, dot)];
+  if (head === undefined) {
+    return false;
+  }
+  // Read the marker before `isMapType` narrows the descriptor to `MapType`
+  // (narrowing drops the `optional?` part of the `MapFields` intersection).
+  if (head.optional === true) {
+    return true;
+  }
+  return isMapType(head) ? isConditionalPath(head.fields, path.slice(dot + 1)) : false;
+};
 
 /** Runtime counterpart of {@link SelectionPath}. */
 const selectionPath = (s: string | ExpressionWithAlias): string =>
