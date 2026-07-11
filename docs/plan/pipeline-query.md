@@ -18,6 +18,11 @@ long-lived **`pipeline`** branch:
 So `pipeline` can carry WIP / unstable code (the `Pipeline` class is marked as
 such); only the final `pipeline` → `main` merge needs to be release-ready.
 
+Related plans:
+
+- [`pipeline-query-expressions.md`](./pipeline-query-expressions.md) — the
+  expression-function restoration plan (class tree, inventory, rollout slices).
+
 Related research / decisions:
 
 - [`../pipeline-query-identity-research.md`](../pipeline-query-identity-research.md) — which stages preserve `id` / `ref` / `createTime` / `updateTime`.
