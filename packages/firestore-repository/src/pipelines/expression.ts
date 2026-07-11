@@ -175,7 +175,10 @@ export type ConstantScalar = string | number | boolean | null | Date | Uint8Arra
 export type ConstantLeafNode = GeoPointValue | VectorValue;
 /**
  * Non-empty (an empty literal has no element to infer a descriptor from) and
- * non-nested (Firestore forbids arrays directly inside arrays).
+ * non-nested: directly nested arrays (`constant([1, [2, 3]])`) are excluded
+ * from the element type because Firestore's data model itself forbids an
+ * array value inside another array — the official SDK does not support them
+ * either. (An array inside a *map* inside an array is fine.)
  */
 export type ConstantArray = readonly [ConstantElement, ...ConstantElement[]];
 type ConstantElement = ConstantScalar | ConstantLeafNode | ConstantMap;
