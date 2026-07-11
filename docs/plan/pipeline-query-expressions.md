@@ -55,10 +55,42 @@ Expression<T> = discriminated union of all leaves (narrowed via `kind`)
 | concern                                                                     | home                                                                              |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | arity / payload shape                                                       | the shape classes                                                                 |
-| operand type constraints (group compatibility, numeric-only, ...)           | factory overloads                                                                 |
+| operand type constraints                                                    | **value-domain predicates** + factory overloads (see below)                       |
 | literal arguments (`TimeUnit`, `FieldTypeName`, regex patterns, separators) | factory signatures (literal unions), lifted via `constant()` — wire-faithful      |
 | derived return types (`logicalMaximum<T>`, `mapGet` subschema lookup)       | factory type parameters / return types                                            |
 | SDK translation                                                             | per-shape `Record<Name, fn>` tables in each executor (exhaustive by construction) |
+
+### Operand constraints are value-domain predicates, not descriptor unions
+
+An operation like `toUpper` must accept every descriptor whose **value domain**
+is a subset of string — `StringType`, `LiteralType<['x','y']>`,
+`UnionType<[StringType, ...]>`, `StringType & Optional`, and any future
+combination. Enumerating descriptor constructors would combinatorially
+explode; instead the phantom `output` type the descriptors already carry
+(valibot-style) expresses the domain structurally:
+
+```ts
+type StringValued = FieldType & { output: string };
+toUpper(s: Expression<StringValued>): UnaryFunction<StringType>
+```
+
+Verified: literals / string unions are accepted covariantly; `double()`,
+`nullable(string())` (null in the domain), and mixed unions are rejected.
+One alias per domain (`StringValued` / `NumberValued` / `BooleanValued` /
+`TimestampValued` / ...), shared by standalone factories and fluent
+`this`-parameters alike.
+
+Consequences adopted with it:
+
+- The existing `NumericType = Int64Type | DoubleType` union is superseded by
+  `NumberValued` (numeric literals become comparable).
+- `where`'s condition type becomes `Expression<BooleanValued>`.
+- `nullable(...)` operands are **rejected** (strict): coalesce first
+  (`ifAbsent` etc., slice 5) rather than inheriting backend null semantics.
+- `... & Optional` operands pass (the domain is right; absence propagation is
+  backend semantics, probed in slice 5).
+- Return types widen to the plain descriptor (`toUpper` of a literal returns
+  `StringType`) — values are transformed, so precision loss is correct.
 
 ### Optional arguments (e.g. `substring(s, start, len?)`)
 
@@ -155,10 +187,15 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
 ## Open questions (to settle before / during the slices)
 
 1. **Fluent methods** (`field('price').multiply(x).as('total')`), SDK-style.
-   Both SDKs offer method + standalone forms. Adding ~100 methods to
-   `ExpressionBase` doubles the surface; a curated subset (comparisons,
-   arithmetic, `and`/`or`) may hit the ergonomic 80/20. Or standalone-only
-   until demand appears. → decide by slice 8.
+   Findings: the official SDK puts **all ~174 functions on `Expression` as
+   methods** (plus standalone forms) with **no type restrictions** (untyped
+   model). We can do better: `this`-parameter types (verified) restrict each
+   method to its value domain from the shared base —
+   `toUpper(this: Expression<StringValued>)` — so `field('rank').toUpper()`
+   is a compile error here while legal in the SDK. Methods are one-line
+   delegations to the standalone factories, hence mechanically addable later
+   and non-breaking. Plan: standalone-only through slices 1–7; bulk-add
+   fluent (likely full parity) in slice 8.
 2. **Naming**: mirror SDK names verbatim? The old file had both `concat` and
    `stringConcat` (SDK quirk); collision risk with `schema.ts` factories
    (`array` / `map` constructors — the old file aliased its schema imports).
