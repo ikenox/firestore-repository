@@ -82,6 +82,16 @@ One alias per domain (`StringValued` / `NumberValued` / `BooleanValued` /
 
 Consequences adopted with it:
 
+- **Comparisons move from same-domain to OVERLAP-based compatibility**:
+  `equal(l, r)` is valid iff the operands' tag domains intersect
+  (`Extract<TagOf<L>, TagOf<R>> extends never` rejects). Grounds: the backend's
+  comparisons are total (probed — `equal(null,'x')` is `false`, never an
+  error), so cross-domain rejection is a lint against always-false
+  comparisons, and its correct boundary is zero overlap — TS's own `===`
+  rule. This legalizes `equal(field(union(string(), double())), field(string()))`,
+  which the current same-`T` fallback rejects (pinned in expression.test.ts
+  as the _current_ contract).
+
 - The existing `NumericType = Int64Type | DoubleType` union is superseded by
   `NumberValued` (numeric literals become comparable).
 - `where`'s condition type becomes `Expression<BooleanValued>`.

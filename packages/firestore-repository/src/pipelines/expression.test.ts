@@ -296,7 +296,10 @@ describe('comparison operators (table-driven over all six)', () => {
 
   it('same-T requires identical descriptors — no union-vs-narrow widening', () => {
     // Empirically disproved a stale comment: the same-T fallback does NOT
-    // unify a union-typed operand with a narrower one.
+    // unify a union-typed operand with a narrower one. NOTE: this is the
+    // CURRENT contract, and deliberately changes with the planned
+    // overlap-based compatibility (see the expressions plan) — a union with
+    // a shared member SHOULD compare.
     const u1 = field(union(string(), double()), 'u1');
     const u2 = field(union(string(), double()), 'u2');
     equal(u1, u2); // identical union descriptors: ok
