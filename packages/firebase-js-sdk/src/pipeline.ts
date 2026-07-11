@@ -1,4 +1,4 @@
-import { Bytes, type Firestore, GeoPoint } from '@firebase/firestore';
+import { Bytes, type Firestore, GeoPoint, vector } from '@firebase/firestore';
 import {
   and as sdkAnd,
   constant as sdkConstant,
@@ -19,7 +19,7 @@ import {
 import { collectionPath } from 'firestore-repository/path';
 import type {
   BinaryFunctionName,
-  ConstantValue,
+  Constant,
   Expression,
   ExpressionWithAlias,
   UnaryFunctionName,
@@ -183,7 +183,7 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
  * (plain `GeoPoint` object → SDK `GeoPoint`; `Uint8Array` → `Bytes`; `Date`
  * is accepted natively).
  */
-const toSdkConstant = (value: ConstantValue): SdkExpression => {
+const toSdkConstant = (value: Constant['value']): SdkExpression => {
   if (value === null) {
     return sdkConstant(value);
   }
@@ -192,6 +192,9 @@ const toSdkConstant = (value: ConstantValue): SdkExpression => {
   }
   if (value instanceof Uint8Array) {
     return sdkConstant(Bytes.fromUint8Array(value));
+  }
+  if (Array.isArray(value)) {
+    return sdkConstant(vector(value));
   }
   switch (typeof value) {
     case 'string':

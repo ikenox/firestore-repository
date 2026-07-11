@@ -4,6 +4,8 @@ import {
   and,
   constant,
   equal,
+  geoPointValue,
+  vectorValue,
   greaterThanOrEqual,
   lessThan,
   not,
@@ -240,9 +242,10 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               constant(null).as('z'),
               constant(new Date('2024-01-02T03:04:05.678Z')).as('t'),
               constant(new Uint8Array([1, 2, 3])).as('by'),
-              constant({ latitude: 35.68, longitude: 139.69 }).as('g'),
+              geoPointValue(35.68, 139.69).as('g'),
+              vectorValue([0.5, 0.25]).as('v'),
             ])
-            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g']),
+            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v']),
           [
             {
               data: {
@@ -253,6 +256,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 t: new Date('2024-01-02T03:04:05.678Z'),
                 by: new Uint8Array([1, 2, 3]),
                 g: { latitude: 35.68, longitude: 139.69 },
+                v: [0.5, 0.25],
               },
             },
           ],

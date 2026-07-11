@@ -15,6 +15,8 @@ import {
   type StringType,
   timestamp,
   type TimestampType,
+  vector,
+  type VectorType,
 } from '../schema.js';
 import { assertNever } from '../util.js';
 
@@ -100,12 +102,12 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   readonly kind = 'constant';
   /** Always derived from `value` — a constant whose descriptor lies about its value is unconstructible. */
   readonly type: T;
-  readonly value: ConstantValue;
+  readonly value: ConstantValue | GeoPoint | number[];
 
-  // Private: `of` is the only construction point, so `T` is always the
-  // inferred `ConstantTypeOf` of the actual value (a `new Constant<Wrong>(v)`
-  // escape hatch does not exist).
-  private constructor(type: T, value: ConstantValue) {
+  // Private: the statics below are the only construction points, so `T`
+  // always matches the actual value (a `new Constant<Wrong>(v)` escape hatch
+  // does not exist).
+  private constructor(type: T, value: ConstantValue | GeoPoint | number[]) {
     super();
     this.type = type;
     this.value = value;
@@ -114,15 +116,28 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   static of<const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> {
     return new Constant(constantTypeOf(value), value);
   }
+
+  /** See {@link geoPointValue} — explicit coordinates, no plain-object ambiguity. */
+  static geoPoint(latitude: number, longitude: number): Constant<GeoPointType> {
+    return new Constant(geoPoint(), { latitude, longitude });
+  }
+
+  /** See {@link vectorValue} — explicit constructor, no `number[]`-array ambiguity. */
+  static vector(values: readonly number[]): Constant<VectorType> {
+    // Defensive copy; also keeps the payload a mutable array, which
+    // `Array.isArray` can narrow (it does not narrow `readonly` arrays).
+    return new Constant(vector(), [...values]);
+  }
 }
 
 /**
  * The value domain `constant()` accepts — the unambiguous scalar types.
- * Deliberately excluded for now: document refs (need collection context),
- * arrays / maps (the `ArrayValue` / `MapValue` constructors), and vectors
- * (indistinguishable from `number[]`).
+ * Deliberately excluded: geopoints (structurally indistinguishable from a
+ * plain object — use {@link geoPointValue}), document refs (need collection
+ * context), arrays / maps (the `ArrayValue` / `MapValue` constructors), and
+ * vectors (indistinguishable from `number[]`).
  */
-export type ConstantValue = string | number | boolean | null | Date | Uint8Array | GeoPoint;
+export type ConstantValue = string | number | boolean | null | Date | Uint8Array;
 
 /**
  * The descriptor a constant value infers to. All JS numbers map to
@@ -142,9 +157,7 @@ export type ConstantTypeOf<V extends ConstantValue> = V extends null
           ? DoubleType
           : V extends boolean
             ? BoolType
-            : V extends GeoPoint
-              ? GeoPointType
-              : never;
+            : never;
 
 /**
  * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
@@ -172,7 +185,6 @@ function constantTypeOf(value: ConstantValue): FieldType {
     case 'boolean':
       return bool();
     case 'object':
-      return geoPoint(); // the only remaining ConstantValue object type
     case 'bigint':
     case 'symbol':
     case 'undefined':
@@ -186,6 +198,25 @@ function constantTypeOf(value: ConstantValue): FieldType {
 
 export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
   Constant.of(value);
+
+/**
+ * Builds a geopoint constant from explicit coordinates. A plain
+ * `{ latitude, longitude }` object is deliberately not a {@link ConstantValue}:
+ * structurally it is just an object, so it would be ambiguous with map
+ * constants (and tolerant of excess fields). Named `geoPointValue` to avoid
+ * colliding with the `geoPoint()` descriptor factory in `schema.ts`, matching
+ * the planned `arrayValue` / `mapValue` constructor naming.
+ */
+export const geoPointValue = (latitude: number, longitude: number): Constant<GeoPointType> =>
+  Constant.geoPoint(latitude, longitude);
+
+/**
+ * Builds a vector constant from explicit components. A plain `number[]` is
+ * deliberately not a {@link ConstantValue}: it would be indistinguishable
+ * from an array constant.
+ */
+export const vectorValue = (values: readonly number[]): Constant<VectorType> =>
+  Constant.vector(values);
 
 // Function-call nodes are grouped by SHAPE (arity), not one class per
 // function: each shape carries typed payload fields (no untyped `args` array,

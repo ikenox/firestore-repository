@@ -11,11 +11,14 @@ import {
   nullType,
   string,
   timestamp,
+  vector,
 } from '../schema.js';
 import {
   and,
   BinaryFunction,
   constant,
+  geoPointValue,
+  vectorValue,
   equal,
   field,
   greaterThan,
@@ -72,7 +75,8 @@ describe('expression factories', () => {
       [constant(2), double()],
       [constant(2.5), double()],
       [constant(true), bool()],
-      [constant({ latitude: 1, longitude: 2 }), geoPoint()],
+      [geoPointValue(1, 2), geoPoint()],
+      [vectorValue([0.5, 0.25]), vector()],
     ] as const;
     for (const [c, oracle] of cases) {
       expect(c.type).toStrictEqual(oracle);
@@ -83,13 +87,25 @@ describe('expression factories', () => {
     expectTypeOf(constant('x').type).toEqualTypeOf(string());
     expectTypeOf(constant(2).type).toEqualTypeOf(double());
     expectTypeOf(constant(true).type).toEqualTypeOf(bool());
-    expectTypeOf(constant({ latitude: 1, longitude: 2 }).type).toEqualTypeOf(geoPoint());
+    expectTypeOf(geoPointValue(1, 2).type).toEqualTypeOf(geoPoint());
+    expectTypeOf(vectorValue([0.5, 0.25]).type).toEqualTypeOf(vector());
 
-    // Composite values are not constants (they get dedicated constructors).
-    // @ts-expect-error -- arrays are not a ConstantValue
-    constant([1, 2]);
-    // @ts-expect-error -- plain objects other than GeoPoint are not a ConstantValue
-    constant({ a: 1 });
+    // Composite values are not constants: they have dedicated constructors
+    // (arrays would be ambiguous with vectors, plain objects with geopoints
+    // and future map constants). Rejected at the type level AND loud at
+    // runtime.
+    expect(() =>
+      // @ts-expect-error -- arrays are not a ConstantValue (use vectorValue / a future arrayValue)
+      constant([1, 2]),
+    ).toThrow();
+    expect(() =>
+      // @ts-expect-error -- plain objects are not a ConstantValue
+      constant({ a: 1 }),
+    ).toThrow();
+    expect(() =>
+      // @ts-expect-error -- geopoint-shaped objects included: use geoPointValue
+      constant({ latitude: 1, longitude: 2 }),
+    ).toThrow();
   });
 
   it('comparisons unify within a value domain', () => {

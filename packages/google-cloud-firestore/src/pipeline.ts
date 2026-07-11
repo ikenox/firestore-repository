@@ -1,8 +1,8 @@
-import { type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
+import { FieldValue, type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
 import { collectionPath } from 'firestore-repository/path';
 import type {
   BinaryFunctionName,
-  ConstantValue,
+  Constant,
   Expression,
   ExpressionWithAlias,
   UnaryFunctionName,
@@ -166,7 +166,7 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
  * (plain `GeoPoint` object → SDK `GeoPoint`; `Date` / `Uint8Array` are
  * accepted natively).
  */
-const toSdkConstant = (value: ConstantValue): Pipelines.Expression => {
+const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
   if (value === null) {
     return Pipelines.constant(null);
   }
@@ -175,6 +175,9 @@ const toSdkConstant = (value: ConstantValue): Pipelines.Expression => {
   }
   if (value instanceof Uint8Array) {
     return Pipelines.constant(value);
+  }
+  if (Array.isArray(value)) {
+    return Pipelines.constant(FieldValue.vector(value));
   }
   switch (typeof value) {
     case 'string':
