@@ -53,10 +53,11 @@ Implications for the schema model:
   (`{ meta?: { x } }` --select('meta.x')--> `{ meta: { x?} }`).
 - Selecting a whole optional map by key keeps the key optional (absent when
   the source lacks it).
-- As of this writing the library does **not** yet propagate ancestor
-  optionality to the leaf — tracked in
-  [#202](https://github.com/ikenox/firestore-repository/issues/202) with
-  skipped red tests.
+- The library models this via `IsConditionalPath` / `WithConditionality` in
+  `selection.ts`: a selection reading a source field path (bare, or a
+  `Field`-expression alias) marks the projected leaf `Optional` when the path
+  crosses an optional ancestor
+  ([#202](https://github.com/ikenox/firestore-repository/issues/202)).
 - The backend output erases the distinction between "parent missing" and
   "parent present but leaf missing" — both yield materialized-empty parents.
   The library deliberately models the wire shape as-is (source-modal
