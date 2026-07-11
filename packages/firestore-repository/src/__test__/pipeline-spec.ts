@@ -8,7 +8,10 @@ import type {
   PipelineResult,
   PipelineRowIdentity,
 } from '../pipelines/pipeline.js';
-import { collection as collectionInput } from '../pipelines/source.js';
+import {
+  collection as collectionInput,
+  collectionGroup as collectionGroupInput,
+} from '../pipelines/source.js';
 import type { Doc, DocRef, FirestoreEnvironment, PlainRepository } from '../repository.js';
 import {
   type Collection,
@@ -19,7 +22,12 @@ import {
   rootCollection,
   string,
 } from '../schema.js';
-import { type AuthorsCollection, authorsCollection } from './specification.js';
+import {
+  type AuthorsCollection,
+  authorsCollection,
+  type PostsCollection,
+  postsCollection,
+} from './specification.js';
 import { uniqueCollection } from './util.js';
 
 /**
@@ -100,6 +108,44 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
+    describe('input stages (subcollection / collection group)', () => {
+      // `postsCollection` is a subcollection under `Authors`. `uniqueCollection`
+      // renames only the collection itself, so instances land under
+      // `Authors/<parent id>/<unique name>` and the group id is unique per run.
+      const postItems: [Doc<PostsCollection>, Doc<PostsCollection>, Doc<PostsCollection>] = [
+        {
+          id: ['author1', 'p1'],
+          data: { title: 'first', postedAt: new Date('2024-01-01T00:00:00Z') },
+        },
+        {
+          id: ['author1', 'p2'],
+          data: { title: 'second', postedAt: new Date('2024-02-01T00:00:00Z') },
+        },
+        {
+          id: ['author2', 'p3'],
+          data: { title: 'third', postedAt: new Date('2024-03-01T00:00:00Z') },
+        },
+      ];
+
+      let posts: PostsCollection;
+      beforeEach(async () => {
+        posts = uniqueCollection(postsCollection);
+        await createRepository(posts).batchSet(postItems);
+      });
+
+      it('reads a specific subcollection instance located by its parent doc ref', async () => {
+        // All of author1's posts (and only those); the row ids are full
+        // (parent-inclusive) refs.
+        await expectPipeline(collectionInput(posts, ['author1']), [postItems[0], postItems[1]], {
+          ordered: false,
+        });
+      });
+
+      it('reads every instance of a subcollection via a collection group', async () => {
+        await expectPipeline(collectionGroupInput(posts), postItems, { ordered: false });
+      });
+    });
+
     describe('sort', () => {
       // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3.
       const [a1, a2, a3] = items;
@@ -125,6 +171,48 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           source().sort((field) => [desc(field('__name__'))]),
           [a3, a2, a1],
         );
+      });
+
+      it('keeps rows missing the sort field, ordering them before all values', async () => {
+        // Unlike core-query `orderBy` (which EXCLUDES documents lacking the
+        // field), pipeline `sort` keeps them: absent orders before every
+        // present value (and after `null`) ascending, and mirrored descending.
+        // a2 has no `profile.gender`; 'female' (a1) < 'male' (a3).
+        await expectPipeline(
+          source().sort((field) => [asc(field('profile.gender'))]),
+          [a2, a1, a3],
+        );
+        await expectPipeline(
+          source().sort((field) => [desc(field('profile.gender'))]),
+          [a3, a1, a2],
+        );
+      });
+
+      describe('multiple sort keys', () => {
+        const compositeCollection = rootCollection({
+          name: 'SortComposite',
+          schema: { group: string(), n: double() },
+        });
+        type CompositeDoc = Doc<typeof compositeCollection>;
+        const compositeItems: [CompositeDoc, CompositeDoc, CompositeDoc] = [
+          { id: ['s1'], data: { group: 'x', n: 1 } },
+          { id: ['s2'], data: { group: 'x', n: 2 } },
+          { id: ['s3'], data: { group: 'y', n: 3 } },
+        ];
+
+        let composite: typeof compositeCollection;
+        beforeEach(async () => {
+          composite = uniqueCollection(compositeCollection);
+          await createRepository(composite).batchSet(compositeItems);
+        });
+
+        it('the earlier key takes precedence; later keys break its ties', async () => {
+          const [x1, x2, y3] = compositeItems;
+          await expectPipeline(
+            collectionInput(composite).sort((field) => [asc(field('group')), desc(field('n'))]),
+            [x2, x1, y3],
+          );
+        });
       });
     });
 
