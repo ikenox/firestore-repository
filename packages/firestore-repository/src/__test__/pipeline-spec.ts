@@ -238,7 +238,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               constant(2.5).as('n'),
               constant(true).as('b'),
               constant(null).as('z'),
-              constant(new Date('2024-01-02T03:04:05.000Z')).as('t'),
+              constant(new Date('2024-01-02T03:04:05.678Z')).as('t'),
               constant(new Uint8Array([1, 2, 3])).as('by'),
               constant({ latitude: 35.68, longitude: 139.69 }).as('g'),
             ])
@@ -250,7 +250,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 n: 2.5,
                 b: true,
                 z: null,
-                t: new Date('2024-01-02T03:04:05.000Z'),
+                t: new Date('2024-01-02T03:04:05.678Z'),
                 by: new Uint8Array([1, 2, 3]),
                 g: { latitude: 35.68, longitude: 139.69 },
               },
