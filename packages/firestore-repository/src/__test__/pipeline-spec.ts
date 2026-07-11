@@ -494,6 +494,48 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('a subsequent select projects an added field', async () => {
+        // The added field participates in the reshaped schema: `select` can
+        // reference it by path, and the rows decode with it.
+        await expectPipeline(
+          source()
+            .addFields((field) => [equal(field('rank'), constant(2)).as('isSecond')])
+            .select(() => ['name', 'isSecond']),
+          [
+            { data: { name: 'alice', isSecond: false } },
+            { data: { name: 'bob', isSecond: true } },
+            { data: { name: 'carol', isSecond: false } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('a subsequent select projects a field deep-merged into an existing map', async () => {
+        await expectPipeline(
+          source()
+            .addFields((field) => [field('name').as('profile.author')])
+            .select(() => ['profile.author']),
+          [
+            { data: { profile: { author: 'alice' } } },
+            { data: { profile: { author: 'bob' } } },
+            { data: { profile: { author: 'carol' } } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('a subsequent select sees the overwritten field type', async () => {
+        // `rank` was overwritten by a string-typed field; the projected rows
+        // (and their static type) carry the string.
+        await expectPipeline(
+          source()
+            .addFields((field) => [field('name').as('rank')])
+            .select(() => ['rank']),
+          [{ data: { rank: 'alice' } }, { data: { rank: 'bob' } }, { data: { rank: 'carol' } }],
+          { ordered: false },
+        );
+      });
+
       it('composes with a subsequent sort over the added field', async () => {
         await expectPipeline(
           source()

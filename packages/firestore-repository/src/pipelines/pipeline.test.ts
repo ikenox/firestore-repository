@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   type AuthorsCollection,
@@ -8,7 +8,7 @@ import {
 import type { DocRef } from '../repository.js';
 import type { StringType } from '../schema.js';
 import { equal } from './expression.js';
-import { collection, type Pipeline } from './index.js';
+import { collection, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
 
 describe('pipeline', () => {
@@ -54,6 +54,23 @@ describe('pipeline', () => {
       // @ts-expect-error -- `tag` was removed by removeFields
       base.removeFields('tag').where((field) => equal(field('tag'), field('tag'))),
     ).toThrow('schema has no field "tag"');
+  });
+
+  it('identity ratchet: preserving stages keep `id`, select drops it for good', () => {
+    // The result-row type of a pipeline: `id` present iff `Id` is a `DocRef`.
+    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
+
+    // A chain of identity-preserving stages keeps `id` on the result rows.
+    const preserved = base.removeFields('tag').addFields((field) => [field('rank').as('score')]);
+    expectTypeOf<RowOf<typeof preserved>>().toHaveProperty('id');
+
+    // `select` drops it...
+    const projected = preserved.select(() => ['name']);
+    expectTypeOf<RowOf<typeof projected>>().not.toHaveProperty('id');
+
+    // ...and a downstream preserving stage never brings it back.
+    const after = projected.sort((field) => [asc(field('name'))]);
+    expectTypeOf<RowOf<typeof after>>().not.toHaveProperty('id');
   });
 
   it('__name__ is not projectable (keeps `select`/`removeFields` honest)', () => {
