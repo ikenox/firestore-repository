@@ -362,8 +362,8 @@ Deferred to a later iteration (still tracked here, not currently in scope):
   in the factory signatures.
 - [ ] Per-op numeric return type refinement (Int64-pair → Int64 vs
       auto-widen to Double) — TODO comments already in `expression.ts`.
-- [ ] Improve `constant(value)` type inference from runtime value
-      (`number → DoubleType`, `string → StringType`, ...).
+- [x] Improve `constant(value)` type inference from runtime value — see the
+      expressions plan, slice 1.
 - [ ] Tighten `arrayGet` return type via element typing.
 - [ ] Tighten `mapGet` return type via key-aware lookup (subschema).
 - [ ] Tighten `array(...)` / `map({...})` constructor return types from

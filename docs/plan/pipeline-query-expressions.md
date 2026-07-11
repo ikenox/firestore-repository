@@ -142,11 +142,16 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
 ## Rollout slices (one PR each, TDD with live spec per slice)
 
 - [x] **0. Shapes + comparison + logical core** (#213).
-- [ ] **1. `constant` type inference.** Do this FIRST: every subsequent
-      slice's factories and spec tests get dramatically better ergonomics
-      (`constant(2)` → `Constant<DoubleType>` instead of context-inferred).
-      Runtime value → descriptor mapping mirrors a type-level
-      `ConstantTypeOf<V>`.
+- [x] **1. `constant` type inference.** `ConstantTypeOf<V>` (type) mirrored by
+      `constantTypeOf` (runtime); `ConstantValue = string | number | boolean |
+    null | Date | Uint8Array | GeoPoint` (doc refs / arrays / maps / vectors
+      deferred to their constructors). All numbers map to `DoubleType` (wire
+      integer encoding is the SDK's concern). This fixed the reachable
+      descriptor-lie crash (`type: 'todo'`) and pulled the comparison
+      operators onto value-domain predicates (`NumberValued` / `StringValued`
+      overloads before the same-`T` fallback) so literal-typed fields compare
+      against plain constants. Executors translate per value type (plain
+      `GeoPoint` → SDK class; `Uint8Array` → `Bytes` on the client SDK).
 - [ ] **2. Arithmetic + string basics** (T1 bulk: binary/unary flows already
       paved; introduces `NullaryFunction` for `rand`).
 - [ ] **3. String rest + regex + reference + type + vector** (T1 bulk #2;

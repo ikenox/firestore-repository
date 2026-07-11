@@ -225,6 +225,41 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
+    describe('constant expressions', () => {
+      it('projects constants of every supported value type', async () => {
+        // One batched round trip verifies inference, translation and decode
+        // for the whole ConstantValue domain.
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .limit(1)
+            .addFields(() => [
+              constant('text').as('s'),
+              constant(2.5).as('n'),
+              constant(true).as('b'),
+              constant(null).as('z'),
+              constant(new Date('2024-01-02T03:04:05.000Z')).as('t'),
+              constant(new Uint8Array([1, 2, 3])).as('by'),
+              constant({ latitude: 35.68, longitude: 139.69 }).as('g'),
+            ])
+            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g']),
+          [
+            {
+              data: {
+                s: 'text',
+                n: 2.5,
+                b: true,
+                z: null,
+                t: new Date('2024-01-02T03:04:05.000Z'),
+                by: new Uint8Array([1, 2, 3]),
+                g: { latitude: 35.68, longitude: 139.69 },
+              },
+            },
+          ],
+        );
+      });
+    });
+
     describe('limit / offset', () => {
       // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3; sort first so
       // the truncation point is deterministic.

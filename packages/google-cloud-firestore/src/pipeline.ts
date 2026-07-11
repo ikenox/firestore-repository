@@ -1,7 +1,8 @@
-import { type Firestore, Pipelines } from '@google-cloud/firestore';
+import { type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
 import { collectionPath } from 'firestore-repository/path';
 import type {
   BinaryFunctionName,
+  ConstantValue,
   Expression,
   ExpressionWithAlias,
   UnaryFunctionName,
@@ -138,8 +139,7 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
     case 'field':
       return Pipelines.field(expression.path);
     case 'constant':
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `Constant.value` is untyped (TODO in expression.ts); the SDK's `constant` overloads want a concrete primitive, but the raw value passes through unchanged at runtime
-      return Pipelines.constant(expression.value as string);
+      return toSdkConstant(expression.value);
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -157,6 +157,42 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
     }
     default:
       return assertNever(expression);
+  }
+};
+
+/**
+ * Translates a constant value into an SDK constant expression, converting the
+ * repository's plain value types into the SDK's classes where they differ
+ * (plain `GeoPoint` object → SDK `GeoPoint`; `Date` / `Uint8Array` are
+ * accepted natively).
+ */
+const toSdkConstant = (value: ConstantValue): Pipelines.Expression => {
+  if (value === null) {
+    return Pipelines.constant(null);
+  }
+  if (value instanceof Date) {
+    return Pipelines.constant(value);
+  }
+  if (value instanceof Uint8Array) {
+    return Pipelines.constant(value);
+  }
+  switch (typeof value) {
+    case 'string':
+      return Pipelines.constant(value);
+    case 'number':
+      return Pipelines.constant(value);
+    case 'boolean':
+      return Pipelines.constant(value);
+    case 'object':
+      return Pipelines.constant(new GeoPoint(value.latitude, value.longitude));
+    case 'bigint':
+    case 'symbol':
+    case 'undefined':
+    case 'function':
+      // Impossible for a ConstantValue — `value` is narrowed to `never` here.
+      return assertNever(value);
+    default:
+      return assertNever(value);
   }
 };
 

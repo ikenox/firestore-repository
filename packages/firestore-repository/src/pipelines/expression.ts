@@ -1,4 +1,22 @@
-import { bool, type BoolType, type DoubleType, type FieldType, type Int64Type } from '../schema.js';
+import {
+  bool,
+  type BoolType,
+  bytes,
+  type BytesType,
+  double,
+  type DoubleType,
+  type FieldType,
+  type GeoPoint,
+  geoPoint,
+  type GeoPointType,
+  nullType,
+  type NullType,
+  string,
+  type StringType,
+  timestamp,
+  type TimestampType,
+} from '../schema.js';
+import { assertNever } from '../util.js';
 
 // NOTE: this module was trimmed to the AST core plus `field` / `constant` /
 // `equal` (the only expression factories currently used). The full set of ~85
@@ -82,19 +100,76 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   readonly kind = 'constant';
   constructor(
     readonly type: T,
-    readonly value: unknown, // TODO add type
+    readonly value: ConstantValue,
   ) {
     super();
   }
 }
 
-export const constant = <T extends FieldType>(value: unknown): Constant<T> =>
-  new Constant(
-    // TODO: derive the schema type from `value` (e.g. number -> DoubleType, string -> StringType).
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- placeholder result type until the TODO above is implemented (pipeline queries are WIP)
-    'todo' as unknown as T,
-    value,
-  );
+/**
+ * The value domain `constant()` accepts — the unambiguous scalar types.
+ * Deliberately excluded for now: document refs (need collection context),
+ * arrays / maps (the `ArrayValue` / `MapValue` constructors), and vectors
+ * (indistinguishable from `number[]`).
+ */
+export type ConstantValue = string | number | boolean | null | Date | Uint8Array | GeoPoint;
+
+/**
+ * The descriptor a constant value infers to. All JS numbers map to
+ * `DoubleType` — the SDK decides integer/double wire encoding itself, and the
+ * descriptor's client-side roles (operand domains, projected-schema decode)
+ * treat the two identically.
+ */
+export type ConstantTypeOf<V extends ConstantValue> = V extends null
+  ? NullType
+  : V extends Date
+    ? TimestampType
+    : V extends Uint8Array
+      ? BytesType
+      : V extends string
+        ? StringType
+        : V extends number
+          ? DoubleType
+          : V extends boolean
+            ? BoolType
+            : V extends GeoPoint
+              ? GeoPointType
+              : never;
+
+/** Runtime counterpart of {@link ConstantTypeOf} (same branch order). */
+const constantTypeOf = (value: ConstantValue): FieldType => {
+  if (value === null) {
+    return nullType();
+  }
+  if (value instanceof Date) {
+    return timestamp();
+  }
+  if (value instanceof Uint8Array) {
+    return bytes();
+  }
+  switch (typeof value) {
+    case 'string':
+      return string();
+    case 'number':
+      return double();
+    case 'boolean':
+      return bool();
+    case 'object':
+      return geoPoint(); // the only remaining ConstantValue object type
+    case 'bigint':
+    case 'symbol':
+    case 'undefined':
+    case 'function':
+      // Impossible for a ConstantValue — `value` is narrowed to `never` here.
+      return assertNever(value);
+    default:
+      return assertNever(value);
+  }
+};
+
+export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime mapping mirrors the type-level `ConstantTypeOf`, but the compiler cannot connect a runtime descriptor value to the type-level result
+  new Constant(constantTypeOf(value) as ConstantTypeOf<V>, value);
 
 // Function-call nodes are grouped by SHAPE (arity), not one class per
 // function: each shape carries typed payload fields (no untyped `args` array,
@@ -150,16 +225,27 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
 }
 export type VariadicFunctionName = 'and' | 'or';
 
-/** Convenience union for numeric expression inputs. */
-type NumericType = Int64Type | DoubleType;
+// Value-domain predicates: a descriptor whose phantom `output` (the value
+// domain) is a subset of the given primitive — so literals, unions of the
+// domain, and `& Optional` variants all qualify structurally, with no
+// enumeration of descriptor constructors. See
+// docs/plan/pipeline-query-expressions.md.
+type NumberValued = FieldType & { output: number };
+type StringValued = FieldType & { output: string };
 
-// A comparison op has two overloads:
-//   1) numeric-pair — lets Int64 and Double mix while rejecting numeric-vs-other.
-//   2) generic same-`T` — every other group plus union-vs-narrow widening.
+// A comparison op has three overloads:
+//   1) number-domain pair — Int64 / Double / numeric literals mix freely.
+//   2) string-domain pair — string / string-literal / string-union operands
+//      unify (e.g. a `literal('male','female')` field against `constant('male')`).
+//   3) generic same-`T` — every other group; cross-group pairs match nothing.
 
 export function equal(
-  left: Expression<NumericType>,
-  right: Expression<NumericType>,
+  left: Expression<NumberValued>,
+  right: Expression<NumberValued>,
+): BinaryFunction<BoolType>;
+export function equal(
+  left: Expression<StringValued>,
+  right: Expression<StringValued>,
 ): BinaryFunction<BoolType>;
 export function equal<T extends FieldType>(
   left: Expression<T>,
@@ -170,8 +256,12 @@ export function equal(left: Expression, right: Expression): BinaryFunction<BoolT
 }
 
 export function notEqual(
-  left: Expression<NumericType>,
-  right: Expression<NumericType>,
+  left: Expression<NumberValued>,
+  right: Expression<NumberValued>,
+): BinaryFunction<BoolType>;
+export function notEqual(
+  left: Expression<StringValued>,
+  right: Expression<StringValued>,
 ): BinaryFunction<BoolType>;
 export function notEqual<T extends FieldType>(
   left: Expression<T>,
@@ -182,8 +272,12 @@ export function notEqual(left: Expression, right: Expression): BinaryFunction<Bo
 }
 
 export function lessThan(
-  left: Expression<NumericType>,
-  right: Expression<NumericType>,
+  left: Expression<NumberValued>,
+  right: Expression<NumberValued>,
+): BinaryFunction<BoolType>;
+export function lessThan(
+  left: Expression<StringValued>,
+  right: Expression<StringValued>,
 ): BinaryFunction<BoolType>;
 export function lessThan<T extends FieldType>(
   left: Expression<T>,
@@ -194,8 +288,12 @@ export function lessThan(left: Expression, right: Expression): BinaryFunction<Bo
 }
 
 export function lessThanOrEqual(
-  left: Expression<NumericType>,
-  right: Expression<NumericType>,
+  left: Expression<NumberValued>,
+  right: Expression<NumberValued>,
+): BinaryFunction<BoolType>;
+export function lessThanOrEqual(
+  left: Expression<StringValued>,
+  right: Expression<StringValued>,
 ): BinaryFunction<BoolType>;
 export function lessThanOrEqual<T extends FieldType>(
   left: Expression<T>,
@@ -206,8 +304,12 @@ export function lessThanOrEqual(left: Expression, right: Expression): BinaryFunc
 }
 
 export function greaterThan(
-  left: Expression<NumericType>,
-  right: Expression<NumericType>,
+  left: Expression<NumberValued>,
+  right: Expression<NumberValued>,
+): BinaryFunction<BoolType>;
+export function greaterThan(
+  left: Expression<StringValued>,
+  right: Expression<StringValued>,
 ): BinaryFunction<BoolType>;
 export function greaterThan<T extends FieldType>(
   left: Expression<T>,
@@ -218,8 +320,12 @@ export function greaterThan(left: Expression, right: Expression): BinaryFunction
 }
 
 export function greaterThanOrEqual(
-  left: Expression<NumericType>,
-  right: Expression<NumericType>,
+  left: Expression<NumberValued>,
+  right: Expression<NumberValued>,
+): BinaryFunction<BoolType>;
+export function greaterThanOrEqual(
+  left: Expression<StringValued>,
+  right: Expression<StringValued>,
 ): BinaryFunction<BoolType>;
 export function greaterThanOrEqual<T extends FieldType>(
   left: Expression<T>,
