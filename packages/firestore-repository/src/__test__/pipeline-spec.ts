@@ -497,7 +497,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
-      it('filters with ordering comparisons', async () => {
+      it('filters with magnitude comparisons (lessThan / greaterThanOrEqual / ...)', async () => {
         await expectPipeline(
           source().where((field) => greaterThanOrEqual(field('rank'), constant(2))),
           [a2, a3],
