@@ -166,11 +166,11 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
 };
 
 /**
- * Translates a constant value into an SDK constant expression. `Constant`
- * payload shapes are unambiguous (geopoints and vectors are dedicated
- * nodes): an array is an array constant, a plain object a map constant, and
- * the SDK's serializer lifts the raw JS values (incl. nested `Date` /
- * `Uint8Array`) itself.
+ * Recursively translates a constant value tree into SDK expressions —
+ * composites translate node-wise (the SDK's `array()` / `map()` accept
+ * nested expressions). `Constant` payload shapes are unambiguous: geopoints
+ * and vectors are dedicated nodes, so an array is always an array constant
+ * and a plain object always a map constant.
  */
 const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
   if (value === null) {
@@ -183,7 +183,7 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
     return Pipelines.constant(value);
   }
   if (isConstantArrayValue(value)) {
-    return Pipelines.array(value.slice());
+    return Pipelines.array(value.map(toSdkConstant));
   }
   switch (typeof value) {
     case 'string':
@@ -193,7 +193,9 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
     case 'boolean':
       return Pipelines.constant(value);
     case 'object':
-      return Pipelines.map({ ...value });
+      return Pipelines.map(
+        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkConstant(v)])),
+      );
     case 'bigint':
     case 'symbol':
     case 'undefined':

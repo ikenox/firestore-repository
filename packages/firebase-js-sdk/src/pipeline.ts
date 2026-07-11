@@ -22,7 +22,7 @@ import { collectionPath } from 'firestore-repository/path';
 import type {
   BinaryFunctionName,
   Constant,
-  ConstantValue,
+  ConstantArray,
   Expression,
   ExpressionWithAlias,
   UnaryFunctionName,
@@ -185,11 +185,12 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
 };
 
 /**
- * Translates a constant value into an SDK constant expression. `Constant`
- * payload shapes are unambiguous (geopoints and vectors are dedicated
- * nodes): an array is an array constant, a plain object a map constant.
- * `Uint8Array` converts to the client SDK's `Bytes` (top-level and inside
- * composites — the client serializer rejects raw `Uint8Array`).
+ * Recursively translates a constant value tree into SDK expressions —
+ * composites translate node-wise (the SDK's `array()` / `map()` accept
+ * nested expressions), so conversions like `Uint8Array` → `Bytes` apply at
+ * any depth. `Constant` payload shapes are unambiguous: geopoints and
+ * vectors are dedicated nodes, so an array is always an array constant and a
+ * plain object always a map constant.
  */
 const toSdkConstant = (value: Constant['value']): SdkExpression => {
   if (value === null) {
@@ -201,8 +202,8 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
   if (value instanceof Uint8Array) {
     return sdkConstant(Bytes.fromUint8Array(value));
   }
-  if (Array.isArray(value)) {
-    return sdkArray(value.map(toSdkComposite));
+  if (isConstantArrayValue(value)) {
+    return sdkArray(value.map(toSdkConstant));
   }
   switch (typeof value) {
     case 'string':
@@ -213,7 +214,7 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
       return sdkConstant(value);
     case 'object':
       return sdkMap(
-        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkComposite(v)])),
+        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkConstant(v)])),
       );
     case 'bigint':
     case 'symbol':
@@ -226,9 +227,9 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
   }
 };
 
-/** Raw values inside composites, with `Uint8Array` lifted to `Bytes`. */
-const toSdkComposite = (value: ConstantValue): unknown =>
-  value instanceof Uint8Array ? Bytes.fromUint8Array(value) : value;
+/** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
+const isConstantArrayValue = (value: Constant['value']): value is ConstantArray =>
+  Array.isArray(value);
 
 // Per-shape translation tables: `Record` over the name union requires every
 // key, so a newly added function name fails to compile here until translated.

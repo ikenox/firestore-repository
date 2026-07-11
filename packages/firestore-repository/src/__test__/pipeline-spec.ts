@@ -246,7 +246,11 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               vectorValue([0.5, 0.25]).as('v'),
               constant([1, 2, 3]).as('arr'),
               constant([1, 'a', true]).as('mixed'),
-              constant({ x: 1, s: 'a', inner: { flag: true } }).as('m'),
+              constant({
+                x: 1,
+                s: 'a',
+                inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
+              }).as('m'),
             ])
             .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v', 'arr', 'mixed', 'm']),
           [
@@ -262,7 +266,11 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 v: [0.5, 0.25],
                 arr: [1, 2, 3],
                 mixed: [1, 'a', true],
-                m: { x: 1, s: 'a', inner: { flag: true } },
+                m: {
+                  x: 1,
+                  s: 'a',
+                  inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
+                },
               },
             },
           ],
