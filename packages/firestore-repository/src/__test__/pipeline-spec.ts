@@ -112,14 +112,18 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       // `postsCollection` is a subcollection under `Authors`. `uniqueCollection`
       // renames only the collection itself, so instances land under
       // `Authors/<parent id>/<unique name>` and the group id is unique per run.
-      const postItems: [Doc<PostsCollection>, Doc<PostsCollection>] = [
+      const postItems: [Doc<PostsCollection>, Doc<PostsCollection>, Doc<PostsCollection>] = [
         {
           id: ['author1', 'p1'],
           data: { title: 'first', postedAt: new Date('2024-01-01T00:00:00Z') },
         },
         {
-          id: ['author2', 'p2'],
+          id: ['author1', 'p2'],
           data: { title: 'second', postedAt: new Date('2024-02-01T00:00:00Z') },
+        },
+        {
+          id: ['author2', 'p3'],
+          data: { title: 'third', postedAt: new Date('2024-03-01T00:00:00Z') },
         },
       ];
 
@@ -130,8 +134,9 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
 
       it('reads a specific subcollection instance located by its parent doc ref', async () => {
-        // Only author1's posts; the row ids are full (parent-inclusive) refs.
-        await expectPipeline(collectionInput(posts, ['author1']), [postItems[0]], {
+        // All of author1's posts (and only those); the row ids are full
+        // (parent-inclusive) refs.
+        await expectPipeline(collectionInput(posts, ['author1']), [postItems[0], postItems[1]], {
           ordered: false,
         });
       });
