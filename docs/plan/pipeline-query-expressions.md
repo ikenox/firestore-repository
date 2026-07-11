@@ -146,8 +146,9 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
       `constantTypeOf` (runtime). Classification: everything with an
       unambiguous plain-JS representation goes through `constant()` — scalars
       (`string | number | boolean | null | Date | Uint8Array`), non-empty
-      homogeneous arrays (heterogeneous elements rejected at the type level,
-      runtime twin guarding nested occurrences), and plain-object maps
+      arrays (element descriptors dedup **in tuple order** — walking the tuple
+      keeps the order stable so the runtime mirrors it exactly; heterogeneous
+      elements become an `ArrayType<UnionType<[...]>>`), and plain-object maps
       (recursive). Firestore types WITHOUT their own JS representation are
       dedicated nodes: `GeoPointValue` / `VectorValue` — a plain object is
       always a map constant, a `number[]` always an array constant. All

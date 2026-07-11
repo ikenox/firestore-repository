@@ -13,6 +13,7 @@ import {
   map,
   string,
   timestamp,
+  union,
   vector,
 } from '../schema.js';
 import {
@@ -104,17 +105,17 @@ describe('expression factories', () => {
       map({ latitude: double(), longitude: double() }),
     );
 
-    expect(() =>
-      // @ts-expect-error -- array elements must share a single type
-      constant([1, 'a']),
-    ).toThrow('constant array elements must share a single type');
-    // The runtime twin also guards nested occurrences the type-level check
-    // cannot reach.
-    // (compiles — the nested array's heterogeneity is beyond the type-level
-    // guard's reach, which is exactly why the runtime twin exists)
-    expect(() => constant({ deep: [1, 'a'] })).toThrow(
-      'constant array elements must share a single type',
-    );
+    // Heterogeneous arrays: element descriptors dedup in tuple order and
+    // become a UnionType (matching Firestore's heterogeneous arrays).
+    const mixed = constant([1, 'a', 2, true]);
+    const mixedOracle = array(union(double(), string(), bool()));
+    expect(mixed.type).toStrictEqual(mixedOracle);
+    expectTypeOf(mixed.type).toEqualTypeOf(mixedOracle);
+
+    const nestedMixed = constant({ deep: [1, 'a'] });
+    const nestedMixedOracle = map({ deep: array(union(double(), string())) });
+    expect(nestedMixed.type).toStrictEqual(nestedMixedOracle);
+    expectTypeOf(nestedMixed.type).toEqualTypeOf(nestedMixedOracle);
     expect(() =>
       // @ts-expect-error -- an empty array literal has no element to infer from
       constant([]),

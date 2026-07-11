@@ -18,6 +18,8 @@ import {
   type StringType,
   timestamp,
   type TimestampType,
+  union,
+  type UnionType,
   vector,
   type VectorType,
 } from '../schema.js';
@@ -193,34 +195,47 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
             : V extends boolean
               ? BoolType
               : V extends ConstantArray
-                ? IsUnion<ConstantTypeOf<V[number]>> extends true
-                  ? never // heterogeneous elements — see HomogeneousArrays
-                  : ArrayType<ConstantTypeOf<V[number]>, [], []>
+                ? ArrayConstantTypeOf<V>
                 : V extends ConstantMap
                   ? MapType<{ -readonly [K in keyof V & string]: ConstantTypeOf<V[K]> }>
                   : never;
 
 /**
- * Rejects `constant([...])` calls whose array elements would infer distinct
- * descriptors: the type level would need a union of descriptor types while
- * the runtime holds a single element descriptor, so the two could not mirror.
- * The message type is what the invalid literal fails to unify with. Nested
- * arrays deeper inside maps are guarded at runtime instead (loud at
- * construction).
+ * The element descriptor is derived by walking the TUPLE (not the union of
+ * the element types): tuple order is stable, so the runtime can mirror the
+ * exact same first-occurrence dedup. A single distinct element type stays
+ * bare; several become a `UnionType` in tuple order — matching the runtime's
+ * `union(...deduped)`.
  */
-type HomogeneousArrays<V> = V extends ConstantArray
-  ? IsUnion<ConstantTypeOf<V[number]>> extends true
-    ? ['constant array elements must share a single type']
-    : unknown
-  : unknown;
-
-type IsUnion<T, U = T> = [T] extends [never]
-  ? false
-  : T extends unknown
-    ? [U] extends [T]
-      ? false
-      : true
+type ArrayConstantTypeOf<V extends ConstantArray> =
+  DedupDescriptors<{ readonly [K in keyof V]: ConstantTypeOf<V[K]> }> extends infer D
+    ? D extends readonly [infer Only extends FieldType]
+      ? ArrayType<Only, [], []>
+      : D extends readonly FieldType[]
+        ? ArrayType<UnionType<[...D]>, [], []>
+        : never
     : never;
+
+/** First-occurrence dedup over a tuple of descriptors (mutual-`extends` equality). */
+type DedupDescriptors<
+  T extends readonly FieldType[],
+  Acc extends readonly FieldType[] = [],
+> = T extends readonly [infer H extends FieldType, ...infer R extends readonly FieldType[]]
+  ? IncludesDescriptor<Acc, H> extends true
+    ? DedupDescriptors<R, Acc>
+    : DedupDescriptors<R, [...Acc, H]>
+  : Acc;
+
+type IncludesDescriptor<T extends readonly FieldType[], X extends FieldType> = T extends readonly [
+  infer H extends FieldType,
+  ...infer R extends readonly FieldType[],
+]
+  ? DescriptorEquals<H, X> extends true
+    ? true
+    : IncludesDescriptor<R, X>
+  : false;
+
+type DescriptorEquals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
  * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
@@ -241,20 +256,18 @@ function constantTypeOf(value: ConstantValue): FieldType {
     return bytes();
   }
   if (isConstantArray(value)) {
-    const [first, ...rest] = value;
-    if (first === undefined) {
+    if (value.length === 0) {
       // Runtime twin of ConstantArray's non-empty tuple constraint.
       throw new Error('constant arrays must not be empty (no element to infer a type from)');
     }
-    const element = constantTypeOf(first);
-    // Runtime twin of the `HomogeneousArrays` rejection (and the guard for
-    // nested arrays the type-level check cannot reach).
-    for (const other of rest) {
-      if (!descriptorEquals(element, constantTypeOf(other))) {
-        throw new Error('constant array elements must share a single type');
-      }
-    }
-    return array(element);
+    // Mirrors ArrayConstantTypeOf: first-occurrence dedup in tuple order, a
+    // single distinct descriptor stays bare, several become a union.
+    const elements = value.map((element) => constantTypeOf(element));
+    const deduped = elements.filter(
+      (d, i) => elements.findIndex((e) => descriptorEquals(e, d)) === i,
+    );
+    const [only] = deduped;
+    return only !== undefined && deduped.length === 1 ? array(only) : array(union(...deduped));
   }
   switch (typeof value) {
     case 'string':
@@ -296,9 +309,8 @@ const descriptorEquals = (a: unknown, b: unknown): boolean => {
   );
 };
 
-export const constant = <const V extends ConstantValue>(
-  value: V & HomogeneousArrays<V>,
-): Constant<ConstantTypeOf<V>> => Constant.of<V>(value);
+export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
+  Constant.of(value);
 
 /**
  * Builds a geopoint constant from explicit coordinates. A plain
