@@ -100,10 +100,19 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   readonly kind = 'constant';
   /** Always derived from `value` — a constant whose descriptor lies about its value is unconstructible. */
   readonly type: T;
-  constructor(readonly value: ConstantValue) {
+  readonly value: ConstantValue;
+
+  // Private: `of` is the only construction point, so `T` is always the
+  // inferred `ConstantTypeOf` of the actual value (a `new Constant<Wrong>(v)`
+  // escape hatch does not exist).
+  private constructor(type: T, value: ConstantValue) {
     super();
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime mapping mirrors the type-level `ConstantTypeOf`; `T` is pinned to it by the `constant` factory's return type
-    this.type = constantTypeOf(value) as T;
+    this.type = type;
+    this.value = value;
+  }
+
+  static of<const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> {
+    return new Constant(constantTypeOf(value), value);
   }
 }
 
@@ -137,8 +146,15 @@ export type ConstantTypeOf<V extends ConstantValue> = V extends null
               ? GeoPointType
               : never;
 
-/** Runtime counterpart of {@link ConstantTypeOf} (same branch order). */
-const constantTypeOf = (value: ConstantValue): FieldType => {
+/**
+ * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
+ * overload signature carries the type-level result; the implementation is
+ * checked loosely against it, which is where the runtime-to-type bridge lives
+ * (the compiler cannot correlate the `typeof` branches with the conditional
+ * type — the oracle tests in `expression.test.ts` are the safety net).
+ */
+function constantTypeOf<V extends ConstantValue>(value: V): ConstantTypeOf<V>;
+function constantTypeOf(value: ConstantValue): FieldType {
   if (value === null) {
     return nullType();
   }
@@ -166,10 +182,10 @@ const constantTypeOf = (value: ConstantValue): FieldType => {
     default:
       return assertNever(value);
   }
-};
+}
 
 export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
-  new Constant(value);
+  Constant.of(value);
 
 // Function-call nodes are grouped by SHAPE (arity), not one class per
 // function: each shape carries typed payload fields (no untyped `args` array,
