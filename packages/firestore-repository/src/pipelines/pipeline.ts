@@ -128,7 +128,9 @@ export class Pipeline<
    * (the fuller "conditionally preserve identity via `__name__`" model, plus
    * `createTime` / `updateTime`, is deferred — see `docs/plan/pipeline-query.md`).
    */
-  select<const Selections extends readonly Selection<Schema>[]>(
+  // At least one selection is required (mirrors the SDK's
+  // `select(selection, ...rest)` signature; an empty projection is meaningless).
+  select<const Selections extends readonly [Selection<Schema>, ...Selection<Schema>[]]>(
     selections: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildSelectionSchema<Schema, Selections>, undefined> {
     const resolved = selections(fieldProvider(this.node.schema));
@@ -149,7 +151,7 @@ export class Pipeline<
    * Aliased expressions only — bare field paths are rejected at the type
    * level (see {@link BuildAddFieldsSchema} for why they are a foot-gun).
    */
-  addFields<const Selections extends readonly ExpressionWithAlias[]>(
+  addFields<const Selections extends readonly [ExpressionWithAlias, ...ExpressionWithAlias[]]>(
     fields: (field: FieldProvider<Schema>) => Selections,
   ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
     const resolved = fields(fieldProvider(this.node.schema));

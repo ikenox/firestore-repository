@@ -1,4 +1,4 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   type AuthorsCollection,
@@ -38,6 +38,22 @@ describe('pipeline', () => {
     collection(postsCollection, ['author1']); // parent doc ref: ok
     // @ts-expect-error -- parent doc ref length must match the parent path
     collection(postsCollection, ['author1', 'extra']);
+  });
+
+  it('reshaped schemas reject stale field references downstream', () => {
+    // Schema threading is bidirectional: reshaping stages not only expose new
+    // fields downstream, they revoke the removed ones — at the type level AND
+    // at runtime (the field provider resolves against the reshaped schema).
+
+    expect(() =>
+      // @ts-expect-error -- `rank` is not part of the projected schema
+      base.select(() => ['name']).sort((field) => [asc(field('rank'))]),
+    ).toThrow('schema has no field "rank"');
+
+    expect(() =>
+      // @ts-expect-error -- `tag` was removed by removeFields
+      base.removeFields('tag').where((field) => equal(field('tag'), field('tag'))),
+    ).toThrow('schema has no field "tag"');
   });
 
   it('identity ratchet: preserving stages keep `id`, select drops it for good', () => {

@@ -164,6 +164,15 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('sorts by the reserved __name__ key (the document id)', async () => {
+        // `__name__` stays addressable in `sort` / `where` even though it is
+        // not projectable — ids a1 < a2 < a3, so descending reverses them.
+        await expectPipeline(
+          source().sort((field) => [desc(field('__name__'))]),
+          [a3, a2, a1],
+        );
+      });
+
       it('keeps rows missing the sort field, ordering them before all values', async () => {
         // Unlike core-query `orderBy` (which EXCLUDES documents lacking the
         // field), pipeline `sort` keeps them: absent orders before every
