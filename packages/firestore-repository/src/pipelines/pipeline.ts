@@ -182,11 +182,21 @@ export class Pipeline<
       parent: this.node,
     });
   }
-  limit(_limit: number): Pipeline<Schema, Id> {
-    return unimplemented();
+  /** Truncates to the first `limit` rows. Identity-preserving; schema unchanged. */
+  limit(limit: number): Pipeline<Schema, Id> {
+    return new Pipeline<Schema, Id>({
+      schema: this.node.schema,
+      stage: { kind: 'limit', limit },
+      parent: this.node,
+    });
   }
-  offset(_offset: number): Pipeline<Schema, Id> {
-    return unimplemented();
+  /** Skips the first `offset` rows. Identity-preserving; schema unchanged. */
+  offset(offset: number): Pipeline<Schema, Id> {
+    return new Pipeline<Schema, Id>({
+      schema: this.node.schema,
+      stage: { kind: 'offset', offset },
+      parent: this.node,
+    });
   }
   // TODO
   unnest(..._args: unknown[]): Pipeline<Fields, Id> {

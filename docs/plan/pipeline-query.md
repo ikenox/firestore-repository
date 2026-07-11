@@ -278,7 +278,9 @@ Transformation stages already stubbed:
       stage carries the field paths, executors translate to `sdk.removeFields(...)`,
       identity preserved (`Id` threads through). Verified live.
 - [ ] `distinct(...)` — Context shrinkage + identity break.
-- [ ] `limit(N)` / `offset(N)` — Context unchanged + identity preserve.
+- [x] `limit(N)` / `offset(N)` — stages carry the count, executors translate
+      to `sdk.limit/offset`, schema unchanged, identity preserved. Verified live
+      incl. offset+limit paging and an over-sized limit.
 - [ ] `unnest(...)` — Context augmentation + identity preserve.
 - [ ] `replaceWith(...)` — Context replacement + identity break.
 - [ ] `union(other)` — combine sources; identity break (conservative).
