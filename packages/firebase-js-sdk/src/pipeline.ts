@@ -112,7 +112,9 @@ const applyStage = (sdk: SdkPipeline, stage: TransformStage): SdkPipeline => {
       // parameter — it does not change the wire proto.
       return sdk.where(toSdkExpression(stage.condition).asBoolean());
     case 'limit':
+      return sdk.limit(stage.limit);
     case 'offset':
+      return sdk.offset(stage.offset);
     case 'unnest':
     case 'aggregate':
     case 'distinct':

@@ -41,8 +41,8 @@ export type TransformStage =
   | { kind: 'addFields'; selections: readonly ExpressionWithAlias[] }
   | { kind: 'removeFields'; fields: readonly string[] }
   | { kind: 'sort'; orderings: Ordering[] }
-  | { kind: 'limit' }
-  | { kind: 'offset' }
+  | { kind: 'limit'; limit: number }
+  | { kind: 'offset'; offset: number }
   | { kind: 'unnest' }
   | { kind: 'aggregate' }
   | { kind: 'distinct' }

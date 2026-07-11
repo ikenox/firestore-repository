@@ -216,6 +216,49 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
+    describe('limit / offset', () => {
+      // items are seeded with rank 1 / 2 / 3 for a1 / a2 / a3; sort first so
+      // the truncation point is deterministic.
+      const [a1, a2, a3] = items;
+
+      it('limit truncates the sorted rows, keeping row identity', async () => {
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .limit(2),
+          [a1, a2],
+        );
+      });
+
+      it('offset skips the leading sorted rows', async () => {
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .offset(1),
+          [a2, a3],
+        );
+      });
+
+      it('offset then limit pages through the rows', async () => {
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .offset(1)
+            .limit(1),
+          [a2],
+        );
+      });
+
+      it('a limit larger than the row count returns everything', async () => {
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .limit(100),
+          [a1, a2, a3],
+        );
+      });
+    });
+
     describe('select', () => {
       it('projects a single top-level field, dropping row identity', async () => {
         // `select` breaks read-identity: the result rows carry no `id`.
