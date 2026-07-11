@@ -1,4 +1,6 @@
 import {
+  array,
+  type ArrayType,
   bool,
   type BoolType,
   bytes,
@@ -6,9 +8,10 @@ import {
   double,
   type DoubleType,
   type FieldType,
-  type GeoPoint,
   geoPoint,
   type GeoPointType,
+  map,
+  type MapType,
   nullType,
   type NullType,
   string,
@@ -34,6 +37,8 @@ import { assertNever } from '../util.js';
 export type Expression<T extends FieldType = FieldType> =
   | Field<T>
   | Constant<T>
+  | GeoPointValue
+  | VectorValue
   | UnaryFunction<T>
   | BinaryFunction<T>
   | VariadicFunction<T>;
@@ -102,12 +107,11 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   readonly kind = 'constant';
   /** Always derived from `value` — a constant whose descriptor lies about its value is unconstructible. */
   readonly type: T;
-  readonly value: ConstantValue | GeoPoint | number[];
+  readonly value: ConstantValue;
 
-  // Private: the statics below are the only construction points, so `T`
-  // always matches the actual value (a `new Constant<Wrong>(v)` escape hatch
-  // does not exist).
-  private constructor(type: T, value: ConstantValue | GeoPoint | number[]) {
+  // Private: `of` is the only construction point, so `T` always matches the
+  // actual value (a `new Constant<Wrong>(v)` escape hatch does not exist).
+  private constructor(type: T, value: ConstantValue) {
     super();
     this.type = type;
     this.value = value;
@@ -116,28 +120,57 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   static of<const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> {
     return new Constant(constantTypeOf(value), value);
   }
+}
 
-  /** See {@link geoPointValue} — explicit coordinates, no plain-object ambiguity. */
-  static geoPoint(latitude: number, longitude: number): Constant<GeoPointType> {
-    return new Constant(geoPoint(), { latitude, longitude });
-  }
-
-  /** See {@link vectorValue} — explicit constructor, no `number[]`-array ambiguity. */
-  static vector(values: readonly number[]): Constant<VectorType> {
-    // Defensive copy; also keeps the payload a mutable array, which
-    // `Array.isArray` can narrow (it does not narrow `readonly` arrays).
-    return new Constant(vector(), [...values]);
+/**
+ * A geopoint value. A dedicated node (not a `Constant`): a geopoint has no JS
+ * representation of its own — a plain `{ latitude, longitude }` object is
+ * always a **map** constant — so the coordinates are explicit and executors
+ * translate by `kind` with no payload ambiguity.
+ */
+export class GeoPointValue extends ExpressionBase {
+  readonly kind = 'geoPointValue';
+  readonly type: GeoPointType = geoPoint();
+  constructor(
+    readonly latitude: number,
+    readonly longitude: number,
+  ) {
+    super();
   }
 }
 
 /**
- * The value domain `constant()` accepts — the unambiguous scalar types.
- * Deliberately excluded: geopoints (structurally indistinguishable from a
- * plain object — use {@link geoPointValue}), document refs (need collection
- * context), arrays / maps (the `ArrayValue` / `MapValue` constructors), and
- * vectors (indistinguishable from `number[]`).
+ * A vector value. A dedicated node (not a `Constant`): a `number[]` is always
+ * an **array** constant, so vectors are constructed explicitly.
  */
-export type ConstantValue = string | number | boolean | null | Date | Uint8Array;
+export class VectorValue extends ExpressionBase {
+  readonly kind = 'vectorValue';
+  readonly type: VectorType = vector();
+  readonly values: readonly number[];
+  constructor(values: readonly number[]) {
+    super();
+    this.values = [...values];
+  }
+}
+
+/**
+ * The value domain `constant()` accepts — everything with an unambiguous
+ * plain-JS representation: scalars, arrays and plain-object maps,
+ * recursively. Firestore types WITHOUT their own JS representation get
+ * explicit constructors instead — a plain object is always a **map** constant
+ * (use {@link geoPointValue} for geopoints) and a `number[]` is always an
+ * **array** constant (use {@link vectorValue} for vectors). Document refs
+ * need collection context and stay deferred.
+ */
+export type ConstantValue = ConstantScalar | ConstantArray | ConstantMap;
+export type ConstantScalar = string | number | boolean | null | Date | Uint8Array;
+/**
+ * Non-empty (an empty literal has no element to infer a descriptor from) and
+ * non-nested (Firestore forbids arrays directly inside arrays).
+ */
+export type ConstantArray = readonly [ConstantElement, ...ConstantElement[]];
+type ConstantElement = ConstantScalar | ConstantMap;
+export type ConstantMap = { readonly [key: string]: ConstantValue };
 
 /**
  * The descriptor a constant value infers to. All JS numbers map to
@@ -145,19 +178,49 @@ export type ConstantValue = string | number | boolean | null | Date | Uint8Array
  * descriptor's client-side roles (operand domains, projected-schema decode)
  * treat the two identically.
  */
-export type ConstantTypeOf<V extends ConstantValue> = V extends null
-  ? NullType
-  : V extends Date
-    ? TimestampType
-    : V extends Uint8Array
-      ? BytesType
-      : V extends string
-        ? StringType
-        : V extends number
-          ? DoubleType
-          : V extends boolean
-            ? BoolType
-            : never;
+export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
+  ? FieldType // wide/unresolved input: break the recursion (same trick as MapFieldPath)
+  : V extends null
+    ? NullType
+    : V extends Date
+      ? TimestampType
+      : V extends Uint8Array
+        ? BytesType
+        : V extends string
+          ? StringType
+          : V extends number
+            ? DoubleType
+            : V extends boolean
+              ? BoolType
+              : V extends ConstantArray
+                ? IsUnion<ConstantTypeOf<V[number]>> extends true
+                  ? never // heterogeneous elements — see HomogeneousArrays
+                  : ArrayType<ConstantTypeOf<V[number]>, [], []>
+                : V extends ConstantMap
+                  ? MapType<{ -readonly [K in keyof V & string]: ConstantTypeOf<V[K]> }>
+                  : never;
+
+/**
+ * Rejects `constant([...])` calls whose array elements would infer distinct
+ * descriptors: the type level would need a union of descriptor types while
+ * the runtime holds a single element descriptor, so the two could not mirror.
+ * The message type is what the invalid literal fails to unify with. Nested
+ * arrays deeper inside maps are guarded at runtime instead (loud at
+ * construction).
+ */
+type HomogeneousArrays<V> = V extends ConstantArray
+  ? IsUnion<ConstantTypeOf<V[number]>> extends true
+    ? ['constant array elements must share a single type']
+    : unknown
+  : unknown;
+
+type IsUnion<T, U = T> = [T] extends [never]
+  ? false
+  : T extends unknown
+    ? [U] extends [T]
+      ? false
+      : true
+    : never;
 
 /**
  * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
@@ -177,6 +240,22 @@ function constantTypeOf(value: ConstantValue): FieldType {
   if (value instanceof Uint8Array) {
     return bytes();
   }
+  if (isConstantArray(value)) {
+    const [first, ...rest] = value;
+    if (first === undefined) {
+      // Runtime twin of ConstantArray's non-empty tuple constraint.
+      throw new Error('constant arrays must not be empty (no element to infer a type from)');
+    }
+    const element = constantTypeOf(first);
+    // Runtime twin of the `HomogeneousArrays` rejection (and the guard for
+    // nested arrays the type-level check cannot reach).
+    for (const other of rest) {
+      if (!descriptorEquals(element, constantTypeOf(other))) {
+        throw new Error('constant array elements must share a single type');
+      }
+    }
+    return array(element);
+  }
   switch (typeof value) {
     case 'string':
       return string();
@@ -185,6 +264,8 @@ function constantTypeOf(value: ConstantValue): FieldType {
     case 'boolean':
       return bool();
     case 'object':
+      // The only remaining ConstantValue: a plain-object map.
+      return map(Object.fromEntries(Object.entries(value).map(([k, v]) => [k, constantTypeOf(v)])));
     case 'bigint':
     case 'symbol':
     case 'undefined':
@@ -196,8 +277,28 @@ function constantTypeOf(value: ConstantValue): FieldType {
   }
 }
 
-export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
-  Constant.of(value);
+/** `Array.isArray` does not narrow `readonly` array unions — a dedicated guard does. */
+const isConstantArray = (value: ConstantValue): value is ConstantArray => Array.isArray(value);
+
+/** Structural descriptor equality (key-order insensitive; descriptors are plain data). */
+const descriptorEquals = (a: unknown, b: unknown): boolean => {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+    return false;
+  }
+  const entriesA = Object.entries(a);
+  const bRecord = new Map(Object.entries(b));
+  return (
+    entriesA.length === bRecord.size &&
+    entriesA.every(([k, v]) => bRecord.has(k) && descriptorEquals(v, bRecord.get(k)))
+  );
+};
+
+export const constant = <const V extends ConstantValue>(
+  value: V & HomogeneousArrays<V>,
+): Constant<ConstantTypeOf<V>> => Constant.of<V>(value);
 
 /**
  * Builds a geopoint constant from explicit coordinates. A plain
@@ -207,16 +308,11 @@ export const constant = <const V extends ConstantValue>(value: V): Constant<Cons
  * colliding with the `geoPoint()` descriptor factory in `schema.ts`, matching
  * the planned `arrayValue` / `mapValue` constructor naming.
  */
-export const geoPointValue = (latitude: number, longitude: number): Constant<GeoPointType> =>
-  Constant.geoPoint(latitude, longitude);
+export const geoPointValue = (latitude: number, longitude: number): GeoPointValue =>
+  new GeoPointValue(latitude, longitude);
 
-/**
- * Builds a vector constant from explicit components. A plain `number[]` is
- * deliberately not a {@link ConstantValue}: it would be indistinguishable
- * from an array constant.
- */
-export const vectorValue = (values: readonly number[]): Constant<VectorType> =>
-  Constant.vector(values);
+/** Builds a vector value from explicit components — see {@link VectorValue}. */
+export const vectorValue = (values: readonly number[]): VectorValue => new VectorValue(values);
 
 // Function-call nodes are grouped by SHAPE (arity), not one class per
 // function: each shape carries typed payload fields (no untyped `args` array,

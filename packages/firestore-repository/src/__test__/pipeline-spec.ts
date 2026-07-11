@@ -244,8 +244,10 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               constant(new Uint8Array([1, 2, 3])).as('by'),
               geoPointValue(35.68, 139.69).as('g'),
               vectorValue([0.5, 0.25]).as('v'),
+              constant([1, 2, 3]).as('arr'),
+              constant({ x: 1, s: 'a', inner: { flag: true } }).as('m'),
             ])
-            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v']),
+            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v', 'arr', 'm']),
           [
             {
               data: {
@@ -257,6 +259,8 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 by: new Uint8Array([1, 2, 3]),
                 g: { latitude: 35.68, longitude: 139.69 },
                 v: [0.5, 0.25],
+                arr: [1, 2, 3],
+                m: { x: 1, s: 'a', inner: { flag: true } },
               },
             },
           ],

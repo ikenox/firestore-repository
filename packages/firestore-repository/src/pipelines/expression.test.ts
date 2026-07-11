@@ -9,6 +9,8 @@ import {
   int64,
   literal,
   nullType,
+  array,
+  map,
   string,
   timestamp,
   vector,
@@ -77,6 +79,10 @@ describe('expression factories', () => {
       [constant(true), bool()],
       [geoPointValue(1, 2), geoPoint()],
       [vectorValue([0.5, 0.25]), vector()],
+      [constant([1, 2, 3]), array(double())],
+      [constant(['a', 'b']), array(string())],
+      [constant({ n: 1, s: 'x' }), map({ n: double(), s: string() })],
+      [constant({ nested: { xs: [true] } }), map({ nested: map({ xs: array(bool()) }) })],
     ] as const;
     for (const [c, oracle] of cases) {
       expect(c.type).toStrictEqual(oracle);
@@ -89,23 +95,30 @@ describe('expression factories', () => {
     expectTypeOf(constant(true).type).toEqualTypeOf(bool());
     expectTypeOf(geoPointValue(1, 2).type).toEqualTypeOf(geoPoint());
     expectTypeOf(vectorValue([0.5, 0.25]).type).toEqualTypeOf(vector());
+    expectTypeOf(constant([1, 2, 3]).type).toEqualTypeOf(array(double()));
+    expectTypeOf(constant({ n: 1, s: 'x' }).type).toEqualTypeOf(map({ n: double(), s: string() }));
 
-    // Composite values are not constants: they have dedicated constructors
-    // (arrays would be ambiguous with vectors, plain objects with geopoints
-    // and future map constants). Rejected at the type level AND loud at
-    // runtime.
+    // A plain object is always a MAP constant — geopoints and vectors have no
+    // JS representation of their own, hence the dedicated constructors.
+    expectTypeOf(constant({ latitude: 1, longitude: 2 }).type).toEqualTypeOf(
+      map({ latitude: double(), longitude: double() }),
+    );
+
     expect(() =>
-      // @ts-expect-error -- arrays are not a ConstantValue (use vectorValue / a future arrayValue)
-      constant([1, 2]),
-    ).toThrow();
+      // @ts-expect-error -- array elements must share a single type
+      constant([1, 'a']),
+    ).toThrow('constant array elements must share a single type');
+    // The runtime twin also guards nested occurrences the type-level check
+    // cannot reach.
+    // (compiles — the nested array's heterogeneity is beyond the type-level
+    // guard's reach, which is exactly why the runtime twin exists)
+    expect(() => constant({ deep: [1, 'a'] })).toThrow(
+      'constant array elements must share a single type',
+    );
     expect(() =>
-      // @ts-expect-error -- plain objects are not a ConstantValue
-      constant({ a: 1 }),
-    ).toThrow();
-    expect(() =>
-      // @ts-expect-error -- geopoint-shaped objects included: use geoPointValue
-      constant({ latitude: 1, longitude: 2 }),
-    ).toThrow();
+      // @ts-expect-error -- an empty array literal has no element to infer from
+      constant([]),
+    ).toThrow('constant arrays must not be empty');
   });
 
   it('comparisons unify within a value domain', () => {

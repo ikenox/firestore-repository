@@ -1,6 +1,7 @@
 import { Bytes, type Firestore, GeoPoint, vector } from '@firebase/firestore';
 import {
   and as sdkAnd,
+  array as sdkArray,
   constant as sdkConstant,
   equal as sdkEqual,
   execute as executePipeline,
@@ -9,6 +10,7 @@ import {
   greaterThanOrEqual as sdkGreaterThanOrEqual,
   lessThan as sdkLessThan,
   lessThanOrEqual as sdkLessThanOrEqual,
+  map as sdkMap,
   not as sdkNot,
   notEqual as sdkNotEqual,
   or as sdkOr,
@@ -20,6 +22,7 @@ import { collectionPath } from 'firestore-repository/path';
 import type {
   BinaryFunctionName,
   Constant,
+  ConstantValue,
   Expression,
   ExpressionWithAlias,
   UnaryFunctionName,
@@ -157,6 +160,10 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
       return field(expression.path);
     case 'constant':
       return toSdkConstant(expression.value);
+    case 'geoPointValue':
+      return sdkConstant(new GeoPoint(expression.latitude, expression.longitude));
+    case 'vectorValue':
+      return sdkConstant(vector([...expression.values]));
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -178,10 +185,11 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
 };
 
 /**
- * Translates a constant value into an SDK constant expression, converting the
- * repository's plain value types into the SDK's classes where they differ
- * (plain `GeoPoint` object → SDK `GeoPoint`; `Uint8Array` → `Bytes`; `Date`
- * is accepted natively).
+ * Translates a constant value into an SDK constant expression. `Constant`
+ * payload shapes are unambiguous (geopoints and vectors are dedicated
+ * nodes): an array is an array constant, a plain object a map constant.
+ * `Uint8Array` converts to the client SDK's `Bytes` (top-level and inside
+ * composites — the client serializer rejects raw `Uint8Array`).
  */
 const toSdkConstant = (value: Constant['value']): SdkExpression => {
   if (value === null) {
@@ -194,7 +202,7 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
     return sdkConstant(Bytes.fromUint8Array(value));
   }
   if (Array.isArray(value)) {
-    return sdkConstant(vector(value));
+    return sdkArray(value.map(toSdkComposite));
   }
   switch (typeof value) {
     case 'string':
@@ -204,7 +212,9 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
     case 'boolean':
       return sdkConstant(value);
     case 'object':
-      return sdkConstant(new GeoPoint(value.latitude, value.longitude));
+      return sdkMap(
+        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkComposite(v)])),
+      );
     case 'bigint':
     case 'symbol':
     case 'undefined':
@@ -215,6 +225,10 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
       return assertNever(value);
   }
 };
+
+/** Raw values inside composites, with `Uint8Array` lifted to `Bytes`. */
+const toSdkComposite = (value: ConstantValue): unknown =>
+  value instanceof Uint8Array ? Bytes.fromUint8Array(value) : value;
 
 // Per-shape translation tables: `Record` over the name union requires every
 // key, so a newly added function name fails to compile here until translated.
@@ -249,6 +263,8 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
+    case 'geoPointValue':
+    case 'vectorValue':
     case 'unaryFunction':
     case 'binaryFunction':
     case 'variadicFunction':

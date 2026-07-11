@@ -3,6 +3,7 @@ import { collectionPath } from 'firestore-repository/path';
 import type {
   BinaryFunctionName,
   Constant,
+  ConstantArray,
   Expression,
   ExpressionWithAlias,
   UnaryFunctionName,
@@ -140,6 +141,10 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
       return Pipelines.field(expression.path);
     case 'constant':
       return toSdkConstant(expression.value);
+    case 'geoPointValue':
+      return Pipelines.constant(new GeoPoint(expression.latitude, expression.longitude));
+    case 'vectorValue':
+      return Pipelines.constant(FieldValue.vector([...expression.values]));
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -161,10 +166,11 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
 };
 
 /**
- * Translates a constant value into an SDK constant expression, converting the
- * repository's plain value types into the SDK's classes where they differ
- * (plain `GeoPoint` object → SDK `GeoPoint`; `Date` / `Uint8Array` are
- * accepted natively).
+ * Translates a constant value into an SDK constant expression. `Constant`
+ * payload shapes are unambiguous (geopoints and vectors are dedicated
+ * nodes): an array is an array constant, a plain object a map constant, and
+ * the SDK's serializer lifts the raw JS values (incl. nested `Date` /
+ * `Uint8Array`) itself.
  */
 const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
   if (value === null) {
@@ -176,8 +182,8 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
   if (value instanceof Uint8Array) {
     return Pipelines.constant(value);
   }
-  if (Array.isArray(value)) {
-    return Pipelines.constant(FieldValue.vector(value));
+  if (isConstantArrayValue(value)) {
+    return Pipelines.array(value.slice());
   }
   switch (typeof value) {
     case 'string':
@@ -187,7 +193,7 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
     case 'boolean':
       return Pipelines.constant(value);
     case 'object':
-      return Pipelines.constant(new GeoPoint(value.latitude, value.longitude));
+      return Pipelines.map({ ...value });
     case 'bigint':
     case 'symbol':
     case 'undefined':
@@ -232,12 +238,18 @@ const variadicFns: Record<
   or: (f, s, ...r) => Pipelines.or(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
 };
 
+/** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
+const isConstantArrayValue = (value: Constant['value']): value is ConstantArray =>
+  Array.isArray(value);
+
 const toSdkOrdering = (ordering: Ordering) => {
   const { expression } = ordering;
   switch (expression.kind) {
     case 'field':
       break;
     case 'constant':
+    case 'geoPointValue':
+    case 'vectorValue':
     case 'unaryFunction':
     case 'binaryFunction':
     case 'variadicFunction':
