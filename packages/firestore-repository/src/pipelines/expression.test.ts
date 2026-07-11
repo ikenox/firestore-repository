@@ -112,6 +112,14 @@ describe('expression factories', () => {
     expect(mixed.type).toStrictEqual(mixedOracle);
     expectTypeOf(mixed.type).toEqualTypeOf(mixedOracle);
 
+    // Geopoint / vector nodes double as composite leaves (Firestore values
+    // hold them at any depth; they have no plain-JS representation, so the
+    // explicit nodes stand in).
+    const withNodes = constant({ spot: geoPointValue(1, 3), embedding: [vectorValue([1, 2])] });
+    const withNodesOracle = map({ spot: geoPoint(), embedding: array(vector()) });
+    expect(withNodes.type).toStrictEqual(withNodesOracle);
+    expectTypeOf(withNodes.type).toEqualTypeOf(withNodesOracle);
+
     const nestedMixed = constant({ deep: [1, 'a'] });
     const nestedMixedOracle = map({ deep: array(union(double(), string())) });
     expect(nestedMixed.type).toStrictEqual(nestedMixedOracle);

@@ -1,10 +1,12 @@
 import { FieldValue, type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
 import { collectionPath } from 'firestore-repository/path';
-import type {
-  BinaryFunctionName,
-  Constant,
-  ConstantArray,
-  Expression,
+import {
+  type BinaryFunctionName,
+  type Constant,
+  type ConstantArray,
+  type Expression,
+  GeoPointValue,
+  VectorValue,
   ExpressionWithAlias,
   UnaryFunctionName,
   VariadicFunctionName,
@@ -142,9 +144,10 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
     case 'constant':
       return toSdkConstant(expression.value);
     case 'geoPointValue':
-      return Pipelines.constant(new GeoPoint(expression.latitude, expression.longitude));
     case 'vectorValue':
-      return Pipelines.constant(FieldValue.vector([...expression.values]));
+      // Value nodes also appear as constant-composite leaves; toSdkConstant
+      // is the single home for their translation.
+      return toSdkConstant(expression);
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -181,6 +184,12 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
   }
   if (value instanceof Uint8Array) {
     return Pipelines.constant(value);
+  }
+  if (value instanceof GeoPointValue) {
+    return Pipelines.constant(new GeoPoint(value.latitude, value.longitude));
+  }
+  if (value instanceof VectorValue) {
+    return Pipelines.constant(FieldValue.vector([...value.values]));
   }
   if (isConstantArrayValue(value)) {
     return Pipelines.array(value.map(toSdkConstant));

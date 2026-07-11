@@ -164,14 +164,21 @@ export class VectorValue extends ExpressionBase {
  * **array** constant (use {@link vectorValue} for vectors). Document refs
  * need collection context and stay deferred.
  */
-export type ConstantValue = ConstantScalar | ConstantArray | ConstantMap;
+export type ConstantValue = ConstantScalar | ConstantLeafNode | ConstantArray | ConstantMap;
 export type ConstantScalar = string | number | boolean | null | Date | Uint8Array;
+/**
+ * Value nodes usable as composite leaves: Firestore values may hold geopoints
+ * and vectors at any depth, and since those have no plain-JS representation of
+ * their own, their explicit nodes stand in —
+ * `constant({ spot: geoPointValue(1, 3) })`.
+ */
+export type ConstantLeafNode = GeoPointValue | VectorValue;
 /**
  * Non-empty (an empty literal has no element to infer a descriptor from) and
  * non-nested (Firestore forbids arrays directly inside arrays).
  */
 export type ConstantArray = readonly [ConstantElement, ...ConstantElement[]];
-type ConstantElement = ConstantScalar | ConstantMap;
+type ConstantElement = ConstantScalar | ConstantLeafNode | ConstantMap;
 export type ConstantMap = { readonly [key: string]: ConstantValue };
 
 /**
@@ -188,17 +195,21 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
       ? TimestampType
       : V extends Uint8Array
         ? BytesType
-        : V extends string
-          ? StringType
-          : V extends number
-            ? DoubleType
-            : V extends boolean
-              ? BoolType
-              : V extends ConstantArray
-                ? ArrayConstantTypeOf<V>
-                : V extends ConstantMap
-                  ? MapType<{ -readonly [K in keyof V & string]: ConstantTypeOf<V[K]> }>
-                  : never;
+        : V extends GeoPointValue
+          ? GeoPointType
+          : V extends VectorValue
+            ? VectorType
+            : V extends string
+              ? StringType
+              : V extends number
+                ? DoubleType
+                : V extends boolean
+                  ? BoolType
+                  : V extends ConstantArray
+                    ? ArrayConstantTypeOf<V>
+                    : V extends ConstantMap
+                      ? MapType<{ -readonly [K in keyof V & string]: ConstantTypeOf<V[K]> }>
+                      : never;
 
 /**
  * The element descriptor is derived by walking the TUPLE (not the union of
@@ -254,6 +265,9 @@ function constantTypeOf(value: ConstantValue): FieldType {
   }
   if (value instanceof Uint8Array) {
     return bytes();
+  }
+  if (value instanceof GeoPointValue || value instanceof VectorValue) {
+    return value.type;
   }
   if (isConstantArray(value)) {
     if (value.length === 0) {

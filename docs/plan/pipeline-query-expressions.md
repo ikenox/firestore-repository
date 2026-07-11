@@ -151,7 +151,9 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
       elements become an `ArrayType<UnionType<[...]>>`), and plain-object maps
       (recursive). Firestore types WITHOUT their own JS representation are
       dedicated nodes: `GeoPointValue` / `VectorValue` — a plain object is
-      always a map constant, a `number[]` always an array constant. All
+      always a map constant, a `number[]` always an array constant. The nodes
+      double as **composite leaves** (`constant({ spot: geoPointValue(1, 3) })`),
+      mirroring the SDK's nested `GeoPoint` support. All
       numbers map to `DoubleType` (wire integer encoding is the SDK's
       concern). This fixed the reachable descriptor-lie crash
       (`type: 'todo'`) and pulled the comparison operators onto value-domain

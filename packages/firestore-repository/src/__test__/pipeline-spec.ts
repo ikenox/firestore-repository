@@ -250,6 +250,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 x: 1,
                 s: 'a',
                 inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
+                spot: geoPointValue(1, 3),
               }).as('m'),
             ])
             .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v', 'arr', 'mixed', 'm']),
@@ -270,6 +271,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                   x: 1,
                   s: 'a',
                   inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
+                  spot: { latitude: 1, longitude: 3 },
                 },
               },
             },

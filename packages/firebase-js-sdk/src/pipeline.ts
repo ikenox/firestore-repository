@@ -19,11 +19,13 @@ import {
   type Selectable as SdkSelectable,
 } from '@firebase/firestore/pipelines';
 import { collectionPath } from 'firestore-repository/path';
-import type {
-  BinaryFunctionName,
-  Constant,
-  ConstantArray,
-  Expression,
+import {
+  type BinaryFunctionName,
+  type Constant,
+  type ConstantArray,
+  type Expression,
+  GeoPointValue,
+  VectorValue,
   ExpressionWithAlias,
   UnaryFunctionName,
   VariadicFunctionName,
@@ -161,9 +163,10 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
     case 'constant':
       return toSdkConstant(expression.value);
     case 'geoPointValue':
-      return sdkConstant(new GeoPoint(expression.latitude, expression.longitude));
     case 'vectorValue':
-      return sdkConstant(vector([...expression.values]));
+      // Value nodes also appear as constant-composite leaves; toSdkConstant
+      // is the single home for their translation.
+      return toSdkConstant(expression);
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -201,6 +204,12 @@ const toSdkConstant = (value: Constant['value']): SdkExpression => {
   }
   if (value instanceof Uint8Array) {
     return sdkConstant(Bytes.fromUint8Array(value));
+  }
+  if (value instanceof GeoPointValue) {
+    return sdkConstant(new GeoPoint(value.latitude, value.longitude));
+  }
+  if (value instanceof VectorValue) {
+    return sdkConstant(vector([...value.values]));
   }
   if (isConstantArrayValue(value)) {
     return sdkArray(value.map(toSdkConstant));
