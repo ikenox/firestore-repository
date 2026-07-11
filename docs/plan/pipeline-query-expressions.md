@@ -144,7 +144,7 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
 - [x] **0. Shapes + comparison + logical core** (#213).
 - [x] **1. `constant` type inference.** `ConstantTypeOf<V>` (type) mirrored by
       `constantTypeOf` (runtime); `ConstantValue = string | number | boolean |
-    null | Date | Uint8Array | GeoPoint` (doc refs / arrays / maps / vectors
+null | Date | Uint8Array | GeoPoint` (doc refs / arrays / maps / vectors
       deferred to their constructors). All numbers map to `DoubleType` (wire
       integer encoding is the SDK's concern). This fixed the reachable
       descriptor-lie crash (`type: 'todo'`) and pulled the comparison

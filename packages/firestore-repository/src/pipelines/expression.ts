@@ -98,11 +98,12 @@ export const field = <T extends FieldType, Path extends string>(
 
 export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
   readonly kind = 'constant';
-  constructor(
-    readonly type: T,
-    readonly value: ConstantValue,
-  ) {
+  /** Always derived from `value` — a constant whose descriptor lies about its value is unconstructible. */
+  readonly type: T;
+  constructor(readonly value: ConstantValue) {
     super();
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime mapping mirrors the type-level `ConstantTypeOf`; `T` is pinned to it by the `constant` factory's return type
+    this.type = constantTypeOf(value) as T;
   }
 }
 
@@ -168,8 +169,7 @@ const constantTypeOf = (value: ConstantValue): FieldType => {
 };
 
 export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime mapping mirrors the type-level `ConstantTypeOf`, but the compiler cannot connect a runtime descriptor value to the type-level result
-  new Constant(constantTypeOf(value) as ConstantTypeOf<V>, value);
+  new Constant(value);
 
 // Function-call nodes are grouped by SHAPE (arity), not one class per
 // function: each shape carries typed payload fields (no untyped `args` array,
