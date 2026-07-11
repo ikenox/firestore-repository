@@ -117,6 +117,48 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           [a3, a2, a1],
         );
       });
+
+      it('keeps rows missing the sort field, ordering them before all values', async () => {
+        // Unlike core-query `orderBy` (which EXCLUDES documents lacking the
+        // field), pipeline `sort` keeps them: absent orders before every
+        // present value (and after `null`) ascending, and mirrored descending.
+        // a2 has no `profile.gender`; 'female' (a1) < 'male' (a3).
+        await expectPipeline(
+          source().sort((field) => [asc(field('profile.gender'))]),
+          [a2, a1, a3],
+        );
+        await expectPipeline(
+          source().sort((field) => [desc(field('profile.gender'))]),
+          [a3, a1, a2],
+        );
+      });
+
+      describe('multiple sort keys', () => {
+        const compositeCollection = rootCollection({
+          name: 'SortComposite',
+          schema: { group: string(), n: double() },
+        });
+        type CompositeDoc = Doc<typeof compositeCollection>;
+        const compositeItems: [CompositeDoc, CompositeDoc, CompositeDoc] = [
+          { id: ['s1'], data: { group: 'x', n: 1 } },
+          { id: ['s2'], data: { group: 'x', n: 2 } },
+          { id: ['s3'], data: { group: 'y', n: 3 } },
+        ];
+
+        let composite: typeof compositeCollection;
+        beforeEach(async () => {
+          composite = uniqueCollection(compositeCollection);
+          await createRepository(composite).batchSet(compositeItems);
+        });
+
+        it('the earlier key takes precedence; later keys break its ties', async () => {
+          const [x1, x2, y3] = compositeItems;
+          await expectPipeline(
+            collectionInput(composite).sort((field) => [asc(field('group')), desc(field('n'))]),
+            [x2, x1, y3],
+          );
+        });
+      });
     });
 
     describe('select', () => {
