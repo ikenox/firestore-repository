@@ -1,4 +1,5 @@
 import { DocRef } from './repository.js';
+import { assertNever } from './util.js';
 
 /**
  * A definition of a Firestore collection
@@ -18,27 +19,58 @@ export type SubCollection<
 > = Collection<Schema, Parent>;
 
 /** Creates a root collection definition */
-export const rootCollection = <Schema extends DocumentSchema>(params: {
+export const rootCollection = <
+  Schema extends DocumentSchema & WithoutDottedFieldNames<Schema>,
+>(params: {
   name: string;
   schema: Schema;
-}): Collection<Schema, []> => ({ ...params, parent: [] });
+}): Collection<Schema, []> => {
+  assertNoDottedFieldNames(params.schema);
+  return { ...params, parent: [] };
+};
 
 /** Creates a subcollection definition */
 export const subCollection = <
-  Schema extends DocumentSchema,
+  Schema extends DocumentSchema & WithoutDottedFieldNames<Schema>,
   const Parent extends [...string[], string],
 >(params: {
   name: string;
   schema: Schema;
   parent: Parent;
 }): SubCollection<Schema, Parent> => {
+  assertNoDottedFieldNames(params.schema);
   return params;
 };
 
 /** A validation schema for document data */
 export type DocumentSchema = MapType['fields'];
 
-export type FieldType = { type: string; input: unknown; output: unknown };
+/**
+ * The closed discriminated union of every field descriptor, discriminated by
+ * `type`. Being closed (rather than an open `{ type: string }` base) lets
+ * `switch (fieldType.type)` narrow each arm to its concrete descriptor and
+ * makes `default: assertNever(fieldType)` a real exhaustiveness check —
+ * adding a new descriptor surfaces every handling site as a compile error.
+ *
+ * The recursive members are the widest `Any*` interfaces, not the generic
+ * `MapType`/`ArrayType`/`UnionType` aliases — see the comment on those
+ * interfaces for why.
+ */
+export type FieldType =
+  | BoolType
+  | StringType
+  | Int64Type
+  | DoubleType
+  | TimestampType
+  | DocRefType<Collection>
+  | BytesType
+  | GeoPointType
+  | VectorType
+  | NullType
+  | AnyMapType
+  | AnyArrayType
+  | AnyUnionType
+  | LiteralType<(string | number | boolean | null)[]>;
 
 export type BoolType = { type: 'bool'; input: boolean; output: boolean };
 export type StringType = { type: 'string'; input: string; output: string };
@@ -55,13 +87,59 @@ export type BytesType = { type: 'bytes'; input: Uint8Array; output: Uint8Array }
 export type GeoPointType = { type: 'geoPoint'; input: GeoPoint; output: GeoPoint };
 export type VectorType = { type: 'vector'; input: number[]; output: number[] };
 export type NullType = { type: 'null'; input: null; output: null };
+/**
+ * The widest map/array/union descriptors — the recursive members of the
+ * closed {@link FieldType} union. Each concrete `MapType<T>` /
+ * `ArrayType<T>` / `UnionType<T>` is a structural subtype of its `Any*`
+ * counterpart.
+ *
+ * Two deliberate choices make the recursion work:
+ *
+ * - They are `interface`s, not type aliases: their members resolve lazily,
+ *   so `FieldType -> AnyMapType -> MapFields -> FieldType` is legal. Spelling
+ *   the union with the (eagerly resolved) generic aliases instead is a TS2456
+ *   circular reference. Making the generic aliases themselves interfaces does
+ *   not work either: TS compares two instantiations of one generic interface
+ *   by measured variance, the computed `input`/`output` members measure as
+ *   invariant, and e.g. `UnionType<[StringType, NullType]>` would no longer
+ *   be accepted where the widest union descriptor is expected.
+ * - `input`/`output` are `unknown` at this widest level (exactly the width
+ *   the old open `{ type: string; input: unknown; output: unknown }` base
+ *   had), which also terminates the type recursion when resolving the wide
+ *   union's value types.
+ */
+export interface AnyMapType {
+  type: 'map';
+  fields: MapFields;
+  input: unknown;
+  output: unknown;
+}
+export interface AnyArrayType {
+  type: 'array';
+  dynamicPart: FieldType;
+  input: unknown;
+  output: unknown;
+}
+export interface AnyUnionType {
+  type: 'union';
+  elements: FieldType[];
+  input: unknown;
+  output: unknown;
+}
+/**
+ * An `interface` (with an index signature) rather than a `Record` alias for
+ * the same laziness reason as the `Any*` descriptors above.
+ */
+export interface MapFields {
+  [field: string]: FieldType & { optional?: boolean };
+}
+
 export type MapType<T extends MapFields = MapFields> = {
   type: 'map';
   fields: T;
   input: ResolveMapValue<T, 'write'>;
   output: ResolveMapValue<T, 'read'>;
 };
-export type MapFields = Record<string, FieldType & { optional?: boolean }>;
 /**
  * Marks a field descriptor as optional. A plain (string-keyed) property, not a
  * symbol: descriptors are a library-controlled closed structure with no
@@ -71,15 +149,9 @@ export type MapFields = Record<string, FieldType & { optional?: boolean }>;
  * that mix with user data, where a symbol is the right call.)
  */
 export type Optional = { optional: true };
-export type ArrayType<
-  DynamicPart extends FieldType = FieldType,
-  HeadFixedPart extends FieldType[] = FieldType[],
-  TailFixedPart extends FieldType[] = FieldType[],
-> = {
+export type ArrayType<DynamicPart extends FieldType = FieldType> = {
   type: 'array';
   dynamicPart: DynamicPart;
-  headFixedPart: HeadFixedPart;
-  tailFixedPart: TailFixedPart;
   input: ResolveArrayValue<DynamicPart, 'write'>;
   output: ResolveArrayValue<DynamicPart, 'read'>;
 };
@@ -108,10 +180,8 @@ export type ResolveMapValue<
   { [K in keyof T]: T[K]['optional'] extends true ? K : never }[keyof T]
 >;
 
-// TODO: support tuple
 export type ResolveArrayValue<T extends FieldType, Mode extends 'read' | 'write'> =
   | FieldValue<T, Mode>[]
-  // TODO: disallow this operations when the array has a fixed part
   | (Mode extends 'write'
       ? ArrayRemove<FieldValue<T, 'read'>> | ArrayUnion<FieldValue<T, 'read'>>
       : never);
@@ -134,6 +204,27 @@ type Merge<T> = { [K in keyof T]: T[K] };
 export const serverOperation: unique symbol = Symbol();
 
 /**
+ * Rejects schema field names containing `.` (the offending field's type
+ * becomes `never`, so the schema literal fails to type-check). Dots are the
+ * path separator of {@link MapFieldPath} / {@link FieldTypeOfPath}, so a
+ * dotted field name would be unaddressable (or ambiguous with a nested
+ * path). Enforced by every factory that accepts a field map (`map`,
+ * `rootCollection`, `subCollection`).
+ */
+type WithoutDottedFieldNames<T> = {
+  [K in keyof T]: K extends `${string}.${string}` ? never : T[K];
+};
+
+/** Runtime counterpart of {@link WithoutDottedFieldNames}. */
+const assertNoDottedFieldNames = (fields: DocumentSchema): void => {
+  for (const field of Object.keys(fields)) {
+    if (field.includes('.')) {
+      throw new Error(`schema field name "${field}" must not contain "."`);
+    }
+  }
+};
+
+/**
  * Constructs a schema type value without specifying the phantom `input`/`output` fields.
  * Those fields exist only at the type level to carry value type information (valibot-style),
  * so they must not appear in runtime objects. The `as T` cast attaches the phantom types
@@ -152,10 +243,12 @@ export const docRef = <T extends Collection>(collection: T): DocRefType<T> =>
 export const bytes = (): BytesType => buildType({ type: 'bytes' });
 export const geoPoint = (): GeoPointType => buildType({ type: 'geoPoint' });
 export const vector = (): VectorType => buildType({ type: 'vector' });
-export const map = <T extends MapType['fields']>(fields: T): MapType<T> =>
-  buildType({ type: 'map', fields });
-export const array = <T extends FieldType>(elementType: T): ArrayType<T, [], []> =>
-  buildType({ type: 'array', dynamicPart: elementType, headFixedPart: [], tailFixedPart: [] });
+export const map = <T extends MapFields & WithoutDottedFieldNames<T>>(fields: T): MapType<T> => {
+  assertNoDottedFieldNames(fields);
+  return buildType({ type: 'map', fields });
+};
+export const array = <T extends FieldType>(elementType: T): ArrayType<T> =>
+  buildType({ type: 'array', dynamicPart: elementType });
 export const union = <T extends FieldType[]>(...elements: T): UnionType<T> =>
   buildType({ type: 'union', elements });
 export const nullType = (): NullType => buildType({ type: 'null' });
@@ -207,8 +300,9 @@ export type MapFieldPath<T extends MapType['fields']> = MapType['fields'] extend
     }[keyof T & string];
 
 /**
- * Resolves field value type at the specified path
- * TODO: Field names containing dots are not handled correctly because dots are used as path separators.
+ * Resolves field value type at the specified path.
+ * (Field names containing dots would collide with the path separator, but the
+ * schema factories reject them — see {@link WithoutDottedFieldNames}.)
  */
 export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>> = U extends keyof T
   ? // root field
@@ -241,8 +335,10 @@ export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath
     resolved = requireField(schema, path);
   } else {
     // A dotted path's head is a map (enforced by `DocFieldPath`).
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `FieldType` is the base type; narrowing it to `MapType` for the nested walk cannot be expressed structurally
-    const head = requireField(schema, path.slice(0, dot)) as MapType;
+    const head = requireField(schema, path.slice(0, dot));
+    if (!isMapType(head)) {
+      throw new Error(`field "${path.slice(0, dot)}" is not a map`);
+    }
     resolved = fieldTypeOfPath(head.fields, path.slice(dot + 1));
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime walk mirrors `FieldTypeOfPath`, but the compiler cannot connect a runtime schema value to the type-level result
@@ -338,7 +434,7 @@ export const omitPaths = <T extends DocumentSchema, const P extends readonly str
       continue; // exact match drops the whole subtree
     }
     const tail = tailPath(key, paths);
-    // Read the marker before `isMapType` narrows the descriptor to `MapType`
+    // Read the marker before `isMapType` narrows the descriptor to `AnyMapType`
     // (narrowing drops the `optional?` part of the `MapFields` intersection).
     const markedOptional = fieldType.optional === true;
     if (!isMapType(fieldType) || tail.length === 0) {
@@ -360,16 +456,26 @@ export const omitPaths = <T extends DocumentSchema, const P extends readonly str
 const tailPath = (key: string, paths: readonly string[]): string[] =>
   paths.filter((p) => p.startsWith(`${key}.`)).map((p) => p.slice(key.length + 1));
 
-/**
- * Narrows a `FieldType` descriptor to `MapType`. `FieldType` is an open
- * structural base (`type: string`), not a closed union, so this is a `switch`
- * on a plain string with a type-predicate bridge.
- */
-export const isMapType = (t: FieldType): t is MapType => {
+/** Narrows a `FieldType` descriptor to the widest map descriptor. */
+export const isMapType = (t: FieldType): t is AnyMapType => {
   switch (t.type) {
     case 'map':
       return true;
-    default:
+    case 'bool':
+    case 'string':
+    case 'int64':
+    case 'double':
+    case 'timestamp':
+    case 'docRef':
+    case 'bytes':
+    case 'geoPoint':
+    case 'vector':
+    case 'null':
+    case 'array':
+    case 'union':
+    case 'const':
       return false;
+    default:
+      return assertNever(t);
   }
 };

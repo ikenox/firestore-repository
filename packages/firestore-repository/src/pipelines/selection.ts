@@ -311,7 +311,7 @@ const isConditionalPath = (schema: Fields, path: string): boolean => {
   if (head === undefined) {
     return false;
   }
-  // Read the marker before `isMapType` narrows the descriptor to `MapType`
+  // Read the marker before `isMapType` narrows the descriptor to `AnyMapType`
   // (narrowing drops the `optional?` part of the `MapFields` intersection).
   if (head.optional === true) {
     return true;

@@ -13,6 +13,7 @@ import {
   type DocumentSchema,
   type DocFieldPath,
   fieldTypeOfPath,
+  type FieldType,
   type FieldTypeOfPath,
   type FieldValue,
   type FieldValueOfPath,
@@ -20,6 +21,7 @@ import {
   geoPoint,
   Increment,
   int64,
+  isMapType,
   Int64Type,
   LiteralType,
   literal,
@@ -31,6 +33,7 @@ import {
   type Optional,
   type PickPaths,
   rootCollection,
+  subCollection,
   ServerTimestamp,
   string,
   StringType,
@@ -188,29 +191,90 @@ describe('schema', () => {
         expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<'a' | 1 | true>();
       });
     });
+  });
 
-    // describe('array (compound)', () => {
-    //   it('tuple', () => {
-    //     type T = {
-    //       type: 'array';
-    //       headFixedPart: [StringType, BoolType];
-    //       dynamicPart: never;
-    //       tailFixedPart: [];
-    //     };
-    //     expectTypeOf<FieldValue<T, 'read'>>().toEqualTypeOf<[string, boolean]>();
-    //   });
-    //
-    //   it('non-empty array', () => {
-    //     type T = {
-    //       type: 'array';
-    //       headFixedPart: [StringType];
-    //       dynamicPart: Int64Type;
-    //       tailFixedPart: [];
-    //     };
-    //     expectTypeOf<FieldValue<T, 'read'>>().toEqualTypeOf<[string, ...number[]]>();
-    //   });
-    // });
-    //
+  describe('FieldType (closed union)', () => {
+    const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+
+    it('every factory-built descriptor is a member of the union', () => {
+      // The `FieldType[]` annotation is the assertion: this fails to compile
+      // if any factory's return type falls outside the closed union.
+      const descriptors: FieldType[] = [
+        bool(),
+        string(),
+        int64(),
+        double(),
+        timestamp(),
+        docRef(authors),
+        bytes(),
+        geoPoint(),
+        vector(),
+        nullType(),
+        map({ a: string() }),
+        array(string()),
+        union(string(), nullType()),
+        literal('a', 1, true, null),
+        optional(string()),
+        nullable(map({ deep: array(union(literal(true), double())) })),
+      ];
+      expect(descriptors).toHaveLength(16);
+    });
+
+    it('isMapType narrows exactly the map descriptor', () => {
+      expect(isMapType(map({ a: string() }))).toBe(true);
+      const nonMaps: FieldType[] = [
+        bool(),
+        string(),
+        int64(),
+        double(),
+        timestamp(),
+        docRef(authors),
+        bytes(),
+        geoPoint(),
+        vector(),
+        nullType(),
+        array(string()),
+        union(string(), nullType()),
+        literal('a'),
+      ];
+      expect(nonMaps.map(isMapType)).toEqual(nonMaps.map(() => false));
+    });
+  });
+
+  describe('dotted field names are rejected', () => {
+    // Rejected at both layers: the type level (the field's descriptor type
+    // becomes `never` via `WithoutDottedFieldNames`) and the runtime level
+    // (the factory throws) — hence @ts-expect-error wrapped in toThrow.
+    it('map', () => {
+      expect(() =>
+        // @ts-expect-error a field name containing "." is rejected
+        map({ 'a.b': string() }),
+      ).toThrow('must not contain "."');
+    });
+
+    it('rootCollection', () => {
+      expect(() =>
+        // @ts-expect-error a field name containing "." is rejected
+        rootCollection({ name: 'authors', schema: { 'a.b': string() } }),
+      ).toThrow('must not contain "."');
+    });
+
+    it('subCollection', () => {
+      expect(() =>
+        // @ts-expect-error a field name containing "." is rejected
+        subCollection({ name: 'posts', schema: { 'a.b': string() }, parent: ['authors'] }),
+      ).toThrow('must not contain "."');
+    });
+
+    it('a nested map inside a collection schema is covered by the map factory', () => {
+      expect(() =>
+        rootCollection({
+          name: 'authors',
+          // @ts-expect-error a nested field name containing "." is rejected
+          schema: { profile: map({ 'a.b': string() }) },
+        }),
+      ).toThrow('must not contain "."');
+    });
   });
 });
 
@@ -311,7 +375,7 @@ describe('document', () => {
       expectTypeOf(fieldTypeOfPath(schema, 'i')).toEqualTypeOf<Int64Type>();
       expectTypeOf(fieldTypeOfPath(schema, 'b')).toEqualTypeOf<BoolType>();
       expectTypeOf(fieldTypeOfPath(schema, 't')).toEqualTypeOf<TimestampType>();
-      expectTypeOf(fieldTypeOfPath(schema, 'arr')).toEqualTypeOf<ArrayType<StringType, [], []>>();
+      expectTypeOf(fieldTypeOfPath(schema, 'arr')).toEqualTypeOf<ArrayType<StringType>>();
     });
 
     it('resolves nested (dotted) fields', () => {
@@ -370,7 +434,7 @@ describe('document', () => {
       name: StringType;
       profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
       rank: DoubleType;
-      tag: ArrayType<StringType, [], []>;
+      tag: ArrayType<StringType>;
     };
 
     describe('TailPath', () => {
@@ -459,7 +523,7 @@ describe('document', () => {
         expectTypeOf<OmitPaths<Schema, 'name'>>().toEqualTypeOf<{
           profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
           rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
+          tag: ArrayType<StringType>;
         }>();
       });
 
@@ -468,7 +532,7 @@ describe('document', () => {
           name: StringType;
           profile: MapType<{ age: DoubleType }>;
           rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
+          tag: ArrayType<StringType>;
         }>();
       });
 
@@ -483,7 +547,7 @@ describe('document', () => {
         expectTypeOf<OmitPaths<Schema, 'profile'>>().toEqualTypeOf<{
           name: StringType;
           rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
+          tag: ArrayType<StringType>;
         }>();
       });
 
@@ -495,7 +559,7 @@ describe('document', () => {
         expectTypeOf<OmitPaths<Schema, 'name' | 'profile.gender'>>().toEqualTypeOf<{
           profile: MapType<{ age: DoubleType }>;
           rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
+          tag: ArrayType<StringType>;
         }>();
       });
 
@@ -508,7 +572,7 @@ describe('document', () => {
         expectTypeOf<OmitPaths<Schema, 'profile.age' | 'profile.gender'>>().toEqualTypeOf<{
           name: StringType;
           rank: DoubleType;
-          tag: ArrayType<StringType, [], []>;
+          tag: ArrayType<StringType>;
         }>();
       });
 
