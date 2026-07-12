@@ -178,6 +178,11 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
 
 ## Rollout slices (one PR each, TDD with live spec per slice)
 
+Every slice MUST add its functions to the live spec's **function catalog**
+(`pipeline-spec.ts`, "function catalog" describe): one straightforward
+constant-operand evaluation per function, pinning the wire translation of
+both executors and the basic backend semantics in one round trip per family.
+
 - [x] **0. Shapes + comparison + logical core** (#213).
 - [x] **1. `constant` type inference.** `ConstantTypeOf<V>` (type) mirrored by
       `constantTypeOf` (runtime). Classification: everything with an

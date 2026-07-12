@@ -1,26 +1,46 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  abs,
   add,
   and,
+  byteLength,
+  ceil,
   charLength,
   constant,
   divide,
+  endsWith,
   equal,
+  exp,
+  floor,
   geoPointValue,
   vectorValue,
+  greaterThan,
   greaterThanOrEqual,
   lessThan,
+  lessThanOrEqual,
+  ln,
+  log10,
+  ltrim,
+  mod,
   multiply,
   not,
   notEqual,
   or,
+  pow,
   rand,
   round,
+  rtrim,
+  sqrt,
   startsWith,
   stringConcat,
+  stringContains,
+  stringReverse,
+  subtract,
+  toLower,
   toUpper,
   trim,
+  trunc,
 } from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
@@ -288,6 +308,140 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           ],
         );
       });
+    });
+
+    // Every expression function gets at least one straightforward live
+    // evaluation here — the catalog pins each function's wire translation and
+    // its basic backend semantics in one round trip per family. Every future
+    // slice MUST add its functions to this catalog.
+    describe('function catalog (one straightforward evaluation per function)', () => {
+      const { source, expectPipeline } = setup();
+      /** A single-row source: the catalog evaluates constant expressions only. */
+      const one = () => source().limit(1);
+
+      it('arithmetic', async () => {
+        await expectPipeline(
+          one().select(() => [
+            add(constant(1), constant(2)).as('add'),
+            subtract(constant(5), constant(3)).as('subtract'),
+            multiply(constant(2), constant(3)).as('multiply'),
+            divide(constant(7), constant(2.5)).as('divide'),
+            mod(constant(7), constant(3)).as('mod'),
+            pow(constant(2), constant(3)).as('pow'),
+            abs(constant(-5)).as('abs'),
+            ceil(constant(1.2)).as('ceil'),
+            floor(constant(1.8)).as('floor'),
+            round(constant(2.4)).as('round'),
+            round(constant(2.44), constant(1)).as('roundTo'),
+            trunc(constant(2.9)).as('trunc'),
+            trunc(constant(2.99), constant(1)).as('truncTo'),
+            sqrt(constant(9)).as('sqrt'),
+            exp(constant(0)).as('exp'),
+            ln(constant(1)).as('ln'),
+            log10(constant(100)).as('log10'),
+          ]),
+          [
+            {
+              data: {
+                add: 3,
+                subtract: 2,
+                multiply: 6,
+                divide: 2.8,
+                mod: 1,
+                pow: 8,
+                abs: 5,
+                ceil: 2,
+                floor: 1,
+                round: 2,
+                roundTo: 2.4,
+                trunc: 2,
+                truncTo: 2.9,
+                sqrt: 3,
+                exp: 1,
+                ln: 0,
+                log10: 2,
+              },
+            },
+          ],
+        );
+      });
+
+      it('string', async () => {
+        await expectPipeline(
+          one().select(() => [
+            charLength(constant('aあ')).as('charLength'),
+            byteLength(constant('aあ')).as('byteLength'),
+            toLower(constant('AbC')).as('toLower'),
+            toUpper(constant('AbC')).as('toUpper'),
+            stringReverse(constant('abc')).as('stringReverse'),
+            trim(constant('  pad  ')).as('trim'),
+            ltrim(constant('  pad  ')).as('ltrim'),
+            rtrim(constant('  pad  ')).as('rtrim'),
+            trim(constant('xpadx'), constant('x')).as('trimChars'),
+            ltrim(constant('xpadx'), constant('x')).as('ltrimChars'),
+            rtrim(constant('xpadx'), constant('x')).as('rtrimChars'),
+            startsWith(constant('abc'), constant('a')).as('startsWith'),
+            endsWith(constant('abc'), constant('z')).as('endsWith'),
+            stringContains(constant('abc'), constant('b')).as('stringContains'),
+            stringConcat(constant('a'), constant('b'), constant('c')).as('stringConcat'),
+          ]),
+          [
+            {
+              data: {
+                charLength: 2,
+                byteLength: 4,
+                toLower: 'abc',
+                toUpper: 'ABC',
+                stringReverse: 'cba',
+                trim: 'pad',
+                ltrim: 'pad  ',
+                rtrim: '  pad',
+                trimChars: 'pad',
+                ltrimChars: 'padx',
+                rtrimChars: 'xpad',
+                startsWith: true,
+                endsWith: false,
+                stringContains: true,
+                stringConcat: 'abc',
+              },
+            },
+          ],
+        );
+      });
+
+      it('comparison and logical', async () => {
+        await expectPipeline(
+          one().select(() => [
+            equal(constant(1), constant(1)).as('equal'),
+            notEqual(constant(1), constant(1)).as('notEqual'),
+            lessThan(constant(1), constant(2)).as('lessThan'),
+            lessThanOrEqual(constant(2), constant(2)).as('lessThanOrEqual'),
+            greaterThan(constant(1), constant(2)).as('greaterThan'),
+            greaterThanOrEqual(constant(2), constant(2)).as('greaterThanOrEqual'),
+            and(equal(constant(1), constant(1)), equal(constant(2), constant(2))).as('and'),
+            or(equal(constant(1), constant(2)), equal(constant(2), constant(2))).as('or'),
+            not(equal(constant(1), constant(2))).as('not'),
+          ]),
+          [
+            {
+              data: {
+                equal: true,
+                notEqual: false,
+                lessThan: true,
+                lessThanOrEqual: true,
+                greaterThan: false,
+                greaterThanOrEqual: true,
+                and: true,
+                or: true,
+                not: true,
+              },
+            },
+          ],
+        );
+      });
+
+      // rand (the remaining nullary) is covered by its own range test below —
+      // its value is not deterministic.
     });
 
     describe('arithmetic and string functions', () => {
