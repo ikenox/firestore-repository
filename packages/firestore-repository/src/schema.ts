@@ -160,17 +160,18 @@ export type TimestampType = {
  * `undefined` ("the collection is unknown", not "there is no collection").
  *
  * The value representation follows the context: a known collection
- * round-trips `DocRef<T>` id tuples, while a context-free reference is never
- * writable (`input: never`) and reads as its relative path string — also the
- * core query API's id-filter contract (`where(eq('__name__', id))`).
- * Pipeline operator compatibility keys on the shared `'reference'` tag, so
- * both flavors compare with each other and with `docRefValue(...)` constants.
+ * round-trips `DocRef<T>` id tuples, while the context-free flavor reads AND
+ * writes relative path strings (`'authors/a1'`) — the one reference
+ * representation that needs no collection context, and also the core query
+ * API's id-filter contract (`where(eq('__name__', id))`). Pipeline operator
+ * compatibility keys on the shared `'reference'` tag, so both flavors
+ * compare with each other and with `docRefValue(...)` constants.
  */
 export type DocRefType<T extends Collection | 'unknown' = Collection | 'unknown'> = {
   type: 'docRef';
   firestoreType: 'reference';
   collection: T;
-  input: T extends Collection ? DocRef<T> : never;
+  input: T extends Collection ? DocRef<T> : string;
   output: T extends Collection ? DocRef<T> : string;
 };
 export type BytesType = {
@@ -361,7 +362,11 @@ export const int64 = (): Int64Type => buildType({ type: 'int64' });
 export const double = (): DoubleType => buildType({ type: 'double' });
 export const timestamp = (): TimestampType => buildType({ type: 'timestamp' });
 export function docRef<T extends Collection>(collection: T): DocRefType<T>;
-/** The context-free flavor — the `'__name__'` pseudo-descriptor; not for schema data fields. */
+/**
+ * The context-free flavor: a reference to no one particular collection —
+ * usable as a schema data field (round-tripping relative path strings), and
+ * the descriptor the reserved `'__name__'` resolves to.
+ */
 export function docRef(): DocRefType<'unknown'>;
 export function docRef(collection?: Collection): FieldType {
   return buildType<DocRefType>({ type: 'docRef', collection: collection ?? 'unknown' });

@@ -96,6 +96,12 @@ describe('schema', () => {
       expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<DocRef<TestCollection>>();
     });
 
+    it('docRef (context-free flavor): relative path strings both ways', () => {
+      const type = docRef();
+      expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<string>();
+      expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<string>();
+    });
+
     it('bytes', () => {
       const type = bytes();
       expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<Uint8Array>();

@@ -156,8 +156,9 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
       ]);
     case 'docRef': {
       if (fieldType.collection === 'unknown') {
-        // The context-free flavor is never writable (input: never).
-        throw new Error('unsupported schema field type: context-free docRef');
+        // The context-free flavor writes a relative path string — the one
+        // reference representation that needs no collection context.
+        return z.string().transform((path) => db.doc(path));
       }
       const { collection } = fieldType;
       return z.array(z.string()).transform((ref) =>
