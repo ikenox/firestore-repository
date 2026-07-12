@@ -22,22 +22,51 @@ import {
   vector,
 } from '../schema.js';
 import {
+  abs,
+  add,
   and,
   BinaryFunction,
+  byteLength,
+  ceil,
+  charLength,
   Constant,
   constant,
+  divide,
+  endsWith,
   equal,
+  exp,
   type ExpressionWithAlias,
   Field,
   field,
+  floor,
   geoPointValue,
   greaterThan,
   greaterThanOrEqual,
   lessThan,
   lessThanOrEqual,
+  ln,
+  log10,
+  ltrim,
+  mod,
+  multiply,
   not,
   notEqual,
+  NullaryFunction,
   or,
+  pow,
+  rand,
+  round,
+  rtrim,
+  sqrt,
+  startsWith,
+  stringConcat,
+  stringContains,
+  stringReverse,
+  subtract,
+  toLower,
+  toUpper,
+  trim,
+  trunc,
   UnaryFunction,
   VariadicFunction,
   vectorValue,
@@ -439,5 +468,164 @@ describe('logical operator edges', () => {
     const cmp = equal(field(nullable(string()), 'ns'), constant(null));
     expect(cmp.type).toStrictEqual(bool());
     expectTypeOf(cmp.type).toEqualTypeOf(bool());
+  });
+});
+
+describe('arithmetic operators', () => {
+  const rank = field(double(), 'rank');
+  const count = field(int64(), 'count');
+
+  it('builds shape-grouped nodes across all three arities', () => {
+    expect(rand()).toStrictEqual(new NullaryFunction('rand', double()));
+    expect(abs(rank)).toStrictEqual(new UnaryFunction('abs', double(), rank));
+    expect(add(rank, count)).toStrictEqual(new BinaryFunction('add', double(), rank, count));
+  });
+
+  it('every unary function shares the numeric domain and DoubleType result', () => {
+    const table = [
+      ['abs', abs],
+      ['ceil', ceil],
+      ['floor', floor],
+      ['sqrt', sqrt],
+      ['exp', exp],
+      ['ln', ln],
+      ['log10', log10],
+    ] as const;
+    for (const [fnName, fn] of table) {
+      expect(fn(count)).toStrictEqual(new UnaryFunction(fnName, double(), count));
+      expect(fn(field(literal(1, 2), 'lv')).name).toBe(fnName);
+    }
+    // round/trunc are overloaded (dual-arity), so a union-typed table entry
+    // is not callable — exercised individually.
+    expect(round(count)).toStrictEqual(new UnaryFunction('round', double(), count));
+    expect(trunc(count)).toStrictEqual(new UnaryFunction('trunc', double(), count));
+    // @ts-expect-error -- a string operand is not numeric
+    abs(field(string(), 'name'));
+  });
+
+  it('every binary function shares the numeric domain and DoubleType result', () => {
+    const table = [
+      ['add', add],
+      ['subtract', subtract],
+      ['multiply', multiply],
+      ['divide', divide],
+      ['mod', mod],
+      ['pow', pow],
+    ] as const;
+    for (const [fnName, fn] of table) {
+      expect(fn(rank, constant(2))).toStrictEqual(
+        new BinaryFunction(fnName, double(), rank, constant(2)),
+      );
+    }
+    // @ts-expect-error -- a string operand is not numeric
+    add(field(string(), 'name'), constant(1));
+    // @ts-expect-error -- a boolean operand is not numeric
+    multiply(rank, field(bool(), 'flag'));
+  });
+
+  it('round/trunc are dual-arity: an optional decimal-places operand', () => {
+    expect(round(rank, constant(2))).toStrictEqual(
+      new BinaryFunction('round', double(), rank, constant(2)),
+    );
+    expect(trunc(rank, count)).toStrictEqual(new BinaryFunction('trunc', double(), rank, count));
+    // @ts-expect-error -- decimal places must be numeric
+    round(rank, constant('2'));
+  });
+
+  it('propagates operand nullability, and rand (no operands) never does', () => {
+    const nullableDouble = nullable(double());
+    const viaNullable = add(rank, field(nullable(int64()), 'nc'));
+    expect(viaNullable.type).toStrictEqual(nullableDouble);
+    expectTypeOf(viaNullable.type).toEqualTypeOf(nullableDouble);
+    const viaOptional = sqrt(field(optional(double()), 'od'));
+    expect(viaOptional.type).toStrictEqual(nullableDouble);
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullableDouble);
+    const viaDecimals = round(rank, field(nullable(int64()), 'nd'));
+    expect(viaDecimals.type).toStrictEqual(nullableDouble);
+    expectTypeOf(viaDecimals.type).toEqualTypeOf(nullableDouble);
+    expectTypeOf(rand().type).toEqualTypeOf(double());
+  });
+});
+
+describe('string operators', () => {
+  const name = field(string(), 'name');
+  const gender = field(literal('male', 'female'), 'gender');
+
+  it('transforms return StringType, lengths return Int64Type', () => {
+    const table = [
+      ['toLower', toLower, string()],
+      ['toUpper', toUpper, string()],
+      ['stringReverse', stringReverse, string()],
+      ['charLength', charLength, int64()],
+      ['byteLength', byteLength, int64()],
+    ] as const;
+    for (const [fnName, fn, resultType] of table) {
+      expect(fn(name)).toStrictEqual(new UnaryFunction(fnName, resultType, name));
+      // Literal-typed string fields are inside the domain.
+      expect(fn(gender).name).toBe(fnName);
+    }
+    // The trim family is overloaded (dual-arity), so a union-typed table
+    // entry is not callable — exercised individually.
+    expect(trim(name)).toStrictEqual(new UnaryFunction('trim', string(), name));
+    expect(ltrim(name)).toStrictEqual(new UnaryFunction('ltrim', string(), name));
+    expect(rtrim(name)).toStrictEqual(new UnaryFunction('rtrim', string(), name));
+    expect(trim(gender).name).toBe('trim');
+    // @ts-expect-error -- a numeric operand is not a string
+    toUpper(field(double(), 'rank'));
+  });
+
+  it('trim family is dual-arity: an optional character-set operand', () => {
+    expect(trim(name, constant('"'))).toStrictEqual(
+      new BinaryFunction('trim', string(), name, constant('"')),
+    );
+    expect(ltrim(name, constant('x')).name).toBe('ltrim');
+    expect(rtrim(name, constant('x')).name).toBe('rtrim');
+    // @ts-expect-error -- the character set must be a string
+    trim(name, constant(1));
+  });
+
+  it('predicates return BoolType but PROPAGATE null (unlike comparisons)', () => {
+    const table = [
+      ['startsWith', startsWith],
+      ['endsWith', endsWith],
+      ['stringContains', stringContains],
+    ] as const;
+    for (const [fnName, fn] of table) {
+      expect(fn(name, constant('a'))).toStrictEqual(
+        new BinaryFunction(fnName, bool(), name, constant('a')),
+      );
+      const viaNullable = fn(field(nullable(string()), 'ns'), constant('a'));
+      expect(viaNullable.type).toStrictEqual(nullable(bool()));
+      expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(bool()));
+    }
+    // A propagated predicate is still a valid condition (BooleanValued domain).
+    and(field(bool(), 'flag'), startsWith(field(nullable(string()), 'ns'), constant('a')));
+    // @ts-expect-error -- a numeric operand is not a string
+    startsWith(field(double(), 'rank'), constant('a'));
+  });
+
+  it('stringConcat takes two or more strings and propagates nullability', () => {
+    const c = stringConcat(name, constant('-'), gender);
+    expect(c).toStrictEqual(
+      new VariadicFunction('stringConcat', string(), [name, constant('-'), gender]),
+    );
+    expectTypeOf(c.type).toEqualTypeOf(string());
+    const viaNullable = stringConcat(name, field(nullable(string()), 'ns'));
+    expect(viaNullable.type).toStrictEqual(nullable(string()));
+    expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(string()));
+    // @ts-expect-error -- stringConcat requires at least two operands
+    stringConcat(name);
+    // @ts-expect-error -- a numeric operand is not a string
+    stringConcat(name, field(double(), 'rank'));
+  });
+
+  it('composes: function results feed other functions within their domains', () => {
+    // toUpper(name)'s StringType result is a string operand...
+    charLength(toUpper(name));
+    // ...and charLength's Int64Type result is a numeric operand.
+    add(charLength(name), constant(1));
+    lessThan(charLength(name), constant(10));
+    // @ts-expect-error -- a numeric result is not a string operand
+    toUpper(charLength(name));
   });
 });

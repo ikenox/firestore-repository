@@ -11,6 +11,8 @@ import {
   type FirestoreType,
   geoPoint,
   type GeoPointType,
+  int64,
+  type Int64Type,
   map,
   type MapType,
   nullable,
@@ -44,6 +46,7 @@ export type Expression<T extends FieldType = FieldType> =
   | Constant<T>
   | GeoPointValue
   | VectorValue
+  | NullaryFunction<T>
   | UnaryFunction<T>
   | BinaryFunction<T>
   | VariadicFunction<T>;
@@ -354,6 +357,18 @@ export const vectorValue = (values: readonly number[]): VectorValue => new Vecto
 // compatibility, return types) lives in the factory signatures. See
 // "Restructure FunctionCall" in docs/plan/pipeline-query.md.
 
+/** A function call with no operands. */
+export class NullaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'nullaryFunction';
+  constructor(
+    readonly name: NullaryFunctionName,
+    readonly type: T,
+  ) {
+    super();
+  }
+}
+export type NullaryFunctionName = 'rand';
+
 /** A function call with a single operand. */
 export class UnaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
   readonly kind = 'unaryFunction';
@@ -365,7 +380,28 @@ export class UnaryFunction<T extends FieldType = FieldType> extends ExpressionBa
     super();
   }
 }
-export type UnaryFunctionName = 'not';
+// A name appearing in two shape unions (round/trunc/trim/ltrim/rtrim) is the
+// dual-arity pattern: the factory overloads to a unary and a binary form and
+// each executor table translates its own arity.
+export type UnaryFunctionName =
+  | 'not'
+  | 'abs'
+  | 'ceil'
+  | 'floor'
+  | 'round'
+  | 'trunc'
+  | 'sqrt'
+  | 'exp'
+  | 'ln'
+  | 'log10'
+  | 'charLength'
+  | 'byteLength'
+  | 'toLower'
+  | 'toUpper'
+  | 'stringReverse'
+  | 'trim'
+  | 'ltrim'
+  | 'rtrim';
 
 /** A function call with exactly two operands. */
 export class BinaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -385,7 +421,21 @@ export type BinaryFunctionName =
   | 'lessThan'
   | 'lessThanOrEqual'
   | 'greaterThan'
-  | 'greaterThanOrEqual';
+  | 'greaterThanOrEqual'
+  | 'add'
+  | 'subtract'
+  | 'multiply'
+  | 'divide'
+  | 'mod'
+  | 'pow'
+  | 'round'
+  | 'trunc'
+  | 'trim'
+  | 'ltrim'
+  | 'rtrim'
+  | 'startsWith'
+  | 'endsWith'
+  | 'stringContains';
 
 /** A function call with two or more uniform operands. */
 export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -398,7 +448,7 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
     super();
   }
 }
-export type VariadicFunctionName = 'and' | 'or';
+export type VariadicFunctionName = 'and' | 'or' | 'stringConcat';
 
 /**
  * The value-domain predicate: descriptors whose `firestoreType` tags fit the
@@ -647,3 +697,277 @@ export const not = <C extends Expression<Valued<'boolean'>>>(
   condition: C,
 ): UnaryFunction<PropagateNull<C['type'], BoolType>> =>
   new UnaryFunction('not', propagateNull([condition], bool()), condition);
+
+// Operand shorthands for the factories below. These name EXPRESSION domains
+// (the null special-casing itself lives once, in `Valued`).
+type NumericOperand = Expression<Valued<'integer' | 'double'>>;
+type StringOperand = Expression<Valued<'string'>>;
+
+// ---- arithmetic ----
+// All arithmetic returns a plain DoubleType (its 'integer' | 'double' tag is
+// the honest numeric domain; per-operator integer/double refinement is a
+// deferred cross-cutting item — see the expressions plan). Error edges
+// (divide by zero, ln(0), sqrt of a negative) produce backend ERROR values,
+// not null — the error channel is handled by isError/ifError (slice 5).
+
+/** A uniformly distributed random double in [0, 1), regenerated per row. */
+export const rand = (): NullaryFunction<DoubleType> => new NullaryFunction('rand', double());
+
+/** Numeric addition. */
+export const add = <L extends NumericOperand, R extends NumericOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('add', propagateNull([left, right], double()), left, right);
+
+/** Numeric subtraction (`left - right`). */
+export const subtract = <L extends NumericOperand, R extends NumericOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('subtract', propagateNull([left, right], double()), left, right);
+
+/** Numeric multiplication. */
+export const multiply = <L extends NumericOperand, R extends NumericOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('multiply', propagateNull([left, right], double()), left, right);
+
+/** Numeric division (`left / right`); a zero divisor is a backend ERROR value. */
+export const divide = <L extends NumericOperand, R extends NumericOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('divide', propagateNull([left, right], double()), left, right);
+
+/** Modulo (`left % right`). */
+export const mod = <L extends NumericOperand, R extends NumericOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('mod', propagateNull([left, right], double()), left, right);
+
+/** Exponentiation (`base ** exponent`). */
+export const pow = <L extends NumericOperand, R extends NumericOperand>(
+  base: L,
+  exponent: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('pow', propagateNull([base, exponent], double()), base, exponent);
+
+/** Absolute value. */
+export const abs = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('abs', propagateNull([expression], double()), expression);
+
+/** Rounds up to the nearest whole number. */
+export const ceil = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('ceil', propagateNull([expression], double()), expression);
+
+/** Rounds down to the nearest whole number. */
+export const floor = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('floor', propagateNull([expression], double()), expression);
+
+/** Square root; a negative operand is a backend ERROR value. */
+export const sqrt = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('sqrt', propagateNull([expression], double()), expression);
+
+/** The exponential function (e ** operand). */
+export const exp = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('exp', propagateNull([expression], double()), expression);
+
+/** Natural logarithm; a non-positive operand is a backend ERROR value. */
+export const ln = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('ln', propagateNull([expression], double()), expression);
+
+/** Base-10 logarithm; a non-positive operand is a backend ERROR value. */
+export const log10 = <Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
+  new UnaryFunction('log10', propagateNull([expression], double()), expression);
+
+/** Rounds to the nearest whole number, or to `decimalPlaces` decimal places. */
+export function round<Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>>;
+export function round<Op extends NumericOperand, P extends NumericOperand>(
+  expression: Op,
+  decimalPlaces: P,
+): BinaryFunction<PropagateNull<Op['type'] | P['type'], DoubleType>>;
+export function round(
+  expression: Expression,
+  decimalPlaces?: Expression,
+): UnaryFunction | BinaryFunction {
+  return decimalPlaces === undefined
+    ? new UnaryFunction('round', propagateNull([expression], double()), expression)
+    : new BinaryFunction(
+        'round',
+        propagateNull([expression, decimalPlaces], double()),
+        expression,
+        decimalPlaces,
+      );
+}
+
+/** Truncates toward zero, to a whole number or to `decimalPlaces` decimal places. */
+export function trunc<Op extends NumericOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], DoubleType>>;
+export function trunc<Op extends NumericOperand, P extends NumericOperand>(
+  expression: Op,
+  decimalPlaces: P,
+): BinaryFunction<PropagateNull<Op['type'] | P['type'], DoubleType>>;
+export function trunc(
+  expression: Expression,
+  decimalPlaces?: Expression,
+): UnaryFunction | BinaryFunction {
+  return decimalPlaces === undefined
+    ? new UnaryFunction('trunc', propagateNull([expression], double()), expression)
+    : new BinaryFunction(
+        'trunc',
+        propagateNull([expression, decimalPlaces], double()),
+        expression,
+        decimalPlaces,
+      );
+}
+
+// ---- string ----
+
+/** The number of characters (Unicode code points) in a string. */
+export const charLength = <Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('charLength', propagateNull([expression], int64()), expression);
+
+/** The number of bytes in a string's UTF-8 encoding. */
+export const byteLength = <Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('byteLength', propagateNull([expression], int64()), expression);
+
+/** Lowercases a string. */
+export const toLower = <Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
+  new UnaryFunction('toLower', propagateNull([expression], string()), expression);
+
+/** Uppercases a string. */
+export const toUpper = <Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
+  new UnaryFunction('toUpper', propagateNull([expression], string()), expression);
+
+/** Reverses a string. */
+export const stringReverse = <Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
+  new UnaryFunction('stringReverse', propagateNull([expression], string()), expression);
+
+/** Trims whitespace from both ends, or every character of `charactersToTrim`. */
+export function trim<Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>>;
+export function trim<Op extends StringOperand, C extends StringOperand>(
+  expression: Op,
+  charactersToTrim: C,
+): BinaryFunction<PropagateNull<Op['type'] | C['type'], StringType>>;
+export function trim(
+  expression: Expression,
+  charactersToTrim?: Expression,
+): UnaryFunction | BinaryFunction {
+  return charactersToTrim === undefined
+    ? new UnaryFunction('trim', propagateNull([expression], string()), expression)
+    : new BinaryFunction(
+        'trim',
+        propagateNull([expression, charactersToTrim], string()),
+        expression,
+        charactersToTrim,
+      );
+}
+
+/** Trims the leading end — see {@link trim}. */
+export function ltrim<Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>>;
+export function ltrim<Op extends StringOperand, C extends StringOperand>(
+  expression: Op,
+  charactersToTrim: C,
+): BinaryFunction<PropagateNull<Op['type'] | C['type'], StringType>>;
+export function ltrim(
+  expression: Expression,
+  charactersToTrim?: Expression,
+): UnaryFunction | BinaryFunction {
+  return charactersToTrim === undefined
+    ? new UnaryFunction('ltrim', propagateNull([expression], string()), expression)
+    : new BinaryFunction(
+        'ltrim',
+        propagateNull([expression, charactersToTrim], string()),
+        expression,
+        charactersToTrim,
+      );
+}
+
+/** Trims the trailing end — see {@link trim}. */
+export function rtrim<Op extends StringOperand>(
+  expression: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>>;
+export function rtrim<Op extends StringOperand, C extends StringOperand>(
+  expression: Op,
+  charactersToTrim: C,
+): BinaryFunction<PropagateNull<Op['type'] | C['type'], StringType>>;
+export function rtrim(
+  expression: Expression,
+  charactersToTrim?: Expression,
+): UnaryFunction | BinaryFunction {
+  return charactersToTrim === undefined
+    ? new UnaryFunction('rtrim', propagateNull([expression], string()), expression)
+    : new BinaryFunction(
+        'rtrim',
+        propagateNull([expression, charactersToTrim], string()),
+        expression,
+        charactersToTrim,
+      );
+}
+
+// The string predicates PROPAGATE null (probed: startsWith(null, 'x') is
+// null), unlike the comparison operators, which are total — hence the
+// PropagateNull in their return types.
+
+/** Whether `value` starts with `prefix`. */
+export const startsWith = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  prefix: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new BinaryFunction('startsWith', propagateNull([value, prefix], bool()), value, prefix);
+
+/** Whether `value` ends with `suffix`. */
+export const endsWith = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  suffix: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new BinaryFunction('endsWith', propagateNull([value, suffix], bool()), value, suffix);
+
+/** Whether `value` contains `substring`. */
+export const stringContains = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  substring: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new BinaryFunction('stringContains', propagateNull([value, substring], bool()), value, substring);
+
+/** Concatenates two or more strings. */
+export const stringConcat = <
+  const Ops extends readonly [StringOperand, StringOperand, ...StringOperand[]],
+>(
+  ...strings: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], StringType>> =>
+  new VariadicFunction('stringConcat', propagateNull(strings, string()), strings);

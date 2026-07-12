@@ -1,16 +1,26 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  add,
   and,
+  charLength,
   constant,
+  divide,
   equal,
   geoPointValue,
   vectorValue,
   greaterThanOrEqual,
   lessThan,
+  multiply,
   not,
   notEqual,
   or,
+  rand,
+  round,
+  startsWith,
+  stringConcat,
+  toUpper,
+  trim,
 } from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
@@ -277,6 +287,111 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             },
           ],
         );
+      });
+    });
+
+    describe('arithmetic and string functions', () => {
+      const { source, expectPipeline } = setup();
+
+      it('computes nested arithmetic over fields and constants', async () => {
+        await expectPipeline(
+          source().select((field) => [
+            'name',
+            add(multiply(field('rank'), constant(10)), constant(1)).as('score'),
+          ]),
+          [
+            { data: { name: 'alice', score: 11 } },
+            { data: { name: 'bob', score: 21 } },
+            { data: { name: 'carol', score: 31 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('integer division truncates; a double operand makes it a double division', async () => {
+        // A whole JS number is wire-encoded as an INTEGER, and
+        // integer / integer is a truncating division — the honest
+        // 'integer' | 'double' tag on number-valued descriptors at work.
+        await expectPipeline(
+          source().select((field) => ['name', divide(field('rank'), constant(2)).as('half')]),
+          [
+            { data: { name: 'alice', half: 0 } },
+            { data: { name: 'bob', half: 1 } },
+            { data: { name: 'carol', half: 1 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('round takes an optional decimal-places operand', async () => {
+        await expectPipeline(
+          source().select((field) => [
+            'name',
+            round(divide(field('rank'), constant(2.5)), constant(2)).as('scaled'),
+          ]),
+          [
+            { data: { name: 'alice', scaled: 0.4 } },
+            { data: { name: 'bob', scaled: 0.8 } },
+            { data: { name: 'carol', scaled: 1.2 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('string transforms, lengths, concatenation, and character-set trim', async () => {
+        await expectPipeline(
+          source().select((field) => [
+            stringConcat(toUpper(field('name')), constant('!')).as('shout'),
+            charLength(field('name')).as('len'),
+            trim(field('name'), constant('al')).as('trimmed'),
+          ]),
+          [
+            { data: { shout: 'ALICE!', len: 5, trimmed: 'ice' } },
+            { data: { shout: 'BOB!', len: 3, trimmed: 'bob' } },
+            { data: { shout: 'CAROL!', len: 5, trimmed: 'caro' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('a string predicate is a valid where condition', async () => {
+        const [a1] = items;
+        await expectPipeline(
+          source().where((field) => startsWith(field('name'), constant('a'))),
+          [a1],
+        );
+      });
+
+      it('null propagation end-to-end: an optional operand yields nullable output', async () => {
+        // profile.gender is optional: bob's is absent, and absence flows
+        // through functions as null (probed) — the projected schema is
+        // nullable(string()) and the row decodes a null VALUE.
+        await expectPipeline(
+          source().select((field) => ['name', toUpper(field('profile.gender')).as('g')]),
+          [
+            { data: { name: 'alice', g: 'FEMALE' } },
+            { data: { name: 'bob', g: null } },
+            { data: { name: 'carol', g: 'MALE' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('a null condition drops the row (string predicate over an optional field)', async () => {
+        const [, , a3] = items;
+        await expectPipeline(
+          source().where((field) => startsWith(field('profile.gender'), constant('m'))),
+          [a3],
+        );
+      });
+
+      it('rand produces a double in [0, 1) per row', async () => {
+        const results = await executor.execute(source().select(() => [rand().as('r')]));
+        expect(results).toHaveLength(3);
+        for (const row of results) {
+          expect(row.data.r).toBeGreaterThanOrEqual(0);
+          expect(row.data.r).toBeLessThan(1);
+        }
       });
     });
 

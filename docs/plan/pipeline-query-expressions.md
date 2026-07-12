@@ -206,8 +206,19 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
       null propagation into logical return descriptors (`PropagateNull`).
       See
       "Operand constraints are value-domain predicates" above.
-- [ ] **2. Arithmetic + string basics** (T1 bulk: binary/unary flows already
-      paved; introduces `NullaryFunction` for `rand`).
+- [x] **2. Arithmetic + string basics** (T1 bulk; introduces
+      `NullaryFunction` for `rand` and the dual-arity pattern early —
+      `round` / `trunc` take optional decimal places, the `trim` family an
+      optional character set, each overloading to unary + binary shapes).
+      Notes: the SDK has no standalone `log` (only `ln` / `log10`);
+      `stringConcat` is the string-typed concat (bare `concat` is the
+      generic form). All slice-2 functions PROPAGATE null — including the
+      boolean-returning string predicates (`startsWith(null, 'x')` is
+      `null`), unlike the total comparisons. Arithmetic error edges
+      (divide by zero, `ln(0)`, `sqrt(-1)`) produce backend ERROR values
+      for the slice-5 `isError` / `ifError` channel. Probed: integer /
+      integer division TRUNCATES (a whole JS number wire-encodes as an
+      integer) — pinned in the live spec.
 - [ ] **3. String rest + regex + reference + type + vector** (T1 bulk #2;
       introduces `TernaryFunction` and the dual-shape optional-arg pattern via
       `substring` / `stringReplace*`).

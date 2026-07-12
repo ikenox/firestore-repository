@@ -8,6 +8,7 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
+  type NullaryFunctionName,
   UnaryFunctionName,
   VariadicFunctionName,
 } from 'firestore-repository/pipelines/expression';
@@ -148,6 +149,8 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
       // Value nodes also appear as constant-composite leaves; toSdkConstant
       // is the single home for their translation.
       return toSdkConstant(expression);
+    case 'nullaryFunction':
+      return nullaryFns[expression.name]();
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -221,8 +224,31 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
 // (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
 // type-tag only, no wire change.)
 
+const nullaryFns: Record<NullaryFunctionName, () => Pipelines.Expression> = {
+  rand: Pipelines.rand,
+};
+
 const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines.Expression> = {
   not: (o) => Pipelines.not(o.asBoolean()),
+  abs: Pipelines.abs,
+  ceil: Pipelines.ceil,
+  // floor/ltrim/rtrim exist at runtime but the SDK's namespace typings only
+  // declare their fluent forms — translate through those.
+  floor: (o) => o.floor(),
+  round: Pipelines.round,
+  trunc: Pipelines.trunc,
+  sqrt: Pipelines.sqrt,
+  exp: Pipelines.exp,
+  ln: Pipelines.ln,
+  log10: Pipelines.log10,
+  charLength: Pipelines.charLength,
+  byteLength: Pipelines.byteLength,
+  toLower: Pipelines.toLower,
+  toUpper: Pipelines.toUpper,
+  stringReverse: Pipelines.stringReverse,
+  trim: Pipelines.trim,
+  ltrim: (o) => o.ltrim(),
+  rtrim: (o) => o.rtrim(),
 };
 
 const binaryFns: Record<
@@ -235,6 +261,20 @@ const binaryFns: Record<
   lessThanOrEqual: Pipelines.lessThanOrEqual,
   greaterThan: Pipelines.greaterThan,
   greaterThanOrEqual: Pipelines.greaterThanOrEqual,
+  add: Pipelines.add,
+  subtract: Pipelines.subtract,
+  multiply: Pipelines.multiply,
+  divide: Pipelines.divide,
+  mod: Pipelines.mod,
+  pow: Pipelines.pow,
+  round: Pipelines.round,
+  trunc: Pipelines.trunc,
+  trim: Pipelines.trim,
+  ltrim: (l, r) => l.ltrim(r),
+  rtrim: (l, r) => l.rtrim(r),
+  startsWith: Pipelines.startsWith,
+  endsWith: Pipelines.endsWith,
+  stringContains: Pipelines.stringContains,
 };
 
 const variadicFns: Record<
@@ -247,6 +287,7 @@ const variadicFns: Record<
 > = {
   and: (f, s, ...r) => Pipelines.and(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
   or: (f, s, ...r) => Pipelines.or(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
+  stringConcat: Pipelines.stringConcat,
 };
 
 /** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
@@ -261,6 +302,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'constant':
     case 'geoPointValue':
     case 'vectorValue':
+    case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
     case 'variadicFunction':
