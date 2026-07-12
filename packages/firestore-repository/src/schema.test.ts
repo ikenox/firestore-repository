@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { DocRef } from './repository.js';
 import {
+  type AnyMapType,
   array,
   type ArrayType,
   bool,
@@ -238,6 +239,8 @@ describe('schema', () => {
         literal('a'),
       ];
       expect(nonMaps.map(isMapType)).toEqual(nonMaps.map(() => false));
+      // Pins the compiler-inferred (checked, not asserted) type predicate.
+      expectTypeOf(isMapType).guards.toEqualTypeOf<AnyMapType>();
     });
   });
 

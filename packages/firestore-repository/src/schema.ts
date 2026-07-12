@@ -1,5 +1,4 @@
 import { DocRef } from './repository.js';
-import { assertNever } from './util.js';
 
 /**
  * A definition of a Firestore collection
@@ -456,26 +455,9 @@ export const omitPaths = <T extends DocumentSchema, const P extends readonly str
 const tailPath = (key: string, paths: readonly string[]): string[] =>
   paths.filter((p) => p.startsWith(`${key}.`)).map((p) => p.slice(key.length + 1));
 
-/** Narrows a `FieldType` descriptor to the widest map descriptor. */
-export const isMapType = (t: FieldType): t is AnyMapType => {
-  switch (t.type) {
-    case 'map':
-      return true;
-    case 'bool':
-    case 'string':
-    case 'int64':
-    case 'double':
-    case 'timestamp':
-    case 'docRef':
-    case 'bytes':
-    case 'geoPoint':
-    case 'vector':
-    case 'null':
-    case 'array':
-    case 'union':
-    case 'const':
-      return false;
-    default:
-      return assertNever(t);
-  }
-};
+/**
+ * Narrows a `FieldType` descriptor to the widest map descriptor. The
+ * `t is AnyMapType` predicate is inferred (and therefore checked) by the
+ * compiler — pinned in `schema.test.ts`.
+ */
+export const isMapType = (t: FieldType) => t.type === 'map';

@@ -40,6 +40,21 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
   Use an exhaustive `switch` instead. Comparisons that are not union-member
   discrimination (e.g. `=== undefined` on an optional, numeric comparisons)
   are fine.
+- **Exception — type-predicate helpers.** A narrowing helper whose whole body
+  is a single boolean expression (e.g.
+  `const isMapType = (t: FieldType) => t.type === 'map'`) should be written
+  exactly like that, **without** a hand-written `t is X` annotation: since
+  TS 5.5 the compiler infers the type predicate from the expression and
+  _verifies_ it, whereas an explicit annotation is trusted unchecked. The
+  exhaustive-`switch` rule does not apply here — there is no per-member
+  behavior to keep in sync, and the inferred predicate stays correct when the
+  union gains members. Keep an explicit annotation only where inference is
+  impossible (the check is delegated to a boolean-returning function, as in
+  `server-value.ts`) or where the built-in narrowing is wrong and the
+  annotation deliberately overrides it (e.g. `Array.isArray` against
+  `readonly` array unions — `isConstantArray` in `pipelines/expression.ts`);
+  say why in a comment, and pin inferred predicates in a type test via
+  `expectTypeOf(fn).guards`.
 - Enforcement: `typescript/switch-exhaustiveness-check` (with
   `considerDefaultExhaustiveForUnions: false`, `requireDefaultForNonUnion: true`)
   in `.oxlintrc.json` enforces the `switch` rules. The `if`/ternary ban is
