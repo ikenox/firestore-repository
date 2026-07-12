@@ -20,6 +20,7 @@ import {
   type FieldValueOfPath,
   GeoPoint,
   geoPoint,
+  type GeoPointType,
   Increment,
   int64,
   isMapType,
@@ -191,6 +192,68 @@ describe('schema', () => {
         expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<'a' | 1 | true>();
         expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<'a' | 1 | true>();
       });
+    });
+  });
+
+  describe('firestoreType (phantom axis)', () => {
+    it('scalar tags', () => {
+      const bytesType = bytes();
+      const nullT = nullType();
+      const vectorT = vector();
+      expectTypeOf<StringType['firestoreType']>().toEqualTypeOf<'string'>();
+      expectTypeOf<BoolType['firestoreType']>().toEqualTypeOf<'boolean'>();
+      expectTypeOf<TimestampType['firestoreType']>().toEqualTypeOf<'timestamp'>();
+      expectTypeOf<(typeof bytesType)['firestoreType']>().toEqualTypeOf<'bytes'>();
+      expectTypeOf<(typeof nullT)['firestoreType']>().toEqualTypeOf<'null'>();
+      expectTypeOf<(typeof vectorT)['firestoreType']>().toEqualTypeOf<'vector'>();
+    });
+
+    it('int64/double carry the honest integer|double union', () => {
+      expectTypeOf<Int64Type['firestoreType']>().toEqualTypeOf<'integer' | 'double'>();
+      expectTypeOf<DoubleType['firestoreType']>().toEqualTypeOf<'integer' | 'double'>();
+    });
+
+    it('reference / geopoint tags are flat — the axis exists to distinguish them from their TS representations', () => {
+      const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+      const ref = docRef(authors);
+      expectTypeOf<(typeof ref)['firestoreType']>().toEqualTypeOf<'reference'>();
+      expectTypeOf<GeoPointType['firestoreType']>().toEqualTypeOf<'geopoint'>();
+    });
+
+    it('literals map to their base tags', () => {
+      expectTypeOf<LiteralType<['a', 'b']>['firestoreType']>().toEqualTypeOf<'string'>();
+      expectTypeOf<LiteralType<[1, 2]>['firestoreType']>().toEqualTypeOf<'integer' | 'double'>();
+      expectTypeOf<LiteralType<[true]>['firestoreType']>().toEqualTypeOf<'boolean'>();
+      expectTypeOf<LiteralType<['a', 1, null]>['firestoreType']>().toEqualTypeOf<
+        'string' | 'integer' | 'double' | 'null'
+      >();
+    });
+
+    it('union distributes over member tags', () => {
+      const t = nullable(string());
+      expectTypeOf<(typeof t)['firestoreType']>().toEqualTypeOf<'string' | 'null'>();
+    });
+
+    it('array is the element tags', () => {
+      const t = array(string());
+      expectTypeOf<(typeof t)['firestoreType']>().toEqualTypeOf<readonly 'string'[]>();
+      const u = array(union(string(), double()));
+      expectTypeOf<(typeof u)['firestoreType']>().toEqualTypeOf<
+        readonly ('string' | 'integer' | 'double')[]
+      >();
+    });
+
+    it('map is a per-field tag record, all required (presence is the optional axis)', () => {
+      const t = map({ age: double(), gender: optional(literal('male', 'female')) });
+      expectTypeOf<(typeof t)['firestoreType']>().toEqualTypeOf<{
+        age: 'integer' | 'double';
+        gender: 'string';
+      }>();
+    });
+
+    it('the optional marker does not change the tag', () => {
+      const t = optional(string());
+      expectTypeOf<(typeof t)['firestoreType']>().toEqualTypeOf<'string'>();
     });
   });
 

@@ -45,6 +45,60 @@ export const subCollection = <
 export type DocumentSchema = MapType['fields'];
 
 /**
+ * The vocabulary of the `firestoreType` phantom axis: the type of a field's
+ * values **as Firestore itself classifies them**, structurally recursive for
+ * containers (an array is the tags of its elements, a map is a per-field tag
+ * record).
+ *
+ * This is a separate axis from the phantom `output`, which is the
+ * **TypeScript representation** of the value and therefore conflates types
+ * Firestore keeps distinct: a document reference decodes to `string[]` but is
+ * not an array of strings, a vector decodes to `number[]` but is not an
+ * array of numbers, a geopoint decodes to a `{ latitude, longitude }` object
+ * but is not a map. Operand-domain predicates and comparison compatibility
+ * (`pipelines/expression.ts`) key on THIS axis so those pairs no longer
+ * unify.
+ *
+ * Deliberate choices (agreed in the pipeline-expressions plan):
+ *
+ * - No `'absent'` tag: field presence is the orthogonal `optional` marker's
+ *   axis, so map tag records are all-required.
+ * - `'integer'` and `'double'` are separate tags, but a `number`-valued
+ *   descriptor carries the honest union of both (see `Int64Type`).
+ * - Literal descriptors map to their base tags — the tag classifies the
+ *   Firestore value, not its narrowed TS domain.
+ */
+export type FirestoreType =
+  | 'string'
+  | 'integer'
+  | 'double'
+  | 'boolean'
+  | 'null'
+  | 'timestamp'
+  | 'bytes'
+  | 'reference'
+  | 'geopoint'
+  | 'vector'
+  | readonly FirestoreType[]
+  | { readonly [field: string]: FirestoreType };
+
+/**
+ * The `firestoreType` of a literal value: literals classify as their base
+ * Firestore type. A `number` literal is honestly `'integer' | 'double'` —
+ * the SDKs choose the wire encoding per value (whole numbers become
+ * integers), so neither tag alone would be true.
+ */
+type LiteralFirestoreType<V extends string | number | boolean | null> = V extends string
+  ? 'string'
+  : V extends number
+    ? 'integer' | 'double'
+    : V extends boolean
+      ? 'boolean'
+      : V extends null
+        ? 'null'
+        : never;
+
+/**
  * The closed discriminated union of every field descriptor, discriminated by
  * `type`. Being closed (rather than an open `{ type: string }` base) lets
  * `switch (fieldType.type)` narrow each arm to its concrete descriptor and
@@ -71,21 +125,57 @@ export type FieldType =
   | AnyUnionType
   | LiteralType<(string | number | boolean | null)[]>;
 
-export type BoolType = { type: 'bool'; input: boolean; output: boolean };
-export type StringType = { type: 'string'; input: string; output: string };
-export type Int64Type = { type: 'int64'; input: number | Increment; output: number }; // TODO bigint?
-export type DoubleType = { type: 'double'; input: number | Increment; output: number };
-export type TimestampType = { type: 'timestamp'; input: Date | ServerTimestamp; output: Date };
+export type BoolType = { type: 'bool'; firestoreType: 'boolean'; input: boolean; output: boolean };
+export type StringType = { type: 'string'; firestoreType: 'string'; input: string; output: string };
+// int64/double both carry the honest `'integer' | 'double'` tag: their value
+// type is the JS `number`, and the SDKs pick the wire encoding per value
+// (whole numbers become integers), so a `double()` field can hold wire
+// integers and neither tag alone would be true. This also keeps the two
+// numeric descriptors mutually comparable under overlap-based compatibility.
+export type Int64Type = {
+  type: 'int64';
+  firestoreType: 'integer' | 'double';
+  input: number | Increment;
+  output: number;
+}; // TODO bigint?
+export type DoubleType = {
+  type: 'double';
+  firestoreType: 'integer' | 'double';
+  input: number | Increment;
+  output: number;
+};
+export type TimestampType = {
+  type: 'timestamp';
+  firestoreType: 'timestamp';
+  input: Date | ServerTimestamp;
+  output: Date;
+};
 export type DocRefType<T extends Collection> = {
   type: 'docRef';
+  firestoreType: 'reference';
   collection: T;
   input: DocRef<T>;
   output: DocRef<T>;
 };
-export type BytesType = { type: 'bytes'; input: Uint8Array; output: Uint8Array };
-export type GeoPointType = { type: 'geoPoint'; input: GeoPoint; output: GeoPoint };
-export type VectorType = { type: 'vector'; input: number[]; output: number[] };
-export type NullType = { type: 'null'; input: null; output: null };
+export type BytesType = {
+  type: 'bytes';
+  firestoreType: 'bytes';
+  input: Uint8Array;
+  output: Uint8Array;
+};
+export type GeoPointType = {
+  type: 'geoPoint';
+  firestoreType: 'geopoint';
+  input: GeoPoint;
+  output: GeoPoint;
+};
+export type VectorType = {
+  type: 'vector';
+  firestoreType: 'vector';
+  input: number[];
+  output: number[];
+};
+export type NullType = { type: 'null'; firestoreType: 'null'; input: null; output: null };
 /**
  * The widest map/array/union descriptors — the recursive members of the
  * closed {@link FieldType} union. Each concrete `MapType<T>` /
@@ -102,25 +192,34 @@ export type NullType = { type: 'null'; input: null; output: null };
  *   by measured variance, the computed `input`/`output` members measure as
  *   invariant, and e.g. `UnionType<[StringType, NullType]>` would no longer
  *   be accepted where the widest union descriptor is expected.
- * - `input`/`output` are `unknown` at this widest level (exactly the width
- *   the old open `{ type: string; input: unknown; output: unknown }` base
- *   had), which also terminates the type recursion when resolving the wide
- *   union's value types.
+ * - `input`/`output`/`firestoreType` are `unknown` at this widest level
+ *   (for input/output, exactly the width the old open
+ *   `{ type: string; input: unknown; output: unknown }` base had). This
+ *   terminates the type recursion when resolving the wide union's value
+ *   types, and for `firestoreType` it also spares the checker from proving
+ *   a generic container's tag against the recursive `FirestoreType` bound —
+ *   both the proof failure (TS cannot bound a two-hop generic indexed
+ *   access like `T[K]['firestoreType']`) and the conditional-type
+ *   workaround for it (which sends constraint computation into unbounded
+ *   recursion, crashing tsc) are avoided outright.
  */
 export interface AnyMapType {
   type: 'map';
+  firestoreType: unknown;
   fields: MapFields;
   input: unknown;
   output: unknown;
 }
 export interface AnyArrayType {
   type: 'array';
+  firestoreType: unknown;
   dynamicPart: FieldType;
   input: unknown;
   output: unknown;
 }
 export interface AnyUnionType {
   type: 'union';
+  firestoreType: unknown;
   elements: FieldType[];
   input: unknown;
   output: unknown;
@@ -135,6 +234,8 @@ export interface MapFields {
 
 export type MapType<T extends MapFields = MapFields> = {
   type: 'map';
+  // All-required: presence lives on the orthogonal `optional` marker axis.
+  firestoreType: { [K in keyof T & string]: T[K]['firestoreType'] };
   fields: T;
   input: ResolveMapValue<T, 'write'>;
   output: ResolveMapValue<T, 'read'>;
@@ -150,18 +251,22 @@ export type MapType<T extends MapFields = MapFields> = {
 export type Optional = { optional: true };
 export type ArrayType<DynamicPart extends FieldType = FieldType> = {
   type: 'array';
+  firestoreType: readonly DynamicPart['firestoreType'][];
   dynamicPart: DynamicPart;
   input: ResolveArrayValue<DynamicPart, 'write'>;
   output: ResolveArrayValue<DynamicPart, 'read'>;
 };
 export type UnionType<T extends FieldType[] = FieldType[]> = {
   type: 'union';
+  // Distributes: the tags of a union are the union of its members' tags.
+  firestoreType: T[number]['firestoreType'];
   elements: T;
   input: ResolveUnionValue<T, 'write'>;
   output: ResolveUnionValue<T, 'read'>;
 };
 export type LiteralType<T extends (string | number | boolean | null)[]> = {
   type: 'const';
+  firestoreType: LiteralFirestoreType<T[number]>;
   values: T;
   input: T[number];
   output: T[number];
@@ -224,13 +329,15 @@ const assertNoDottedFieldNames = (fields: DocumentSchema): void => {
 };
 
 /**
- * Constructs a schema type value without specifying the phantom `input`/`output` fields.
+ * Constructs a schema type value without specifying the phantom
+ * `input`/`output`/`firestoreType` fields.
  * Those fields exist only at the type level to carry value type information (valibot-style),
  * so they must not appear in runtime objects. The `as T` cast attaches the phantom types
  * without requiring them in the object literal.
  */
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- phantom type cast: input/output fields exist only at type level
-const buildType = <T extends FieldType>(v: Omit<T, 'input' | 'output'>): T => v as T;
+const buildType = <T extends FieldType>(v: Omit<T, 'input' | 'output' | 'firestoreType'>): T =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- phantom type cast: input/output/firestoreType fields exist only at type level
+  v as T;
 
 export const bool = (): BoolType => buildType({ type: 'bool' });
 export const string = (): StringType => buildType({ type: 'string' });

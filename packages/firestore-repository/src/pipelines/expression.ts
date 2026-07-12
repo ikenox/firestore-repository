@@ -397,132 +397,84 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
 }
 export type VariadicFunctionName = 'and' | 'or';
 
-// Value-domain predicates: a descriptor whose phantom `output` (the value
-// domain) is a subset of the given primitive — so literals, unions of the
-// domain, and `& Optional` variants all qualify structurally, with no
-// enumeration of descriptor constructors. See
-// docs/plan/pipeline-query-expressions.md.
-type NumberValued = FieldType & { output: number };
-type StringValued = FieldType & { output: string };
+/**
+ * The value-domain predicate for boolean contexts (`where` conditions,
+ * `and` / `or` / `not` operands): a descriptor whose `firestoreType` tags are
+ * a subset of `'boolean' | 'null'` — so `bool()`, boolean literals,
+ * `nullable(bool())`, and `& Optional` variants all qualify structurally.
+ *
+ * Predicates key on the `firestoreType` axis (not the TS-representation
+ * `output`) and are null-TOLERANT: probed backend semantics make `null` a
+ * well-behaved operand everywhere (`null` and absent operands flow through
+ * functions as `null`, and a non-`true` condition just drops the row), so a
+ * nullable descriptor is inside every domain. See
+ * docs/plan/pipeline-query-expressions.md.
+ */
+export type BooleanValued = FieldType & { firestoreType: 'boolean' | 'null' };
 
-// A comparison op has three overloads:
-//   1) number-domain pair — Int64 / Double / numeric literals mix freely.
-//   2) string-domain pair — string / string-literal / string-union operands
-//      unify (e.g. a `literal('male','female')` field against `constant('male')`).
-//   3) generic same-`T` — every other group, requiring IDENTICAL descriptor
-//      types (no union-vs-narrow widening — pinned in expression.test.ts);
-//      cross-group pairs match nothing.
+/**
+ * Overlap-based comparison compatibility: a pair is comparable iff the
+ * operands' `firestoreType` tag sets intersect (checked symmetrically —
+ * `Extract` alone is subset-directional for structural container tags).
+ * Evaluates to `unknown` (no-op intersection) on overlap and `never` on
+ * disjoint domains, rejecting the call.
+ *
+ * The backend's comparisons are total (probed: `equal(null, 'x')` is `false`,
+ * never an error), so this rule is a lint against always-false comparisons —
+ * and the correct boundary for that lint is ZERO overlap, mirroring TS's own
+ * `===` rule. A union operand with a shared member overlaps a narrower one
+ * (`equal(field(union(string(), double())), constant('x'))` is legal).
+ */
+type Comparable<L extends FieldType, R extends FieldType> = [
+  Extract<L['firestoreType'], R['firestoreType']> | Extract<R['firestoreType'], L['firestoreType']>,
+] extends [never]
+  ? never
+  : unknown;
 
-export function equal(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function equal(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function equal<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function equal(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('equal', bool(), left, right);
-}
+export const equal = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('equal', bool(), left, right);
 
-export function notEqual(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function notEqual(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function notEqual<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function notEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('notEqual', bool(), left, right);
-}
+export const notEqual = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('notEqual', bool(), left, right);
 
-export function lessThan(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function lessThan(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function lessThan<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function lessThan(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('lessThan', bool(), left, right);
-}
+export const lessThan = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('lessThan', bool(), left, right);
 
-export function lessThanOrEqual(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function lessThanOrEqual(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function lessThanOrEqual<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function lessThanOrEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('lessThanOrEqual', bool(), left, right);
-}
+export const lessThanOrEqual = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('lessThanOrEqual', bool(), left, right);
 
-export function greaterThan(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function greaterThan(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function greaterThan<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function greaterThan(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('greaterThan', bool(), left, right);
-}
+export const greaterThan = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('greaterThan', bool(), left, right);
 
-export function greaterThanOrEqual(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function greaterThanOrEqual(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function greaterThanOrEqual<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function greaterThanOrEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('greaterThanOrEqual', bool(), left, right);
-}
+export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('greaterThanOrEqual', bool(), left, right);
 
 /** Logical conjunction of two or more boolean expressions. */
 export const and = (
-  first: Expression<BoolType>,
-  second: Expression<BoolType>,
-  ...rest: Expression<BoolType>[]
+  first: Expression<BooleanValued>,
+  second: Expression<BooleanValued>,
+  ...rest: Expression<BooleanValued>[]
 ): VariadicFunction<BoolType> => new VariadicFunction('and', bool(), [first, second, ...rest]);
 
 /** Logical disjunction of two or more boolean expressions. */
 export const or = (
-  first: Expression<BoolType>,
-  second: Expression<BoolType>,
-  ...rest: Expression<BoolType>[]
+  first: Expression<BooleanValued>,
+  second: Expression<BooleanValued>,
+  ...rest: Expression<BooleanValued>[]
 ): VariadicFunction<BoolType> => new VariadicFunction('or', bool(), [first, second, ...rest]);
 
 /** Logical negation of a boolean expression. */
-export const not = (condition: Expression<BoolType>): UnaryFunction<BoolType> =>
+export const not = (condition: Expression<BooleanValued>): UnaryFunction<BoolType> =>
   new UnaryFunction('not', bool(), condition);

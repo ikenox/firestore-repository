@@ -5,6 +5,7 @@ import {
   bool,
   type BoolType,
   bytes,
+  docRef,
   double,
   geoPoint,
   int64,
@@ -12,6 +13,7 @@ import {
   map,
   nullable,
   nullType,
+  rootCollection,
   string,
   type StringType,
   timestamp,
@@ -294,26 +296,38 @@ describe('comparison operators (table-driven over all six)', () => {
     greaterThanOrEqual(name, rank);
   });
 
-  it('same-T requires identical descriptors — no union-vs-narrow widening', () => {
-    // Empirically disproved a stale comment: the same-T fallback does NOT
-    // unify a union-typed operand with a narrower one. NOTE: this is the
-    // CURRENT contract, and deliberately changes with the planned
-    // overlap-based compatibility (see the expressions plan) — a union with
-    // a shared member SHOULD compare.
+  it('overlap-based compatibility: a union with a shared member compares against a narrower operand', () => {
     const u1 = field(union(string(), double()), 'u1');
     const u2 = field(union(string(), double()), 'u2');
     equal(u1, u2); // identical union descriptors: ok
-    // @ts-expect-error -- a narrower operand does not widen into the union
-    equal(u1, field(string(), 's'));
+    equal(u1, field(string(), 's')); // shared 'string' tag: ok
+    equal(u1, constant(1)); // shared numeric tags: ok
+    // @ts-expect-error -- zero overlap: {string, integer, double} vs timestamp
+    equal(u1, field(timestamp(), 'at'));
   });
 
-  it('pins the current nullable contract (to change with null-tolerant domains)', () => {
+  it('null-tolerant domains: nullable operands compare on their non-null overlap', () => {
     const ns = field(nullable(string()), 'ns');
-    // Identical nullable descriptors unify via same-T...
     equal(ns, ns);
-    // ...but a plain string constant does not (strict domains today).
-    // @ts-expect-error -- nullable strings are outside the string domain
-    equal(ns, constant('x'));
+    equal(ns, constant('x')); // shared 'string' tag: ok
+    equal(ns, constant(null)); // shared 'null' tag: an is-null check is legal
+    // A non-nullable field is never null — an always-false comparison is
+    // exactly what the zero-overlap lint rejects.
+    // @ts-expect-error -- 'string' vs 'null' have zero overlap
+    equal(field(string(), 's'), constant(null));
+  });
+
+  it('firestoreType keys the compatibility — pairs whose TS representations collide stay rejected', () => {
+    const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+    // A reference decodes to string[], a vector to number[], a geopoint to a
+    // {latitude, longitude} object — the tag axis keeps them apart from the
+    // genuine array/map descriptors sharing those representations.
+    // @ts-expect-error -- 'reference' vs array-of-'string'
+    equal(field(docRef(authors), 'ref'), field(array(string()), 'tags'));
+    // @ts-expect-error -- 'vector' vs array-of-number
+    equal(field(vector(), 'vec'), field(array(double()), 'nums'));
+    // @ts-expect-error -- 'geopoint' vs the same-shaped map
+    equal(field(geoPoint(), 'geo'), field(map({ latitude: double(), longitude: double() }), 'm'));
   });
 });
 
@@ -327,10 +341,17 @@ describe('logical operator edges', () => {
     expect(five.name).toBe('and');
   });
 
-  it('pins the current exact-BoolType contract for conditions', () => {
-    // A literal(true, false) field is a LiteralType, not BoolType — rejected
-    // today (to change with the planned BooleanValued domain).
-    // @ts-expect-error -- literal booleans are not Expression<BoolType>
+  it('conditions are BooleanValued: boolean literals and nullable booleans qualify', () => {
+    // The condition domain is the firestoreType predicate 'boolean' | 'null',
+    // not the exact BoolType descriptor: a literal(true, false) field and a
+    // nullable(bool()) field are both boolean-valued (a null condition just
+    // drops the row — truthy-only semantics).
     and(flag, field(literal(true, false), 'lit'));
+    or(flag, field(nullable(bool()), 'nb'));
+    not(field(literal(true), 'lt'));
+    // @ts-expect-error -- a string field is not boolean-valued
+    and(flag, field(string(), 'name'));
+    // @ts-expect-error -- a string field is not a condition
+    not(field(string(), 'name'));
   });
 });
