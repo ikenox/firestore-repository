@@ -1,3 +1,4 @@
+import type { DocRef } from '../repository.js';
 import {
   array,
   type ArrayType,
@@ -5,6 +6,9 @@ import {
   type BoolType,
   bytes,
   type BytesType,
+  type Collection,
+  docRef,
+  type DocRefType,
   double,
   type DoubleType,
   type FieldType,
@@ -43,11 +47,18 @@ import { assertNever } from '../util.js';
  * public type, so `switch (expr.kind)` narrowing and `assertNever`
  * exhaustiveness keep working (a base-class-typed value would not narrow).
  */
+// The non-generic value nodes are bound to `T` through their `type` property
+// (`GeoPointValue & { type: T }`): a bare `GeoPointValue` member would belong
+// to EVERY `Expression<T>` regardless of domain — accepting a geopoint where
+// a string operand is required, and collapsing operator type inference to the
+// wide fallback. The intersection makes membership conditional on the node's
+// descriptor fitting `T`, and lets inference read the descriptor off it.
 export type Expression<T extends FieldType = FieldType> =
   | Field<T>
   | Constant<T>
-  | GeoPointValue
-  | VectorValue
+  | (GeoPointValue & { type: T })
+  | (VectorValue & { type: T })
+  | (DocRefValue & { type: T })
   | NullaryFunction<T>
   | UnaryFunction<T>
   | BinaryFunction<T>
@@ -165,23 +176,50 @@ export class VectorValue extends ExpressionBase {
 }
 
 /**
+ * A document-reference value. A dedicated node (not a `Constant`), for the
+ * same classification rule as {@link GeoPointValue} / {@link VectorValue}: a
+ * reference's plain-JS representation (`DocRef<T>`, an id tuple) is a string
+ * array — always an **array** constant — and building the wire reference
+ * needs the collection context anyway, so both come explicitly. This is the
+ * comparand that makes reference comparisons meaningful: probed, the
+ * pipeline backend never matches `__name__` against ANY string form
+ * (id / relative path / full resource path — all `false`), only against a
+ * reference value.
+ */
+export class DocRefValue<T extends Collection = Collection> extends ExpressionBase {
+  readonly kind = 'docRefValue';
+  readonly type: DocRefType<T>;
+  constructor(
+    readonly collection: T,
+    readonly id: DocRef<T>,
+  ) {
+    super();
+    this.type = docRef(collection);
+  }
+}
+
+/** Builds a document-reference value — see {@link DocRefValue}. */
+export const docRefValue = <T extends Collection>(collection: T, id: DocRef<T>): DocRefValue<T> =>
+  new DocRefValue(collection, id);
+
+/**
  * The value domain `constant()` accepts — everything with an unambiguous
  * plain-JS representation: scalars, arrays and plain-object maps,
  * recursively. Firestore types WITHOUT their own JS representation get
  * explicit constructors instead — a plain object is always a **map** constant
- * (use {@link geoPointValue} for geopoints) and a `number[]` is always an
- * **array** constant (use {@link vectorValue} for vectors). Document refs
- * need collection context and stay deferred.
+ * (use {@link geoPointValue} for geopoints), a `number[]` is always an
+ * **array** constant (use {@link vectorValue} for vectors), and a `string[]`
+ * id tuple likewise (use {@link docRefValue} for document references).
  */
 export type ConstantValue = ConstantScalar | ConstantLeafNode | ConstantArray | ConstantMap;
 export type ConstantScalar = string | number | boolean | null | Date | Uint8Array;
 /**
- * Value nodes usable as composite leaves: Firestore values may hold geopoints
- * and vectors at any depth, and since those have no plain-JS representation of
- * their own, their explicit nodes stand in —
- * `constant({ spot: geoPointValue(1, 3) })`.
+ * Value nodes usable as composite leaves: Firestore values may hold
+ * geopoints, vectors, and document references at any depth, and since those
+ * have no plain-JS representation of their own, their explicit nodes stand
+ * in — `constant({ spot: geoPointValue(1, 3) })`.
  */
-export type ConstantLeafNode = GeoPointValue | VectorValue;
+export type ConstantLeafNode = GeoPointValue | VectorValue | DocRefValue;
 /**
  * Non-empty (an empty literal has no element to infer a descriptor from) and
  * non-nested: directly nested arrays (`constant([1, [2, 3]])`) are excluded
@@ -207,21 +245,23 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
       ? TimestampType
       : V extends Uint8Array
         ? BytesType
-        : V extends GeoPointValue
-          ? GeoPointType
-          : V extends VectorValue
-            ? VectorType
-            : V extends string
-              ? StringType
-              : V extends number
-                ? DoubleType
-                : V extends boolean
-                  ? BoolType
-                  : V extends ConstantArray
-                    ? ArrayConstantTypeOf<V>
-                    : V extends ConstantMap
-                      ? MapType<{ -readonly [K in keyof V & string]: ConstantTypeOf<V[K]> }>
-                      : never;
+        : V extends DocRefValue<infer C>
+          ? DocRefType<C>
+          : V extends GeoPointValue
+            ? GeoPointType
+            : V extends VectorValue
+              ? VectorType
+              : V extends string
+                ? StringType
+                : V extends number
+                  ? DoubleType
+                  : V extends boolean
+                    ? BoolType
+                    : V extends ConstantArray
+                      ? ArrayConstantTypeOf<V>
+                      : V extends ConstantMap
+                        ? MapType<{ -readonly [K in keyof V & string]: ConstantTypeOf<V[K]> }>
+                        : never;
 
 /**
  * The element descriptor is derived by walking the TUPLE (not the union of
@@ -278,7 +318,11 @@ function constantTypeOf(value: ConstantValue): FieldType {
   if (value instanceof Uint8Array) {
     return bytes();
   }
-  if (value instanceof GeoPointValue || value instanceof VectorValue) {
+  if (
+    value instanceof GeoPointValue ||
+    value instanceof VectorValue ||
+    value instanceof DocRefValue
+  ) {
     return value.type;
   }
   if (isConstantArray(value)) {

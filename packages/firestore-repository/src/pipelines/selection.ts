@@ -288,6 +288,7 @@ const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fie
     case 'constant':
     case 'geoPointValue':
     case 'vectorValue':
+    case 'docRefValue':
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':

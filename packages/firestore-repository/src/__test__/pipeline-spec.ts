@@ -22,6 +22,7 @@ import {
   substring,
   type,
   vectorLength,
+  docRefValue,
   byteLength,
   ceil,
   charLength,
@@ -154,7 +155,13 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       }
     };
 
-    return { items, source, expectPipeline, collectionName: () => collection.name };
+    return {
+      items,
+      source,
+      expectPipeline,
+      collectionName: () => collection.name,
+      liveCollection: () => collection,
+    };
   };
 
   describe('pipeline specification', () => {
@@ -333,7 +340,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     // its basic backend semantics in one round trip per family. Every future
     // slice MUST add its functions to this catalog.
     describe('function catalog (one straightforward evaluation per function)', () => {
-      const { source, expectPipeline, collectionName } = setup();
+      const { items, source, expectPipeline, collectionName, liveCollection } = setup();
       /** A single-row source: the catalog evaluates constant expressions only. */
       const one = () => source().limit(1);
 
@@ -533,6 +540,36 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               },
             },
           ],
+        );
+      });
+
+      it('reference: __name__ equals a docRefValue constant (never a string)', async () => {
+        const [a1] = items;
+        // Probed: the pipeline backend never matches __name__ against any
+        // string form (id / relative path / full resource path) — only a
+        // genuine reference value.
+        await expectPipeline(
+          source().where((field) =>
+            equal(field('__name__'), docRefValue(liveCollection(), ['a1'])),
+          ),
+          [a1],
+        );
+      });
+
+      it('reference: a projected raw __name__ decodes to its path string', async () => {
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .limit(1)
+            .select((field) => [field('__name__').as('key'), 'name']),
+          [{ data: { key: `${collectionName()}/a1`, name: 'alice' } }],
+        );
+      });
+
+      it('reference: a docRefValue inside a constant map decodes to a DocRef id tuple', async () => {
+        await expectPipeline(
+          one().select(() => [constant({ author: docRefValue(liveCollection(), ['a2']) }).as('m')]),
+          [{ data: { m: { author: ['a2'] } } }],
         );
       });
 

@@ -84,14 +84,30 @@ strings (`documentId(constant("authors/a1"))` →
 are total, so an `equal(field("**name**"), <string>)` would silently be
 always-false — a trap, not an error.
 
+Comparison semantics (probed 2026-07): the pipeline backend never converts —
+`equal(__name__, <string>)` is `false` for EVERY string form (the bare id,
+the relative path, the full resource path), and only a reference constant
+matches (`constant(db.doc(...))` in the SDK / `docRefValue(collection, id)`
+in this library). The core query API's `where(eq('__name__', '1'))` accepting
+a string is an SDK convenience: the core query has a collection context to
+convert the string into a reference before it hits the wire; a pipeline has
+none, so the raw type shows through.
+
+A projected raw key (`field("__name__").as("k")`) materializes in the SDK as
+a `DocumentReference` instance (NOT a path string — an earlier note here was
+imprecise).
+
 Library consequence: `FieldTypeOfPath` resolves `'__name__'` to the
 `ReferenceType` pseudo-descriptor (`schema.ts`) with the `'reference'`
 firestoreType tag, so string comparisons and string functions over the raw
 key are rejected at the type level; `documentId(field('__name__'))` /
-`collectionId(...)` bridge it into the string domain. Its `output` stays
-`string` — the core query API's id-filter contract
-(`where(eq('__name__', id))`) — and it is neither writable nor decodable as
-document data (the codecs reject it).
+`collectionId(...)` bridge it into the string domain, and
+`docRefValue(collection, id)` is the matching comparand. Its `output` is
+`string`: the core query API's id-filter contract, and the decode of a
+projected raw key (the codecs decode the `DocumentReference` to its relative
+path string — the context-free representation; a schema-known `docRef`
+field decodes to a `DocRef` id tuple as usual). It is never writable
+(`input: never`).
 
 ## Read-identity (row key) vs. `__name__` field / DML-capability
 
@@ -126,16 +142,16 @@ read-identity (`Id`) parameter.
 rule is symmetric across all three and depends on whether the field keeps its
 reserved name:
 
-| projection (inside `select`)                | `id`+`ref` | `createTime` | `updateTime` | lands in `data` as |
-| ------------------------------------------- | ---------- | ------------ | ------------ | ------------------ |
-| `field("__name__")` (un-aliased)            | ✓          | —            | —            | — (consumed)       |
-| `field("__create_time__")` (un-al.)         | —          | ✓            | —            | — (consumed)       |
-| `field("__update_time__")` (un-al.)         | —          | —            | ✓            | — (consumed)       |
-| all three un-aliased                        | ✓          | ✓            | ✓            | — (consumed)       |
-| `field("__name__").as("__name__")`          | ✓          | —            | —            | — (consumed)       |
-| `field("__name__").as("docId")`             | ✗          | —            | —            | `docId` (path str) |
-| `field("__create_time__").as("ct")`         | —          | ✗            | —            | `ct` (Timestamp)   |
-| `documentId(field("__name__")).as("docId")` | ✗          | —            | —            | `docId`            |
+| projection (inside `select`)                | `id`+`ref` | `createTime` | `updateTime` | lands in `data` as  |
+| ------------------------------------------- | ---------- | ------------ | ------------ | ------------------- |
+| `field("__name__")` (un-aliased)            | ✓          | —            | —            | — (consumed)        |
+| `field("__create_time__")` (un-al.)         | —          | ✓            | —            | — (consumed)        |
+| `field("__update_time__")` (un-al.)         | —          | —            | ✓            | — (consumed)        |
+| all three un-aliased                        | ✓          | ✓            | ✓            | — (consumed)        |
+| `field("__name__").as("__name__")`          | ✓          | —            | —            | — (consumed)        |
+| `field("__name__").as("docId")`             | ✗          | —            | —            | `docId` (reference) |
+| `field("__create_time__").as("ct")`         | —          | ✗            | —            | `ct` (Timestamp)    |
+| `documentId(field("__name__")).as("docId")` | ✗          | —            | —            | `docId`             |
 
 Key points (probed on `enterprise-native-playground`, `@google-cloud/firestore@8.6.0`):
 

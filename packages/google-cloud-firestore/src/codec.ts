@@ -40,9 +40,14 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'string':
       return z.string();
     case 'reference':
-      // The '__name__' pseudo-descriptor — an expression-context type that
-      // never appears in document data.
-      throw new Error(`unsupported schema field type: ${fieldType.type}`);
+      // The '__name__' pseudo-descriptor: a projected raw key decodes to its
+      // relative path string — the context-free representation its `output`
+      // declares (there is no schema-known collection to build a DocRef id
+      // tuple from).
+      return z
+        .unknown()
+        .refine(isDocumentReference)
+        .transform((ref) => ref.path);
     case 'bool':
       return z.boolean();
     case 'int64':
@@ -120,8 +125,7 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
     case 'string':
       return z.string();
     case 'reference':
-      // The '__name__' pseudo-descriptor — an expression-context type that
-      // never appears in document data.
+      // The '__name__' pseudo-descriptor is never writable (input: never).
       throw new Error(`unsupported schema field type: ${fieldType.type}`);
     case 'bool':
       return z.boolean();

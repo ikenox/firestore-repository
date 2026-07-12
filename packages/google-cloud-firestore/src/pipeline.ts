@@ -1,10 +1,11 @@
 import { FieldValue, type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
-import { collectionPath } from 'firestore-repository/path';
+import { collectionPath, documentPath } from 'firestore-repository/path';
 import {
   type BinaryFunctionName,
   type Constant,
   type ConstantArray,
   type Expression,
+  DocRefValue,
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
@@ -62,7 +63,7 @@ export const executor = (db: Firestore): PipelineQueryExecutor => {
         return assertNever(input);
     }
     for (const stage of transforms) {
-      sdk = applyStage(sdk, stage);
+      sdk = applyStage(db, sdk, stage);
     }
 
     const { fromFirestore } = buildFirestoreUtilities(db, collection);
@@ -80,14 +81,18 @@ export const executor = (db: Firestore): PipelineQueryExecutor => {
   return { execute };
 };
 
-const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.Pipeline => {
+const applyStage = (
+  db: Firestore,
+  sdk: Pipelines.Pipeline,
+  stage: TransformStage,
+): Pipelines.Pipeline => {
   switch (stage.kind) {
     case 'sort': {
       const [first, ...rest] = stage.orderings.map(toSdkOrdering);
       return first === undefined ? sdk : sdk.sort(first, ...rest);
     }
     case 'select': {
-      const [first, ...rest] = stage.selections.map(toSdkSelectable);
+      const [first, ...rest] = stage.selections.map((selection) => toSdkSelectable(db, selection));
       if (first === undefined) {
         throw new Error('google-cloud pipeline executor: select requires at least one selection');
       }
@@ -101,7 +106,7 @@ const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.P
       return sdk.removeFields(first, ...rest);
     }
     case 'addFields': {
-      const [first, ...rest] = stage.selections.map(toSdkSelectable);
+      const [first, ...rest] = stage.selections.map((selection) => toSdkSelectable(db, selection));
       if (first === undefined) {
         throw new Error('google-cloud pipeline executor: addFields requires at least one field');
       }
@@ -110,7 +115,7 @@ const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.P
     case 'where':
       // `asBoolean()` is a type-tag wrap for the SDK's `BooleanExpression`
       // parameter — it does not change the wire proto.
-      return sdk.where(toSdkExpression(stage.condition).asBoolean());
+      return sdk.where(toSdkExpression(db, stage.condition).asBoolean());
     case 'limit':
       return sdk.limit(stage.limit);
     case 'offset':
@@ -136,43 +141,49 @@ const applyStage = (sdk: Pipelines.Pipeline, stage: TransformStage): Pipelines.P
  * with its own path as the alias — the same wire proto as the SDK's string
  * handling for `select`, in the form `addFields` also accepts.
  */
-const toSdkSelectable = (s: string | ExpressionWithAlias): Pipelines.Selectable =>
-  typeof s === 'string' ? Pipelines.field(s) : toSdkExpression(s.expression).as(s.alias);
+const toSdkSelectable = (db: Firestore, s: string | ExpressionWithAlias): Pipelines.Selectable =>
+  typeof s === 'string' ? Pipelines.field(s) : toSdkExpression(db, s.expression).as(s.alias);
 
-/** Translates the repository expression AST into an SDK expression. */
-const toSdkExpression = (expression: Expression): Pipelines.Expression => {
+/**
+ * Translates the repository expression AST into an SDK expression. Threads
+ * `db` for the one value kind whose SDK form needs it: a document-reference
+ * constant is built via `db.doc(...)` (the codec's `buildEncodeField`
+ * precedent).
+ */
+const toSdkExpression = (db: Firestore, expression: Expression): Pipelines.Expression => {
   switch (expression.kind) {
     case 'field':
       return Pipelines.field(expression.path);
     case 'constant':
-      return toSdkConstant(expression.value);
+      return toSdkConstant(db, expression.value);
     case 'geoPointValue':
     case 'vectorValue':
+    case 'docRefValue':
       // Value nodes also appear as constant-composite leaves; toSdkConstant
       // is the single home for their translation.
-      return toSdkConstant(expression);
+      return toSdkConstant(db, expression);
     case 'nullaryFunction':
       return nullaryFns[expression.name]();
     case 'unaryFunction':
-      return unaryFns[expression.name](toSdkExpression(expression.operand));
+      return unaryFns[expression.name](toSdkExpression(db, expression.operand));
     case 'binaryFunction':
       return binaryFns[expression.name](
-        toSdkExpression(expression.left),
-        toSdkExpression(expression.right),
+        toSdkExpression(db, expression.left),
+        toSdkExpression(db, expression.right),
         expression,
       );
     case 'ternaryFunction':
       return ternaryFns[expression.name](
-        toSdkExpression(expression.first),
-        toSdkExpression(expression.second),
-        toSdkExpression(expression.third),
+        toSdkExpression(db, expression.first),
+        toSdkExpression(db, expression.second),
+        toSdkExpression(db, expression.third),
       );
     case 'variadicFunction': {
       const [first, second, ...rest] = expression.operands;
       return variadicFns[expression.name](
-        toSdkExpression(first),
-        toSdkExpression(second),
-        ...rest.map(toSdkExpression),
+        toSdkExpression(db, first),
+        toSdkExpression(db, second),
+        ...rest.map((operand) => toSdkExpression(db, operand)),
       );
     }
     default:
@@ -187,7 +198,7 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
  * and vectors are dedicated nodes, so an array is always an array constant
  * and a plain object always a map constant.
  */
-const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
+const toSdkConstant = (db: Firestore, value: Constant['value']): Pipelines.Expression => {
   if (value === null) {
     return Pipelines.constant(null);
   }
@@ -203,8 +214,11 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
   if (value instanceof VectorValue) {
     return Pipelines.constant(FieldValue.vector([...value.values]));
   }
+  if (value instanceof DocRefValue) {
+    return Pipelines.constant(db.doc(documentPath(value.collection, value.id)));
+  }
   if (isConstantArrayValue(value)) {
-    return Pipelines.array(value.map(toSdkConstant));
+    return Pipelines.array(value.map((element) => toSdkConstant(db, element)));
   }
   switch (typeof value) {
     case 'string':
@@ -215,7 +229,7 @@ const toSdkConstant = (value: Constant['value']): Pipelines.Expression => {
       return Pipelines.constant(value);
     case 'object':
       return Pipelines.map(
-        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkConstant(v)])),
+        Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toSdkConstant(db, v)])),
       );
     case 'bigint':
     case 'symbol':
@@ -338,6 +352,7 @@ const literalStringOperand = (operand: Expression): string => {
     case 'field':
     case 'geoPointValue':
     case 'vectorValue':
+    case 'docRefValue':
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
@@ -374,6 +389,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'constant':
     case 'geoPointValue':
     case 'vectorValue':
+    case 'docRefValue':
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':

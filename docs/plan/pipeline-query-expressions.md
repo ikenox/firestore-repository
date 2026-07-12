@@ -244,7 +244,16 @@ both executors and the basic backend semantics in one round trip per family.
       pseudo-descriptor (tag `'reference'`, `output: string` for the core
       query API's id filters) — `documentId(field('__name__'))` bridges it
       into the string domain, and comparing `__name__` against strings is
-      now correctly rejected.
+      now correctly rejected (probed: the backend matches NO string form —
+      only a reference value). `docRefValue(collection, id)` joins
+      `geoPointValue` / `vectorValue` as the third dedicated value node
+      (same classification rule: an id tuple is a plain `string[]` = an
+      array constant) and is the matching comparand; executors thread `db`
+      to build the wire reference (the codec's `buildEncodeField`
+      precedent). The `Expression<T>` union now binds the non-generic value
+      nodes through their `type` property (`GeoPointValue & { type: T }`) —
+      previously every value node inhabited every operand domain
+      (`toUpper(geoPointValue(...))` type-checked).
 - [ ] **4. Timestamp family** (literal-union factory args pattern:
       `TimeUnit`, truncation granularity).
 - [ ] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**

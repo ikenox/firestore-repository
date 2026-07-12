@@ -9,6 +9,25 @@
 
 Follow the project's linting and formatting rules enforced by `pnpm check`.
 
+## Design principles
+
+- **Systemic consistency is the top priority — no ad-hoc special cases.** A
+  new capability must be an instance of an existing rule of the system (or a
+  deliberate, documented extension of one), not a one-off carve-out.
+  Precedent: values without an unambiguous plain-JS representation get
+  dedicated expression nodes — `geoPointValue`, `vectorValue`, and later
+  `docRefValue` all follow the ONE classification rule rather than each
+  getting bespoke treatment. When a proposal only works for the case at hand,
+  find the rule it should be an instance of first.
+- **Deferring parts is fine; deviating structures is not.** Implementation
+  cost may postpone a piece of the system (an unimplemented function family,
+  a not-yet-supported descriptor), but what IS built must always have the
+  same fundamental structure as the intended end state. Building something
+  "for now" on a structure that the final design will have to replace is not
+  acceptable — a missing limb is recoverable, a wrong skeleton is not.
+  Likewise, do not dismiss a consistent-but-rare case as "low practical
+  utility"; uniformity of the system is itself the utility.
+
 ## Type assertions
 
 - **Do not use type assertions (`as`, `as unknown as`, non-null `!`).** They are

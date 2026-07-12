@@ -62,6 +62,8 @@ import {
   startsWith,
   collectionId,
   cosineDistance,
+  docRefValue,
+  DocRefValue,
   documentId,
   dotProduct,
   euclideanDistance,
@@ -753,5 +755,46 @@ describe('reference / type / vector operators', () => {
     dotProduct(vec, field(array(double()), 'nums'));
     // @ts-expect-error -- a string is not a vector
     vectorLength(field(string(), 'name'));
+  });
+});
+
+describe('document-reference values', () => {
+  const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+
+  it('docRefValue is a dedicated node carrying its collection and id', () => {
+    const ref = docRefValue(authors, ['a1']);
+    expect(ref).toStrictEqual(new DocRefValue(authors, ['a1']));
+    expect(ref.type).toStrictEqual(docRef(authors));
+    expectTypeOf(ref.type).toEqualTypeOf(docRef(authors));
+  });
+
+  it('compares against reference operands only (probed: strings never match)', () => {
+    const ref = docRefValue(authors, ['a1']);
+    equal(field(referenceType(), '__name__'), ref);
+    equal(field(docRef(authors), 'ref'), ref);
+    // @ts-expect-error -- a reference never equals a string (always-false on the backend)
+    equal(ref, constant('authors/a1'));
+  });
+
+  it('value nodes are domain-bound: a node only inhabits expressions its descriptor fits', () => {
+    // The Expression<T> union binds GeoPointValue/VectorValue/DocRefValue
+    // through their `type` property — without that, every value node would
+    // satisfy every operand domain.
+    // @ts-expect-error -- a geopoint is not a string operand
+    toUpper(geoPointValue(1, 2));
+    // @ts-expect-error -- a vector is not a numeric operand
+    abs(vectorValue([1]));
+    // @ts-expect-error -- a geopoint never equals a string
+    equal(geoPointValue(1, 2), constant('x'));
+    // ...and inference reads the node's own descriptor, so same-domain pairs work.
+    equal(geoPointValue(1, 2), field(geoPoint(), 'geo'));
+    dotProduct(vectorValue([1, 2]), field(vector(), 'vec'));
+  });
+
+  it('doubles as a composite constant leaf, like geopoint/vector nodes', () => {
+    const c = constant({ author: docRefValue(authors, ['a1']) });
+    const oracle = map({ author: docRef(authors) });
+    expect(c.type).toStrictEqual(oracle);
+    expectTypeOf(c.type).toEqualTypeOf(oracle);
   });
 });
