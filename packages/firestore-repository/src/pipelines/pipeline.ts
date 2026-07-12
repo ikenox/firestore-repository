@@ -13,7 +13,7 @@ import {
   omitPaths,
 } from '../schema.js';
 import { AggregateWithAlias } from './aggregate.js';
-import { type BooleanValued, field, type Expression, type Field } from './expression.js';
+import { field, type Expression, type Field, type Valued } from './expression.js';
 import { Ordering } from './ordering.js';
 import {
   type BuildAddFieldsSchema,
@@ -108,7 +108,7 @@ export class Pipeline<
    * a non-boolean — are silently dropped (Firestore's truthy-only semantics).
    */
   where(
-    condition: (field: FieldProvider<Schema>) => Expression<BooleanValued>,
+    condition: (field: FieldProvider<Schema>) => Expression<Valued<'boolean'>>,
   ): Pipeline<Schema, Id> {
     return new Pipeline<Schema, Id>({
       schema: this.node.schema,

@@ -27,6 +27,7 @@ Related research / decisions:
 
 - [`../pipeline-query-identity-research.md`](../pipeline-query-identity-research.md) — which stages preserve `id` / `ref` / `createTime` / `updateTime`.
 - [`../pipeline-query-ordering-research.md`](../pipeline-query-ordering-research.md) — `sort` keeps rows missing the field (unlike core `orderBy`); `null` < absent < values.
+- [`../pipeline-query-null-semantics-research.md`](../pipeline-query-null-semantics-research.md) — absent merges into `null` inside expressions; logical operators are Kleene three-valued; comparisons are total.
 - [`../pipeline-query-projection-research.md`](../pipeline-query-projection-research.md) — `select` / `add_fields` output shaping (dotted-name materialization, conflict rejection vs the library's last-wins, add_fields merge rules).
 
 ## Current status (snapshot — read this first)

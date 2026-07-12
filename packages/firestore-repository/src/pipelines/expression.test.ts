@@ -13,6 +13,7 @@ import {
   map,
   nullable,
   nullType,
+  optional,
   rootCollection,
   string,
   type StringType,
@@ -306,13 +307,20 @@ describe('comparison operators (table-driven over all six)', () => {
     equal(u1, field(timestamp(), 'at'));
   });
 
-  it('null-tolerant domains: nullable operands compare on their non-null overlap', () => {
+  it('null is special-cased: nullable operands compare on their NON-NULL overlap', () => {
     const ns = field(nullable(string()), 'ns');
     equal(ns, ns);
     equal(ns, constant('x')); // shared 'string' tag: ok
-    equal(ns, constant(null)); // shared 'null' tag: an is-null check is legal
-    // A non-nullable field is never null — an always-false comparison is
-    // exactly what the zero-overlap lint rejects.
+    // Sharing ONLY 'null' does not make a pair comparable: true only in the
+    // both-null corner — almost surely a bug.
+    // @ts-expect-error -- the non-null tags (string vs timestamp) have zero overlap
+    equal(ns, field(nullable(timestamp()), 'nt'));
+    // A PURE null operand is the exception — an is-null check, legal against
+    // any nullable operand (either side) ...
+    equal(ns, constant(null));
+    equal(constant(null), ns);
+    equal(constant(null), constant(null));
+    // ...and rejected against a never-null one (always false).
     // @ts-expect-error -- 'string' vs 'null' have zero overlap
     equal(field(string(), 's'), constant(null));
   });
@@ -341,11 +349,12 @@ describe('logical operator edges', () => {
     expect(five.name).toBe('and');
   });
 
-  it('conditions are BooleanValued: boolean literals and nullable booleans qualify', () => {
-    // The condition domain is the firestoreType predicate 'boolean' | 'null',
-    // not the exact BoolType descriptor: a literal(true, false) field and a
-    // nullable(bool()) field are both boolean-valued (a null condition just
-    // drops the row — truthy-only semantics).
+  it("conditions are Valued<'boolean'>: boolean literals and nullable booleans qualify", () => {
+    // The condition domain is the firestoreType predicate 'boolean' (null is
+    // special-cased inside Valued), not the exact BoolType descriptor: a
+    // literal(true, false) field and a nullable(bool()) field are both
+    // boolean-valued (a null condition just drops the row — truthy-only
+    // semantics).
     and(flag, field(literal(true, false), 'lit'));
     or(flag, field(nullable(bool()), 'nb'));
     not(field(literal(true), 'lt'));
@@ -353,5 +362,47 @@ describe('logical operator edges', () => {
     and(flag, field(string(), 'name'));
     // @ts-expect-error -- a string field is not a condition
     not(field(string(), 'name'));
+  });
+
+  it('propagates operand nullability into the result descriptor (Kleene logic)', () => {
+    // Probed: and(true, null) is null, and(false, null) is false — Kleene
+    // three-valued logic, so a possibly-null operand makes the result
+    // possibly null. Oracle-both-sides per operator/operand kind.
+    const nullableBool = nullable(bool());
+
+    // All-boolean operands: the result stays a plain BoolType.
+    const strict = and(flag, not(flag));
+    expect(strict.type).toStrictEqual(bool());
+    expectTypeOf(strict.type).toEqualTypeOf(bool());
+
+    // A nullable operand propagates.
+    const viaNullable = and(flag, field(nullable(bool()), 'nb'));
+    expect(viaNullable.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaNullable.type).toEqualTypeOf(nullableBool);
+
+    // An optional (possibly absent) operand counts too: an absent operand
+    // flows through functions as null (probed).
+    const viaOptional = or(flag, field(optional(bool()), 'ob'));
+    expect(viaOptional.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullableBool);
+
+    // A boolean literal union containing null counts.
+    const viaLiteral = or(flag, field(literal(true, null), 'ln'));
+    expect(viaLiteral.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaLiteral.type).toEqualTypeOf(nullableBool);
+
+    // not() propagates, and nested nullability flows upward.
+    const viaNot = not(field(nullable(bool()), 'nb'));
+    expect(viaNot.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaNot.type).toEqualTypeOf(nullableBool);
+    const nested = and(flag, viaNot);
+    expect(nested.type).toStrictEqual(nullableBool);
+    expectTypeOf(nested.type).toEqualTypeOf(nullableBool);
+
+    // Comparisons do NOT propagate: they are total (never null), even over
+    // nullable operands.
+    const cmp = equal(field(nullable(string()), 'ns'), constant(null));
+    expect(cmp.type).toStrictEqual(bool());
+    expectTypeOf(cmp.type).toEqualTypeOf(bool());
   });
 });

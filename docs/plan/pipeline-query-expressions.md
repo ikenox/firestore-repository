@@ -77,24 +77,26 @@ combination. Enumerating descriptor constructors would combinatorially
 explode; a tag-subset predicate expresses the domain structurally:
 
 ```ts
-type StringValued = FieldType & { firestoreType: 'string' | 'null' };
-toUpper(s: Expression<StringValued>): UnaryFunction<StringType>
+type Valued<Tag extends FirestoreType> = FieldType & { firestoreType: Tag | 'null' };
+toUpper(s: Expression<Valued<'string'>>): UnaryFunction<StringType>
 ```
 
-One alias per domain (`BooleanValued` is implemented in `expression.ts`;
-`StringValued` / `NumberValued` / `TimestampValued` / ... arrive with the
-slices that need them), shared by standalone factories and fluent
-`this`-parameters alike.
+ONE generic predicate (`Valued`, implemented in `expression.ts`) — not an
+alias zoo per domain: `where` conditions are `Valued<'boolean'>`, string
+operands `Valued<'string'>`, and so on, shared by standalone factories and
+fluent `this`-parameters alike.
 
 Consequences (all implemented in S2 unless noted):
 
-- **Domains are null-TOLERANT** (`'string' | 'null'` above): probed backend
-  semantics make `null` a well-behaved operand everywhere — `null` and
-  absent operands flow through functions as `null`, comparisons are total,
-  and a non-`true` condition just drops the row. So `nullable(string())` is
-  inside the string domain, and `... & Optional` operands pass too (the
-  marker does not change the tag). (This supersedes an earlier "reject
-  nullable, coalesce first" stance.)
+- **`null` is special-cased once, inside the machinery — individual domains
+  never mention it.** Probed backend semantics make `null` a well-behaved
+  operand everywhere (`null` and absent operands flow through functions as
+  `null`, comparisons are total, and a non-`true` condition just drops the
+  row — see `../pipeline-query-null-semantics-research.md`), so `Valued`
+  admits `'null'` tags in every domain: `nullable(string())` is inside the
+  string domain, and `... & Optional` operands pass too (the marker does not
+  change the tag). (This supersedes an earlier "reject nullable, coalesce
+  first" stance.)
 - **Comparisons are OVERLAP-based**: `equal(l, r)` is valid iff the
   operands' tag sets intersect (symmetric `Extract` check — `Comparable` in
   `expression.ts`). Grounds: the backend's comparisons are total (probed —
@@ -103,13 +105,24 @@ Consequences (all implemented in S2 unless noted):
   zero overlap — TS's own `===` rule. `equal(field(union(string(),
 double())), field(string()))` is legal; reference-vs-`array(string())`,
   vector-vs-`array(double())`, and geopoint-vs-same-shaped-map are rejected
-  (the tag axis at work).
+  (the tag axis at work). Consistent with the predicates, `'null'` is
+  special-cased: sharing ONLY `'null'` is not overlap
+  (`nullable(string())` vs `nullable(timestamp())` is rejected), except for
+  a PURE null operand — an is-null check, legal against nullable operands
+  and rejected against never-null ones.
 - `Int64Type` and `DoubleType` both carry the honest `'integer' | 'double'`
   tag (the SDKs pick the wire encoding per value), which keeps the numeric
   domain mutually comparable — this replaces the old `NumericType` union
   and the number/string overload pairs.
-- `where`'s condition type is `Expression<BooleanValued>` (boolean literals
-  and `nullable(bool())` are valid conditions).
+- `where`'s condition type is `Expression<Valued<'boolean'>>` (boolean
+  literals and `nullable(bool())` are valid conditions).
+- **Return types propagate nullability** (`PropagateNull` /
+  `propagateNull`): the logical operators follow Kleene three-valued logic
+  (probed — `and(true, null)` is `null`, see the null-semantics research
+  doc), so `and` / `or` / `not` return `nullable(bool())` when any
+  operand's tags include `'null'` OR the operand is `& Optional` (absence
+  flows through functions as `null`). Comparisons stay plain `BoolType`
+  (total). Value functions in later slices reuse `PropagateNull`.
 - Return types widen to the plain descriptor (`toUpper` of a literal returns
   `StringType`) — values are transformed, so precision loss is correct.
 
@@ -185,7 +198,10 @@ return-type refinement for arithmetic; vector dimension typing (if ever).
 - [x] **1.5. `firestoreType` phantom + predicate migration (S2)** — the tag
       axis on every descriptor, null-tolerant domains, overlap-based
       comparisons (single signature replaces the per-domain overload
-      triples), `where` / `and` / `or` / `not` on `BooleanValued`. See
+      triples with `'null'` special-cased once in the machinery),
+      `where` / `and` / `or` / `not` on `Valued<'boolean'>`, and Kleene
+      null propagation into logical return descriptors (`PropagateNull`).
+      See
       "Operand constraints are value-domain predicates" above.
 - [ ] **2. Arithmetic + string basics** (T1 bulk: binary/unary flows already
       paved; introduces `NullaryFunction` for `rand`).

@@ -8,12 +8,15 @@ import {
   double,
   type DoubleType,
   type FieldType,
+  type FirestoreType,
   geoPoint,
   type GeoPointType,
   map,
   type MapType,
+  nullable,
   nullType,
   type NullType,
+  type Optional,
   string,
   type StringType,
   timestamp,
@@ -398,19 +401,22 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
 export type VariadicFunctionName = 'and' | 'or';
 
 /**
- * The value-domain predicate for boolean contexts (`where` conditions,
- * `and` / `or` / `not` operands): a descriptor whose `firestoreType` tags are
- * a subset of `'boolean' | 'null'` — so `bool()`, boolean literals,
+ * The value-domain predicate: descriptors whose `firestoreType` tags fit the
+ * given tag set — so for `Valued<'boolean'>`, `bool()`, boolean literals,
  * `nullable(bool())`, and `& Optional` variants all qualify structurally.
  *
  * Predicates key on the `firestoreType` axis (not the TS-representation
- * `output`) and are null-TOLERANT: probed backend semantics make `null` a
- * well-behaved operand everywhere (`null` and absent operands flow through
- * functions as `null`, and a non-`true` condition just drops the row), so a
- * nullable descriptor is inside every domain. See
+ * `output`), and `null` is special-cased HERE, once, so individual domains
+ * never mention it: probed backend semantics make `null` a well-behaved
+ * operand everywhere (`null` and absent operands flow through functions as
+ * `null`, and a non-`true` condition just drops the row), so a nullable
+ * descriptor is inside every domain. See
  * docs/plan/pipeline-query-expressions.md.
  */
-export type BooleanValued = FieldType & { firestoreType: 'boolean' | 'null' };
+export type Valued<Tag extends FirestoreType> = FieldType & { firestoreType: Tag | 'null' };
+
+/** A descriptor's `firestoreType` tags with the special-cased `'null'` removed. */
+type NonNullTags<T extends FieldType> = Exclude<T['firestoreType'], 'null'>;
 
 /**
  * Overlap-based comparison compatibility: a pair is comparable iff the
@@ -424,10 +430,27 @@ export type BooleanValued = FieldType & { firestoreType: 'boolean' | 'null' };
  * and the correct boundary for that lint is ZERO overlap, mirroring TS's own
  * `===` rule. A union operand with a shared member overlaps a narrower one
  * (`equal(field(union(string(), double())), constant('x'))` is legal).
+ *
+ * `'null'` is special-cased, consistent with the domain predicates: two
+ * nullable descriptors sharing ONLY `'null'` do not overlap (a
+ * `nullable(string())` vs `nullable(timestamp())` comparison is true only in
+ * the both-null corner — almost surely a bug). The one place null itself
+ * counts is a PURE null operand (`constant(null)` / a `nullType()` field):
+ * that is an is-null check, legal against any nullable operand and rejected
+ * against a never-null one (always false).
  */
 type Comparable<L extends FieldType, R extends FieldType> = [
-  Extract<L['firestoreType'], R['firestoreType']> | Extract<R['firestoreType'], L['firestoreType']>,
+  Extract<NonNullTags<L>, NonNullTags<R>> | Extract<NonNullTags<R>, NonNullTags<L>>,
 ] extends [never]
+  ? [NonNullTags<L>] extends [never]
+    ? IsNullable<R> // pure-null left: an is-null check on the right operand
+    : [NonNullTags<R>] extends [never]
+      ? IsNullable<L> // pure-null right: an is-null check on the left operand
+      : never
+  : unknown;
+
+/** `unknown` (accept) when the descriptor's tags include `'null'`, else `never`. */
+type IsNullable<T extends FieldType> = [Extract<T['firestoreType'], 'null'>] extends [never]
   ? never
   : unknown;
 
@@ -461,20 +484,103 @@ export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
   right: Expression<R> & Comparable<L, R>,
 ): BinaryFunction<BoolType> => new BinaryFunction('greaterThanOrEqual', bool(), left, right);
 
-/** Logical conjunction of two or more boolean expressions. */
-export const and = (
-  first: Expression<BooleanValued>,
-  second: Expression<BooleanValued>,
-  ...rest: Expression<BooleanValued>[]
-): VariadicFunction<BoolType> => new VariadicFunction('and', bool(), [first, second, ...rest]);
+/**
+ * Null propagation for a function's RETURN descriptor: `T` when no operand
+ * can be null, `nullable(T)` when one can. An operand "can be null" when its
+ * tags include `'null'` or it is `& Optional` — an absent operand flows
+ * through functions as `null` (probed), so optionality implies a possibly-null
+ * result even though presence stays off the tag axis.
+ *
+ * The logical operators need this (probed — Kleene three-valued logic:
+ * `and(true, null)` is `null` while `and(false, null)` is `false`, `or` and
+ * `not` mirror it), and most value functions in later slices will too. The
+ * comparison operators do NOT: they are total (never null).
+ */
+type PropagateNull<Operands extends FieldType, T extends FieldType> = [
+  Extract<Operands['firestoreType'], 'null'> | Extract<Operands, Optional>,
+] extends [never]
+  ? T
+  : UnionType<[T, NullType]>;
 
-/** Logical disjunction of two or more boolean expressions. */
-export const or = (
-  first: Expression<BooleanValued>,
-  second: Expression<BooleanValued>,
-  ...rest: Expression<BooleanValued>[]
-): VariadicFunction<BoolType> => new VariadicFunction('or', bool(), [first, second, ...rest]);
+/**
+ * Runtime counterpart of {@link PropagateNull} (the overload signature
+ * carries the type-level result; the loose implementation check is the
+ * runtime-to-type bridge, mirrored branch-for-branch by `mayBeNull` /
+ * the type's `Extract` arms).
+ *
+ * Takes the operand EXPRESSIONS and reads their descriptors via the
+ * type-level `Ops['type']`: a value-level `.type` access on a generic operand
+ * resolves eagerly through its constraint (which includes `'null'`), which
+ * would collapse the conditional to the nullable branch for every call.
+ */
+function propagateNull<Ops extends readonly Expression[], T extends FieldType>(
+  operands: Ops,
+  type: T,
+): PropagateNull<Ops[number]['type'], T>;
+function propagateNull(operands: readonly Expression[], type: FieldType): FieldType {
+  return operands.some((operand) => mayBeNull(operand.type)) ? nullable(type) : type;
+}
 
-/** Logical negation of a boolean expression. */
-export const not = (condition: Expression<BooleanValued>): UnaryFunction<BoolType> =>
-  new UnaryFunction('not', bool(), condition);
+/**
+ * Whether a value of the descriptor can be `null` (or absent — which functions
+ * receive as `null`). Mirrors {@link PropagateNull}'s condition: the `'null'`
+ * tag distributes through unions and null literals but deliberately not into
+ * array elements or map fields, and the `Optional` marker counts.
+ */
+const mayBeNull = (t: FieldType & { optional?: boolean }): boolean => {
+  if (t.optional === true) {
+    return true;
+  }
+  switch (t.type) {
+    case 'null':
+      return true;
+    case 'union':
+      return t.elements.some(mayBeNull);
+    case 'const':
+      return t.values.includes(null);
+    case 'bool':
+    case 'string':
+    case 'int64':
+    case 'double':
+    case 'timestamp':
+    case 'docRef':
+    case 'bytes':
+    case 'geoPoint':
+    case 'vector':
+    case 'map':
+    case 'array':
+      return false;
+    default:
+      return assertNever(t);
+  }
+};
+
+/** Logical conjunction of two or more boolean expressions (Kleene: null operands propagate). */
+export const and = <
+  const Ops extends readonly [
+    Expression<Valued<'boolean'>>,
+    Expression<Valued<'boolean'>>,
+    ...Expression<Valued<'boolean'>>[],
+  ],
+>(
+  ...conditions: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new VariadicFunction('and', propagateNull(conditions, bool()), conditions);
+
+/** Logical disjunction of two or more boolean expressions (Kleene: null operands propagate). */
+export const or = <
+  const Ops extends readonly [
+    Expression<Valued<'boolean'>>,
+    Expression<Valued<'boolean'>>,
+    ...Expression<Valued<'boolean'>>[],
+  ],
+>(
+  ...conditions: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new VariadicFunction('or', propagateNull(conditions, bool()), conditions);
+
+/** Logical negation of a boolean expression (Kleene: a null operand propagates). */
+export const not = <C extends Expression<Valued<'boolean'>>>(
+  condition: C,
+): UnaryFunction<PropagateNull<C['type'], BoolType>> =>
+  new UnaryFunction('not', propagateNull([condition], bool()), condition);
