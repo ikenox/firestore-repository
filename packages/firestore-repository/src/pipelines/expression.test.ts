@@ -323,6 +323,29 @@ describe('comparison operators (table-driven over all six)', () => {
     // ...and rejected against a never-null one (always false).
     // @ts-expect-error -- 'string' vs 'null' have zero overlap
     equal(field(string(), 's'), constant(null));
+    // A plain descriptor overlaps its nullable widening.
+    equal(field(string(), 's'), ns);
+  });
+
+  it('container tags compare by element-set inclusion (either direction)', () => {
+    // Top-level null stripping does not reach inside containers, but the
+    // SYMMETRIC Extract does the work: string[] is assignable to
+    // (string|null)[] element-covariantly, so the pair overlaps — in both
+    // argument orders.
+    const arr = field(array(string()), 'arr');
+    const arrNullable = field(array(nullable(string())), 'arrN');
+    equal(arr, arrNullable);
+    equal(arrNullable, arr);
+    // Same for a map field widened with null.
+    equal(field(map({ a: string() }), 'm'), field(map({ a: nullable(string()) }), 'mn'));
+    // Disjoint element sets stay rejected even when both are nullable inside.
+    // @ts-expect-error -- (string|null)[] vs (double|null)[] share no non-null element tag
+    equal(arrNullable, field(array(nullable(double())), 'dn'));
+    // KNOWN LIMIT: inside a container the check is inclusion, not member-wise
+    // overlap — elements sharing 'string' but with neither side a subset of
+    // the other are rejected.
+    // @ts-expect-error -- (string|double)[] vs (string|null)[]: neither includes the other
+    equal(field(array(union(string(), double())), 'sd'), arrNullable);
   });
 
   it('firestoreType keys the compatibility — pairs whose TS representations collide stay rejected', () => {
