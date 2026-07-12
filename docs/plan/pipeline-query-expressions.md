@@ -129,6 +129,18 @@ double())), field(string()))` is legal; reference-vs-`array(string())`,
 - Return types widen to the plain descriptor (`toUpper` of a literal returns
   `StringType`) — values are transformed, so precision loss is correct.
 
+### Planned ergonomics: direct literal operands (no explicit `constant()`)
+
+Raw values should be writable directly as operands —
+`equal(field('rank'), 1)`, `startsWith(field('name'), 'a')`,
+`equal(field('__name__'), docRefValue(...))` — with the factory lifting them
+via `constant()` internally, exactly like the official SDK
+(`equal(field('x'), 5)`). ONE lifting rule applied uniformly across every
+factory (an operand position accepts `Expression<D> | <the ConstantValue
+subset whose inferred descriptor fits D>`), not per-function ad-hoc
+overloads. Value constructors (`geoPointValue` / `vectorValue` /
+`docRefValue`) are values, so they ride the same rule.
+
 ### Optional arguments (e.g. `substring(s, start, len?)`)
 
 The factory overloads to **two shapes**: 2-arg calls build a `BinaryFunction`,
@@ -256,10 +268,12 @@ both executors and the basic backend semantics in one round trip per family.
       (same classification rule: an id tuple is a plain `string[]` = an
       array constant) and is the matching comparand; executors thread `db`
       to build the wire reference (the codec's `buildEncodeField`
-      precedent). The `Expression<T>` union now binds the non-generic value
-      nodes through their `type` property (`GeoPointValue & { type: T }`) —
-      previously every value node inhabited every operand domain
-      (`toUpper(geoPointValue(...))` type-checked).
+      precedent). Value nodes are NOT expressions: `constant()` is the one
+      point where any value (scalar, map, `geoPointValue` / `vectorValue` /
+      `docRefValue`) lifts into an expression, matching the SDK's
+      `constant(new GeoPoint(...))` — this closed the hole where every value
+      node inhabited every operand domain (`toUpper(geoPointValue(...))`
+      type-checked), and needed no type-level membership trick.
 - [ ] **4. Timestamp family** (literal-union factory args pattern:
       `TimeUnit`, truncation granularity).
 - [ ] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**

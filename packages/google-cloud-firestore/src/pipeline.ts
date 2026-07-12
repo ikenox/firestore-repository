@@ -156,12 +156,6 @@ const toSdkExpression = (db: Firestore, expression: Expression): Pipelines.Expre
       return Pipelines.field(expression.path);
     case 'constant':
       return toSdkConstant(db, expression.value);
-    case 'geoPointValue':
-    case 'vectorValue':
-    case 'docRefValue':
-      // Value nodes also appear as constant-composite leaves; toSdkConstant
-      // is the single home for their translation.
-      return toSdkConstant(db, expression);
     case 'nullaryFunction':
       return nullaryFns[expression.name]();
     case 'unaryFunction':
@@ -350,9 +344,6 @@ const literalStringOperand = (operand: Expression): string => {
       throw new Error('expected a literal string constant operand');
     }
     case 'field':
-    case 'geoPointValue':
-    case 'vectorValue':
-    case 'docRefValue':
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
@@ -387,9 +378,6 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'geoPointValue':
-    case 'vectorValue':
-    case 'docRefValue':
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':

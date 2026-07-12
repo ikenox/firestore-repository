@@ -297,8 +297,8 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               constant(null).as('z'),
               constant(new Date('2024-01-02T03:04:05.678Z')).as('t'),
               constant(new Uint8Array([1, 2, 3])).as('by'),
-              geoPointValue(35.68, 139.69).as('g'),
-              vectorValue([0.5, 0.25]).as('v'),
+              constant(geoPointValue(35.68, 139.69)).as('g'),
+              constant(vectorValue([0.5, 0.25])).as('v'),
               constant([1, 2, 3]).as('arr'),
               constant([1, 'a', true]).as('mixed'),
               constant({
@@ -519,10 +519,16 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             type(constant(null)).as('typeNull'),
             isType(constant('x'), 'string').as('isTypeHit'),
             isType(constant('x'), 'int64').as('isTypeMiss'),
-            vectorLength(vectorValue([1, 2, 3])).as('vectorLength'),
-            dotProduct(vectorValue([1, 2, 3]), vectorValue([1, 1, 1])).as('dotProduct'),
-            euclideanDistance(vectorValue([1, 2]), vectorValue([4, 6])).as('euclidean'),
-            cosineDistance(vectorValue([1, 0]), vectorValue([1, 0])).as('cosine'),
+            vectorLength(constant(vectorValue([1, 2, 3]))).as('vectorLength'),
+            dotProduct(constant(vectorValue([1, 2, 3])), constant(vectorValue([1, 1, 1]))).as(
+              'dotProduct',
+            ),
+            euclideanDistance(constant(vectorValue([1, 2])), constant(vectorValue([4, 6]))).as(
+              'euclidean',
+            ),
+            cosineDistance(constant(vectorValue([1, 0])), constant(vectorValue([1, 0]))).as(
+              'cosine',
+            ),
           ]),
           [
             {
@@ -550,7 +556,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // genuine reference value.
         await expectPipeline(
           source().where((field) =>
-            equal(field('__name__'), docRefValue(liveCollection(), ['a1'])),
+            equal(field('__name__'), constant(docRefValue(liveCollection(), ['a1']))),
           ),
           [a1],
         );

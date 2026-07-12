@@ -224,10 +224,11 @@ describe('aliasing (.as)', () => {
     const c = constant(1);
     expect(c.as('n')).toStrictEqual({ expression: c, alias: 'n' });
 
-    const g = geoPointValue(1, 2);
+    // Value nodes are not expressions — they alias through constant().
+    const g = constant(geoPointValue(1, 2));
     expect(g.as('g')).toStrictEqual({ expression: g, alias: 'g' });
 
-    const v = vectorValue([1]);
+    const v = constant(vectorValue([1]));
     expect(v.as('v')).toStrictEqual({ expression: v, alias: 'v' });
 
     const cmp = equal(field(double(), 'rank'), constant(1));
@@ -324,8 +325,8 @@ describe('comparison operators (table-driven over all six)', () => {
       // same-T pairs for the remaining groups
       expect(cmp(field(timestamp(), 'at'), constant(new Date(0))).name).toBe(fnName);
       expect(cmp(field(bytes(), 'raw'), constant(new Uint8Array([1]))).name).toBe(fnName);
-      expect(cmp(field(geoPoint(), 'geo'), geoPointValue(1, 2)).name).toBe(fnName);
-      expect(cmp(field(vector(), 'vec'), vectorValue([1])).name).toBe(fnName);
+      expect(cmp(field(geoPoint(), 'geo'), constant(geoPointValue(1, 2))).name).toBe(fnName);
+      expect(cmp(field(vector(), 'vec'), constant(vectorValue([1]))).name).toBe(fnName);
       expect(cmp(field(nullType(), 'z'), constant(null)).name).toBe(fnName);
       // function operands nest (bool same-T)
       expect(cmp(equal(rank, count), constant(true)).name).toBe(fnName);
@@ -744,8 +745,8 @@ describe('reference / type / vector operators', () => {
 
   it('vector functions take vector operands only', () => {
     const vec = field(vector(), 'vec');
-    expect(dotProduct(vec, vectorValue([1, 2]))).toStrictEqual(
-      new BinaryFunction('dotProduct', double(), vec, vectorValue([1, 2])),
+    expect(dotProduct(vec, constant(vectorValue([1, 2])))).toStrictEqual(
+      new BinaryFunction('dotProduct', double(), vec, constant(vectorValue([1, 2]))),
     );
     expect(cosineDistance(vec, vec).name).toBe('cosineDistance');
     expect(euclideanDistance(vec, vec).name).toBe('euclideanDistance');
@@ -768,26 +769,28 @@ describe('document-reference values', () => {
   });
 
   it('compares against reference operands only (probed: strings never match)', () => {
-    const ref = docRefValue(authors, ['a1']);
+    const ref = constant(docRefValue(authors, ['a1']));
     equal(field(docRef(), '__name__'), ref);
     equal(field(docRef(authors), 'ref'), ref);
     // @ts-expect-error -- a reference never equals a string (always-false on the backend)
     equal(ref, constant('authors/a1'));
   });
 
-  it('value nodes are domain-bound: a node only inhabits expressions its descriptor fits', () => {
-    // The Expression<T> union binds GeoPointValue/VectorValue/DocRefValue
-    // through their `type` property — without that, every value node would
-    // satisfy every operand domain.
-    // @ts-expect-error -- a geopoint is not a string operand
+  it('value nodes are not expressions: they enter only via constant(), which scopes their domain', () => {
+    // A value node is a VALUE — constant() is the one lifting point (like
+    // the SDK's constant(new GeoPoint(...))), and the lifted Constant<T>
+    // carries the precise descriptor into domains and inference.
+    // @ts-expect-error -- a raw value node is not an expression operand
     toUpper(geoPointValue(1, 2));
-    // @ts-expect-error -- a vector is not a numeric operand
-    abs(vectorValue([1]));
+    // @ts-expect-error -- a geopoint constant is not a string operand
+    toUpper(constant(geoPointValue(1, 2)));
+    // @ts-expect-error -- a vector constant is not a numeric operand
+    abs(constant(vectorValue([1])));
     // @ts-expect-error -- a geopoint never equals a string
-    equal(geoPointValue(1, 2), constant('x'));
-    // ...and inference reads the node's own descriptor, so same-domain pairs work.
-    equal(geoPointValue(1, 2), field(geoPoint(), 'geo'));
-    dotProduct(vectorValue([1, 2]), field(vector(), 'vec'));
+    equal(constant(geoPointValue(1, 2)), constant('x'));
+    // Same-domain pairs work, with inference reading the lifted descriptor.
+    equal(constant(geoPointValue(1, 2)), field(geoPoint(), 'geo'));
+    dotProduct(constant(vectorValue([1, 2])), field(vector(), 'vec'));
   });
 
   it('doubles as a composite constant leaf, like geopoint/vector nodes', () => {

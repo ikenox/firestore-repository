@@ -47,18 +47,15 @@ import { assertNever } from '../util.js';
  * public type, so `switch (expr.kind)` narrowing and `assertNever`
  * exhaustiveness keep working (a base-class-typed value would not narrow).
  */
-// The non-generic value nodes are bound to `T` through their `type` property
-// (`GeoPointValue & { type: T }`): a bare `GeoPointValue` member would belong
-// to EVERY `Expression<T>` regardless of domain — accepting a geopoint where
-// a string operand is required, and collapsing operator type inference to the
-// wide fallback. The intersection makes membership conditional on the node's
-// descriptor fitting `T`, and lets inference read the descriptor off it.
+// Value nodes (GeoPointValue / VectorValue / DocRefValue) are NOT members:
+// they are VALUES, and the one way any value becomes an expression is
+// `constant()` — `constant(geoPointValue(1, 3))`, exactly like `constant(5)`
+// (and like the official SDK's `constant(new GeoPoint(...))`). Every member
+// therefore carries `type: T` natively, which is what scopes operand domains
+// and feeds operator type inference.
 export type Expression<T extends FieldType = FieldType> =
   | Field<T>
   | Constant<T>
-  | (GeoPointValue & { type: T })
-  | (VectorValue & { type: T })
-  | (DocRefValue & { type: T })
   | NullaryFunction<T>
   | UnaryFunction<T>
   | BinaryFunction<T>
@@ -145,39 +142,36 @@ export class Constant<T extends FieldType = FieldType> extends ExpressionBase {
 }
 
 /**
- * A geopoint value. A dedicated node (not a `Constant`): a geopoint has no JS
- * representation of its own — a plain `{ latitude, longitude }` object is
- * always a **map** constant — so the coordinates are explicit and executors
- * translate by `kind` with no payload ambiguity.
+ * A geopoint VALUE (not an expression — lift it with
+ * `constant(geoPointValue(...))`). A dedicated constructor because a geopoint
+ * has no JS representation of its own: a plain `{ latitude, longitude }`
+ * object is always a **map** constant.
  */
-export class GeoPointValue extends ExpressionBase {
-  readonly kind = 'geoPointValue';
+export class GeoPointValue {
   readonly type: GeoPointType = geoPoint();
   constructor(
     readonly latitude: number,
     readonly longitude: number,
-  ) {
-    super();
-  }
+  ) {}
 }
 
 /**
- * A vector value. A dedicated node (not a `Constant`): a `number[]` is always
- * an **array** constant, so vectors are constructed explicitly.
+ * A vector VALUE (not an expression — lift it with
+ * `constant(vectorValue(...))`). A dedicated constructor because a `number[]`
+ * is always an **array** constant.
  */
-export class VectorValue extends ExpressionBase {
-  readonly kind = 'vectorValue';
+export class VectorValue {
   readonly type: VectorType = vector();
   readonly values: readonly number[];
   constructor(values: readonly number[]) {
-    super();
     this.values = [...values];
   }
 }
 
 /**
- * A document-reference value. A dedicated node (not a `Constant`), for the
- * same classification rule as {@link GeoPointValue} / {@link VectorValue}: a
+ * A document-reference VALUE (not an expression — lift it with
+ * `constant(docRefValue(...))`). A dedicated constructor for the same
+ * classification rule as {@link GeoPointValue} / {@link VectorValue}: a
  * reference's plain-JS representation (`DocRef<T>`, an id tuple) is a string
  * array — always an **array** constant — and building the wire reference
  * needs the collection context anyway, so both come explicitly. This is the
@@ -186,14 +180,12 @@ export class VectorValue extends ExpressionBase {
  * (id / relative path / full resource path — all `false`), only against a
  * reference value.
  */
-export class DocRefValue<T extends Collection = Collection> extends ExpressionBase {
-  readonly kind = 'docRefValue';
+export class DocRefValue<T extends Collection = Collection> {
   readonly type: DocRefType<T>;
   constructor(
     readonly collection: T,
     readonly id: DocRef<T>,
   ) {
-    super();
     this.type = docRef(collection);
   }
 }
