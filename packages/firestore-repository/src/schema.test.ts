@@ -155,7 +155,7 @@ describe('schema', () => {
         >();
       });
 
-      // TODO: support tuple
+      // TODO: support tuple (https://github.com/ikenox/firestore-repository/issues/218)
     });
 
     it('union', () => {
