@@ -4,6 +4,17 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+    # This is a library, so the declared version ranges in package.json are the
+    # public contract and should be curated by humans, not bumped automatically.
+    # Only edit package.json when a new version falls outside the current range;
+    # otherwise just refresh the lockfile.
+    versioning-strategy: 'increase-if-necessary'
+    # Skip routine major-version PRs so we widen ranges deliberately by hand.
+    # This only applies to version updates; security updates ignore this and
+    # still open PRs (bumping package.json if a fix requires leaving the range).
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       dependencies:
         patterns:
