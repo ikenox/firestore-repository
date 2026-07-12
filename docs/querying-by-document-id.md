@@ -29,6 +29,18 @@ Note that for a subcollection query the parent id is **not** part of the `__name
 specified separately via `parent`. Only the leaf document ID goes into `__name__`, and it must not
 contain a `/`.
 
+A few additional properties of this contract (verified empirically):
+
+- **Validation is client-side.** An invalid string form throws synchronously in the SDK at query
+  construction time (inside `where()`), before any request is sent. The server never sees it.
+- **The convention applies to every operator**, not just `eq` — inequality/range filters
+  (`gt('__name__', '1')`, etc.) resolve the string the same way, per the query scope.
+- **A `DocumentReference` works in every scope** at the SDK level. The string forms are client-side
+  conveniences: the SDK resolves the string against the query's static scope and compiles it to a
+  reference before it hits the wire. The reference value is the single wire-level concept — which is
+  also why Pipeline queries (which have no such scope) accept only references; see below. This
+  library's `__name__` contract is the string form; the raw-reference form is not part of its API.
+
 ## Single collection / subcollection
 
 Pass a plain document ID. The parent (for a subcollection) is given via `parent`, not in the value.
@@ -82,10 +94,12 @@ The behavior described here is verified against both SDK implementations
 
 ## Pipeline queries
 
-> This library does not implement Pipeline queries yet; the notes below describe the underlying
-> `@google-cloud/firestore` Pipeline API (`db.pipeline()...execute()`, an Enterprise-edition
-> feature) so the semantics are documented for when support is added. They were verified
+> The notes below describe the underlying Firestore Pipeline API semantics (an Enterprise-edition
+> feature; this library's pipeline support is under development on this branch). They were verified
 > empirically against a real Enterprise database, not the emulator (which cannot run pipelines).
+> For how this library maps these semantics onto its type system (`DocRefType<'unknown'>`,
+> `docRefValue`, `documentId()` / `collectionId()`), see
+> [pipeline-query-identity-research.md](./pipeline-query-identity-research.md).
 
 In a Pipeline query the identity semantics change fundamentally: `__name__` is **not a string**, it
 is a **`DocumentReference` value**. Unlike classic queries — where `__name__` is a filter-only field

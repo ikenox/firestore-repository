@@ -108,8 +108,20 @@ over the raw key are rejected at the type level; `documentId(field('__name__'))`
 flavor's `output` is `string`: the core query API's id-filter contract, and
 the decode of a projected raw key (the codecs decode the
 `DocumentReference` to its relative path string; a schema-known
-`docRef(collection)` field decodes to a `DocRef` id tuple as usual). It is
-never writable (`input: never`).
+`docRef(collection)` field decodes to a `DocRef` id tuple as usual), and its
+`input` is likewise the relative path string (encoded via `db.doc(path)`).
+
+### Core query `__name__` string filters
+
+Full probe results (root collection / subcollection / collection group ×
+bare id / relative path / `DocumentReference`, incl. range operators) live in
+[querying-by-document-id.md](./querying-by-document-id.md). The design
+takeaway: "core query accepts strings for `__name__`" is really two
+different client-side conveniences keyed to the source's static scope
+(collection query → bare id; collection group → root-relative path), both
+compiled to a reference before hitting the wire. The reference VALUE is the
+one wire-level concept; address-style strings are only accepted where a
+static context exists to resolve them.
 
 ## Read-identity (row key) vs. `__name__` field / DML-capability
 
