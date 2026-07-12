@@ -29,7 +29,7 @@ type Schema = {
   name: StringType;
   profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
   rank: DoubleType;
-  tag: ArrayType<StringType, [], []>;
+  tag: ArrayType<StringType>;
 };
 
 describe('BuildSelectionSchema', () => {
@@ -65,7 +65,7 @@ describe('BuildSelectionSchema', () => {
     it('merges disjoint top-level selections', () => {
       expectTypeOf<BuildSelectionSchema<Schema, ['name', 'tag']>>().toEqualTypeOf<{
         name: StringType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
 
@@ -219,7 +219,7 @@ describe('BuildAddFieldsSchema', () => {
         name: StringType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
         score: DoubleType;
       }>();
     });
@@ -230,7 +230,7 @@ describe('BuildAddFieldsSchema', () => {
         name: StringType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
         stats: MapType<{ score: DoubleType }>;
       }>();
     });
@@ -245,7 +245,7 @@ describe('BuildAddFieldsSchema', () => {
           computed: StringType;
         }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
   });
@@ -257,7 +257,7 @@ describe('BuildAddFieldsSchema', () => {
         name: DoubleType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
 
@@ -267,7 +267,7 @@ describe('BuildAddFieldsSchema', () => {
         name: StringType;
         profile: MapType<{ age: StringType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
   });
@@ -284,7 +284,7 @@ describe('BuildAddFieldsSchema', () => {
           computed: StringType;
         }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
         score: DoubleType;
       }>();
     });
@@ -300,7 +300,7 @@ describe('BuildAddFieldsSchema', () => {
         name: DoubleType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
 
@@ -316,7 +316,7 @@ describe('BuildAddFieldsSchema', () => {
           baz: StringType;
         }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
 
@@ -332,7 +332,7 @@ describe('BuildAddFieldsSchema', () => {
         name: StringType;
         profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
         rank: DoubleType;
-        tag: ArrayType<StringType, [], []>;
+        tag: ArrayType<StringType>;
       }>();
     });
   });

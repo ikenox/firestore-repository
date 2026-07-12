@@ -224,9 +224,9 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
 type ArrayConstantTypeOf<V extends ConstantArray> =
   DedupDescriptors<{ readonly [K in keyof V]: ConstantTypeOf<V[K]> }> extends infer D
     ? D extends readonly [infer Only extends FieldType]
-      ? ArrayType<Only, [], []>
+      ? ArrayType<Only>
       : D extends readonly FieldType[]
-        ? ArrayType<UnionType<[...D]>, [], []>
+        ? ArrayType<UnionType<[...D]>>
         : never
     : never;
 

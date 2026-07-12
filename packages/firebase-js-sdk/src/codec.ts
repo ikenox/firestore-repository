@@ -14,16 +14,7 @@ import {
 } from '@firebase/firestore';
 import { documentPath } from 'firestore-repository/path';
 import type { DocRef } from 'firestore-repository/repository';
-import type {
-  ArrayType,
-  Collection,
-  DocRefType,
-  DocumentSchema,
-  FieldType,
-  LiteralType,
-  MapType,
-  UnionType,
-} from 'firestore-repository/schema';
+import type { Collection, DocumentSchema, FieldType } from 'firestore-repository/schema';
 import {
   isArrayRemove,
   isArrayUnion,
@@ -90,11 +81,9 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
           return ids.reverse() as DocRef<Collection>;
         });
     case 'map': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as MapType;
       return z.object(
         Object.fromEntries(
-          Object.entries(ft.fields).map(([k, v]) => {
+          Object.entries(fieldType.fields).map(([k, v]) => {
             const s = buildDecodeField(v);
             return [k, v.optional ? s.optional() : s];
           }),
@@ -102,23 +91,16 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
       );
     }
     case 'array': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as ArrayType;
-      return z.array(buildDecodeField(ft.dynamicPart));
+      return z.array(buildDecodeField(fieldType.dynamicPart));
     }
     case 'union': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as UnionType;
-      return zodUnion(ft.elements.map(buildDecodeField));
+      return zodUnion(fieldType.elements.map(buildDecodeField));
     }
     case 'const': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as LiteralType<(string | number | boolean | null)[]>;
-      return zodUnion(ft.values.map((v) => z.literal(v)));
+      return zodUnion(fieldType.values.map((v) => z.literal(v)));
     }
     default:
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return assertNever(fieldType as never);
+      return assertNever(fieldType);
   }
 }
 
@@ -170,19 +152,15 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
           .transform(() => firestoreServerTimestamp()),
       ]);
     case 'docRef': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as DocRefType<Collection>;
       return z.array(z.string()).transform((ref) =>
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        doc(db, documentPath(ft.collection, ref as DocRef<Collection>)),
+        doc(db, documentPath(fieldType.collection, ref as DocRef<Collection>)),
       );
     }
     case 'map': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as MapType;
       return z.object(
         Object.fromEntries(
-          Object.entries(ft.fields).map(([k, v]) => {
+          Object.entries(fieldType.fields).map(([k, v]) => {
             const s = buildEncodeField(v, db);
             return [k, v.optional ? s.optional() : s];
           }),
@@ -190,10 +168,8 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       );
     }
     case 'array': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as ArrayType;
       return zodUnion([
-        z.array(buildEncodeField(ft.dynamicPart, db)),
+        z.array(buildEncodeField(fieldType.dynamicPart, db)),
         z
           .unknown()
           .refine(isArrayRemove)
@@ -205,18 +181,13 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       ]);
     }
     case 'union': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as UnionType;
-      return zodUnion(ft.elements.map((e) => buildEncodeField(e, db)));
+      return zodUnion(fieldType.elements.map((e) => buildEncodeField(e, db)));
     }
     case 'const': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as LiteralType<(string | number | boolean | null)[]>;
-      return zodUnion(ft.values.map((v) => z.literal(v)));
+      return zodUnion(fieldType.values.map((v) => z.literal(v)));
     }
     default:
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return assertNever(fieldType as never);
+      return assertNever(fieldType);
   }
 }
 
