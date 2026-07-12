@@ -430,8 +430,12 @@ export class UnaryFunction<T extends FieldType = FieldType> extends ExpressionBa
 // A name appearing in two shape unions (round/trunc/trim/ltrim/rtrim) is the
 // dual-arity pattern: the factory overloads to a unary and a binary form and
 // each executor table translates its own arity.
+// The name unions are ordered by function CATEGORY (matching the factory
+// sections below), not by anything historical.
 export type UnaryFunctionName =
+  // logical
   | 'not'
+  // arithmetic
   | 'abs'
   | 'ceil'
   | 'floor'
@@ -441,6 +445,7 @@ export type UnaryFunctionName =
   | 'exp'
   | 'ln'
   | 'log10'
+  // string
   | 'charLength'
   | 'byteLength'
   | 'toLower'
@@ -449,9 +454,12 @@ export type UnaryFunctionName =
   | 'trim'
   | 'ltrim'
   | 'rtrim'
+  // reference
   | 'documentId'
   | 'collectionId'
+  // type
   | 'type'
+  // vector
   | 'vectorLength';
 
 /** A function call with exactly two operands. */
@@ -467,12 +475,14 @@ export class BinaryFunction<T extends FieldType = FieldType> extends ExpressionB
   }
 }
 export type BinaryFunctionName =
+  // comparison
   | 'equal'
   | 'notEqual'
   | 'lessThan'
   | 'lessThanOrEqual'
   | 'greaterThan'
   | 'greaterThanOrEqual'
+  // arithmetic
   | 'add'
   | 'subtract'
   | 'multiply'
@@ -481,6 +491,7 @@ export type BinaryFunctionName =
   | 'pow'
   | 'round'
   | 'trunc'
+  // string
   | 'trim'
   | 'ltrim'
   | 'rtrim'
@@ -491,11 +502,14 @@ export type BinaryFunctionName =
   | 'stringRepeat'
   | 'substring'
   | 'like'
+  // regex
   | 'regexContains'
   | 'regexMatch'
   | 'regexFind'
   | 'regexFindAll'
+  // type
   | 'isType'
+  // vector
   | 'cosineDistance'
   | 'dotProduct'
   | 'euclideanDistance';
@@ -526,7 +540,12 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
     super();
   }
 }
-export type VariadicFunctionName = 'and' | 'or' | 'stringConcat';
+export type VariadicFunctionName =
+  // logical
+  | 'and'
+  | 'or'
+  // string
+  | 'stringConcat';
 
 /**
  * The value-domain predicate: descriptors whose `firestoreType` tags fit the
