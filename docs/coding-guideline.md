@@ -36,11 +36,13 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
   `firestore-repository/util`). Never use `default` as a catch-all for "the
   rest of the members"; a non-exhaustive `switch` is forbidden.
 - **Do not use equality comparison on a union/enum-like value as a proxy for
-  deciding behavior** (e.g. `if (x.kind !== 'field')`, `dir === 'asc' ? a : b`).
-  The question such code actually asks is not "is it this member?" but "which
-  behavior does this value get?" — and the `else` / non-matching side becomes
-  an implicit catch-all for _every other member_, so a member added later
-  silently falls into it. Use an exhaustive `switch` instead, which forces
+  deciding behavior** (e.g. `if (x.kind !== 'field')`, or
+  `expr.kind === 'constant' ? inlineValue(expr) : compileFunction(expr)` —
+  where `Expression` gains a new kind every rollout slice). The question such
+  code actually asks is not "is it this member?" but "which behavior does
+  this value get?" — and the `else` / non-matching side becomes an implicit
+  catch-all for _every other member_, so a member added later silently falls
+  into it. Use an exhaustive `switch` instead, which forces
   each member's behavior to be stated. Comparisons that are not union-member
   discrimination (e.g. `=== undefined` on an optional, numeric comparisons)
   are fine.
