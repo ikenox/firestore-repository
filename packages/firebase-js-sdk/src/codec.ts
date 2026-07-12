@@ -27,9 +27,8 @@ import * as z from 'zod';
 // oxlint-disable-next-line typescript/no-explicit-any
 type ZodAny = z.ZodType<any, any>;
 
-export const isBytes = (v: unknown): v is FirestoreBytes => v instanceof FirestoreBytes;
-export const isDocumentReference = (v: unknown): v is FirestoreDocumentReference =>
-  v instanceof FirestoreDocumentReference;
+export const isBytes = (v: unknown) => v instanceof FirestoreBytes;
+export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumentReference;
 
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
   return z.object(
