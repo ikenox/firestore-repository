@@ -738,7 +738,6 @@ const mayBeNull = (t: FieldType & { optional?: boolean }): boolean => {
     case 'bytes':
     case 'geoPoint':
     case 'vector':
-    case 'reference':
     case 'map':
     case 'array':
       return false;

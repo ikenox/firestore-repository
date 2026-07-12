@@ -14,7 +14,6 @@ import {
   nullable,
   nullType,
   optional,
-  referenceType,
   rootCollection,
   string,
   type StringType,
@@ -707,7 +706,7 @@ describe('reference / type / vector operators', () => {
   const authors = rootCollection({ name: 'authors', schema: { name: string() } });
 
   it('documentId/collectionId take reference operands only', () => {
-    const key = field(referenceType(), '__name__');
+    const key = field(docRef(), '__name__');
     const refField = field(docRef(authors), 'ref');
     expect(documentId(key)).toStrictEqual(new UnaryFunction('documentId', string(), key));
     expect(collectionId(key).name).toBe('collectionId');
@@ -770,7 +769,7 @@ describe('document-reference values', () => {
 
   it('compares against reference operands only (probed: strings never match)', () => {
     const ref = docRefValue(authors, ['a1']);
-    equal(field(referenceType(), '__name__'), ref);
+    equal(field(docRef(), '__name__'), ref);
     equal(field(docRef(authors), 'ref'), ref);
     // @ts-expect-error -- a reference never equals a string (always-false on the backend)
     equal(ref, constant('authors/a1'));

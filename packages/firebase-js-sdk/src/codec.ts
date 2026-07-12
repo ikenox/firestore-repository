@@ -45,15 +45,6 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
   switch (fieldType.type) {
     case 'string':
       return z.string();
-    case 'reference':
-      // The '__name__' pseudo-descriptor: a projected raw key decodes to its
-      // relative path string — the context-free representation its `output`
-      // declares (there is no schema-known collection to build a DocRef id
-      // tuple from).
-      return z
-        .unknown()
-        .refine(isDocumentReference)
-        .transform((ref) => ref.path);
     case 'bool':
       return z.boolean();
     case 'int64':
@@ -75,6 +66,16 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'vector':
       return z.instanceof(FirestoreVectorValue).transform((vv) => vv.toArray());
     case 'docRef':
+      if (fieldType.collection === 'unknown') {
+        // The context-free flavor (the '__name__' pseudo-descriptor): with no
+        // schema-known collection to build a DocRef id tuple from, a
+        // projected raw key decodes to its relative path string — the
+        // representation its `output` declares.
+        return z
+          .unknown()
+          .refine(isDocumentReference)
+          .transform((ref) => ref.path);
+      }
       return z
         .unknown()
         .refine(isDocumentReference)
@@ -130,9 +131,6 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
   switch (fieldType.type) {
     case 'string':
       return z.string();
-    case 'reference':
-      // The '__name__' pseudo-descriptor is never writable (input: never).
-      throw new Error(`unsupported schema field type: ${fieldType.type}`);
     case 'bool':
       return z.boolean();
     case 'null':
@@ -163,9 +161,14 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
           .transform(() => firestoreServerTimestamp()),
       ]);
     case 'docRef': {
+      if (fieldType.collection === 'unknown') {
+        // The context-free flavor is never writable (input: never).
+        throw new Error('unsupported schema field type: context-free docRef');
+      }
+      const { collection } = fieldType;
       return z.array(z.string()).transform((ref) =>
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        doc(db, documentPath(fieldType.collection, ref as DocRef<Collection>)),
+        doc(db, documentPath(collection, ref as DocRef<Collection>)),
       );
     }
     case 'map': {

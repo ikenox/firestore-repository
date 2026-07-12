@@ -240,9 +240,15 @@ both executors and the basic backend semantics in one round trip per family.
       wire-literal (factory takes a literal union, lifted via `constant`;
       executors recover the raw string for the SDK helpers). The reserved
       `__name__` is a REFERENCE (probed via `type(__name__)`), so
-      `FieldTypeOfPath` now resolves it to the new `ReferenceType`
-      pseudo-descriptor (tag `'reference'`, `output: string` for the core
-      query API's id filters) — `documentId(field('__name__'))` bridges it
+      `FieldTypeOfPath` now resolves it to the context-free
+      `DocRefType<'unknown'>` (ONE unified reference descriptor — the type
+      parameter is the known collection or the `'unknown'` sentinel; the
+      context-free flavor has `output: string` for the core query API's id
+      filters and `input: never`). Future refinement, same skeleton: while a
+      pipeline's read-identity is alive (`Id = DocRef<T>`), the source
+      collection IS statically known — `fieldProvider` could resolve
+      `'__name__'` to `DocRefType<T>` and fall back to `'unknown'` once the
+      identity ratchet drops (deferred; `documentId` covers today's uses) — `documentId(field('__name__'))` bridges it
       into the string domain, and comparing `__name__` against strings is
       now correctly rejected (probed: the backend matches NO string form —
       only a reference value). `docRefValue(collection, id)` joins

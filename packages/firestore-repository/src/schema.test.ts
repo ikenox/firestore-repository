@@ -10,6 +10,7 @@ import {
   bytes,
   docRef,
   double,
+  type DocRefType,
   type DoubleType,
   type DocumentSchema,
   type DocFieldPath,
@@ -34,8 +35,6 @@ import {
   optional,
   type Optional,
   type PickPaths,
-  referenceType,
-  type ReferenceType,
   rootCollection,
   subCollection,
   ServerTimestamp,
@@ -407,7 +406,7 @@ describe('document', () => {
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optional'>>().toExtend<LiteralType<['foo', 'bar']>>();
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optionalMap.f'>>().toEqualTypeOf<StringType>();
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optionalMap.g'>>().toExtend<Int64Type>();
-    expectTypeOf<FieldTypeOfPath<Schema, '__name__'>>().toEqualTypeOf<ReferenceType>();
+    expectTypeOf<FieldTypeOfPath<Schema, '__name__'>>().toEqualTypeOf<DocRefType<'unknown'>>();
   });
 
   // Comprehensive runtime tests for `fieldTypeOfPath` — its return type is bridged
@@ -474,9 +473,9 @@ describe('document', () => {
       expectTypeOf(fieldTypeOfPath(s, 'om.z')).toEqualTypeOf<StringType>();
     });
 
-    it('resolves the reserved __name__ to the reference pseudo-descriptor', () => {
-      expect(fieldTypeOfPath(schema, '__name__')).toStrictEqual(referenceType());
-      expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<ReferenceType>();
+    it('resolves the reserved __name__ to the context-free reference descriptor', () => {
+      expect(fieldTypeOfPath(schema, '__name__')).toStrictEqual(docRef());
+      expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<DocRefType<'unknown'>>();
     });
 
     it('throws for a path that does not exist at runtime (defensive guard)', () => {

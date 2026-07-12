@@ -98,16 +98,18 @@ a `DocumentReference` instance (NOT a path string — an earlier note here was
 imprecise).
 
 Library consequence: `FieldTypeOfPath` resolves `'__name__'` to the
-`ReferenceType` pseudo-descriptor (`schema.ts`) with the `'reference'`
-firestoreType tag, so string comparisons and string functions over the raw
-key are rejected at the type level; `documentId(field('__name__'))` /
+context-free reference descriptor `DocRefType<'unknown'>` (`schema.ts` —
+ONE unified descriptor; the type parameter is the referenced collection when
+the schema knows it, or the `'unknown'` sentinel when it does not) with the
+`'reference'` firestoreType tag, so string comparisons and string functions
+over the raw key are rejected at the type level; `documentId(field('__name__'))` /
 `collectionId(...)` bridge it into the string domain, and
-`docRefValue(collection, id)` is the matching comparand. Its `output` is
-`string`: the core query API's id-filter contract, and the decode of a
-projected raw key (the codecs decode the `DocumentReference` to its relative
-path string — the context-free representation; a schema-known `docRef`
-field decodes to a `DocRef` id tuple as usual). It is never writable
-(`input: never`).
+`docRefValue(collection, id)` is the matching comparand. The context-free
+flavor's `output` is `string`: the core query API's id-filter contract, and
+the decode of a projected raw key (the codecs decode the
+`DocumentReference` to its relative path string; a schema-known
+`docRef(collection)` field decodes to a `DocRef` id tuple as usual). It is
+never writable (`input: never`).
 
 ## Read-identity (row key) vs. `__name__` field / DML-capability
 

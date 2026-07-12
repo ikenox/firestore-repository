@@ -115,12 +115,11 @@ export type FieldType =
   | Int64Type
   | DoubleType
   | TimestampType
-  | DocRefType<Collection>
+  | DocRefType
   | BytesType
   | GeoPointType
   | VectorType
   | NullType
-  | ReferenceType
   | AnyMapType
   | AnyArrayType
   | AnyUnionType
@@ -151,12 +150,28 @@ export type TimestampType = {
   input: Date | ServerTimestamp;
   output: Date;
 };
-export type DocRefType<T extends Collection> = {
+/**
+ * A document-reference descriptor. `T` is the referenced collection when the
+ * schema knows it (a `docRef(collection)` data field), or the `'unknown'`
+ * sentinel when it does not — the reserved `'__name__'` key resolves to
+ * `DocRefType<'unknown'>` (probed: `type(__name__)` is `"reference"`, and
+ * reference-domain functions accept it while rejecting strings). The sentinel
+ * is a visible plain value, like the `Optional` marker, rather than
+ * `undefined` ("the collection is unknown", not "there is no collection").
+ *
+ * The value representation follows the context: a known collection
+ * round-trips `DocRef<T>` id tuples, while a context-free reference is never
+ * writable (`input: never`) and reads as its relative path string — also the
+ * core query API's id-filter contract (`where(eq('__name__', id))`).
+ * Pipeline operator compatibility keys on the shared `'reference'` tag, so
+ * both flavors compare with each other and with `docRefValue(...)` constants.
+ */
+export type DocRefType<T extends Collection | 'unknown' = Collection | 'unknown'> = {
   type: 'docRef';
   firestoreType: 'reference';
   collection: T;
-  input: DocRef<T>;
-  output: DocRef<T>;
+  input: T extends Collection ? DocRef<T> : never;
+  output: T extends Collection ? DocRef<T> : string;
 };
 export type BytesType = {
   type: 'bytes';
@@ -177,26 +192,6 @@ export type VectorType = {
   output: number[];
 };
 export type NullType = { type: 'null'; firestoreType: 'null'; input: null; output: null };
-/**
- * A bare document reference with no schema-known collection — the descriptor
- * of the reserved `'__name__'` key (probed: `type(__name__)` is
- * `"reference"`, and reference-domain functions like `documentId` accept it
- * while rejecting strings). NOT a schema factory: schema data fields with a
- * known collection use {@link DocRefType}; this descriptor exists for
- * expression and filter contexts only — it is never writable
- * (`input: never`) nor decodable as document data (the codecs reject it).
- * Its `output` is `string`: the core query API filters the key against plain
- * document-id strings (`where(eq('__name__', id))`), and `output` is the
- * axis filter operands are typed from. Pipeline operator compatibility keys
- * on the `firestoreType` tag instead, where `'reference'` keeps it apart
- * from genuine strings.
- */
-export type ReferenceType = {
-  type: 'reference';
-  firestoreType: 'reference';
-  input: never;
-  output: string;
-};
 /**
  * The widest map/array/union descriptors — the recursive members of the
  * closed {@link FieldType} union. Each concrete `MapType<T>` /
@@ -365,8 +360,12 @@ export const string = (): StringType => buildType({ type: 'string' });
 export const int64 = (): Int64Type => buildType({ type: 'int64' });
 export const double = (): DoubleType => buildType({ type: 'double' });
 export const timestamp = (): TimestampType => buildType({ type: 'timestamp' });
-export const docRef = <T extends Collection>(collection: T): DocRefType<T> =>
-  buildType({ type: 'docRef', collection });
+export function docRef<T extends Collection>(collection: T): DocRefType<T>;
+/** The context-free flavor — the `'__name__'` pseudo-descriptor; not for schema data fields. */
+export function docRef(): DocRefType<'unknown'>;
+export function docRef(collection?: Collection): FieldType {
+  return buildType<DocRefType>({ type: 'docRef', collection: collection ?? 'unknown' });
+}
 export const bytes = (): BytesType => buildType({ type: 'bytes' });
 export const geoPoint = (): GeoPointType => buildType({ type: 'geoPoint' });
 export const vector = (): VectorType => buildType({ type: 'vector' });
@@ -379,8 +378,6 @@ export const array = <T extends FieldType>(elementType: T): ArrayType<T> =>
 export const union = <T extends FieldType[]>(...elements: T): UnionType<T> =>
   buildType({ type: 'union', elements });
 export const nullType = (): NullType => buildType({ type: 'null' });
-/** Builds the `'__name__'` pseudo-descriptor — see {@link ReferenceType}; not for schemas. */
-export const referenceType = (): ReferenceType => buildType({ type: 'reference' });
 
 export const literal = <const T extends (string | number | boolean | null)[]>(
   ...values: T
@@ -444,13 +441,13 @@ export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>>
         : never
       : never
     : U extends '__name__'
-      ? ReferenceType
+      ? DocRefType<'unknown'>
       : never;
 
 /**
  * Runtime counterpart of {@link FieldTypeOfPath}: resolves the `FieldType`
  * descriptor stored in `schema` at `path` (dotted for nested maps; `'__name__'`
- * resolves to a `ReferenceType`, mirroring the type).
+ * resolves to a context-free `DocRefType<'unknown'>`, mirroring the type).
  */
 export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath<T>>(
   schema: T,
@@ -459,7 +456,7 @@ export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath
   const dot = path.indexOf('.');
   let resolved: FieldType;
   if (path === '__name__') {
-    resolved = referenceType();
+    resolved = docRef();
   } else if (dot < 0) {
     resolved = requireField(schema, path);
   } else {
