@@ -684,8 +684,8 @@ export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
  *
  * The logical operators need this (probed — Kleene three-valued logic:
  * `and(true, null)` is `null` while `and(false, null)` is `false`, `or` and
- * `not` mirror it), and most value functions in later slices will too. The
- * comparison operators do NOT: they are total (never null).
+ * `not` mirror it), and so do most value functions. The comparison
+ * operators do NOT: they are total (never null).
  */
 type PropagateNull<Operands extends FieldType, T extends FieldType> = [
   Extract<Operands['firestoreType'], 'null'> | Extract<Operands, Optional>,
@@ -810,7 +810,8 @@ type StringOperand = Expression<Valued<'string'>>;
 // the honest numeric domain; per-operator integer/double refinement is a
 // deferred cross-cutting item — see the expressions plan). Error edges
 // (divide by zero, ln(0), sqrt of a negative) produce backend ERROR values,
-// not null — the error channel is handled by isError/ifError (slice 5).
+// not null — observable/recoverable only through the error-channel
+// functions (isError / ifError; not implemented yet).
 
 /** A uniformly distributed random double in [0, 1), regenerated per row. */
 export const rand = (): NullaryFunction<DoubleType> => new NullaryFunction('rand', double());
@@ -1074,8 +1075,6 @@ export const stringConcat = <
 ): VariadicFunction<PropagateNull<Ops[number]['type'], StringType>> =>
   new VariadicFunction('stringConcat', propagateNull(strings, string()), strings);
 
-// ---- string (slice 3) ----
-
 /** The 0-based index of the first occurrence of `substring`, or -1 if absent. */
 export const stringIndexOf = <L extends StringOperand, R extends StringOperand>(
   value: L,
@@ -1167,7 +1166,8 @@ export const like = <L extends StringOperand, R extends StringOperand>(
   new BinaryFunction('like', propagateNull([value, pattern], bool()), value, pattern);
 
 // ---- regex ----
-// An invalid pattern is a backend ERROR value (isError/ifError, slice 5).
+// An invalid pattern is a backend ERROR value (see the error-channel note
+// on the arithmetic section).
 
 /** Whether `value` contains a match of the RE2 `pattern`. */
 export const regexContains = <L extends StringOperand, R extends StringOperand>(
