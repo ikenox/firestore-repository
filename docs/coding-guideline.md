@@ -35,26 +35,29 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
 - **The `default` clause may contain nothing but `assertNever(...)`** (from
   `firestore-repository/util`). Never use `default` as a catch-all for "the
   rest of the members"; a non-exhaustive `switch` is forbidden.
-- **Do not branch on union/enum-like values with `if` / ternary equality
-  comparisons** (e.g. `if (x.kind !== 'field')`, `dir === 'asc' ? a : b`).
-  Use an exhaustive `switch` instead. Comparisons that are not union-member
+- **Do not use equality comparison on a union/enum-like value as a proxy for
+  deciding behavior** (e.g. `if (x.kind !== 'field')`, `dir === 'asc' ? a : b`).
+  The question such code actually asks is not "is it this member?" but "which
+  behavior does this value get?" — and the `else` / non-matching side becomes
+  an implicit catch-all for _every other member_, so a member added later
+  silently falls into it. Use an exhaustive `switch` instead, which forces
+  each member's behavior to be stated. Comparisons that are not union-member
   discrimination (e.g. `=== undefined` on an optional, numeric comparisons)
   are fine.
-- **Exception — type-predicate helpers.** A narrowing helper whose whole body
-  is a single boolean expression (e.g.
-  `const isMapType = (t: FieldType) => t.type === 'map'`) should be written
-  exactly like that, **without** a hand-written `t is X` annotation: since
-  TS 5.5 the compiler infers the type predicate from the expression and
-  _verifies_ it, whereas an explicit annotation is trusted unchecked. The
-  exhaustive-`switch` rule does not apply here — there is no per-member
-  behavior to keep in sync, and the inferred predicate stays correct when the
-  union gains members. Keep an explicit annotation only where inference is
-  impossible (the check is delegated to a boolean-returning function, as in
-  `server-value.ts`) or where the built-in narrowing is wrong and the
-  annotation deliberately overrides it (e.g. `Array.isArray` against
-  `readonly` array unions — `isConstantArray` in `pipelines/expression.ts`);
-  say why in a comment, and pin inferred predicates in a type test via
-  `expectTypeOf(fn).guards`.
+- **Membership tests themselves are not proxies and are allowed.** When the
+  question genuinely is "is this value that member?" (a type-predicate
+  helper), `===` is the direct expression of it and stays correct as the
+  union grows — every new member correctly answers "no". Write such a helper
+  as a single boolean expression **without** a hand-written `t is X`
+  annotation (e.g. `const isMapType = (t: FieldType) => t.type === 'map'`):
+  since TS 5.5 the compiler infers the type predicate from the expression and
+  _verifies_ it, whereas an explicit annotation is trusted unchecked. Keep an
+  explicit annotation only where inference is impossible (the check is
+  delegated to a boolean-returning function, as in `server-value.ts`) or
+  where the built-in narrowing is wrong and the annotation deliberately
+  overrides it (e.g. `Array.isArray` against `readonly` array unions —
+  `isConstantArray` in `pipelines/expression.ts`); say why in a comment, and
+  pin inferred predicates in a type test via `expectTypeOf(fn).guards`.
 - Enforcement: `typescript/switch-exhaustiveness-check` (with
   `considerDefaultExhaustiveForUnions: false`, `requireDefaultForNonUnion: true`)
   in `.oxlintrc.json` enforces the `switch` rules. The `if`/ternary ban is
