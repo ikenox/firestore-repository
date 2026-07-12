@@ -1006,6 +1006,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           map: map({ a: double(), b: array(string()), nested: map({ c: int64() }) }),
           null: nullType(),
           docRef: docRef(authorsCollection),
+          // The context-free flavor: a reference to no one particular
+          // collection, round-tripping relative path strings.
+          anyRef: docRef(),
           str: string(),
           vector: vector(),
           literalStr: literal('foo', 'bar', 'baz'),
@@ -1030,6 +1033,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             map: { a: 123, b: ['foo', 'bar'], nested: { c: 7 } },
             null: null,
             docRef: [randomString()],
+            anyRef: 'SomeOtherCollection/some-doc-id',
             str: randomString(),
             vector: [1, 2, 3, 4, 5],
             literalStr: 'foo',

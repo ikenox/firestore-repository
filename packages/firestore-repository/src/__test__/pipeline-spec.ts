@@ -4,6 +4,25 @@ import {
   abs,
   add,
   and,
+  collectionId,
+  cosineDistance,
+  documentId,
+  dotProduct,
+  euclideanDistance,
+  isType,
+  like,
+  regexContains,
+  regexFind,
+  regexFindAll,
+  regexMatch,
+  stringIndexOf,
+  stringRepeat,
+  stringReplaceAll,
+  stringReplaceOne,
+  substring,
+  type,
+  vectorLength,
+  docRefValue,
   byteLength,
   ceil,
   charLength,
@@ -136,7 +155,13 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       }
     };
 
-    return { items, source, expectPipeline };
+    return {
+      items,
+      source,
+      expectPipeline,
+      collectionName: () => collection.name,
+      liveCollection: () => collection,
+    };
   };
 
   describe('pipeline specification', () => {
@@ -272,8 +297,8 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               constant(null).as('z'),
               constant(new Date('2024-01-02T03:04:05.678Z')).as('t'),
               constant(new Uint8Array([1, 2, 3])).as('by'),
-              geoPointValue(35.68, 139.69).as('g'),
-              vectorValue([0.5, 0.25]).as('v'),
+              constant(geoPointValue(35.68, 139.69)).as('g'),
+              constant(vectorValue([0.5, 0.25])).as('v'),
               constant([1, 2, 3]).as('arr'),
               constant([1, 'a', true]).as('mixed'),
               constant({
@@ -315,7 +340,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     // its basic backend semantics in one round trip per family. Every future
     // slice MUST add its functions to this catalog.
     describe('function catalog (one straightforward evaluation per function)', () => {
-      const { source, expectPipeline } = setup();
+      const { items, source, expectPipeline, collectionName, liveCollection } = setup();
       /** A single-row source: the catalog evaluates constant expressions only. */
       const one = () => source().limit(1);
 
@@ -437,6 +462,133 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               },
             },
           ],
+        );
+      });
+
+      it('string (slice 3) and regex', async () => {
+        await expectPipeline(
+          one().select(() => [
+            stringIndexOf(constant('abc'), constant('b')).as('indexOf'),
+            stringIndexOf(constant('abc'), constant('z')).as('indexOfMiss'),
+            stringRepeat(constant('ab'), constant(2)).as('repeat'),
+            stringReplaceAll(constant('aba'), constant('a'), constant('x')).as('replaceAll'),
+            stringReplaceOne(constant('aba'), constant('a'), constant('x')).as('replaceOne'),
+            substring(constant('abc'), constant(1)).as('substringToEnd'),
+            substring(constant('abc'), constant(1), constant(1)).as('substringLen'),
+            like(constant('abc'), constant('a%')).as('like'),
+            regexContains(constant('abc'), constant('b+')).as('regexContains'),
+            regexMatch(constant('abc'), constant('b+')).as('regexMatchPartial'),
+            regexMatch(constant('abc'), constant('a.c')).as('regexMatchFull'),
+            regexFind(constant('abc'), constant('b+')).as('regexFind'),
+            regexFind(constant('abc'), constant('z+')).as('regexFindMiss'),
+            regexFindAll(constant('abc'), constant('[ab]')).as('regexFindAll'),
+            regexFindAll(constant('abc'), constant('z+')).as('regexFindAllMiss'),
+          ]),
+          [
+            {
+              data: {
+                indexOf: 1,
+                indexOfMiss: -1,
+                repeat: 'abab',
+                replaceAll: 'xbx',
+                replaceOne: 'xba',
+                substringToEnd: 'bc',
+                substringLen: 'b',
+                like: true,
+                regexContains: true,
+                regexMatchPartial: false,
+                regexMatchFull: true,
+                regexFind: 'b',
+                regexFindMiss: null,
+                regexFindAll: ['a', 'b'],
+                regexFindAllMiss: [],
+              },
+            },
+          ],
+        );
+      });
+
+      it('type / isType and vector', async () => {
+        await expectPipeline(
+          one().select(() => [
+            type(constant('x')).as('typeString'),
+            // A whole JS number wire-encodes as an integer — type() observes
+            // int64, the honest 'integer' | 'double' tag at work.
+            type(constant(7)).as('typeInt'),
+            type(constant(7.5)).as('typeDouble'),
+            type(constant(null)).as('typeNull'),
+            isType(constant('x'), 'string').as('isTypeHit'),
+            isType(constant('x'), 'int64').as('isTypeMiss'),
+            vectorLength(constant(vectorValue([1, 2, 3]))).as('vectorLength'),
+            dotProduct(constant(vectorValue([1, 2, 3])), constant(vectorValue([1, 1, 1]))).as(
+              'dotProduct',
+            ),
+            euclideanDistance(constant(vectorValue([1, 2])), constant(vectorValue([4, 6]))).as(
+              'euclidean',
+            ),
+            cosineDistance(constant(vectorValue([1, 0])), constant(vectorValue([1, 0]))).as(
+              'cosine',
+            ),
+          ]),
+          [
+            {
+              data: {
+                typeString: 'string',
+                typeInt: 'int64',
+                typeDouble: 'float64',
+                typeNull: 'null',
+                isTypeHit: true,
+                isTypeMiss: false,
+                vectorLength: 3,
+                dotProduct: 6,
+                euclidean: 5,
+                cosine: 0,
+              },
+            },
+          ],
+        );
+      });
+
+      it('reference: __name__ equals a docRefValue constant (never a string)', async () => {
+        const [a1] = items;
+        // Probed: the pipeline backend never matches __name__ against any
+        // string form (id / relative path / full resource path) — only a
+        // genuine reference value.
+        await expectPipeline(
+          source().where((field) =>
+            equal(field('__name__'), constant(docRefValue(liveCollection(), ['a1']))),
+          ),
+          [a1],
+        );
+      });
+
+      it('reference: a projected raw __name__ decodes to its path string', async () => {
+        await expectPipeline(
+          source()
+            .sort((field) => [asc(field('rank'))])
+            .limit(1)
+            .select((field) => [field('__name__').as('key'), 'name']),
+          [{ data: { key: `${collectionName()}/a1`, name: 'alice' } }],
+        );
+      });
+
+      it('reference: a docRefValue inside a constant map decodes to a DocRef id tuple', async () => {
+        await expectPipeline(
+          one().select(() => [constant({ author: docRefValue(liveCollection(), ['a2']) }).as('m')]),
+          [{ data: { m: { author: ['a2'] } } }],
+        );
+      });
+
+      it('reference: documentId / collectionId over __name__', async () => {
+        const sorted = source()
+          .sort((field) => [asc(field('rank'))])
+          .limit(1);
+        await expectPipeline(
+          sorted.select((field) => [
+            documentId(field('__name__')).as('id'),
+            collectionId(field('__name__')).as('cid'),
+          ]),
+          [{ data: { id: 'a1', cid: collectionName() } }],
         );
       });
 

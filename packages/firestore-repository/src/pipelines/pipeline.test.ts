@@ -7,7 +7,7 @@ import {
 } from '../__test__/specification.js';
 import type { DocRef } from '../repository.js';
 import type { StringType } from '../schema.js';
-import { equal } from './expression.js';
+import { documentId, equal } from './expression.js';
 import { collection, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
 
@@ -88,7 +88,12 @@ describe('pipeline', () => {
     base.removeFields('__name__');
     base.removeFields('name'); // real data field: ok
 
-    // `__name__` stays usable in `where` (goes through `FieldProvider`, not `Selection`)
+    // `__name__` stays usable in `where` (goes through `FieldProvider`, not
+    // `Selection`). Its value is a REFERENCE (probed: type(__name__) is
+    // "reference"), so it does not compare against strings directly —
+    // documentId() bridges it into the string domain.
+    base.where((field) => equal(documentId(field('__name__')), field('name')));
+    // @ts-expect-error -- a reference does not compare against a string field
     base.where((field) => equal(field('__name__'), field('name')));
   });
 });

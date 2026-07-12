@@ -115,7 +115,7 @@ export type FieldType =
   | Int64Type
   | DoubleType
   | TimestampType
-  | DocRefType<Collection>
+  | DocRefType
   | BytesType
   | GeoPointType
   | VectorType
@@ -150,12 +150,35 @@ export type TimestampType = {
   input: Date | ServerTimestamp;
   output: Date;
 };
-export type DocRefType<T extends Collection> = {
+/**
+ * A document-reference descriptor. `T` is the referenced collection when the
+ * schema knows it (a `docRef(collection)` data field), or the `'unknown'`
+ * sentinel when it does not — the reserved `'__name__'` key resolves to
+ * `DocRefType<'unknown'>` (probed: `type(__name__)` is `"reference"`, and
+ * reference-domain functions accept it while rejecting strings). The sentinel
+ * is a visible plain value, like the `Optional` marker, rather than
+ * `undefined` ("the collection is unknown", not "there is no collection").
+ *
+ * The value representation follows the context: a known collection
+ * round-trips `DocRef<T>` id tuples, while the context-free flavor reads AND
+ * writes relative path strings (`'authors/a1'`). NOT a `string[]`: a
+ * `DocRef` tuple holds ONLY ids (`['authorId', 'postId']` — the collection
+ * names live in the schema and `documentPath` interleaves them), so a
+ * context-free array would have to carry path SEGMENTS
+ * (`['authors', 'a1']`) — a same-typed but differently-meaning shape,
+ * indistinguishable from an id tuple in TS. The path string avoids that
+ * collision, is the ecosystem's own context-free form (`ref.path` /
+ * `db.doc(path)`), and is the core query API's id-filter contract
+ * (`where(eq('__name__', id))`). Pipeline operator compatibility keys on the
+ * shared `'reference'` tag, so both flavors compare with each other and
+ * with `docRefValue(...)` constants.
+ */
+export type DocRefType<T extends Collection | 'unknown' = Collection | 'unknown'> = {
   type: 'docRef';
   firestoreType: 'reference';
   collection: T;
-  input: DocRef<T>;
-  output: DocRef<T>;
+  input: T extends Collection ? DocRef<T> : string;
+  output: T extends Collection ? DocRef<T> : string;
 };
 export type BytesType = {
   type: 'bytes';
@@ -344,8 +367,16 @@ export const string = (): StringType => buildType({ type: 'string' });
 export const int64 = (): Int64Type => buildType({ type: 'int64' });
 export const double = (): DoubleType => buildType({ type: 'double' });
 export const timestamp = (): TimestampType => buildType({ type: 'timestamp' });
-export const docRef = <T extends Collection>(collection: T): DocRefType<T> =>
-  buildType({ type: 'docRef', collection });
+export function docRef<T extends Collection>(collection: T): DocRefType<T>;
+/**
+ * The context-free flavor: a reference to no one particular collection —
+ * usable as a schema data field (round-tripping relative path strings), and
+ * the descriptor the reserved `'__name__'` resolves to.
+ */
+export function docRef(): DocRefType<'unknown'>;
+export function docRef(collection?: Collection): FieldType {
+  return buildType<DocRefType>({ type: 'docRef', collection: collection ?? 'unknown' });
+}
 export const bytes = (): BytesType => buildType({ type: 'bytes' });
 export const geoPoint = (): GeoPointType => buildType({ type: 'geoPoint' });
 export const vector = (): VectorType => buildType({ type: 'vector' });
@@ -421,13 +452,13 @@ export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>>
         : never
       : never
     : U extends '__name__'
-      ? StringType
+      ? DocRefType<'unknown'>
       : never;
 
 /**
  * Runtime counterpart of {@link FieldTypeOfPath}: resolves the `FieldType`
  * descriptor stored in `schema` at `path` (dotted for nested maps; `'__name__'`
- * resolves to a `StringType`, mirroring the type).
+ * resolves to a context-free `DocRefType<'unknown'>`, mirroring the type).
  */
 export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath<T>>(
   schema: T,
@@ -436,7 +467,7 @@ export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath
   const dot = path.indexOf('.');
   let resolved: FieldType;
   if (path === '__name__') {
-    resolved = string();
+    resolved = docRef();
   } else if (dot < 0) {
     resolved = requireField(schema, path);
   } else {

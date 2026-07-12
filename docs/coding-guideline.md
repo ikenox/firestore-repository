@@ -4,10 +4,39 @@
 
 - All functions and type definitions MUST include JSDoc comments describing their purpose, role, and any notable details
 - Add explanatory comments to object and class field definitions when necessary
+- **Record non-obvious design decisions (the WHY) — and route them by
+  audience.** A rationale that affects how the API is USED (why a value is
+  represented this way, why an input is rejected, why two similar-looking
+  types are distinct — e.g. why the context-free `DocRefType` reads/writes a
+  path string rather than a `string[]`) belongs in the **JSDoc**, where a
+  consumer hovering the symbol sees it. A rationale that only matters to
+  maintainers (compiler workarounds, why an implementation shape was chosen
+  over an alternative, probe references) stays a **plain comment** inside the
+  implementation. The test: "would a user of this API make a wrong decision
+  without knowing this?" — yes → JSDoc, no → plain comment.
 
 ## Code Style
 
 Follow the project's linting and formatting rules enforced by `pnpm check`.
+
+## Design principles
+
+- **Systemic consistency is the top priority — no ad-hoc special cases.** A
+  new capability must be an instance of an existing rule of the system (or a
+  deliberate, documented extension of one), not a one-off carve-out.
+  Precedent: values without an unambiguous plain-JS representation get
+  dedicated expression nodes — `geoPointValue`, `vectorValue`, and later
+  `docRefValue` all follow the ONE classification rule rather than each
+  getting bespoke treatment. When a proposal only works for the case at hand,
+  find the rule it should be an instance of first.
+- **Deferring parts is fine; deviating structures is not.** Implementation
+  cost may postpone a piece of the system (an unimplemented function family,
+  a not-yet-supported descriptor), but what IS built must always have the
+  same fundamental structure as the intended end state. Building something
+  "for now" on a structure that the final design will have to replace is not
+  acceptable — a missing limb is recoverable, a wrong skeleton is not.
+  Likewise, do not dismiss a consistent-but-rare case as "low practical
+  utility"; uniformity of the system is itself the utility.
 
 ## Type assertions
 

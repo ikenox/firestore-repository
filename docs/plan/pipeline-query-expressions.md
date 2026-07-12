@@ -129,6 +129,18 @@ double())), field(string()))` is legal; reference-vs-`array(string())`,
 - Return types widen to the plain descriptor (`toUpper` of a literal returns
   `StringType`) — values are transformed, so precision loss is correct.
 
+### Planned ergonomics: direct literal operands (no explicit `constant()`)
+
+Raw values should be writable directly as operands —
+`equal(field('rank'), 1)`, `startsWith(field('name'), 'a')`,
+`equal(field('__name__'), docRefValue(...))` — with the factory lifting them
+via `constant()` internally, exactly like the official SDK
+(`equal(field('x'), 5)`). ONE lifting rule applied uniformly across every
+factory (an operand position accepts `Expression<D> | <the ConstantValue
+subset whose inferred descriptor fits D>`), not per-function ad-hoc
+overloads. Value constructors (`geoPointValue` / `vectorValue` /
+`docRefValue`) are values, so they ride the same rule.
+
 ### Optional arguments (e.g. `substring(s, start, len?)`)
 
 The factory overloads to **two shapes**: 2-arg calls build a `BinaryFunction`,
@@ -224,9 +236,44 @@ both executors and the basic backend semantics in one round trip per family.
       for the slice-5 `isError` / `ifError` channel. Probed: integer /
       integer division TRUNCATES (a whole JS number wire-encodes as an
       integer) — pinned in the live spec.
-- [ ] **3. String rest + regex + reference + type + vector** (T1 bulk #2;
-      introduces `TernaryFunction` and the dual-shape optional-arg pattern via
-      `substring` / `stringReplace*`).
+- [x] **3. String rest + regex + reference + type + vector** (T1 bulk #2;
+      introduces `TernaryFunction`; `substring` reuses the dual-arity
+      pattern — `stringReplace*` turned out fully ternary). Notes:
+      `split` / `join` deferred to the array slice (their typing IS array
+      typing). Probed: `regexFind` returns null on NO MATCH (always-nullable
+      return, independent of operands) while `regexFindAll` returns `[]`;
+      invalid regex patterns and vector dimension mismatches are backend
+      ERROR values; `type()` / `isType()` are type-OBSERVING — a null value
+      yields the name `'null'`, so only ABSENCE propagates
+      (`PropagateAbsence`). `type()`'s vocabulary is the backend naming
+      (`int64` / `float64` / `geo_point`, distinct per VALUE — another
+      artifact of the honest numeric tag), pinned as
+      `LiteralType<FirestoreTypeName[]>`; `isType`'s name must be a
+      wire-literal (factory takes a literal union, lifted via `constant`;
+      executors recover the raw string for the SDK helpers). The reserved
+      `__name__` is a REFERENCE (probed via `type(__name__)`), so
+      `FieldTypeOfPath` now resolves it to the context-free
+      `DocRefType<'unknown'>` (ONE unified reference descriptor — the type
+      parameter is the known collection or the `'unknown'` sentinel; the
+      context-free flavor has `output: string` for the core query API's id
+      filters and `input: never`). Future refinement, same skeleton: while a
+      pipeline's read-identity is alive (`Id = DocRef<T>`), the source
+      collection IS statically known — `fieldProvider` could resolve
+      `'__name__'` to `DocRefType<T>` and fall back to `'unknown'` once the
+      identity ratchet drops (deferred; `documentId` covers today's uses) — `documentId(field('__name__'))` bridges it
+      into the string domain, and comparing `__name__` against strings is
+      now correctly rejected (probed: the backend matches NO string form —
+      only a reference value). `docRefValue(collection, id)` joins
+      `geoPointValue` / `vectorValue` as the third dedicated value node
+      (same classification rule: an id tuple is a plain `string[]` = an
+      array constant) and is the matching comparand; executors thread `db`
+      to build the wire reference (the codec's `buildEncodeField`
+      precedent). Value nodes are NOT expressions: `constant()` is the one
+      point where any value (scalar, map, `geoPointValue` / `vectorValue` /
+      `docRefValue`) lifts into an expression, matching the SDK's
+      `constant(new GeoPoint(...))` — this closed the hole where every value
+      node inhabited every operand domain (`toUpper(geoPointValue(...))`
+      type-checked), and needed no type-level membership trick.
 - [ ] **4. Timestamp family** (literal-union factory args pattern:
       `TimeUnit`, truncation granularity).
 - [ ] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**

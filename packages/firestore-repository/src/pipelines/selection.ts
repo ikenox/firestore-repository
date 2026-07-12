@@ -286,11 +286,10 @@ const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fie
     case 'field':
       return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
     case 'constant':
-    case 'geoPointValue':
-    case 'vectorValue':
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
+    case 'ternaryFunction':
     case 'variadicFunction':
       return pathToSchema(alias, expression.type);
     default:

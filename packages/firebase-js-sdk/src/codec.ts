@@ -66,6 +66,16 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'vector':
       return z.instanceof(FirestoreVectorValue).transform((vv) => vv.toArray());
     case 'docRef':
+      if (fieldType.collection === 'unknown') {
+        // The context-free flavor (the '__name__' pseudo-descriptor): with no
+        // schema-known collection to build a DocRef id tuple from, a
+        // projected raw key decodes to its relative path string — the
+        // representation its `output` declares.
+        return z
+          .unknown()
+          .refine(isDocumentReference)
+          .transform((ref) => ref.path);
+      }
       return z
         .unknown()
         .refine(isDocumentReference)
@@ -151,9 +161,15 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
           .transform(() => firestoreServerTimestamp()),
       ]);
     case 'docRef': {
+      if (fieldType.collection === 'unknown') {
+        // The context-free flavor writes a relative path string — the one
+        // reference representation that needs no collection context.
+        return z.string().transform((path) => doc(db, path));
+      }
+      const { collection } = fieldType;
       return z.array(z.string()).transform((ref) =>
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        doc(db, documentPath(fieldType.collection, ref as DocRef<Collection>)),
+        doc(db, documentPath(collection, ref as DocRef<Collection>)),
       );
     }
     case 'map': {
