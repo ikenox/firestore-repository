@@ -335,6 +335,31 @@ Deferred to a later iteration (still tracked here, not currently in scope):
   - Settle whether `Ordering` is imported as a value or `import type` in
     `pipeline.ts` (it is currently a value import of a type).
 
+## Reference values: segment-path unification (next up, own PR)
+
+Agreed direction (2026-07): unify the reference VALUE representation across
+the known-collection and context-free flavors as a **segment path including
+collection names** — `['authors', <id>]`, `['authors', <id>, 'posts', <id>]`
+— typed with LITERAL collection-name positions when the collection is known
+and `string[]` when it is not, so known/unknown becomes purely a gradient of
+tuple precision (this also dissolves the ids-tuple vs segments ambiguity
+that previously forced the context-free flavor onto a path string).
+
+Constraints / scope:
+
+- **The repository API keeps its ids-only interface** (`get(['a1'])`,
+  `Doc.id`, `DocRef<T>` as-is): a repository is already collection-bound, so
+  making callers repeat the collection name is pure ceremony. The segment
+  form is a SEPARATE type for reference VALUES (a `docRef(...)` field's
+  read/write value, `DocRefType<'unknown'>`'s value, `docRefValue`'s
+  payload), converting to/from ids at the repository boundary.
+- Prerequisite: `Collection` must capture `name` / `parent` as LITERAL types
+  (`const` type parameters) for the precise tuples.
+- Ripples: both codecs' docRef decode (collect names from the ref walk —
+  already available), `documentPath` (becomes ~a join), the core query's
+  docRef filter encoding (today's raw pass-through needs revisiting),
+  `docRefValue`'s argument shape, specs and README examples.
+
 ## Expressions — remaining gaps
 
 - [~] **Restructure `FunctionCall` into shape-grouped classes when the ~85
