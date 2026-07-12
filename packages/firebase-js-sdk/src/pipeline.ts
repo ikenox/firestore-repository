@@ -205,7 +205,6 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
 const toSdkSelectable = (db: Firestore, s: string | ExpressionWithAlias): SdkSelectable =>
   typeof s === 'string' ? field(s) : toSdkExpression(db, s.expression).as(s.alias);
 
-/** Translates the repository expression AST into an SDK expression. */
 /**
  * Translates the repository expression AST into an SDK expression. Threads
  * `db` for the one value kind whose SDK form needs it: a document-reference
