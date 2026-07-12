@@ -4,6 +4,16 @@
 
 - All functions and type definitions MUST include JSDoc comments describing their purpose, role, and any notable details
 - Add explanatory comments to object and class field definitions when necessary
+- **Record non-obvious design decisions (the WHY) — and route them by
+  audience.** A rationale that affects how the API is USED (why a value is
+  represented this way, why an input is rejected, why two similar-looking
+  types are distinct — e.g. why the context-free `DocRefType` reads/writes a
+  path string rather than a `string[]`) belongs in the **JSDoc**, where a
+  consumer hovering the symbol sees it. A rationale that only matters to
+  maintainers (compiler workarounds, why an implementation shape was chosen
+  over an alternative, probe references) stays a **plain comment** inside the
+  implementation. The test: "would a user of this API make a wrong decision
+  without knowing this?" — yes → JSDoc, no → plain comment.
 
 ## Code Style
 
