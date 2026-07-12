@@ -1,19 +1,47 @@
 import { Bytes, type Firestore, GeoPoint, vector } from '@firebase/firestore';
 import {
+  abs as sdkAbs,
+  add as sdkAdd,
   and as sdkAnd,
   array as sdkArray,
+  byteLength as sdkByteLength,
+  ceil as sdkCeil,
+  charLength as sdkCharLength,
   constant as sdkConstant,
+  divide as sdkDivide,
+  endsWith as sdkEndsWith,
   equal as sdkEqual,
   execute as executePipeline,
+  exp as sdkExp,
   field,
+  floor as sdkFloor,
   greaterThan as sdkGreaterThan,
   greaterThanOrEqual as sdkGreaterThanOrEqual,
   lessThan as sdkLessThan,
   lessThanOrEqual as sdkLessThanOrEqual,
+  ln as sdkLn,
+  log10 as sdkLog10,
+  ltrim as sdkLtrim,
   map as sdkMap,
+  mod as sdkMod,
+  multiply as sdkMultiply,
   not as sdkNot,
   notEqual as sdkNotEqual,
   or as sdkOr,
+  pow as sdkPow,
+  rand as sdkRand,
+  round as sdkRound,
+  rtrim as sdkRtrim,
+  sqrt as sdkSqrt,
+  startsWith as sdkStartsWith,
+  stringConcat as sdkStringConcat,
+  stringContains as sdkStringContains,
+  stringReverse as sdkStringReverse,
+  subtract as sdkSubtract,
+  toLower as sdkToLower,
+  toUpper as sdkToUpper,
+  trim as sdkTrim,
+  trunc as sdkTrunc,
   type Expression as SdkExpression,
   type Pipeline as SdkPipeline,
   type Selectable as SdkSelectable,
@@ -27,6 +55,7 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
+  type NullaryFunctionName,
   UnaryFunctionName,
   VariadicFunctionName,
 } from 'firestore-repository/pipelines/expression';
@@ -167,6 +196,8 @@ const toSdkExpression = (expression: Expression): SdkExpression => {
       // Value nodes also appear as constant-composite leaves; toSdkConstant
       // is the single home for their translation.
       return toSdkConstant(expression);
+    case 'nullaryFunction':
+      return nullaryFns[expression.name]();
     case 'unaryFunction':
       return unaryFns[expression.name](toSdkExpression(expression.operand));
     case 'binaryFunction':
@@ -245,8 +276,27 @@ const isConstantArrayValue = (value: Constant['value']): value is ConstantArray 
 // (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
 // type-tag only, no wire change.)
 
+const nullaryFns: Record<NullaryFunctionName, () => SdkExpression> = { rand: sdkRand };
+
 const unaryFns: Record<UnaryFunctionName, (o: SdkExpression) => SdkExpression> = {
   not: (o) => sdkNot(o.asBoolean()),
+  abs: sdkAbs,
+  ceil: sdkCeil,
+  floor: sdkFloor,
+  round: sdkRound,
+  trunc: sdkTrunc,
+  sqrt: sdkSqrt,
+  exp: sdkExp,
+  ln: sdkLn,
+  log10: sdkLog10,
+  charLength: sdkCharLength,
+  byteLength: sdkByteLength,
+  toLower: sdkToLower,
+  toUpper: sdkToUpper,
+  stringReverse: sdkStringReverse,
+  trim: sdkTrim,
+  ltrim: sdkLtrim,
+  rtrim: sdkRtrim,
 };
 
 const binaryFns: Record<BinaryFunctionName, (l: SdkExpression, r: SdkExpression) => SdkExpression> =
@@ -257,6 +307,20 @@ const binaryFns: Record<BinaryFunctionName, (l: SdkExpression, r: SdkExpression)
     lessThanOrEqual: sdkLessThanOrEqual,
     greaterThan: sdkGreaterThan,
     greaterThanOrEqual: sdkGreaterThanOrEqual,
+    add: sdkAdd,
+    subtract: sdkSubtract,
+    multiply: sdkMultiply,
+    divide: sdkDivide,
+    mod: sdkMod,
+    pow: sdkPow,
+    round: sdkRound,
+    trunc: sdkTrunc,
+    trim: sdkTrim,
+    ltrim: sdkLtrim,
+    rtrim: sdkRtrim,
+    startsWith: sdkStartsWith,
+    endsWith: sdkEndsWith,
+    stringContains: sdkStringContains,
   };
 
 const variadicFns: Record<
@@ -265,6 +329,7 @@ const variadicFns: Record<
 > = {
   and: (f, s, ...r) => sdkAnd(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
   or: (f, s, ...r) => sdkOr(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
+  stringConcat: sdkStringConcat,
 };
 
 const toSdkOrdering = (ordering: Ordering) => {
@@ -275,6 +340,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'constant':
     case 'geoPointValue':
     case 'vectorValue':
+    case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
     case 'variadicFunction':

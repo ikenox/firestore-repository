@@ -44,6 +44,23 @@ indistinguishable there. The distinction matters as soon as the expression's
 VALUE is observed — projected via `select` / `addFields`, or used as an
 operand of another function.
 
+## Value functions propagate `null` — including boolean-returning ones
+
+Every probed slice-2 function returns `null` when any operand is `null` or
+absent (`probe-slice2-null.mjs`): arithmetic (`add(7, null)`), string
+transforms (`toUpper(null)`), lengths, `stringConcat` — and notably the
+boolean-returning string predicates (`startsWith(null, 'x')` is `null`,
+absent operands identical). Their results are therefore possibly-null
+descriptors under `PropagateNull`, in contrast to the comparisons below.
+
+## Errors are a separate channel from `null`
+
+Arithmetic domain violations (`divide(x, 0)`, `ln(0)`, `sqrt(-1)`) do NOT
+yield `null`: they produce backend ERROR values. An unhandled error value
+fails the whole query (`INVALID_ARGUMENT`), while `isError(...)` observes it
+(`true`) and `ifError(..., fallback)` replaces it — the error-handling
+functions arrive in slice 5.
+
 ## Comparisons are total — never `null`
 
 `equal` / `notEqual` / `lessThan` / ... always return `true` or `false`, even

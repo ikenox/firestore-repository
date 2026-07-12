@@ -1,16 +1,46 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  abs,
+  add,
   and,
+  byteLength,
+  ceil,
+  charLength,
   constant,
+  divide,
+  endsWith,
   equal,
+  exp,
+  floor,
   geoPointValue,
   vectorValue,
+  greaterThan,
   greaterThanOrEqual,
   lessThan,
+  lessThanOrEqual,
+  ln,
+  log10,
+  ltrim,
+  mod,
+  multiply,
   not,
   notEqual,
   or,
+  pow,
+  rand,
+  round,
+  rtrim,
+  sqrt,
+  startsWith,
+  stringConcat,
+  stringContains,
+  stringReverse,
+  subtract,
+  toLower,
+  toUpper,
+  trim,
+  trunc,
 } from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
@@ -277,6 +307,245 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             },
           ],
         );
+      });
+    });
+
+    // Every expression function gets at least one straightforward live
+    // evaluation here — the catalog pins each function's wire translation and
+    // its basic backend semantics in one round trip per family. Every future
+    // slice MUST add its functions to this catalog.
+    describe('function catalog (one straightforward evaluation per function)', () => {
+      const { source, expectPipeline } = setup();
+      /** A single-row source: the catalog evaluates constant expressions only. */
+      const one = () => source().limit(1);
+
+      it('arithmetic', async () => {
+        await expectPipeline(
+          one().select(() => [
+            add(constant(1), constant(2)).as('add'),
+            subtract(constant(5), constant(3)).as('subtract'),
+            multiply(constant(2), constant(3)).as('multiply'),
+            divide(constant(7), constant(2.5)).as('divide'),
+            mod(constant(7), constant(3)).as('mod'),
+            pow(constant(2), constant(3)).as('pow'),
+            abs(constant(-5)).as('abs'),
+            ceil(constant(1.2)).as('ceil'),
+            floor(constant(1.8)).as('floor'),
+            round(constant(2.4)).as('round'),
+            round(constant(2.44), constant(1)).as('roundTo'),
+            trunc(constant(2.9)).as('trunc'),
+            trunc(constant(2.99), constant(1)).as('truncTo'),
+            sqrt(constant(9)).as('sqrt'),
+            exp(constant(0)).as('exp'),
+            ln(constant(1)).as('ln'),
+            log10(constant(100)).as('log10'),
+          ]),
+          [
+            {
+              data: {
+                add: 3,
+                subtract: 2,
+                multiply: 6,
+                divide: 2.8,
+                mod: 1,
+                pow: 8,
+                abs: 5,
+                ceil: 2,
+                floor: 1,
+                round: 2,
+                roundTo: 2.4,
+                trunc: 2,
+                truncTo: 2.9,
+                sqrt: 3,
+                exp: 1,
+                ln: 0,
+                log10: 2,
+              },
+            },
+          ],
+        );
+      });
+
+      it('string', async () => {
+        await expectPipeline(
+          one().select(() => [
+            charLength(constant('aあ')).as('charLength'),
+            byteLength(constant('aあ')).as('byteLength'),
+            toLower(constant('AbC')).as('toLower'),
+            toUpper(constant('AbC')).as('toUpper'),
+            stringReverse(constant('abc')).as('stringReverse'),
+            trim(constant('  pad  ')).as('trim'),
+            ltrim(constant('  pad  ')).as('ltrim'),
+            rtrim(constant('  pad  ')).as('rtrim'),
+            trim(constant('xpadx'), constant('x')).as('trimChars'),
+            ltrim(constant('xpadx'), constant('x')).as('ltrimChars'),
+            rtrim(constant('xpadx'), constant('x')).as('rtrimChars'),
+            startsWith(constant('abc'), constant('a')).as('startsWith'),
+            endsWith(constant('abc'), constant('z')).as('endsWith'),
+            stringContains(constant('abc'), constant('b')).as('stringContains'),
+            stringConcat(constant('a'), constant('b'), constant('c')).as('stringConcat'),
+          ]),
+          [
+            {
+              data: {
+                charLength: 2,
+                byteLength: 4,
+                toLower: 'abc',
+                toUpper: 'ABC',
+                stringReverse: 'cba',
+                trim: 'pad',
+                ltrim: 'pad  ',
+                rtrim: '  pad',
+                trimChars: 'pad',
+                ltrimChars: 'padx',
+                rtrimChars: 'xpad',
+                startsWith: true,
+                endsWith: false,
+                stringContains: true,
+                stringConcat: 'abc',
+              },
+            },
+          ],
+        );
+      });
+
+      it('comparison and logical', async () => {
+        await expectPipeline(
+          one().select(() => [
+            equal(constant(1), constant(1)).as('equal'),
+            notEqual(constant(1), constant(1)).as('notEqual'),
+            lessThan(constant(1), constant(2)).as('lessThan'),
+            lessThanOrEqual(constant(2), constant(2)).as('lessThanOrEqual'),
+            greaterThan(constant(1), constant(2)).as('greaterThan'),
+            greaterThanOrEqual(constant(2), constant(2)).as('greaterThanOrEqual'),
+            and(equal(constant(1), constant(1)), equal(constant(2), constant(2))).as('and'),
+            or(equal(constant(1), constant(2)), equal(constant(2), constant(2))).as('or'),
+            not(equal(constant(1), constant(2))).as('not'),
+          ]),
+          [
+            {
+              data: {
+                equal: true,
+                notEqual: false,
+                lessThan: true,
+                lessThanOrEqual: true,
+                greaterThan: false,
+                greaterThanOrEqual: true,
+                and: true,
+                or: true,
+                not: true,
+              },
+            },
+          ],
+        );
+      });
+
+      // rand (the remaining nullary) is covered by its own range test below —
+      // its value is not deterministic.
+    });
+
+    describe('arithmetic and string functions', () => {
+      const { source, expectPipeline } = setup();
+
+      it('computes nested arithmetic over fields and constants', async () => {
+        await expectPipeline(
+          source().select((field) => [
+            'name',
+            add(multiply(field('rank'), constant(10)), constant(1)).as('score'),
+          ]),
+          [
+            { data: { name: 'alice', score: 11 } },
+            { data: { name: 'bob', score: 21 } },
+            { data: { name: 'carol', score: 31 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('integer division truncates; a double operand makes it a double division', async () => {
+        // A whole JS number is wire-encoded as an INTEGER, and
+        // integer / integer is a truncating division — the honest
+        // 'integer' | 'double' tag on number-valued descriptors at work.
+        await expectPipeline(
+          source().select((field) => ['name', divide(field('rank'), constant(2)).as('half')]),
+          [
+            { data: { name: 'alice', half: 0 } },
+            { data: { name: 'bob', half: 1 } },
+            { data: { name: 'carol', half: 1 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('round takes an optional decimal-places operand', async () => {
+        await expectPipeline(
+          source().select((field) => [
+            'name',
+            round(divide(field('rank'), constant(2.5)), constant(2)).as('scaled'),
+          ]),
+          [
+            { data: { name: 'alice', scaled: 0.4 } },
+            { data: { name: 'bob', scaled: 0.8 } },
+            { data: { name: 'carol', scaled: 1.2 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('string transforms, lengths, concatenation, and character-set trim', async () => {
+        await expectPipeline(
+          source().select((field) => [
+            stringConcat(toUpper(field('name')), constant('!')).as('shout'),
+            charLength(field('name')).as('len'),
+            trim(field('name'), constant('al')).as('trimmed'),
+          ]),
+          [
+            { data: { shout: 'ALICE!', len: 5, trimmed: 'ice' } },
+            { data: { shout: 'BOB!', len: 3, trimmed: 'bob' } },
+            { data: { shout: 'CAROL!', len: 5, trimmed: 'caro' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('a string predicate is a valid where condition', async () => {
+        const [a1] = items;
+        await expectPipeline(
+          source().where((field) => startsWith(field('name'), constant('a'))),
+          [a1],
+        );
+      });
+
+      it('null propagation end-to-end: an optional operand yields nullable output', async () => {
+        // profile.gender is optional: bob's is absent, and absence flows
+        // through functions as null (probed) — the projected schema is
+        // nullable(string()) and the row decodes a null VALUE.
+        await expectPipeline(
+          source().select((field) => ['name', toUpper(field('profile.gender')).as('g')]),
+          [
+            { data: { name: 'alice', g: 'FEMALE' } },
+            { data: { name: 'bob', g: null } },
+            { data: { name: 'carol', g: 'MALE' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('a null condition drops the row (string predicate over an optional field)', async () => {
+        const [, , a3] = items;
+        await expectPipeline(
+          source().where((field) => startsWith(field('profile.gender'), constant('m'))),
+          [a3],
+        );
+      });
+
+      it('rand produces a double in [0, 1) per row', async () => {
+        const results = await executor.execute(source().select(() => [rand().as('r')]));
+        expect(results).toHaveLength(3);
+        for (const row of results) {
+          expect(row.data.r).toBeGreaterThanOrEqual(0);
+          expect(row.data.r).toBeLessThan(1);
+        }
       });
     });
 
