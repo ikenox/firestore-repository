@@ -9,7 +9,7 @@ import type {
   WriteBatch,
 } from '@firebase/firestore';
 import {
-      and,
+  and,
   average,
   collection,
   collectionGroup,
