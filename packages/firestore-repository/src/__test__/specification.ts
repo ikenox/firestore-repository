@@ -1,6 +1,7 @@
 import { assert, beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
 import { average, count, sum } from '../aggregate.js';
+import { documentPath } from '../path.js';
 import {
   and,
   arrayContains,
@@ -975,6 +976,35 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               [items[1], items[0]],
             );
           });
+
+          // In a subcollection query the `__name__` value is a plain document id relative to
+          // the queried subcollection (the parent id is NOT part of the value).
+          it('filter by id', async () => {
+            await expectQuery(
+              query(
+                { collection: repository.collection, parent: ['author1'] },
+                where(eq('__name__', '1')),
+              ),
+              [items[0]],
+            );
+            await expectQuery(
+              query(
+                { collection: repository.collection, parent: ['author1'] },
+                where(eq('__name__', '2')),
+              ),
+              [items[1]],
+            );
+          });
+
+          it('orderBy id', async () => {
+            await expectQuery(
+              query(
+                { collection: repository.collection, parent: ['author1'] },
+                orderBy('__name__', 'asc'),
+              ),
+              [items[0], items[1]],
+            );
+          });
         });
 
         describe('collectionGroupQuery', () => {
@@ -986,6 +1016,45 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 where(gt('postedAt', new Date('2020-01-01'))),
               ),
               [items[0], items[2]],
+            );
+          });
+
+          // In a collection group query the `__name__` value must be the fully-qualified document
+          // path relative to the database root (e.g. `Authors/author1/Posts/1`), unlike a plain
+          // collection/subcollection query which takes a plain document id. A plain id is rejected
+          // by Firestore because it does not resolve to a valid (even-segment) document path.
+          it('filter by id', async () => {
+            await expectQuery(
+              query(
+                { collection: repository.collection, group: true },
+                where(eq('__name__', documentPath(repository.collection, ['author1', '1']))),
+              ),
+              [items[0]],
+            );
+            await expectQuery(
+              query(
+                { collection: repository.collection, group: true },
+                where(eq('__name__', documentPath(repository.collection, ['author2', '3']))),
+              ),
+              [items[2]],
+            );
+          });
+
+          it('filter by id rejects a plain document id', async () => {
+            await expect(
+              repository.list(
+                query(
+                  { collection: repository.collection, group: true },
+                  where(eq('__name__', '1')),
+                ),
+              ),
+            ).rejects.toThrowError(/odd number of segments/);
+          });
+
+          it('orderBy id', async () => {
+            await expectQuery(
+              query({ collection: repository.collection, group: true }, orderBy('__name__', 'asc')),
+              items,
             );
           });
         });
