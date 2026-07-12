@@ -161,11 +161,17 @@ export type TimestampType = {
  *
  * The value representation follows the context: a known collection
  * round-trips `DocRef<T>` id tuples, while the context-free flavor reads AND
- * writes relative path strings (`'authors/a1'`) — the one reference
- * representation that needs no collection context, and also the core query
- * API's id-filter contract (`where(eq('__name__', id))`). Pipeline operator
- * compatibility keys on the shared `'reference'` tag, so both flavors
- * compare with each other and with `docRefValue(...)` constants.
+ * writes relative path strings (`'authors/a1'`). NOT a `string[]`: a
+ * `DocRef` tuple holds ONLY ids (`['authorId', 'postId']` — the collection
+ * names live in the schema and `documentPath` interleaves them), so a
+ * context-free array would have to carry path SEGMENTS
+ * (`['authors', 'a1']`) — a same-typed but differently-meaning shape,
+ * indistinguishable from an id tuple in TS. The path string avoids that
+ * collision, is the ecosystem's own context-free form (`ref.path` /
+ * `db.doc(path)`), and is the core query API's id-filter contract
+ * (`where(eq('__name__', id))`). Pipeline operator compatibility keys on the
+ * shared `'reference'` tag, so both flavors compare with each other and
+ * with `docRefValue(...)` constants.
  */
 export type DocRefType<T extends Collection | 'unknown' = Collection | 'unknown'> = {
   type: 'docRef';
