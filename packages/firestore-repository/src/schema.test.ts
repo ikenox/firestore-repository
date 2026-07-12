@@ -34,6 +34,8 @@ import {
   optional,
   type Optional,
   type PickPaths,
+  referenceType,
+  type ReferenceType,
   rootCollection,
   subCollection,
   ServerTimestamp,
@@ -405,7 +407,7 @@ describe('document', () => {
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optional'>>().toExtend<LiteralType<['foo', 'bar']>>();
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optionalMap.f'>>().toEqualTypeOf<StringType>();
     expectTypeOf<FieldTypeOfPath<Schema, 'b.optionalMap.g'>>().toExtend<Int64Type>();
-    expectTypeOf<FieldTypeOfPath<Schema, '__name__'>>().toEqualTypeOf<StringType>();
+    expectTypeOf<FieldTypeOfPath<Schema, '__name__'>>().toEqualTypeOf<ReferenceType>();
   });
 
   // Comprehensive runtime tests for `fieldTypeOfPath` — its return type is bridged
@@ -472,9 +474,9 @@ describe('document', () => {
       expectTypeOf(fieldTypeOfPath(s, 'om.z')).toEqualTypeOf<StringType>();
     });
 
-    it('resolves the reserved __name__ to a StringType', () => {
-      expect(fieldTypeOfPath(schema, '__name__')).toStrictEqual(string());
-      expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<StringType>();
+    it('resolves the reserved __name__ to the reference pseudo-descriptor', () => {
+      expect(fieldTypeOfPath(schema, '__name__')).toStrictEqual(referenceType());
+      expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<ReferenceType>();
     });
 
     it('throws for a path that does not exist at runtime (defensive guard)', () => {

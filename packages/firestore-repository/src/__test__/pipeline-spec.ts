@@ -4,6 +4,24 @@ import {
   abs,
   add,
   and,
+  collectionId,
+  cosineDistance,
+  documentId,
+  dotProduct,
+  euclideanDistance,
+  isType,
+  like,
+  regexContains,
+  regexFind,
+  regexFindAll,
+  regexMatch,
+  stringIndexOf,
+  stringRepeat,
+  stringReplaceAll,
+  stringReplaceOne,
+  substring,
+  type,
+  vectorLength,
   byteLength,
   ceil,
   charLength,
@@ -136,7 +154,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       }
     };
 
-    return { items, source, expectPipeline };
+    return { items, source, expectPipeline, collectionName: () => collection.name };
   };
 
   describe('pipeline specification', () => {
@@ -315,7 +333,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     // its basic backend semantics in one round trip per family. Every future
     // slice MUST add its functions to this catalog.
     describe('function catalog (one straightforward evaluation per function)', () => {
-      const { source, expectPipeline } = setup();
+      const { source, expectPipeline, collectionName } = setup();
       /** A single-row source: the catalog evaluates constant expressions only. */
       const one = () => source().limit(1);
 
@@ -437,6 +455,97 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               },
             },
           ],
+        );
+      });
+
+      it('string (slice 3) and regex', async () => {
+        await expectPipeline(
+          one().select(() => [
+            stringIndexOf(constant('abc'), constant('b')).as('indexOf'),
+            stringIndexOf(constant('abc'), constant('z')).as('indexOfMiss'),
+            stringRepeat(constant('ab'), constant(2)).as('repeat'),
+            stringReplaceAll(constant('aba'), constant('a'), constant('x')).as('replaceAll'),
+            stringReplaceOne(constant('aba'), constant('a'), constant('x')).as('replaceOne'),
+            substring(constant('abc'), constant(1)).as('substringToEnd'),
+            substring(constant('abc'), constant(1), constant(1)).as('substringLen'),
+            like(constant('abc'), constant('a%')).as('like'),
+            regexContains(constant('abc'), constant('b+')).as('regexContains'),
+            regexMatch(constant('abc'), constant('b+')).as('regexMatchPartial'),
+            regexMatch(constant('abc'), constant('a.c')).as('regexMatchFull'),
+            regexFind(constant('abc'), constant('b+')).as('regexFind'),
+            regexFind(constant('abc'), constant('z+')).as('regexFindMiss'),
+            regexFindAll(constant('abc'), constant('[ab]')).as('regexFindAll'),
+            regexFindAll(constant('abc'), constant('z+')).as('regexFindAllMiss'),
+          ]),
+          [
+            {
+              data: {
+                indexOf: 1,
+                indexOfMiss: -1,
+                repeat: 'abab',
+                replaceAll: 'xbx',
+                replaceOne: 'xba',
+                substringToEnd: 'bc',
+                substringLen: 'b',
+                like: true,
+                regexContains: true,
+                regexMatchPartial: false,
+                regexMatchFull: true,
+                regexFind: 'b',
+                regexFindMiss: null,
+                regexFindAll: ['a', 'b'],
+                regexFindAllMiss: [],
+              },
+            },
+          ],
+        );
+      });
+
+      it('type / isType and vector', async () => {
+        await expectPipeline(
+          one().select(() => [
+            type(constant('x')).as('typeString'),
+            // A whole JS number wire-encodes as an integer — type() observes
+            // int64, the honest 'integer' | 'double' tag at work.
+            type(constant(7)).as('typeInt'),
+            type(constant(7.5)).as('typeDouble'),
+            type(constant(null)).as('typeNull'),
+            isType(constant('x'), 'string').as('isTypeHit'),
+            isType(constant('x'), 'int64').as('isTypeMiss'),
+            vectorLength(vectorValue([1, 2, 3])).as('vectorLength'),
+            dotProduct(vectorValue([1, 2, 3]), vectorValue([1, 1, 1])).as('dotProduct'),
+            euclideanDistance(vectorValue([1, 2]), vectorValue([4, 6])).as('euclidean'),
+            cosineDistance(vectorValue([1, 0]), vectorValue([1, 0])).as('cosine'),
+          ]),
+          [
+            {
+              data: {
+                typeString: 'string',
+                typeInt: 'int64',
+                typeDouble: 'float64',
+                typeNull: 'null',
+                isTypeHit: true,
+                isTypeMiss: false,
+                vectorLength: 3,
+                dotProduct: 6,
+                euclidean: 5,
+                cosine: 0,
+              },
+            },
+          ],
+        );
+      });
+
+      it('reference: documentId / collectionId over __name__', async () => {
+        const sorted = source()
+          .sort((field) => [asc(field('rank'))])
+          .limit(1);
+        await expectPipeline(
+          sorted.select((field) => [
+            documentId(field('__name__')).as('id'),
+            collectionId(field('__name__')).as('cid'),
+          ]),
+          [{ data: { id: 'a1', cid: collectionName() } }],
         );
       });
 

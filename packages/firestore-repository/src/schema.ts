@@ -120,6 +120,7 @@ export type FieldType =
   | GeoPointType
   | VectorType
   | NullType
+  | ReferenceType
   | AnyMapType
   | AnyArrayType
   | AnyUnionType
@@ -176,6 +177,26 @@ export type VectorType = {
   output: number[];
 };
 export type NullType = { type: 'null'; firestoreType: 'null'; input: null; output: null };
+/**
+ * A bare document reference with no schema-known collection — the descriptor
+ * of the reserved `'__name__'` key (probed: `type(__name__)` is
+ * `"reference"`, and reference-domain functions like `documentId` accept it
+ * while rejecting strings). NOT a schema factory: schema data fields with a
+ * known collection use {@link DocRefType}; this descriptor exists for
+ * expression and filter contexts only — it is never writable
+ * (`input: never`) nor decodable as document data (the codecs reject it).
+ * Its `output` is `string`: the core query API filters the key against plain
+ * document-id strings (`where(eq('__name__', id))`), and `output` is the
+ * axis filter operands are typed from. Pipeline operator compatibility keys
+ * on the `firestoreType` tag instead, where `'reference'` keeps it apart
+ * from genuine strings.
+ */
+export type ReferenceType = {
+  type: 'reference';
+  firestoreType: 'reference';
+  input: never;
+  output: string;
+};
 /**
  * The widest map/array/union descriptors — the recursive members of the
  * closed {@link FieldType} union. Each concrete `MapType<T>` /
@@ -358,6 +379,8 @@ export const array = <T extends FieldType>(elementType: T): ArrayType<T> =>
 export const union = <T extends FieldType[]>(...elements: T): UnionType<T> =>
   buildType({ type: 'union', elements });
 export const nullType = (): NullType => buildType({ type: 'null' });
+/** Builds the `'__name__'` pseudo-descriptor — see {@link ReferenceType}; not for schemas. */
+export const referenceType = (): ReferenceType => buildType({ type: 'reference' });
 
 export const literal = <const T extends (string | number | boolean | null)[]>(
   ...values: T
@@ -421,13 +444,13 @@ export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>>
         : never
       : never
     : U extends '__name__'
-      ? StringType
+      ? ReferenceType
       : never;
 
 /**
  * Runtime counterpart of {@link FieldTypeOfPath}: resolves the `FieldType`
  * descriptor stored in `schema` at `path` (dotted for nested maps; `'__name__'`
- * resolves to a `StringType`, mirroring the type).
+ * resolves to a `ReferenceType`, mirroring the type).
  */
 export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath<T>>(
   schema: T,
@@ -436,7 +459,7 @@ export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath
   const dot = path.indexOf('.');
   let resolved: FieldType;
   if (path === '__name__') {
-    resolved = string();
+    resolved = referenceType();
   } else if (dot < 0) {
     resolved = requireField(schema, path);
   } else {

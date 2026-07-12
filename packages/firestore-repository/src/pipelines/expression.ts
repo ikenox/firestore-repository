@@ -13,6 +13,8 @@ import {
   type GeoPointType,
   int64,
   type Int64Type,
+  literal,
+  type LiteralType,
   map,
   type MapType,
   nullable,
@@ -49,6 +51,7 @@ export type Expression<T extends FieldType = FieldType> =
   | NullaryFunction<T>
   | UnaryFunction<T>
   | BinaryFunction<T>
+  | TernaryFunction<T>
   | VariadicFunction<T>;
 
 /**
@@ -401,7 +404,11 @@ export type UnaryFunctionName =
   | 'stringReverse'
   | 'trim'
   | 'ltrim'
-  | 'rtrim';
+  | 'rtrim'
+  | 'documentId'
+  | 'collectionId'
+  | 'type'
+  | 'vectorLength';
 
 /** A function call with exactly two operands. */
 export class BinaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -435,7 +442,34 @@ export type BinaryFunctionName =
   | 'rtrim'
   | 'startsWith'
   | 'endsWith'
-  | 'stringContains';
+  | 'stringContains'
+  | 'stringIndexOf'
+  | 'stringRepeat'
+  | 'substring'
+  | 'like'
+  | 'regexContains'
+  | 'regexMatch'
+  | 'regexFind'
+  | 'regexFindAll'
+  | 'isType'
+  | 'cosineDistance'
+  | 'dotProduct'
+  | 'euclideanDistance';
+
+/** A function call with exactly three operands. */
+export class TernaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'ternaryFunction';
+  constructor(
+    readonly name: TernaryFunctionName,
+    readonly type: T,
+    readonly first: Expression,
+    readonly second: Expression,
+    readonly third: Expression,
+  ) {
+    super();
+  }
+}
+export type TernaryFunctionName = 'stringReplaceAll' | 'stringReplaceOne' | 'substring';
 
 /** A function call with two or more uniform operands. */
 export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -660,6 +694,7 @@ const mayBeNull = (t: FieldType & { optional?: boolean }): boolean => {
     case 'bytes':
     case 'geoPoint':
     case 'vector':
+    case 'reference':
     case 'map':
     case 'array':
       return false;
@@ -667,6 +702,30 @@ const mayBeNull = (t: FieldType & { optional?: boolean }): boolean => {
       return assertNever(t);
   }
 };
+
+/**
+ * Absence-only variant of {@link PropagateNull}, for the TYPE-OBSERVING
+ * functions (`type` / `isType`): probed, a `null` VALUE is observed as the
+ * `'null'` type (not propagated), while an ABSENT operand still nulls the
+ * result — so only the `Optional` marker triggers the nullable widening.
+ */
+type PropagateAbsence<Operands extends FieldType, T extends FieldType> = [
+  Extract<Operands, Optional>,
+] extends [never]
+  ? T
+  : UnionType<[T, NullType]>;
+
+/** Runtime counterpart of {@link PropagateAbsence} (same bridge shape as `propagateNull`). */
+function propagateAbsence<Ops extends readonly Expression[], T extends FieldType>(
+  operands: Ops,
+  type: T,
+): PropagateAbsence<Ops[number]['type'], T>;
+function propagateAbsence(operands: readonly Expression[], type: FieldType): FieldType {
+  return operands.some((operand) => mayBeAbsent(operand.type)) ? nullable(type) : type;
+}
+
+/** Runtime twin of `Extract<Operands, Optional>`: the marker only. */
+const mayBeAbsent = (t: FieldType & { optional?: boolean }): boolean => t.optional === true;
 
 /** Logical conjunction of two or more boolean expressions (Kleene: null operands propagate). */
 export const and = <
@@ -971,3 +1030,261 @@ export const stringConcat = <
   ...strings: Ops
 ): VariadicFunction<PropagateNull<Ops[number]['type'], StringType>> =>
   new VariadicFunction('stringConcat', propagateNull(strings, string()), strings);
+
+// ---- string (slice 3) ----
+
+/** The 0-based index of the first occurrence of `substring`, or -1 if absent. */
+export const stringIndexOf = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  substring: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], Int64Type>> =>
+  new BinaryFunction('stringIndexOf', propagateNull([value, substring], int64()), value, substring);
+
+/** Repeats a string `count` times. */
+export const stringRepeat = <L extends StringOperand, R extends NumericOperand>(
+  value: L,
+  count: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], StringType>> =>
+  new BinaryFunction('stringRepeat', propagateNull([value, count], string()), value, count);
+
+/** Replaces every occurrence of `find` with `replacement`. */
+export const stringReplaceAll = <
+  L extends StringOperand,
+  M extends StringOperand,
+  R extends StringOperand,
+>(
+  value: L,
+  find: M,
+  replacement: R,
+): TernaryFunction<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
+  new TernaryFunction(
+    'stringReplaceAll',
+    propagateNull([value, find, replacement], string()),
+    value,
+    find,
+    replacement,
+  );
+
+/** Replaces the first occurrence of `find` with `replacement`. */
+export const stringReplaceOne = <
+  L extends StringOperand,
+  M extends StringOperand,
+  R extends StringOperand,
+>(
+  value: L,
+  find: M,
+  replacement: R,
+): TernaryFunction<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
+  new TernaryFunction(
+    'stringReplaceOne',
+    propagateNull([value, find, replacement], string()),
+    value,
+    find,
+    replacement,
+  );
+
+/**
+ * The substring from the 0-based `position`, spanning `length` characters or
+ * (omitted) to the end of the string.
+ */
+export function substring<Op extends StringOperand, P extends NumericOperand>(
+  value: Op,
+  position: P,
+): BinaryFunction<PropagateNull<Op['type'] | P['type'], StringType>>;
+export function substring<
+  Op extends StringOperand,
+  P extends NumericOperand,
+  Len extends NumericOperand,
+>(
+  value: Op,
+  position: P,
+  length: Len,
+): TernaryFunction<PropagateNull<Op['type'] | P['type'] | Len['type'], StringType>>;
+export function substring(
+  value: Expression,
+  position: Expression,
+  length?: Expression,
+): BinaryFunction | TernaryFunction {
+  return length === undefined
+    ? new BinaryFunction('substring', propagateNull([value, position], string()), value, position)
+    : new TernaryFunction(
+        'substring',
+        propagateNull([value, position, length], string()),
+        value,
+        position,
+        length,
+      );
+}
+
+/** SQL LIKE match (`%` any sequence, `_` any single character). */
+export const like = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  pattern: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new BinaryFunction('like', propagateNull([value, pattern], bool()), value, pattern);
+
+// ---- regex ----
+// An invalid pattern is a backend ERROR value (isError/ifError, slice 5).
+
+/** Whether `value` contains a match of the RE2 `pattern`. */
+export const regexContains = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  pattern: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new BinaryFunction('regexContains', propagateNull([value, pattern], bool()), value, pattern);
+
+/** Whether `value` ENTIRELY matches the RE2 `pattern`. */
+export const regexMatch = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  pattern: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new BinaryFunction('regexMatch', propagateNull([value, pattern], bool()), value, pattern);
+
+/**
+ * The first match of the RE2 `pattern`, or `null` when there is none — the
+ * result is ALWAYS nullable (probed), independent of operand nullability.
+ */
+export const regexFind = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  pattern: R,
+): BinaryFunction<UnionType<[StringType, NullType]>> =>
+  new BinaryFunction('regexFind', nullable(string()), value, pattern);
+
+/** Every match of the RE2 `pattern` (empty array when there is none). */
+export const regexFindAll = <L extends StringOperand, R extends StringOperand>(
+  value: L,
+  pattern: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], ArrayType<StringType>>> =>
+  new BinaryFunction(
+    'regexFindAll',
+    propagateNull([value, pattern], array(string())),
+    value,
+    pattern,
+  );
+
+// ---- reference ----
+
+/** A reference-domain operand: a `docRef(...)` field or the reserved `'__name__'`. */
+type ReferenceOperand = Expression<Valued<'reference'>>;
+
+/** The document id (the path's last segment) of a reference. */
+export const documentId = <Op extends ReferenceOperand>(
+  reference: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
+  new UnaryFunction('documentId', propagateNull([reference], string()), reference);
+
+/** The id of the collection containing the referenced document. */
+export const collectionId = <Op extends ReferenceOperand>(
+  reference: Op,
+): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
+  new UnaryFunction('collectionId', propagateNull([reference], string()), reference);
+
+// ---- type ----
+
+/**
+ * The backend's type-name vocabulary (`type()` results / `isType()`'s `type`
+ * argument, per the SDK contract). Note this is the BACKEND's naming
+ * (`'int64'` / `'float64'` / `'geo_point'`), not the `firestoreType` tag
+ * axis; `'number'` matches both numeric types.
+ */
+export type FirestoreTypeName =
+  | 'null'
+  | 'boolean'
+  | 'string'
+  | 'bytes'
+  | 'number'
+  | 'int32'
+  | 'int64'
+  | 'float64'
+  | 'decimal128'
+  | 'timestamp'
+  | 'geo_point'
+  | 'reference'
+  | 'array'
+  | 'map'
+  | 'vector'
+  | 'max_key'
+  | 'min_key'
+  | 'object_id'
+  | 'regex'
+  | 'request_timestamp';
+
+/**
+ * The backend type name of the operand's value. Type-OBSERVING: a `null`
+ * value yields `'null'` (not a null result), so only ABSENCE propagates —
+ * see {@link PropagateAbsence}.
+ */
+export const type = <Op extends Expression>(
+  value: Op,
+): UnaryFunction<PropagateAbsence<Op['type'], LiteralType<FirestoreTypeName[]>>> =>
+  new UnaryFunction('type', propagateAbsence([value], typeNameLiteral()), value);
+
+/**
+ * Whether the operand's value is of the named backend type. The name must be
+ * a compile-time literal (the backend requires a constant — probed), lifted
+ * into a constant operand wire-faithfully. Type-observing like {@link type}:
+ * only absence propagates.
+ */
+export const isType = <Op extends Expression>(
+  value: Op,
+  typeName: FirestoreTypeName,
+): BinaryFunction<PropagateAbsence<Op['type'], BoolType>> =>
+  new BinaryFunction('isType', propagateAbsence([value], bool()), value, Constant.of(typeName));
+
+/** The `type()` return descriptor: the closed backend type-name vocabulary. */
+const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
+  literal(
+    'null',
+    'boolean',
+    'string',
+    'bytes',
+    'number',
+    'int32',
+    'int64',
+    'float64',
+    'decimal128',
+    'timestamp',
+    'geo_point',
+    'reference',
+    'array',
+    'map',
+    'vector',
+    'max_key',
+    'min_key',
+    'object_id',
+    'regex',
+    'request_timestamp',
+  );
+
+// ---- vector ----
+// Distance functions over mismatched dimensions are backend ERROR values.
+
+/** A vector-domain operand: a `vector()` field or a `vectorValue(...)` node. */
+type VectorOperand = Expression<Valued<'vector'>>;
+
+/** The cosine distance between two vectors. */
+export const cosineDistance = <L extends VectorOperand, R extends VectorOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('cosineDistance', propagateNull([left, right], double()), left, right);
+
+/** The dot product of two vectors. */
+export const dotProduct = <L extends VectorOperand, R extends VectorOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('dotProduct', propagateNull([left, right], double()), left, right);
+
+/** The euclidean distance between two vectors. */
+export const euclideanDistance = <L extends VectorOperand, R extends VectorOperand>(
+  left: L,
+  right: R,
+): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new BinaryFunction('euclideanDistance', propagateNull([left, right], double()), left, right);
+
+/** The number of dimensions of a vector. */
+export const vectorLength = <Op extends VectorOperand>(
+  vector: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('vectorLength', propagateNull([vector], int64()), vector);

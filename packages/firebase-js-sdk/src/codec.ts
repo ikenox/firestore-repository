@@ -45,6 +45,10 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
   switch (fieldType.type) {
     case 'string':
       return z.string();
+    case 'reference':
+      // The '__name__' pseudo-descriptor — an expression-context type that
+      // never appears in document data.
+      throw new Error(`unsupported schema field type: ${fieldType.type}`);
     case 'bool':
       return z.boolean();
     case 'int64':
@@ -121,6 +125,10 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
   switch (fieldType.type) {
     case 'string':
       return z.string();
+    case 'reference':
+      // The '__name__' pseudo-descriptor — an expression-context type that
+      // never appears in document data.
+      throw new Error(`unsupported schema field type: ${fieldType.type}`);
     case 'bool':
       return z.boolean();
     case 'null':

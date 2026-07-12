@@ -291,6 +291,7 @@ const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fie
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
+    case 'ternaryFunction':
     case 'variadicFunction':
       return pathToSchema(alias, expression.type);
     default:

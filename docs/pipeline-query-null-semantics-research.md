@@ -53,9 +53,26 @@ boolean-returning string predicates (`startsWith(null, 'x')` is `null`,
 absent operands identical). Their results are therefore possibly-null
 descriptors under `PropagateNull`, in contrast to the comparisons below.
 
+## Type-observing functions propagate only ABSENCE
+
+`type()` / `isType()` observe `null` as a first-class type — `type(null)` is
+the string `"null"`, `isType(null, 'null')` is `true` — so a `null` operand
+does NOT null their result; an ABSENT operand still does (`type(absent)` is
+`null`). Their return descriptors use the absence-only `PropagateAbsence`
+variant. Relatedly, `type()` distinguishes `int64` from `float64` PER VALUE
+(`type(7)` is `"int64"`, `type(7.5)` is `"float64"`) — the wire encoding the
+honest `'integer' | 'double'` tag models.
+
+## `regexFind` is null on no match
+
+`regexFind` returns `null` when the pattern has no match — so its return
+descriptor is ALWAYS nullable, independent of operand nullability.
+`regexFindAll` returns `[]` instead and stays non-null.
+
 ## Errors are a separate channel from `null`
 
-Arithmetic domain violations (`divide(x, 0)`, `ln(0)`, `sqrt(-1)`) do NOT
+Arithmetic domain violations (`divide(x, 0)`, `ln(0)`, `sqrt(-1)`), invalid
+regex patterns, and vector dimension mismatches do NOT
 yield `null`: they produce backend ERROR values. An unhandled error value
 fails the whole query (`INVALID_ARGUMENT`), while `isError(...)` observes it
 (`true`) and `ifError(..., fallback)` replaces it — the error-handling

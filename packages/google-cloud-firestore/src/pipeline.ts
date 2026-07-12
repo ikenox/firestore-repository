@@ -8,7 +8,9 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
+  type BinaryFunction,
   type NullaryFunctionName,
+  type TernaryFunctionName,
   UnaryFunctionName,
   VariadicFunctionName,
 } from 'firestore-repository/pipelines/expression';
@@ -157,6 +159,13 @@ const toSdkExpression = (expression: Expression): Pipelines.Expression => {
       return binaryFns[expression.name](
         toSdkExpression(expression.left),
         toSdkExpression(expression.right),
+        expression,
+      );
+    case 'ternaryFunction':
+      return ternaryFns[expression.name](
+        toSdkExpression(expression.first),
+        toSdkExpression(expression.second),
+        toSdkExpression(expression.third),
       );
     case 'variadicFunction': {
       const [first, second, ...rest] = expression.operands;
@@ -249,11 +258,18 @@ const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines
   trim: Pipelines.trim,
   ltrim: (o) => o.ltrim(),
   rtrim: (o) => o.rtrim(),
+  documentId: Pipelines.documentId,
+  collectionId: Pipelines.collectionId,
+  type: Pipelines.type,
+  vectorLength: Pipelines.vectorLength,
 };
 
+// Entries receive the raw AST node too: functions with backend-mandated
+// LITERAL arguments (isType's type name) must hand the SDK helper the plain
+// string, which is unrecoverable from the translated constant expression.
 const binaryFns: Record<
   BinaryFunctionName,
-  (l: Pipelines.Expression, r: Pipelines.Expression) => Pipelines.Expression
+  (l: Pipelines.Expression, r: Pipelines.Expression, node: BinaryFunction) => Pipelines.Expression
 > = {
   equal: Pipelines.equal,
   notEqual: Pipelines.notEqual,
@@ -275,6 +291,62 @@ const binaryFns: Record<
   startsWith: Pipelines.startsWith,
   endsWith: Pipelines.endsWith,
   stringContains: Pipelines.stringContains,
+  // stringIndexOf/stringRepeat (and the ternary stringReplace* below) exist
+  // at runtime but the SDK's namespace typings only declare their fluent
+  // forms — translate through those.
+  stringIndexOf: (l, r) => l.stringIndexOf(r),
+  stringRepeat: (l, r) => l.stringRepeat(r),
+  substring: (l, r) => Pipelines.substring(l, r),
+  like: Pipelines.like,
+  regexContains: Pipelines.regexContains,
+  regexMatch: Pipelines.regexMatch,
+  regexFind: Pipelines.regexFind,
+  regexFindAll: Pipelines.regexFindAll,
+  isType: (l, _r, node) => Pipelines.isType(l, literalStringOperand(node.right)),
+  cosineDistance: Pipelines.cosineDistance,
+  dotProduct: Pipelines.dotProduct,
+  euclideanDistance: Pipelines.euclideanDistance,
+};
+
+const ternaryFns: Record<
+  TernaryFunctionName,
+  (
+    a: Pipelines.Expression,
+    b: Pipelines.Expression,
+    c: Pipelines.Expression,
+  ) => Pipelines.Expression
+> = {
+  stringReplaceAll: (a, b, c) => a.stringReplaceAll(b, c),
+  stringReplaceOne: (a, b, c) => a.stringReplaceOne(b, c),
+  substring: Pipelines.substring,
+};
+
+/**
+ * Recovers the literal string a factory lifted into a constant operand
+ * (e.g. `isType`'s type name): the backend requires the wire argument to be
+ * a constant, and the SDK helper takes it as a plain string.
+ */
+const literalStringOperand = (operand: Expression): string => {
+  switch (operand.kind) {
+    case 'constant': {
+      const { value } = operand;
+      if (typeof value === 'string') {
+        return value;
+      }
+      throw new Error('expected a literal string constant operand');
+    }
+    case 'field':
+    case 'geoPointValue':
+    case 'vectorValue':
+    case 'nullaryFunction':
+    case 'unaryFunction':
+    case 'binaryFunction':
+    case 'ternaryFunction':
+    case 'variadicFunction':
+      throw new Error(`expected a constant operand, got ${operand.kind}`);
+    default:
+      return assertNever(operand);
+  }
 };
 
 const variadicFns: Record<
@@ -305,6 +377,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'nullaryFunction':
     case 'unaryFunction':
     case 'binaryFunction':
+    case 'ternaryFunction':
     case 'variadicFunction':
       throw new Error(
         'google-cloud pipeline executor: only field orderings are supported in sort yet',

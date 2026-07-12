@@ -224,9 +224,27 @@ both executors and the basic backend semantics in one round trip per family.
       for the slice-5 `isError` / `ifError` channel. Probed: integer /
       integer division TRUNCATES (a whole JS number wire-encodes as an
       integer) — pinned in the live spec.
-- [ ] **3. String rest + regex + reference + type + vector** (T1 bulk #2;
-      introduces `TernaryFunction` and the dual-shape optional-arg pattern via
-      `substring` / `stringReplace*`).
+- [x] **3. String rest + regex + reference + type + vector** (T1 bulk #2;
+      introduces `TernaryFunction`; `substring` reuses the dual-arity
+      pattern — `stringReplace*` turned out fully ternary). Notes:
+      `split` / `join` deferred to the array slice (their typing IS array
+      typing). Probed: `regexFind` returns null on NO MATCH (always-nullable
+      return, independent of operands) while `regexFindAll` returns `[]`;
+      invalid regex patterns and vector dimension mismatches are backend
+      ERROR values; `type()` / `isType()` are type-OBSERVING — a null value
+      yields the name `'null'`, so only ABSENCE propagates
+      (`PropagateAbsence`). `type()`'s vocabulary is the backend naming
+      (`int64` / `float64` / `geo_point`, distinct per VALUE — another
+      artifact of the honest numeric tag), pinned as
+      `LiteralType<FirestoreTypeName[]>`; `isType`'s name must be a
+      wire-literal (factory takes a literal union, lifted via `constant`;
+      executors recover the raw string for the SDK helpers). The reserved
+      `__name__` is a REFERENCE (probed via `type(__name__)`), so
+      `FieldTypeOfPath` now resolves it to the new `ReferenceType`
+      pseudo-descriptor (tag `'reference'`, `output: string` for the core
+      query API's id filters) — `documentId(field('__name__'))` bridges it
+      into the string domain, and comparing `__name__` against strings is
+      now correctly rejected.
 - [ ] **4. Timestamp family** (literal-union factory args pattern:
       `TimeUnit`, truncation granularity).
 - [ ] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**

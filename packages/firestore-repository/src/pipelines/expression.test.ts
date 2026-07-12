@@ -14,6 +14,7 @@ import {
   nullable,
   nullType,
   optional,
+  referenceType,
   rootCollection,
   string,
   type StringType,
@@ -59,10 +60,29 @@ import {
   rtrim,
   sqrt,
   startsWith,
+  collectionId,
+  cosineDistance,
+  documentId,
+  dotProduct,
+  euclideanDistance,
+  isType,
+  like,
+  regexContains,
+  regexFind,
+  regexFindAll,
+  regexMatch,
   stringConcat,
   stringContains,
+  stringIndexOf,
+  stringRepeat,
+  stringReplaceAll,
+  stringReplaceOne,
   stringReverse,
+  substring,
   subtract,
+  TernaryFunction,
+  type,
+  vectorLength,
   toLower,
   toUpper,
   trim,
@@ -627,5 +647,111 @@ describe('string operators', () => {
     lessThan(charLength(name), constant(10));
     // @ts-expect-error -- a numeric result is not a string operand
     toUpper(charLength(name));
+  });
+});
+
+describe('string operators (slice 3)', () => {
+  const name = field(string(), 'name');
+
+  it('indexOf / repeat / replace / substring shapes and domains', () => {
+    expect(stringIndexOf(name, constant('b'))).toStrictEqual(
+      new BinaryFunction('stringIndexOf', int64(), name, constant('b')),
+    );
+    expect(stringRepeat(name, constant(2))).toStrictEqual(
+      new BinaryFunction('stringRepeat', string(), name, constant(2)),
+    );
+    expect(stringReplaceAll(name, constant('a'), constant('x'))).toStrictEqual(
+      new TernaryFunction('stringReplaceAll', string(), name, constant('a'), constant('x')),
+    );
+    expect(stringReplaceOne(name, constant('a'), constant('x'))).toStrictEqual(
+      new TernaryFunction('stringReplaceOne', string(), name, constant('a'), constant('x')),
+    );
+    // @ts-expect-error -- the repeat count is numeric
+    stringRepeat(name, constant('2'));
+    // @ts-expect-error -- a numeric operand is not a string
+    stringReplaceAll(field(double(), 'rank'), constant('a'), constant('x'));
+  });
+
+  it('substring is dual-arity: an optional length operand', () => {
+    expect(substring(name, constant(1))).toStrictEqual(
+      new BinaryFunction('substring', string(), name, constant(1)),
+    );
+    expect(substring(name, constant(1), constant(2))).toStrictEqual(
+      new TernaryFunction('substring', string(), name, constant(1), constant(2)),
+    );
+    // @ts-expect-error -- position is numeric
+    substring(name, constant('1'));
+  });
+
+  it('like and the regex predicates propagate null; regexFind is ALWAYS nullable', () => {
+    for (const fn of [like, regexContains, regexMatch] as const) {
+      expect(fn(name, constant('a%')).type).toStrictEqual(bool());
+      const viaNullable = fn(field(nullable(string()), 'ns'), constant('a'));
+      expect(viaNullable.type).toStrictEqual(nullable(bool()));
+    }
+    // regexFind returns null on NO MATCH, so it is nullable even over
+    // non-null operands (probed).
+    const found = regexFind(name, constant('b+'));
+    expect(found.type).toStrictEqual(nullable(string()));
+    expectTypeOf(found.type).toEqualTypeOf(nullable(string()));
+    // regexFindAll returns an empty array instead — plain unless operands are nullable.
+    const all = regexFindAll(name, constant('b+'));
+    expect(all.type).toStrictEqual(array(string()));
+    expectTypeOf(all.type).toEqualTypeOf(array(string()));
+  });
+});
+
+describe('reference / type / vector operators', () => {
+  const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+
+  it('documentId/collectionId take reference operands only', () => {
+    const key = field(referenceType(), '__name__');
+    const refField = field(docRef(authors), 'ref');
+    expect(documentId(key)).toStrictEqual(new UnaryFunction('documentId', string(), key));
+    expect(collectionId(key).name).toBe('collectionId');
+    documentId(refField);
+    collectionId(refField);
+    // @ts-expect-error -- a string is not a reference (probed: the backend rejects it too)
+    documentId(field(string(), 'name'));
+    // A nullable/optional reference propagates.
+    const viaOptional = documentId(field(optional(docRef(authors)), 'oref'));
+    expect(viaOptional.type).toStrictEqual(nullable(string()));
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(string()));
+  });
+
+  it('type() observes null and returns the backend type-name vocabulary', () => {
+    const t = type(field(nullable(string()), 'ns'));
+    // Type-observing: a null VALUE yields the name 'null' — only ABSENCE
+    // propagates, so a nullable (but present) operand keeps the plain
+    // literal descriptor...
+    expect(t.type.type).toBe('const');
+    expectTypeOf(t.type).not.toEqualTypeOf(nullable(t.type));
+    // ...while an optional operand becomes nullable.
+    const viaOptional = type(field(optional(string()), 'os'));
+    expect(viaOptional.type.type).toBe('union');
+  });
+
+  it('isType lifts its literal type name into a constant operand', () => {
+    const call = isType(field(string(), 'name'), 'string');
+    expect(call).toStrictEqual(
+      new BinaryFunction('isType', bool(), field(string(), 'name'), constant('string')),
+    );
+    isType(field(double(), 'rank'), 'float64');
+    // @ts-expect-error -- an arbitrary string is not a backend type name
+    isType(field(string(), 'name'), 'varchar');
+  });
+
+  it('vector functions take vector operands only', () => {
+    const vec = field(vector(), 'vec');
+    expect(dotProduct(vec, vectorValue([1, 2]))).toStrictEqual(
+      new BinaryFunction('dotProduct', double(), vec, vectorValue([1, 2])),
+    );
+    expect(cosineDistance(vec, vec).name).toBe('cosineDistance');
+    expect(euclideanDistance(vec, vec).name).toBe('euclideanDistance');
+    expect(vectorLength(vec)).toStrictEqual(new UnaryFunction('vectorLength', int64(), vec));
+    // @ts-expect-error -- a number array field is not a vector (the tag axis at work)
+    dotProduct(vec, field(array(double()), 'nums'));
+    // @ts-expect-error -- a string is not a vector
+    vectorLength(field(string(), 'name'));
   });
 });
