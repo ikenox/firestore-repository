@@ -105,11 +105,14 @@ Consequences (all implemented in S2 unless noted):
   zero overlap — TS's own `===` rule. `equal(field(union(string(),
 double())), field(string()))` is legal; reference-vs-`array(string())`,
   vector-vs-`array(double())`, and geopoint-vs-same-shaped-map are rejected
-  (the tag axis at work). Consistent with the predicates, `'null'` is
-  special-cased: sharing ONLY `'null'` is not overlap
-  (`nullable(string())` vs `nullable(timestamp())` is rejected), except for
-  a PURE null operand — an is-null check, legal against nullable operands
-  and rejected against never-null ones.
+  (the tag axis at work). The rule applies MEMBER-WISE at every depth
+  (`TagSetsComparable` recurses into array elements and map fields,
+  matching TS's own nested-union handling): a shared element tag is enough
+  for two heterogeneous arrays to compare. Consistent with the predicates,
+  `'null'` is special-cased at each level: sharing ONLY `'null'` is not
+  overlap (`nullable(string())` vs `nullable(timestamp())` is rejected),
+  except for a PURE null operand — an is-null check, legal against
+  nullable operands and rejected against never-null ones.
 - `Int64Type` and `DoubleType` both carry the honest `'integer' | 'double'`
   tag (the SDKs pick the wire encoding per value), which keeps the numeric
   domain mutually comparable — this replaces the old `NumericType` union

@@ -415,44 +415,107 @@ export type VariadicFunctionName = 'and' | 'or';
  */
 export type Valued<Tag extends FirestoreType> = FieldType & { firestoreType: Tag | 'null' };
 
-/** A descriptor's `firestoreType` tags with the special-cased `'null'` removed. */
-type NonNullTags<T extends FieldType> = Exclude<T['firestoreType'], 'null'>;
-
 /**
  * Overlap-based comparison compatibility: a pair is comparable iff the
- * operands' `firestoreType` tag sets intersect (checked symmetrically —
- * `Extract` alone is subset-directional for structural container tags).
- * Evaluates to `unknown` (no-op intersection) on overlap and `never` on
- * disjoint domains, rejecting the call.
+ * operands' `firestoreType` tag sets intersect — computed MEMBER-WISE at
+ * every depth ({@link TagSetsComparable}), so a shared element tag is enough
+ * for two heterogeneous arrays to compare. Evaluates to `unknown` (no-op
+ * intersection) on overlap and `never` on disjoint domains, rejecting the
+ * call.
  *
  * The backend's comparisons are total (probed: `equal(null, 'x')` is `false`,
  * never an error), so this rule is a lint against always-false comparisons —
  * and the correct boundary for that lint is ZERO overlap, mirroring TS's own
- * `===` rule. A union operand with a shared member overlaps a narrower one
+ * `===` rule (whose nested-union handling this matches). A union operand with
+ * a shared member overlaps a narrower one
  * (`equal(field(union(string(), double())), constant('x'))` is legal).
- *
- * `'null'` is special-cased, consistent with the domain predicates: two
- * nullable descriptors sharing ONLY `'null'` do not overlap (a
- * `nullable(string())` vs `nullable(timestamp())` comparison is true only in
- * the both-null corner — almost surely a bug). The one place null itself
- * counts is a PURE null operand (`constant(null)` / a `nullType()` field):
- * that is an is-null check, legal against any nullable operand and rejected
- * against a never-null one (always false).
  */
-type Comparable<L extends FieldType, R extends FieldType> = [
-  Extract<NonNullTags<L>, NonNullTags<R>> | Extract<NonNullTags<R>, NonNullTags<L>>,
-] extends [never]
-  ? [NonNullTags<L>] extends [never]
-    ? IsNullable<R> // pure-null left: an is-null check on the right operand
-    : [NonNullTags<R>] extends [never]
-      ? IsNullable<L> // pure-null right: an is-null check on the left operand
-      : never
-  : unknown;
+type Comparable<L extends FieldType, R extends FieldType> =
+  TagSetsComparable<L['firestoreType'], R['firestoreType']> extends true ? unknown : never;
 
-/** `unknown` (accept) when the descriptor's tags include `'null'`, else `never`. */
-type IsNullable<T extends FieldType> = [Extract<T['firestoreType'], 'null'>] extends [never]
-  ? never
-  : unknown;
+/**
+ * Whether two tag SETS (unions of {@link FirestoreType} members) are
+ * comparable. This is the one rule, applied uniformly at every depth (the
+ * top-level operands, array elements, map fields):
+ *
+ * - `'null'` is special-cased, consistent with the domain predicates: it is
+ *   stripped before the overlap test, so sets sharing ONLY `'null'` are not
+ *   comparable (`nullable(string())` vs `nullable(timestamp())` is true only
+ *   in the both-null corner — almost surely a bug) — EXCEPT when one side is
+ *   PURE null (`constant(null)` / a `nullType()` field): that is an is-null
+ *   check, legal against any nullable set and rejected against a never-null
+ *   one (always false).
+ * - A wide input (the unconstrained `FirestoreType`, or the `unknown` the
+ *   `Any*` descriptors carry) accepts leniently — it also breaks the
+ *   otherwise-infinite recursion through the self-referential vocabulary.
+ */
+type TagSetsComparable<A, B> = FirestoreType extends A
+  ? true // wide/unknown input: lenient (and a recursion breaker)
+  : FirestoreType extends B
+    ? true
+    : true extends TagSetsOverlap<Exclude<A, 'null'>, Exclude<B, 'null'>>
+      ? true
+      : [Exclude<A, 'null'>] extends [never]
+        ? 'null' extends B & 'null' // pure-null left: an is-null check on the right
+          ? true
+          : false
+        : [Exclude<B, 'null'>] extends [never]
+          ? 'null' extends A & 'null' // pure-null right: an is-null check on the left
+            ? true
+            : false
+          : false;
+
+/**
+ * Distributes both null-stripped sets into member pairs; the result is the
+ * union of the pairwise verdicts, so `true extends ...` asks "does SOME pair
+ * overlap".
+ */
+type TagSetsOverlap<A, B> = A extends unknown
+  ? B extends unknown
+    ? TagPairOverlaps<A, B>
+    : never
+  : never;
+
+/**
+ * Whether two single tags overlap: scalars by equality, arrays by their
+ * element SETS being comparable (recursion, null rule included), maps by
+ * width-directional key inclusion plus per-shared-key comparability —
+ * matching how TS's own `===` treats nested structures.
+ */
+type TagPairOverlaps<A, B> = A extends readonly FirestoreType[]
+  ? B extends readonly FirestoreType[]
+    ? TagSetsComparable<A[number], B[number]>
+    : false
+  : B extends readonly FirestoreType[]
+    ? false
+    : A extends { readonly [field: string]: FirestoreType }
+      ? B extends { readonly [field: string]: FirestoreType }
+        ? MapTagsOverlap<A, B>
+        : false
+      : B extends { readonly [field: string]: FirestoreType }
+        ? false
+        : A extends B // both scalar tags: literal equality
+          ? true
+          : false;
+
+/**
+ * One key set must include the other (maps of genuinely different shapes
+ * never hold equal values), and every shared key must be comparable.
+ */
+type MapTagsOverlap<
+  A extends { readonly [field: string]: FirestoreType },
+  B extends { readonly [field: string]: FirestoreType },
+> = [keyof B] extends [keyof A]
+  ? SharedKeysComparable<A, B, keyof B>
+  : [keyof A] extends [keyof B]
+    ? SharedKeysComparable<A, B, keyof A>
+    : false;
+
+type SharedKeysComparable<
+  A extends { readonly [field: string]: FirestoreType },
+  B extends { readonly [field: string]: FirestoreType },
+  K extends keyof A & keyof B,
+> = false extends (K extends unknown ? TagSetsComparable<A[K], B[K]> : never) ? false : true;
 
 export const equal = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,

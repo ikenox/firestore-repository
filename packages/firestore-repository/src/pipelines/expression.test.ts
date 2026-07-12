@@ -327,25 +327,37 @@ describe('comparison operators (table-driven over all six)', () => {
     equal(field(string(), 's'), ns);
   });
 
-  it('container tags compare by element-set inclusion (either direction)', () => {
-    // Top-level null stripping does not reach inside containers, but the
-    // SYMMETRIC Extract does the work: string[] is assignable to
-    // (string|null)[] element-covariantly, so the pair overlaps — in both
-    // argument orders.
+  it('container tags compare member-wise at every depth (one rule, uniformly)', () => {
+    // The single TagSetsComparable rule (null-stripped overlap + the
+    // pure-null is-null exception) recurses into array elements and map
+    // fields, matching how TS's own === treats nested unions.
     const arr = field(array(string()), 'arr');
     const arrNullable = field(array(nullable(string())), 'arrN');
     equal(arr, arrNullable);
     equal(arrNullable, arr);
-    // Same for a map field widened with null.
-    equal(field(map({ a: string() }), 'm'), field(map({ a: nullable(string()) }), 'mn'));
-    // Disjoint element sets stay rejected even when both are nullable inside.
+    // A shared element tag is enough — neither side needs to include the other.
+    equal(field(array(union(string(), double())), 'sd'), arrNullable);
+    // An array of pure nulls against a nullable-element array is the nested
+    // is-null form.
+    equal(field(array(nullType()), 'nulls'), arrNullable);
+    // Sharing ONLY null inside the container is not overlap (the nested
+    // both-null corner) ...
     // @ts-expect-error -- (string|null)[] vs (double|null)[] share no non-null element tag
     equal(arrNullable, field(array(nullable(double())), 'dn'));
-    // KNOWN LIMIT: inside a container the check is inclusion, not member-wise
-    // overlap — elements sharing 'string' but with neither side a subset of
-    // the other are rejected.
-    // @ts-expect-error -- (string|double)[] vs (string|null)[]: neither includes the other
-    equal(field(array(union(string(), double())), 'sd'), arrNullable);
+    // ...and pure-null elements against never-null elements stay rejected.
+    // @ts-expect-error -- null[] vs string[]: an element is never null
+    equal(field(array(nullType()), 'nulls'), arr);
+    // Maps: one key set must include the other, shared keys compare
+    // member-wise.
+    equal(field(map({ a: string() }), 'm'), field(map({ a: nullable(string()) }), 'mn'));
+    equal(
+      field(map({ a: string() }), 'm'),
+      field(map({ a: union(string(), double()), b: bool() }), 'wide'),
+    );
+    // @ts-expect-error -- disjoint key sets: maps of different shapes never hold equal values
+    equal(field(map({ a: string() }), 'm'), field(map({ b: string() }), 'other'));
+    // @ts-expect-error -- shared key with disjoint tags
+    equal(field(map({ a: string() }), 'm'), field(map({ a: double() }), 'num'));
   });
 
   it('firestoreType keys the compatibility — pairs whose TS representations collide stay rejected', () => {
