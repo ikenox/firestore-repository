@@ -8,12 +8,15 @@ import {
   double,
   type DoubleType,
   type FieldType,
+  type FirestoreType,
   geoPoint,
   type GeoPointType,
   map,
   type MapType,
+  nullable,
   nullType,
   type NullType,
+  type Optional,
   string,
   type StringType,
   timestamp,
@@ -397,132 +400,250 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
 }
 export type VariadicFunctionName = 'and' | 'or';
 
-// Value-domain predicates: a descriptor whose phantom `output` (the value
-// domain) is a subset of the given primitive — so literals, unions of the
-// domain, and `& Optional` variants all qualify structurally, with no
-// enumeration of descriptor constructors. See
-// docs/plan/pipeline-query-expressions.md.
-type NumberValued = FieldType & { output: number };
-type StringValued = FieldType & { output: string };
+/**
+ * The value-domain predicate: descriptors whose `firestoreType` tags fit the
+ * given tag set — so for `Valued<'boolean'>`, `bool()`, boolean literals,
+ * `nullable(bool())`, and `& Optional` variants all qualify structurally.
+ *
+ * Predicates key on the `firestoreType` axis (not the TS-representation
+ * `output`), and `null` is special-cased HERE, once, so individual domains
+ * never mention it: probed backend semantics make `null` a well-behaved
+ * operand everywhere (`null` and absent operands flow through functions as
+ * `null`, and a non-`true` condition just drops the row), so a nullable
+ * descriptor is inside every domain. See
+ * docs/plan/pipeline-query-expressions.md.
+ */
+export type Valued<Tag extends FirestoreType> = FieldType & { firestoreType: Tag | 'null' };
 
-// A comparison op has three overloads:
-//   1) number-domain pair — Int64 / Double / numeric literals mix freely.
-//   2) string-domain pair — string / string-literal / string-union operands
-//      unify (e.g. a `literal('male','female')` field against `constant('male')`).
-//   3) generic same-`T` — every other group, requiring IDENTICAL descriptor
-//      types (no union-vs-narrow widening — pinned in expression.test.ts);
-//      cross-group pairs match nothing.
+/**
+ * Overlap-based comparison compatibility: a pair is comparable iff the
+ * operands' `firestoreType` tag sets intersect — computed MEMBER-WISE at
+ * every depth ({@link TagSetsComparable}), so a shared element tag is enough
+ * for two heterogeneous arrays to compare. Evaluates to `unknown` (no-op
+ * intersection) on overlap and `never` on disjoint domains, rejecting the
+ * call.
+ *
+ * The backend's comparisons are total (probed: `equal(null, 'x')` is `false`,
+ * never an error), so this rule is a lint against always-false comparisons —
+ * and the correct boundary for that lint is ZERO overlap, mirroring TS's own
+ * `===` rule (whose nested-union handling this matches). A union operand with
+ * a shared member overlaps a narrower one
+ * (`equal(field(union(string(), double())), constant('x'))` is legal).
+ */
+type Comparable<L extends FieldType, R extends FieldType> =
+  TagSetsComparable<L['firestoreType'], R['firestoreType']> extends true ? unknown : never;
 
-export function equal(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function equal(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function equal<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function equal(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('equal', bool(), left, right);
+/**
+ * Whether two tag SETS (unions of {@link FirestoreType} members) are
+ * comparable. This is the one rule, applied uniformly at every depth (the
+ * top-level operands, array elements, map fields):
+ *
+ * - `'null'` is special-cased, consistent with the domain predicates: it is
+ *   stripped before the overlap test, so sets sharing ONLY `'null'` are not
+ *   comparable (`nullable(string())` vs `nullable(timestamp())` is true only
+ *   in the both-null corner — almost surely a bug) — EXCEPT when one side is
+ *   PURE null (`constant(null)` / a `nullType()` field): that is an is-null
+ *   check, legal against any nullable set and rejected against a never-null
+ *   one (always false).
+ * - A wide input (the unconstrained `FirestoreType`, or the `unknown` the
+ *   `Any*` descriptors carry) accepts leniently — it also breaks the
+ *   otherwise-infinite recursion through the self-referential vocabulary.
+ */
+type TagSetsComparable<A, B> = FirestoreType extends A
+  ? true // wide/unknown input: lenient (and a recursion breaker)
+  : FirestoreType extends B
+    ? true
+    : true extends TagSetsOverlap<Exclude<A, 'null'>, Exclude<B, 'null'>>
+      ? true
+      : [Exclude<A, 'null'>] extends [never]
+        ? 'null' extends B & 'null' // pure-null left: an is-null check on the right
+          ? true
+          : false
+        : [Exclude<B, 'null'>] extends [never]
+          ? 'null' extends A & 'null' // pure-null right: an is-null check on the left
+            ? true
+            : false
+          : false;
+
+/**
+ * Distributes both null-stripped sets into member pairs; the result is the
+ * union of the pairwise verdicts, so `true extends ...` asks "does SOME pair
+ * overlap".
+ */
+type TagSetsOverlap<A, B> = A extends unknown
+  ? B extends unknown
+    ? TagPairOverlaps<A, B>
+    : never
+  : never;
+
+/**
+ * Whether two single tags overlap: scalars by equality, arrays by their
+ * element SETS being comparable (recursion, null rule included), maps by
+ * width-directional key inclusion plus per-shared-key comparability —
+ * matching how TS's own `===` treats nested structures.
+ */
+type TagPairOverlaps<A, B> = A extends readonly FirestoreType[]
+  ? B extends readonly FirestoreType[]
+    ? TagSetsComparable<A[number], B[number]>
+    : false
+  : B extends readonly FirestoreType[]
+    ? false
+    : A extends { readonly [field: string]: FirestoreType }
+      ? B extends { readonly [field: string]: FirestoreType }
+        ? MapTagsOverlap<A, B>
+        : false
+      : B extends { readonly [field: string]: FirestoreType }
+        ? false
+        : A extends B // both scalar tags: literal equality
+          ? true
+          : false;
+
+/**
+ * One key set must include the other (maps of genuinely different shapes
+ * never hold equal values), and every shared key must be comparable.
+ */
+type MapTagsOverlap<
+  A extends { readonly [field: string]: FirestoreType },
+  B extends { readonly [field: string]: FirestoreType },
+> = [keyof B] extends [keyof A]
+  ? SharedKeysComparable<A, B, keyof B>
+  : [keyof A] extends [keyof B]
+    ? SharedKeysComparable<A, B, keyof A>
+    : false;
+
+type SharedKeysComparable<
+  A extends { readonly [field: string]: FirestoreType },
+  B extends { readonly [field: string]: FirestoreType },
+  K extends keyof A & keyof B,
+> = false extends (K extends unknown ? TagSetsComparable<A[K], B[K]> : never) ? false : true;
+
+export const equal = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('equal', bool(), left, right);
+
+export const notEqual = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('notEqual', bool(), left, right);
+
+export const lessThan = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('lessThan', bool(), left, right);
+
+export const lessThanOrEqual = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('lessThanOrEqual', bool(), left, right);
+
+export const greaterThan = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('greaterThan', bool(), left, right);
+
+export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
+  left: Expression<L>,
+  right: Expression<R> & Comparable<L, R>,
+): BinaryFunction<BoolType> => new BinaryFunction('greaterThanOrEqual', bool(), left, right);
+
+/**
+ * Null propagation for a function's RETURN descriptor: `T` when no operand
+ * can be null, `nullable(T)` when one can. An operand "can be null" when its
+ * tags include `'null'` or it is `& Optional` — an absent operand flows
+ * through functions as `null` (probed), so optionality implies a possibly-null
+ * result even though presence stays off the tag axis.
+ *
+ * The logical operators need this (probed — Kleene three-valued logic:
+ * `and(true, null)` is `null` while `and(false, null)` is `false`, `or` and
+ * `not` mirror it), and most value functions in later slices will too. The
+ * comparison operators do NOT: they are total (never null).
+ */
+type PropagateNull<Operands extends FieldType, T extends FieldType> = [
+  Extract<Operands['firestoreType'], 'null'> | Extract<Operands, Optional>,
+] extends [never]
+  ? T
+  : UnionType<[T, NullType]>;
+
+/**
+ * Runtime counterpart of {@link PropagateNull} (the overload signature
+ * carries the type-level result; the loose implementation check is the
+ * runtime-to-type bridge, mirrored branch-for-branch by `mayBeNull` /
+ * the type's `Extract` arms).
+ *
+ * Takes the operand EXPRESSIONS and reads their descriptors via the
+ * type-level `Ops['type']`: a value-level `.type` access on a generic operand
+ * resolves eagerly through its constraint (which includes `'null'`), which
+ * would collapse the conditional to the nullable branch for every call.
+ */
+function propagateNull<Ops extends readonly Expression[], T extends FieldType>(
+  operands: Ops,
+  type: T,
+): PropagateNull<Ops[number]['type'], T>;
+function propagateNull(operands: readonly Expression[], type: FieldType): FieldType {
+  return operands.some((operand) => mayBeNull(operand.type)) ? nullable(type) : type;
 }
 
-export function notEqual(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function notEqual(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function notEqual<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function notEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('notEqual', bool(), left, right);
-}
+/**
+ * Whether a value of the descriptor can be `null` (or absent — which functions
+ * receive as `null`). Mirrors {@link PropagateNull}'s condition: the `'null'`
+ * tag distributes through unions and null literals but deliberately not into
+ * array elements or map fields, and the `Optional` marker counts.
+ */
+const mayBeNull = (t: FieldType & { optional?: boolean }): boolean => {
+  if (t.optional === true) {
+    return true;
+  }
+  switch (t.type) {
+    case 'null':
+      return true;
+    case 'union':
+      return t.elements.some(mayBeNull);
+    case 'const':
+      return t.values.includes(null);
+    case 'bool':
+    case 'string':
+    case 'int64':
+    case 'double':
+    case 'timestamp':
+    case 'docRef':
+    case 'bytes':
+    case 'geoPoint':
+    case 'vector':
+    case 'map':
+    case 'array':
+      return false;
+    default:
+      return assertNever(t);
+  }
+};
 
-export function lessThan(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function lessThan(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function lessThan<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function lessThan(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('lessThan', bool(), left, right);
-}
+/** Logical conjunction of two or more boolean expressions (Kleene: null operands propagate). */
+export const and = <
+  const Ops extends readonly [
+    Expression<Valued<'boolean'>>,
+    Expression<Valued<'boolean'>>,
+    ...Expression<Valued<'boolean'>>[],
+  ],
+>(
+  ...conditions: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new VariadicFunction('and', propagateNull(conditions, bool()), conditions);
 
-export function lessThanOrEqual(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function lessThanOrEqual(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function lessThanOrEqual<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function lessThanOrEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('lessThanOrEqual', bool(), left, right);
-}
+/** Logical disjunction of two or more boolean expressions (Kleene: null operands propagate). */
+export const or = <
+  const Ops extends readonly [
+    Expression<Valued<'boolean'>>,
+    Expression<Valued<'boolean'>>,
+    ...Expression<Valued<'boolean'>>[],
+  ],
+>(
+  ...conditions: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new VariadicFunction('or', propagateNull(conditions, bool()), conditions);
 
-export function greaterThan(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function greaterThan(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function greaterThan<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function greaterThan(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('greaterThan', bool(), left, right);
-}
-
-export function greaterThanOrEqual(
-  left: Expression<NumberValued>,
-  right: Expression<NumberValued>,
-): BinaryFunction<BoolType>;
-export function greaterThanOrEqual(
-  left: Expression<StringValued>,
-  right: Expression<StringValued>,
-): BinaryFunction<BoolType>;
-export function greaterThanOrEqual<T extends FieldType>(
-  left: Expression<T>,
-  right: Expression<T>,
-): BinaryFunction<BoolType>;
-export function greaterThanOrEqual(left: Expression, right: Expression): BinaryFunction<BoolType> {
-  return new BinaryFunction('greaterThanOrEqual', bool(), left, right);
-}
-
-/** Logical conjunction of two or more boolean expressions. */
-export const and = (
-  first: Expression<BoolType>,
-  second: Expression<BoolType>,
-  ...rest: Expression<BoolType>[]
-): VariadicFunction<BoolType> => new VariadicFunction('and', bool(), [first, second, ...rest]);
-
-/** Logical disjunction of two or more boolean expressions. */
-export const or = (
-  first: Expression<BoolType>,
-  second: Expression<BoolType>,
-  ...rest: Expression<BoolType>[]
-): VariadicFunction<BoolType> => new VariadicFunction('or', bool(), [first, second, ...rest]);
-
-/** Logical negation of a boolean expression. */
-export const not = (condition: Expression<BoolType>): UnaryFunction<BoolType> =>
-  new UnaryFunction('not', bool(), condition);
+/** Logical negation of a boolean expression (Kleene: a null operand propagates). */
+export const not = <C extends Expression<Valued<'boolean'>>>(
+  condition: C,
+): UnaryFunction<PropagateNull<C['type'], BoolType>> =>
+  new UnaryFunction('not', propagateNull([condition], bool()), condition);

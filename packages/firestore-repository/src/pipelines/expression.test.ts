@@ -5,6 +5,7 @@ import {
   bool,
   type BoolType,
   bytes,
+  docRef,
   double,
   geoPoint,
   int64,
@@ -12,6 +13,8 @@ import {
   map,
   nullable,
   nullType,
+  optional,
+  rootCollection,
   string,
   type StringType,
   timestamp,
@@ -294,26 +297,80 @@ describe('comparison operators (table-driven over all six)', () => {
     greaterThanOrEqual(name, rank);
   });
 
-  it('same-T requires identical descriptors — no union-vs-narrow widening', () => {
-    // Empirically disproved a stale comment: the same-T fallback does NOT
-    // unify a union-typed operand with a narrower one. NOTE: this is the
-    // CURRENT contract, and deliberately changes with the planned
-    // overlap-based compatibility (see the expressions plan) — a union with
-    // a shared member SHOULD compare.
+  it('overlap-based compatibility: a union with a shared member compares against a narrower operand', () => {
     const u1 = field(union(string(), double()), 'u1');
     const u2 = field(union(string(), double()), 'u2');
     equal(u1, u2); // identical union descriptors: ok
-    // @ts-expect-error -- a narrower operand does not widen into the union
-    equal(u1, field(string(), 's'));
+    equal(u1, field(string(), 's')); // shared 'string' tag: ok
+    equal(u1, constant(1)); // shared numeric tags: ok
+    // @ts-expect-error -- zero overlap: {string, integer, double} vs timestamp
+    equal(u1, field(timestamp(), 'at'));
   });
 
-  it('pins the current nullable contract (to change with null-tolerant domains)', () => {
+  it('null is special-cased: nullable operands compare on their NON-NULL overlap', () => {
     const ns = field(nullable(string()), 'ns');
-    // Identical nullable descriptors unify via same-T...
     equal(ns, ns);
-    // ...but a plain string constant does not (strict domains today).
-    // @ts-expect-error -- nullable strings are outside the string domain
-    equal(ns, constant('x'));
+    equal(ns, constant('x')); // shared 'string' tag: ok
+    // Sharing ONLY 'null' does not make a pair comparable: true only in the
+    // both-null corner — almost surely a bug.
+    // @ts-expect-error -- the non-null tags (string vs timestamp) have zero overlap
+    equal(ns, field(nullable(timestamp()), 'nt'));
+    // A PURE null operand is the exception — an is-null check, legal against
+    // any nullable operand (either side) ...
+    equal(ns, constant(null));
+    equal(constant(null), ns);
+    equal(constant(null), constant(null));
+    // ...and rejected against a never-null one (always false).
+    // @ts-expect-error -- 'string' vs 'null' have zero overlap
+    equal(field(string(), 's'), constant(null));
+    // A plain descriptor overlaps its nullable widening.
+    equal(field(string(), 's'), ns);
+  });
+
+  it('container tags compare member-wise at every depth (one rule, uniformly)', () => {
+    // The single TagSetsComparable rule (null-stripped overlap + the
+    // pure-null is-null exception) recurses into array elements and map
+    // fields, matching how TS's own === treats nested unions.
+    const arr = field(array(string()), 'arr');
+    const arrNullable = field(array(nullable(string())), 'arrN');
+    equal(arr, arrNullable);
+    equal(arrNullable, arr);
+    // A shared element tag is enough — neither side needs to include the other.
+    equal(field(array(union(string(), double())), 'sd'), arrNullable);
+    // An array of pure nulls against a nullable-element array is the nested
+    // is-null form.
+    equal(field(array(nullType()), 'nulls'), arrNullable);
+    // Sharing ONLY null inside the container is not overlap (the nested
+    // both-null corner) ...
+    // @ts-expect-error -- (string|null)[] vs (double|null)[] share no non-null element tag
+    equal(arrNullable, field(array(nullable(double())), 'dn'));
+    // ...and pure-null elements against never-null elements stay rejected.
+    // @ts-expect-error -- null[] vs string[]: an element is never null
+    equal(field(array(nullType()), 'nulls'), arr);
+    // Maps: one key set must include the other, shared keys compare
+    // member-wise.
+    equal(field(map({ a: string() }), 'm'), field(map({ a: nullable(string()) }), 'mn'));
+    equal(
+      field(map({ a: string() }), 'm'),
+      field(map({ a: union(string(), double()), b: bool() }), 'wide'),
+    );
+    // @ts-expect-error -- disjoint key sets: maps of different shapes never hold equal values
+    equal(field(map({ a: string() }), 'm'), field(map({ b: string() }), 'other'));
+    // @ts-expect-error -- shared key with disjoint tags
+    equal(field(map({ a: string() }), 'm'), field(map({ a: double() }), 'num'));
+  });
+
+  it('firestoreType keys the compatibility — pairs whose TS representations collide stay rejected', () => {
+    const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+    // A reference decodes to string[], a vector to number[], a geopoint to a
+    // {latitude, longitude} object — the tag axis keeps them apart from the
+    // genuine array/map descriptors sharing those representations.
+    // @ts-expect-error -- 'reference' vs array-of-'string'
+    equal(field(docRef(authors), 'ref'), field(array(string()), 'tags'));
+    // @ts-expect-error -- 'vector' vs array-of-number
+    equal(field(vector(), 'vec'), field(array(double()), 'nums'));
+    // @ts-expect-error -- 'geopoint' vs the same-shaped map
+    equal(field(geoPoint(), 'geo'), field(map({ latitude: double(), longitude: double() }), 'm'));
   });
 });
 
@@ -327,10 +384,60 @@ describe('logical operator edges', () => {
     expect(five.name).toBe('and');
   });
 
-  it('pins the current exact-BoolType contract for conditions', () => {
-    // A literal(true, false) field is a LiteralType, not BoolType — rejected
-    // today (to change with the planned BooleanValued domain).
-    // @ts-expect-error -- literal booleans are not Expression<BoolType>
+  it("conditions are Valued<'boolean'>: boolean literals and nullable booleans qualify", () => {
+    // The condition domain is the firestoreType predicate 'boolean' (null is
+    // special-cased inside Valued), not the exact BoolType descriptor: a
+    // literal(true, false) field and a nullable(bool()) field are both
+    // boolean-valued (a null condition just drops the row — truthy-only
+    // semantics).
     and(flag, field(literal(true, false), 'lit'));
+    or(flag, field(nullable(bool()), 'nb'));
+    not(field(literal(true), 'lt'));
+    // @ts-expect-error -- a string field is not boolean-valued
+    and(flag, field(string(), 'name'));
+    // @ts-expect-error -- a string field is not a condition
+    not(field(string(), 'name'));
+  });
+
+  it('propagates operand nullability into the result descriptor (Kleene logic)', () => {
+    // Probed: and(true, null) is null, and(false, null) is false — Kleene
+    // three-valued logic, so a possibly-null operand makes the result
+    // possibly null. Oracle-both-sides per operator/operand kind.
+    const nullableBool = nullable(bool());
+
+    // All-boolean operands: the result stays a plain BoolType.
+    const strict = and(flag, not(flag));
+    expect(strict.type).toStrictEqual(bool());
+    expectTypeOf(strict.type).toEqualTypeOf(bool());
+
+    // A nullable operand propagates.
+    const viaNullable = and(flag, field(nullable(bool()), 'nb'));
+    expect(viaNullable.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaNullable.type).toEqualTypeOf(nullableBool);
+
+    // An optional (possibly absent) operand counts too: an absent operand
+    // flows through functions as null (probed).
+    const viaOptional = or(flag, field(optional(bool()), 'ob'));
+    expect(viaOptional.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullableBool);
+
+    // A boolean literal union containing null counts.
+    const viaLiteral = or(flag, field(literal(true, null), 'ln'));
+    expect(viaLiteral.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaLiteral.type).toEqualTypeOf(nullableBool);
+
+    // not() propagates, and nested nullability flows upward.
+    const viaNot = not(field(nullable(bool()), 'nb'));
+    expect(viaNot.type).toStrictEqual(nullableBool);
+    expectTypeOf(viaNot.type).toEqualTypeOf(nullableBool);
+    const nested = and(flag, viaNot);
+    expect(nested.type).toStrictEqual(nullableBool);
+    expectTypeOf(nested.type).toEqualTypeOf(nullableBool);
+
+    // Comparisons do NOT propagate: they are total (never null), even over
+    // nullable operands.
+    const cmp = equal(field(nullable(string()), 'ns'), constant(null));
+    expect(cmp.type).toStrictEqual(bool());
+    expectTypeOf(cmp.type).toEqualTypeOf(bool());
   });
 });

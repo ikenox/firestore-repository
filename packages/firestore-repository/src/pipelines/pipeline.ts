@@ -1,6 +1,5 @@
 import type { DocRef } from '../repository.js';
 import {
-  type BoolType,
   type Collection,
   type DocFieldPath,
   type DocumentSchema,
@@ -14,7 +13,7 @@ import {
   omitPaths,
 } from '../schema.js';
 import { AggregateWithAlias } from './aggregate.js';
-import { field, type Expression, type Field } from './expression.js';
+import { field, type Expression, type Field, type Valued } from './expression.js';
 import { Ordering } from './ordering.js';
 import {
   type BuildAddFieldsSchema,
@@ -108,7 +107,9 @@ export class Pipeline<
    * condition evaluates to anything else — `false`, `null`, a missing field,
    * a non-boolean — are silently dropped (Firestore's truthy-only semantics).
    */
-  where(condition: (field: FieldProvider<Schema>) => Expression<BoolType>): Pipeline<Schema, Id> {
+  where(
+    condition: (field: FieldProvider<Schema>) => Expression<Valued<'boolean'>>,
+  ): Pipeline<Schema, Id> {
     return new Pipeline<Schema, Id>({
       schema: this.node.schema,
       stage: { kind: 'where', condition: condition(fieldProvider(this.node.schema)) },
