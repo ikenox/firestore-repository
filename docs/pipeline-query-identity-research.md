@@ -75,6 +75,24 @@ records the observed behavior so we can encode it in the
   elements — useful for "explode" patterns where you want to know which
   source document each emitted row came from.
 
+## `__name__` is a REFERENCE value, not a string
+
+Probed (2026-07, `probe-slice3.mjs`): `type(field("__name__"))` is
+`"reference"`, and the reference-domain functions accept it while rejecting
+strings (`documentId(constant("authors/a1"))` →
+`INVALID_ARGUMENT: requires \`Reference\` but got \`STRING\``). Comparisons
+are total, so an `equal(field("**name**"), <string>)` would silently be
+always-false — a trap, not an error.
+
+Library consequence: `FieldTypeOfPath` resolves `'__name__'` to the
+`ReferenceType` pseudo-descriptor (`schema.ts`) with the `'reference'`
+firestoreType tag, so string comparisons and string functions over the raw
+key are rejected at the type level; `documentId(field('__name__'))` /
+`collectionId(...)` bridge it into the string domain. Its `output` stays
+`string` — the core query API's id-filter contract
+(`where(eq('__name__', id))`) — and it is neither writable nor decodable as
+document data (the codecs reject it).
+
 ## Read-identity (row key) vs. `__name__` field / DML-capability
 
 Two distinct notions are easy to conflate:
