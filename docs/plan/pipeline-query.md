@@ -362,7 +362,12 @@ Deferred to a later iteration (still tracked here, not currently in scope):
     FEASIBLE (the length parity 2n vs n disambiguates ids from segments once
     names are literal) and deliberately deferred.
   - `docRefValue(path)` takes the segment path (one signature, typed
-    `DocRefType<'unknown'>`; comparisons key on the `'reference'` tag).
+    `DocRefType<'unknown'>`; comparisons key on the `'reference'` tag — a
+    segment tuple alone cannot recover the `Collection` type, and no operator
+    needs the precision). Decided (2026-07): the shorthand layer SHOULD add
+    the collection+address form `docRefValue(authors, ['a1'])` typed
+    `DocRefType<Authors>` — receiving the collection definition itself is
+    what makes the known-collection typing possible.
   - Cursor constraints (`startAt` etc.) remain untyped raw pass-through
     (`Cursor` is `unknown[]`) — a reference cursor value would need the same
     encoding once cursors get typed.
