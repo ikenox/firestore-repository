@@ -57,7 +57,7 @@ import {
 import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeSchema, encodeFilterValue } from './codec.js';
+import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
 
 /** Platform-specific environment types for Firebase JS SDK */
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
@@ -219,6 +219,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
 
 export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
   const decodeSchema = buildDecodeSchema(coll.schema);
+  const encodeFilterValue = buildEncodeFilterValue(coll.schema, db);
   const encodeSchema = buildEncodeSchema(coll.schema, db);
 
   const toFirestore = {
@@ -301,7 +302,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
           return where(
             expr.fieldPath,
             expr.opStr,
-            encodeFilterValue(coll.schema, expr.fieldPath, expr.opStr, expr.value, db),
+            encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
           );
         case 'and':
           return and(...expr.filters.map(toFirestore.filter));

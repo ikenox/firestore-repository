@@ -188,46 +188,61 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
 }
 
 /**
- * Encodes a single filter condition's operand into what the SDK's `where()`
- * accepts, by reusing the write codec (`buildEncodeField`): a field's READ
- * representation is a subset of its write `input` for every descriptor, and
- * the write conversions (`RefPath` -> `DocumentReference`, `Date` ->
- * `Timestamp`, geopoint/bytes/vector to their SDK classes) are exactly the
- * operand forms `where()` compares correctly. Sending references as
- * `DocumentReference` values also keeps `__name__` filters free of the SDK's
- * scope-dependent string conventions (see docs/querying-by-document-id.md):
- * a reference works in every scope. Only the operand arity is resolved here —
- * `in`/`not-in` take a list of field values and `array-contains(-any)` take
+ * Builds the encoder for filter-condition operands, memoizing the operand
+ * schema per (field path, operator) like `buildEncodeSchema` builds the
+ * write schema once per collection. The operand schema reuses the write
+ * codec (`buildEncodeField`): a field's READ representation is a subset of
+ * its write `input` for every descriptor, and the write conversions
+ * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`,
+ * geopoint/bytes/vector to their SDK classes) are exactly the operand forms
+ * `where()` compares correctly. Sending references as `DocumentReference`
+ * values also keeps `__name__` filters free of the SDK's scope-dependent
+ * string conventions (see docs/querying-by-document-id.md): a reference
+ * works in every scope. Only the operand arity is resolved here — `in`/
+ * `not-in` take a list of field values and `array-contains(-any)` take
  * element values.
  */
-export function encodeFilterValue(
+export function buildEncodeFilterValue(
+  schema: DocumentSchema,
+  db: Firestore,
+): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
+  const operandSchemas = new Map<string, ZodAny>();
+  return (fieldPath, opStr, value) => {
+    const key = `${opStr}:${fieldPath}`;
+    let operandSchema = operandSchemas.get(key);
+    if (operandSchema === undefined) {
+      operandSchema = buildOperandSchema(schema, fieldPath, opStr, db);
+      operandSchemas.set(key, operandSchema);
+    }
+    return operandSchema.parse(value);
+  };
+}
+
+function buildOperandSchema(
   schema: DocumentSchema,
   fieldPath: string,
   opStr: WhereFilterOp,
-  value: unknown,
   db: Firestore,
-): unknown {
+): ZodAny {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
   const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
   switch (opStr) {
     case 'in':
     case 'not-in':
-      return z.array(buildEncodeField(fieldType, db)).parse(value);
+      return z.array(buildEncodeField(fieldType, db));
     case 'array-contains':
-      return fieldType.type === 'array'
-        ? buildEncodeField(fieldType.dynamicPart, db).parse(value)
-        : value;
+      return fieldType.type === 'array' ? buildEncodeField(fieldType.dynamicPart, db) : z.unknown();
     case 'array-contains-any':
       return fieldType.type === 'array'
-        ? z.array(buildEncodeField(fieldType.dynamicPart, db)).parse(value)
-        : value;
+        ? z.array(buildEncodeField(fieldType.dynamicPart, db))
+        : z.unknown();
     case '==':
     case '!=':
     case '<':
     case '<=':
     case '>':
     case '>=':
-      return buildEncodeField(fieldType, db).parse(value);
+      return buildEncodeField(fieldType, db);
     default:
       return assertNever(opStr);
   }
