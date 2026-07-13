@@ -189,15 +189,16 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
 
 /**
  * Encodes a single filter condition's operand into what the SDK's `where()`
- * accepts. Only document references need conversion: they appear in
- * conditions as `RefPath` segment paths (a field's READ representation) and
- * are sent as `DocumentReference` values — the one representation the
- * backend compares. This also keeps `__name__` filters free of the SDK's
- * scope-dependent string conventions (a plain id for a collection query, a
- * full root-relative path for a collection group — see
- * docs/querying-by-document-id.md): a reference works in every scope.
- * `in`/`not-in` take a list of operands and `array-contains(-any)` take
- * element operands, so the arity/element type is resolved per operator.
+ * accepts, by reusing the write codec (`buildEncodeField`): a field's READ
+ * representation is a subset of its write `input` for every descriptor, and
+ * the write conversions (`RefPath` -> `DocumentReference`, `Date` ->
+ * `Timestamp`, geopoint/bytes/vector to their SDK classes) are exactly the
+ * operand forms `where()` compares correctly. Sending references as
+ * `DocumentReference` values also keeps `__name__` filters free of the SDK's
+ * scope-dependent string conventions (see docs/querying-by-document-id.md):
+ * a reference works in every scope. Only the operand arity is resolved here —
+ * `in`/`not-in` take a list of field values and `array-contains(-any)` take
+ * element values.
  */
 export function encodeFilterValue(
   schema: DocumentSchema,
@@ -211,14 +212,14 @@ export function encodeFilterValue(
   switch (opStr) {
     case 'in':
     case 'not-in':
-      return Array.isArray(value) ? value.map((v) => encodeFilterOperand(fieldType, v, db)) : value;
+      return z.array(buildEncodeField(fieldType, db)).parse(value);
     case 'array-contains':
       return fieldType.type === 'array'
-        ? encodeFilterOperand(fieldType.dynamicPart, value, db)
+        ? buildEncodeField(fieldType.dynamicPart, db).parse(value)
         : value;
     case 'array-contains-any':
-      return fieldType.type === 'array' && Array.isArray(value)
-        ? value.map((v) => encodeFilterOperand(fieldType.dynamicPart, v, db))
+      return fieldType.type === 'array'
+        ? z.array(buildEncodeField(fieldType.dynamicPart, db)).parse(value)
         : value;
     case '==':
     case '!=':
@@ -226,57 +227,11 @@ export function encodeFilterValue(
     case '<=':
     case '>':
     case '>=':
-      return encodeFilterOperand(fieldType, value, db);
+      return buildEncodeField(fieldType, db).parse(value);
     default:
       return assertNever(opStr);
   }
 }
-
-function encodeFilterOperand(fieldType: FieldType, value: unknown, db: Firestore): unknown {
-  switch (fieldType.type) {
-    case 'docRef': {
-      const parsed = refPathSchema(fieldType.collection).safeParse(value);
-      return parsed.success ? doc(db, parsed.data.join('/')) : value;
-    }
-    case 'array':
-      return Array.isArray(value)
-        ? value.map((v) => encodeFilterOperand(fieldType.dynamicPart, v, db))
-        : value;
-    case 'map':
-      return typeof value === 'object' && value !== null
-        ? Object.fromEntries(
-            Object.entries(value).map(([k, v]) => {
-              const f = fieldType.fields[k];
-              return [k, f === undefined ? v : encodeFilterOperand(f, v, db)];
-            }),
-          )
-        : value;
-    case 'union': {
-      // A reference is the only member type needing conversion, so a value is
-      // converted iff it matches a docRef member's segment-path shape.
-      for (const e of fieldType.elements) {
-        if (e.type === 'docRef' && refPathSchema(e.collection).safeParse(value).success) {
-          return encodeFilterOperand(e, value, db);
-        }
-      }
-      return value;
-    }
-    case 'string':
-    case 'bool':
-    case 'int64':
-    case 'double':
-    case 'timestamp':
-    case 'bytes':
-    case 'geoPoint':
-    case 'vector':
-    case 'null':
-    case 'const':
-      return value;
-    default:
-      return assertNever(fieldType);
-  }
-}
-
 /**
  * A zod schema for a `RefPath` segment path. A known collection's tuple shape
  * is exact — literal collection names at the even positions — while the
