@@ -263,9 +263,9 @@ both executors and the basic backend semantics in one round trip per family.
       identity ratchet drops (deferred; `documentId` covers today's uses) — `documentId(field('__name__'))` bridges it
       into the string domain, and comparing `__name__` against strings is
       now correctly rejected (probed: the backend matches NO string form —
-      only a reference value). `docRefValue(collection, id)` joins
+      only a reference value). `docRefValue(refPath)` joins
       `geoPointValue` / `vectorValue` as the third dedicated value node
-      (same classification rule: an id tuple is a plain `string[]` = an
+      (same classification rule: a segment path is a plain `string[]` = an
       array constant) and is the matching comparand; executors thread `db`
       to build the wire reference (the codec's `buildEncodeField`
       precedent). Value nodes are NOT expressions: `constant()` is the one

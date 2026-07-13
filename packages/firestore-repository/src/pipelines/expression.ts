@@ -1,4 +1,3 @@
-import type { DocRef } from '../repository.js';
 import {
   array,
   type ArrayType,
@@ -6,7 +5,6 @@ import {
   type BoolType,
   bytes,
   type BytesType,
-  type Collection,
   docRef,
   type DocRefType,
   double,
@@ -172,27 +170,25 @@ export class VectorValue {
  * A document-reference VALUE (not an expression — lift it with
  * `constant(docRefValue(...))`). A dedicated constructor for the same
  * classification rule as {@link GeoPointValue} / {@link VectorValue}: a
- * reference's plain-JS representation (`DocRef<T>`, an id tuple) is a string
- * array — always an **array** constant — and building the wire reference
- * needs the collection context anyway, so both come explicitly. This is the
- * comparand that makes reference comparisons meaningful: probed, the
- * pipeline backend never matches `__name__` against ANY string form
- * (id / relative path / full resource path — all `false`), only against a
- * reference value.
+ * reference's plain-JS representation (`RefPath`, a segment path) is a
+ * string array — always an **array** constant — so the reference
+ * interpretation must be explicit. This is the comparand that makes
+ * reference comparisons meaningful: probed, the pipeline backend never
+ * matches `__name__` against ANY string form (id / relative path / full
+ * resource path — all `false`), only against a reference value. Build the
+ * segment path from a repository-side id with `refPath(collection, id)`
+ * (`path.js`).
  */
-export class DocRefValue<T extends Collection = Collection> {
-  readonly type: DocRefType<T>;
-  constructor(
-    readonly collection: T,
-    readonly id: DocRef<T>,
-  ) {
-    this.type = docRef(collection);
+export class DocRefValue {
+  readonly type: DocRefType<'unknown'> = docRef();
+  readonly path: readonly string[];
+  constructor(path: readonly string[]) {
+    this.path = [...path];
   }
 }
 
 /** Builds a document-reference value — see {@link DocRefValue}. */
-export const docRefValue = <T extends Collection>(collection: T, id: DocRef<T>): DocRefValue<T> =>
-  new DocRefValue(collection, id);
+export const docRefValue = (path: readonly string[]): DocRefValue => new DocRefValue(path);
 
 /**
  * The value domain `constant()` accepts — everything with an unambiguous
@@ -201,7 +197,7 @@ export const docRefValue = <T extends Collection>(collection: T, id: DocRef<T>):
  * explicit constructors instead — a plain object is always a **map** constant
  * (use {@link geoPointValue} for geopoints), a `number[]` is always an
  * **array** constant (use {@link vectorValue} for vectors), and a `string[]`
- * id tuple likewise (use {@link docRefValue} for document references).
+ * segment path likewise (use {@link docRefValue} for document references).
  */
 export type ConstantValue = ConstantScalar | ConstantLeafNode | ConstantArray | ConstantMap;
 export type ConstantScalar = string | number | boolean | null | Date | Uint8Array;
@@ -237,8 +233,8 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
       ? TimestampType
       : V extends Uint8Array
         ? BytesType
-        : V extends DocRefValue<infer C>
-          ? DocRefType<C>
+        : V extends DocRefValue
+          ? DocRefType<'unknown'>
           : V extends GeoPointValue
             ? GeoPointType
             : V extends VectorValue

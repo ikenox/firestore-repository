@@ -1,5 +1,5 @@
 import { FieldValue, type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
-import { collectionPath, documentPath } from 'firestore-repository/path';
+import { collectionPath } from 'firestore-repository/path';
 import {
   type BinaryFunctionName,
   type Constant,
@@ -209,7 +209,7 @@ const toSdkConstant = (db: Firestore, value: Constant['value']): Pipelines.Expre
     return Pipelines.constant(FieldValue.vector([...value.values]));
   }
   if (value instanceof DocRefValue) {
-    return Pipelines.constant(db.doc(documentPath(value.collection, value.id)));
+    return Pipelines.constant(db.doc(value.path.join('/')));
   }
   if (isConstantArrayValue(value)) {
     return Pipelines.array(value.map((element) => toSdkConstant(db, element)));

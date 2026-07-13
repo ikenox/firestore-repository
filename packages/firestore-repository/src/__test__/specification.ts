@@ -1,7 +1,7 @@
 import { assert, beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
 import { average, count, sum } from '../aggregate.js';
-import { documentPath } from '../path.js';
+import { refPath } from '../path.js';
 import {
   and,
   arrayContains,
@@ -607,11 +607,17 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           it('filter by id', async () => {
             await expectQuery(
-              query({ collection: repository.collection }, where(eq('__name__', '1'))),
+              query(
+                { collection: repository.collection },
+                where(eq('__name__', refPath(repository.collection, ['1']))),
+              ),
               [items[0]],
             );
             await expectQuery(
-              query({ collection: repository.collection }, where(eq('__name__', '2'))),
+              query(
+                { collection: repository.collection },
+                where(eq('__name__', refPath(repository.collection, ['2']))),
+              ),
               [items[1]],
             );
           });
@@ -977,20 +983,18 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             );
           });
 
-          // In a subcollection query the `__name__` value is a plain document id relative to
-          // the queried subcollection (the parent id is NOT part of the value).
           it('filter by id', async () => {
             await expectQuery(
               query(
                 { collection: repository.collection, parent: ['author1'] },
-                where(eq('__name__', '1')),
+                where(eq('__name__', refPath(repository.collection, ['author1', '1']))),
               ),
               [items[0]],
             );
             await expectQuery(
               query(
                 { collection: repository.collection, parent: ['author1'] },
-                where(eq('__name__', '2')),
+                where(eq('__name__', refPath(repository.collection, ['author1', '2']))),
               ),
               [items[1]],
             );
@@ -1019,36 +1023,25 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             );
           });
 
-          // In a collection group query the `__name__` value must be the fully-qualified document
-          // path relative to the database root (e.g. `Authors/author1/Posts/1`), unlike a plain
-          // collection/subcollection query which takes a plain document id. A plain id is rejected
-          // by Firestore because it does not resolve to a valid (even-segment) document path.
+          // The `__name__` operand is the same `RefPath` in every scope — the
+          // adapters encode it to a reference value, which (unlike the SDK's
+          // scope-dependent string conventions) works uniformly for
+          // collection, subcollection, and collection group queries.
           it('filter by id', async () => {
             await expectQuery(
               query(
                 { collection: repository.collection, group: true },
-                where(eq('__name__', documentPath(repository.collection, ['author1', '1']))),
+                where(eq('__name__', refPath(repository.collection, ['author1', '1']))),
               ),
               [items[0]],
             );
             await expectQuery(
               query(
                 { collection: repository.collection, group: true },
-                where(eq('__name__', documentPath(repository.collection, ['author2', '3']))),
+                where(eq('__name__', refPath(repository.collection, ['author2', '3']))),
               ),
               [items[2]],
             );
-          });
-
-          it('filter by id rejects a plain document id', async () => {
-            await expect(
-              repository.list(
-                query(
-                  { collection: repository.collection, group: true },
-                  where(eq('__name__', '1')),
-                ),
-              ),
-            ).rejects.toThrowError(/odd number of segments/);
           });
 
           it('orderBy id', async () => {
@@ -1076,7 +1069,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           null: nullType(),
           docRef: docRef(authorsCollection),
           // The context-free flavor: a reference to no one particular
-          // collection, round-tripping relative path strings.
+          // collection, round-tripping untyped segment paths.
           anyRef: docRef(),
           str: string(),
           vector: vector(),
@@ -1101,8 +1094,8 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             geoPoint: { latitude: 12.3, longitude: 45.6 },
             map: { a: 123, b: ['foo', 'bar'], nested: { c: 7 } },
             null: null,
-            docRef: [randomString()],
-            anyRef: 'SomeOtherCollection/some-doc-id',
+            docRef: refPath(authorsCollection, [randomString()]),
+            anyRef: ['SomeOtherCollection', 'some-doc-id'],
             str: randomString(),
             vector: [1, 2, 3, 4, 5],
             literalStr: 'foo',

@@ -1,6 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { DocRef } from './repository.js';
 import {
   type AnyMapType,
   array,
@@ -11,6 +10,7 @@ import {
   docRef,
   double,
   type DocRefType,
+  type RefPath,
   type DoubleType,
   type DocumentSchema,
   type DocFieldPath,
@@ -92,14 +92,15 @@ describe('schema', () => {
       type TestCollection = typeof testCollection;
 
       const type = docRef(testCollection);
-      expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<DocRef<TestCollection>>();
-      expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<DocRef<TestCollection>>();
+      expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<RefPath<TestCollection>>();
+      expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<['TestCollection', string]>();
+      expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<RefPath<TestCollection>>();
     });
 
-    it('docRef (context-free flavor): relative path strings both ways', () => {
+    it('docRef (context-free flavor): untyped segment paths both ways', () => {
       const type = docRef();
-      expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<string>();
-      expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<string>();
+      expectTypeOf<FieldValue<typeof type, 'read'>>().toEqualTypeOf<string[]>();
+      expectTypeOf<FieldValue<typeof type, 'write'>>().toEqualTypeOf<string[]>();
     });
 
     it('bytes', () => {
@@ -391,7 +392,7 @@ describe('document', () => {
     expectTypeOf<FieldValueOfPath<Schema, 'b.optional'>>().toEqualTypeOf<'foo' | 'bar'>();
     expectTypeOf<FieldValueOfPath<Schema, 'b.optionalMap.f'>>().toEqualTypeOf<string>();
     expectTypeOf<FieldValueOfPath<Schema, 'b.optionalMap.g'>>().toEqualTypeOf<number>();
-    expectTypeOf<FieldValueOfPath<Schema, '__name__'>>().toEqualTypeOf<string>();
+    expectTypeOf<FieldValueOfPath<Schema, '__name__'>>().toEqualTypeOf<string[]>();
   });
 
   it('FieldTypeOfPath', () => {

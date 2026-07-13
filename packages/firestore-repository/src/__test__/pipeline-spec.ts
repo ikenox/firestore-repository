@@ -1,5 +1,6 @@
 import { assert, beforeEach, describe, expect, it } from 'vitest';
 
+import { refPath } from '../path.js';
 import {
   abs,
   add,
@@ -556,26 +557,28 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // genuine reference value.
         await expectPipeline(
           source().where((field) =>
-            equal(field('__name__'), constant(docRefValue(liveCollection(), ['a1']))),
+            equal(field('__name__'), constant(docRefValue(refPath(liveCollection(), ['a1'])))),
           ),
           [a1],
         );
       });
 
-      it('reference: a projected raw __name__ decodes to its path string', async () => {
+      it('reference: a projected raw __name__ decodes to its segment path', async () => {
         await expectPipeline(
           source()
             .sort((field) => [asc(field('rank'))])
             .limit(1)
             .select((field) => [field('__name__').as('key'), 'name']),
-          [{ data: { key: `${collectionName()}/a1`, name: 'alice' } }],
+          [{ data: { key: [collectionName(), 'a1'], name: 'alice' } }],
         );
       });
 
-      it('reference: a docRefValue inside a constant map decodes to a DocRef id tuple', async () => {
+      it('reference: a docRefValue inside a constant map decodes to a RefPath', async () => {
         await expectPipeline(
-          one().select(() => [constant({ author: docRefValue(liveCollection(), ['a2']) }).as('m')]),
-          [{ data: { m: { author: ['a2'] } } }],
+          one().select(() => [
+            constant({ author: docRefValue(refPath(liveCollection(), ['a2'])) }).as('m'),
+          ]),
+          [{ data: { m: { author: [collectionName(), 'a2'] } } }],
         );
       });
 

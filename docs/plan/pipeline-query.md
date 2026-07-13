@@ -335,30 +335,37 @@ Deferred to a later iteration (still tracked here, not currently in scope):
   - Settle whether `Ordering` is imported as a value or `import type` in
     `pipeline.ts` (it is currently a value import of a type).
 
-## Reference values: segment-path unification (next up, own PR)
+## Reference values: segment-path unification
 
-Agreed direction (2026-07): unify the reference VALUE representation across
-the known-collection and context-free flavors as a **segment path including
-collection names** — `['authors', <id>]`, `['authors', <id>, 'posts', <id>]`
-— typed with LITERAL collection-name positions when the collection is known
-and `string[]` when it is not, so known/unknown becomes purely a gradient of
-tuple precision (this also dissolves the ids-tuple vs segments ambiguity
-that previously forced the context-free flavor onto a path string).
-
-Constraints / scope:
-
-- **The repository API keeps its ids-only interface** (`get(['a1'])`,
-  `Doc.id`, `DocRef<T>` as-is): a repository is already collection-bound, so
-  making callers repeat the collection name is pure ceremony. The segment
-  form is a SEPARATE type for reference VALUES (a `docRef(...)` field's
-  read/write value, `DocRefType<'unknown'>`'s value, `docRefValue`'s
-  payload), converting to/from ids at the repository boundary.
-- Prerequisite: `Collection` must capture `name` / `parent` as LITERAL types
-  (`const` type parameters) for the precise tuples.
-- Ripples: both codecs' docRef decode (collect names from the ref walk —
-  already available), `documentPath` (becomes ~a join), the core query's
-  docRef filter encoding (today's raw pass-through needs revisiting),
-  `docRefValue`'s argument shape, specs and README examples.
+- [x] **Done (2026-07).** Reference VALUES are uniformly `RefPath<T>` segment
+      paths (`['Authors', <id>]`, `['Authors', <id>, 'Posts', <id>]`) — literal
+      collection-name positions when the collection is known, `string[]` for the
+      `'unknown'` flavor, so known/unknown is purely a gradient of tuple
+      precision. The ids-only ADDRESS (`DocRef<T>`) survives only in the
+      repository interface (`get`/`set`/`Doc.id`), with `refPath()` /
+      `toDocRef()` (`path.ts`) converting at that one boundary.
+  - `Collection` captures `name` as a literal (`const Name` on the
+    factories; `parent` already was).
+  - Both codecs: decode is a single arm (`ref.path.split('/')`); encode
+    validates the segment shape per flavor (`refPathSchema`) and builds
+    `db.doc(segments.join('/'))`.
+  - Core query `__name__` (and docRef-field) filter operands are RefPath and
+    the adapters encode them to `DocumentReference` values
+    (`encodeFilterValue` in each codec, recursing into
+    array/map/union-nested references), so every scope — collection,
+    subcollection, collection group — takes the same operand form and the
+    SDK's scope-dependent string conventions (plain id vs full path — see
+    docs/querying-by-document-id.md) no longer surface. The old "plain id
+    for a collection query" convenience is gone; a typed shorthand layer
+    ("address accepted where a static context exists": bare id / `DocRef`
+    tuple at surfaces whose collection is statically known) was judged
+    FEASIBLE (the length parity 2n vs n disambiguates ids from segments once
+    names are literal) and deliberately deferred.
+  - `docRefValue(path)` takes the segment path (one signature, typed
+    `DocRefType<'unknown'>`; comparisons key on the `'reference'` tag).
+  - Cursor constraints (`startAt` etc.) remain untyped raw pass-through
+    (`Cursor` is `unknown[]`) — a reference cursor value would need the same
+    encoding once cursors get typed.
 
 ## Expressions — remaining gaps
 

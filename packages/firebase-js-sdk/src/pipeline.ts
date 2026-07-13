@@ -64,7 +64,7 @@ import {
   type Pipeline as SdkPipeline,
   type Selectable as SdkSelectable,
 } from '@firebase/firestore/pipelines';
-import { collectionPath, documentPath } from 'firestore-repository/path';
+import { collectionPath } from 'firestore-repository/path';
 import {
   type BinaryFunctionName,
   type Constant,
@@ -271,7 +271,7 @@ const toSdkConstant = (db: Firestore, value: Constant['value']): SdkExpression =
     return sdkConstant(vector([...value.values]));
   }
   if (value instanceof DocRefValue) {
-    return sdkConstant(doc(db, documentPath(value.collection, value.id)));
+    return sdkConstant(doc(db, value.path.join('/')));
   }
   if (isConstantArrayValue(value)) {
     return sdkArray(value.map((element) => toSdkConstant(db, element)));

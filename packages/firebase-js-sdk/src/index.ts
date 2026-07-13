@@ -57,7 +57,7 @@ import {
 import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeSchema } from './codec.js';
+import { buildDecodeSchema, buildEncodeSchema, encodeFilterValue } from './codec.js';
 
 /** Platform-specific environment types for Firebase JS SDK */
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
@@ -298,7 +298,11 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
     filter: (expr: FilterExpression<T['schema']>): FirestoreQueryFilterConstraint => {
       switch (expr.kind) {
         case 'fieldValueCondition':
-          return where(expr.fieldPath, expr.opStr, expr.value);
+          return where(
+            expr.fieldPath,
+            expr.opStr,
+            encodeFilterValue(coll.schema, expr.fieldPath, expr.opStr, expr.value, db),
+          );
         case 'and':
           return and(...expr.filters.map(toFirestore.filter));
         case 'or':
