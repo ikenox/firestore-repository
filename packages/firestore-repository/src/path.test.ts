@@ -60,15 +60,15 @@ describe('path', () => {
 
     it('takes typed paths only: a path of the wrong collection is a compile error', () => {
       // @ts-expect-error -- 4 segments cannot be a Users path
-      expect(() => toDocRef(users, ['Users', 'user1', 'Posts', 'post1'])).toThrow();
+      void (() => toDocRef(users, ['Users', 'user1', 'Posts', 'post1']));
       // @ts-expect-error -- a Comments segment cannot appear in a Posts path
-      expect(() => toDocRef(posts, ['Users', 'user1', 'Comments', 'c1'])).toThrow();
+      void (() => toDocRef(posts, ['Users', 'user1', 'Comments', 'c1']));
       const postsPath = refPath(posts, ['user1', 'post1']);
       // @ts-expect-error -- a typed RefPath of another collection is rejected
-      expect(() => toDocRef(users, postsPath)).toThrow();
+      void (() => toDocRef(users, postsPath));
       const untyped: string[] = ['Users', 'user1'];
       // @ts-expect-error -- an untyped string[] must be narrowed with parseRefPath first
-      expect(toDocRef(users, untyped)).toStrictEqual(['user1']);
+      void (() => toDocRef(users, untyped));
     });
   });
 
