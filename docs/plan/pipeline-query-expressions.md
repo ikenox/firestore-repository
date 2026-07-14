@@ -131,6 +131,9 @@ double())), field(string()))` is legal; reference-vs-`array(string())`,
 
 ### Planned ergonomics: direct literal operands (no explicit `constant()`)
 
+Deliberately deferred (2026-07): nice-to-have ergonomics, not blocking any
+slice — revisit after the function slices land.
+
 Raw values should be writable directly as operands —
 `equal(field('rank'), 1)`, `startsWith(field('name'), 'a')`,
 `equal(field('__name__'), docRefValue(...))` — with the factory lifting them
