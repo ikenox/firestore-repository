@@ -15,28 +15,13 @@ export const refPath = <T extends Collection>(collection: T, docRef: DocRef<T>):
   ]) as RefPath<T>;
 
 /**
- * Converts a reference VALUE (`RefPath` segment path) back into the ids-only
- * ADDRESS (`DocRef`) of the given collection, so a reference read from a
- * document field can be passed to that collection's repository.
- *
- * Two patterns, statically separated by the argument's precision:
- *
- * - A tuple-shaped path (an inline literal, or a value typed `RefPath<T>`)
- *   must match the collection's `RefPath` at COMPILE time — a path of the
- *   wrong collection is rejected by the first overload, and the second
- *   overload's conditional turns back into `RefPath<T>` for any non-wide
- *   tuple, so it cannot fall through to the permissive signature.
- * - A wide `string[]` (a context-free `RefPath<'unknown'>` read from a
- *   `docRef()` field or a raw `__name__` key) carries no static shape, so it
- *   is accepted as-is and checked at RUNTIME instead (segment count and
- *   every collection-name position).
+ * Narrows a context-free reference value (`RefPath<'unknown'>`, a plain
+ * `string[]` read from a `docRef()` field or a raw `__name__` key) into the
+ * typed `RefPath` of a collection the caller knows it belongs to. The claim
+ * is validated at runtime — segment count and every collection-name
+ * position — since the input carries no static shape.
  */
-export function toDocRef<T extends Collection>(collection: T, path: RefPath<T>): DocRef<T>;
-export function toDocRef<T extends Collection, const P extends string[]>(
-  collection: T,
-  path: string[] extends P ? P : RefPath<T>,
-): DocRef<T>;
-export function toDocRef<T extends Collection>(collection: T, path: string[]): DocRef<T> {
+export const asRefPath = <T extends Collection>(collection: T, path: string[]): RefPath<T> => {
   const names = [...collection.parent, collection.name];
   if (path.length !== names.length * 2) {
     throw new Error(
@@ -50,10 +35,21 @@ export function toDocRef<T extends Collection>(collection: T, path: string[]): D
       );
     }
   });
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- filter cannot preserve the tuple shape
-  return path.filter((_, i) => i % 2 === 1) as DocRef<T>;
-}
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the loop above verified exactly the shape RefPath<T> declares
+  return path as RefPath<T>;
+};
 
+/**
+ * Converts a reference VALUE (`RefPath` segment path) back into the ids-only
+ * ADDRESS (`DocRef`) of the given collection, so a reference read from a
+ * document field can be passed to that collection's repository. Takes the
+ * typed `RefPath<T>` only — narrow a context-free `string[]` with
+ * {@link asRefPath} first. (Validation still runs, via `asRefPath`, as a
+ * guard for assertion-carrying callers.)
+ */
+export const toDocRef = <T extends Collection>(collection: T, path: RefPath<T>): DocRef<T> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- filter cannot preserve the tuple shape
+  asRefPath(collection, path).filter((_, i) => i % 2 === 1) as DocRef<T>;
 /**
  * Returns the fully-qualified path of a document
  */

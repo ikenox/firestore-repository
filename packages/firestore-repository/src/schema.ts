@@ -170,7 +170,8 @@ export type TimestampType = {
  * same shape at different tuple precision (`RefPath<Posts>` is
  * `['Authors', string, 'Posts', string]`; `RefPath<'unknown'>` degrades to
  * `string[]`), instead of two unrelated representations. Convert between the
- * two with `refPath()` / `toDocRef()` (`path.js`).
+ * two with `refPath()` / `toDocRef()`, and narrow a context-free `string[]`
+ * into a typed `RefPath` with `asRefPath()` (`path.js`).
  */
 export type RefPath<T extends Collection | 'unknown' = Collection | 'unknown'> =
   T extends Collection ? SegmentTuple<[...T['parent'], T['name']]> : string[];
