@@ -69,6 +69,13 @@ string[])` → `RefPath<T>`; the codecs' decode → read-space values).
 - Every remaining assertion MUST carry an `oxlint-disable-next-line
 typescript/no-unsafe-type-assertion` comment stating the specific compiler
   limitation that makes it unavoidable.
+- **A function containing a type assertion MUST have exhaustive unit tests.**
+  An assertion is a claim the compiler no longer checks, so the tests carry
+  the proof instead: cover every input shape the function's contract admits
+  (each collection depth for path helpers, each operator for operand
+  encoders, each flavor of a descriptor) and the failure modes, not just one
+  happy path. Precedent: `path.test.ts` for `refPath` / `parseRefPath` /
+  `toDocRef`, `codec.test.ts` for `buildEncodeFilterValue`.
 
 ## Union / enum-like value handling
 

@@ -56,6 +56,19 @@ describe('path', () => {
         'user1',
         'post1',
       ]);
+      expect(
+        toDocRef(comments, ['Users', 'user1', 'Posts', 'post1', 'Comments', 'comment1']),
+      ).toStrictEqual(['user1', 'post1', 'comment1']);
+      expectTypeOf(toDocRef(posts, refPath(posts, ['user1', 'post1']))).toEqualTypeOf<
+        [string, string]
+      >();
+    });
+
+    it('fails loudly on a lying type assertion instead of yielding wrong ids', () => {
+      const wide: string[] = ['Posts', 'post1'];
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberately lying, to exercise the guard
+      const lying = wide as RefPath<typeof users>;
+      expect(() => toDocRef(users, lying)).toThrow(/segment 0 is 'Posts', expected 'Users'/);
     });
 
     it('takes typed paths only: a path of the wrong collection is a compile error', () => {
@@ -74,18 +87,37 @@ describe('path', () => {
 
   describe('parseRefPath', () => {
     it('narrows an untyped (context-free) segment path after runtime validation', () => {
-      const untyped: string[] = ['Users', 'user1', 'Posts', 'post1'];
-      const narrowed = parseRefPath(posts, untyped);
-      expectTypeOf(narrowed).toEqualTypeOf<['Users', string, 'Posts', string]>();
-      expect(toDocRef(posts, narrowed)).toStrictEqual(['user1', 'post1']);
+      const rootPath: string[] = ['Users', 'user1'];
+      const root = parseRefPath(users, rootPath);
+      expectTypeOf(root).toEqualTypeOf<['Users', string]>();
+      expect(root).toStrictEqual(['Users', 'user1']);
+
+      const subPath: string[] = ['Users', 'user1', 'Posts', 'post1'];
+      const sub = parseRefPath(posts, subPath);
+      expectTypeOf(sub).toEqualTypeOf<['Users', string, 'Posts', string]>();
+      expect(sub).toStrictEqual(['Users', 'user1', 'Posts', 'post1']);
+
+      const deepPath: string[] = ['Users', 'user1', 'Posts', 'post1', 'Comments', 'comment1'];
+      expect(parseRefPath(comments, deepPath)).toStrictEqual(deepPath);
     });
 
-    it('rejects a path that does not belong to the collection', () => {
+    it('rejects a wrong segment count', () => {
       expect(() => parseRefPath(users, ['Users', 'user1', 'Posts', 'post1'])).toThrow(
         /expected 2 segments/,
       );
+      expect(() => parseRefPath(posts, ['post1'])).toThrow(/expected 4 segments/);
+      expect(() => parseRefPath(users, [])).toThrow(/expected 2 segments/);
+    });
+
+    it('rejects a wrong collection name at any name position', () => {
+      expect(() => parseRefPath(users, ['Posts', 'user1'])).toThrow(
+        /segment 0 is 'Posts', expected 'Users'/,
+      );
       expect(() => parseRefPath(posts, ['Users', 'user1', 'Comments', 'c1'])).toThrow(
         /segment 2 is 'Comments', expected 'Posts'/,
+      );
+      expect(() => parseRefPath(comments, ['Users', 'u1', 'Posts', 'p1', 'Likes', 'l1'])).toThrow(
+        /segment 4 is 'Likes', expected 'Comments'/,
       );
     });
   });
