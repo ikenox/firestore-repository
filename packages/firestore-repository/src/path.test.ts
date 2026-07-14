@@ -63,13 +63,21 @@ describe('path', () => {
       expect(toDocRef(posts, untyped)).toStrictEqual(['user1', 'post1']);
     });
 
-    it('rejects a path that does not belong to the collection', () => {
-      expect(() => toDocRef(users, ['Users', 'user1', 'Posts', 'post1'])).toThrow(
-        /expected 2 segments/,
-      );
-      expect(() => toDocRef(posts, ['Users', 'user1', 'Comments', 'c1'])).toThrow(
-        /segment 2 is 'Comments', expected 'Posts'/,
-      );
+    it('rejects a tuple-shaped path of the wrong collection at compile time', () => {
+      // @ts-expect-error -- 4 segments cannot be a Users path
+      expect(() => toDocRef(users, ['Users', 'user1', 'Posts', 'post1'])).toThrow();
+      // @ts-expect-error -- a Comments segment cannot appear in a Posts path
+      expect(() => toDocRef(posts, ['Users', 'user1', 'Comments', 'c1'])).toThrow();
+      const postsPath = refPath(posts, ['user1', 'post1']);
+      // @ts-expect-error -- a typed RefPath of another collection is rejected
+      expect(() => toDocRef(users, postsPath)).toThrow();
+    });
+
+    it('rejects an untyped path that does not belong to the collection at runtime', () => {
+      const tooLong: string[] = ['Users', 'user1', 'Posts', 'post1'];
+      expect(() => toDocRef(users, tooLong)).toThrow(/expected 2 segments/);
+      const wrongName: string[] = ['Users', 'user1', 'Comments', 'c1'];
+      expect(() => toDocRef(posts, wrongName)).toThrow(/segment 2 is 'Comments', expected 'Posts'/);
     });
   });
 

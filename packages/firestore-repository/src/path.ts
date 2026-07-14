@@ -17,15 +17,26 @@ export const refPath = <T extends Collection>(collection: T, docRef: DocRef<T>):
 /**
  * Converts a reference VALUE (`RefPath` segment path) back into the ids-only
  * ADDRESS (`DocRef`) of the given collection, so a reference read from a
- * document field can be passed to that collection's repository. Validates at
- * runtime that the path actually belongs to the collection (segment count
- * and every collection-name position), since a context-free `RefPath` is
- * just a `string[]`.
+ * document field can be passed to that collection's repository.
+ *
+ * Two patterns, statically separated by the argument's precision:
+ *
+ * - A tuple-shaped path (an inline literal, or a value typed `RefPath<T>`)
+ *   must match the collection's `RefPath` at COMPILE time — a path of the
+ *   wrong collection is rejected by the first overload, and the second
+ *   overload's conditional turns back into `RefPath<T>` for any non-wide
+ *   tuple, so it cannot fall through to the permissive signature.
+ * - A wide `string[]` (a context-free `RefPath<'unknown'>` read from a
+ *   `docRef()` field or a raw `__name__` key) carries no static shape, so it
+ *   is accepted as-is and checked at RUNTIME instead (segment count and
+ *   every collection-name position).
  */
-export const toDocRef = <T extends Collection>(
+export function toDocRef<T extends Collection>(collection: T, path: RefPath<T>): DocRef<T>;
+export function toDocRef<T extends Collection, const P extends string[]>(
   collection: T,
-  path: RefPath<T> | RefPath<'unknown'>,
-): DocRef<T> => {
+  path: string[] extends P ? P : RefPath<T>,
+): DocRef<T>;
+export function toDocRef<T extends Collection>(collection: T, path: string[]): DocRef<T> {
   const names = [...collection.parent, collection.name];
   if (path.length !== names.length * 2) {
     throw new Error(
@@ -41,7 +52,7 @@ export const toDocRef = <T extends Collection>(
   });
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- filter cannot preserve the tuple shape
   return path.filter((_, i) => i % 2 === 1) as DocRef<T>;
-};
+}
 
 /**
  * Returns the fully-qualified path of a document
