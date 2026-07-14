@@ -44,7 +44,7 @@ Follow the project's linting and formatting rules enforced by `pnpm check`.
   corollaries:
   - Data of uncertain validity (untyped/context-free values, wire data)
     enters the typed world only through a dedicated **narrowing function
-    that validates and returns the precise type** (`asRefPath(collection,
+    that validates and returns the precise type** (`parseRefPath(collection,
 string[])` → `RefPath<T>`; the codecs' decode → read-space values).
     Validation lives there, once.
   - **Do not widen a function's parameter to also accept possibly-invalid

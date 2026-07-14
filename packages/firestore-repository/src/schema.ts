@@ -171,7 +171,7 @@ export type TimestampType = {
  * `['Authors', string, 'Posts', string]`; `RefPath<'unknown'>` degrades to
  * `string[]`), instead of two unrelated representations. Convert between the
  * two with `refPath()` / `toDocRef()`, and narrow a context-free `string[]`
- * into a typed `RefPath` with `asRefPath()` (`path.js`).
+ * into a typed `RefPath` with `parseRefPath()` (`path.js`).
  */
 export type RefPath<T extends Collection | 'unknown' = Collection | 'unknown'> =
   T extends Collection ? SegmentTuple<[...T['parent'], T['name']]> : string[];

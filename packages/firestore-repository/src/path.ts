@@ -21,7 +21,7 @@ export const refPath = <T extends Collection>(collection: T, docRef: DocRef<T>):
  * is validated at runtime — segment count and every collection-name
  * position — since the input carries no static shape.
  */
-export const asRefPath = <T extends Collection>(collection: T, path: string[]): RefPath<T> => {
+export const parseRefPath = <T extends Collection>(collection: T, path: string[]): RefPath<T> => {
   const names = [...collection.parent, collection.name];
   if (path.length !== names.length * 2) {
     throw new Error(
@@ -44,12 +44,12 @@ export const asRefPath = <T extends Collection>(collection: T, path: string[]): 
  * ADDRESS (`DocRef`) of the given collection, so a reference read from a
  * document field can be passed to that collection's repository. Takes the
  * typed `RefPath<T>` only — narrow a context-free `string[]` with
- * {@link asRefPath} first. (Validation still runs, via `asRefPath`, as a
+ * {@link parseRefPath} first. (Validation still runs, via `parseRefPath`, as a
  * guard for assertion-carrying callers.)
  */
 export const toDocRef = <T extends Collection>(collection: T, path: RefPath<T>): DocRef<T> =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- filter cannot preserve the tuple shape
-  asRefPath(collection, path).filter((_, i) => i % 2 === 1) as DocRef<T>;
+  parseRefPath(collection, path).filter((_, i) => i % 2 === 1) as DocRef<T>;
 /**
  * Returns the fully-qualified path of a document
  */

@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { asRefPath, collectionPath, documentPath, refPath, toDocRef } from './path.js';
+import { parseRefPath, collectionPath, documentPath, refPath, toDocRef } from './path.js';
 import { type RefPath, rootCollection, string, subCollection } from './schema.js';
 
 describe('path', () => {
@@ -67,24 +67,24 @@ describe('path', () => {
       // @ts-expect-error -- a typed RefPath of another collection is rejected
       expect(() => toDocRef(users, postsPath)).toThrow();
       const untyped: string[] = ['Users', 'user1'];
-      // @ts-expect-error -- an untyped string[] must be narrowed with asRefPath first
+      // @ts-expect-error -- an untyped string[] must be narrowed with parseRefPath first
       expect(toDocRef(users, untyped)).toStrictEqual(['user1']);
     });
   });
 
-  describe('asRefPath', () => {
+  describe('parseRefPath', () => {
     it('narrows an untyped (context-free) segment path after runtime validation', () => {
       const untyped: string[] = ['Users', 'user1', 'Posts', 'post1'];
-      const narrowed = asRefPath(posts, untyped);
+      const narrowed = parseRefPath(posts, untyped);
       expectTypeOf(narrowed).toEqualTypeOf<['Users', string, 'Posts', string]>();
       expect(toDocRef(posts, narrowed)).toStrictEqual(['user1', 'post1']);
     });
 
     it('rejects a path that does not belong to the collection', () => {
-      expect(() => asRefPath(users, ['Users', 'user1', 'Posts', 'post1'])).toThrow(
+      expect(() => parseRefPath(users, ['Users', 'user1', 'Posts', 'post1'])).toThrow(
         /expected 2 segments/,
       );
-      expect(() => asRefPath(posts, ['Users', 'user1', 'Comments', 'c1'])).toThrow(
+      expect(() => parseRefPath(posts, ['Users', 'user1', 'Comments', 'c1'])).toThrow(
         /segment 2 is 'Comments', expected 'Posts'/,
       );
     });
