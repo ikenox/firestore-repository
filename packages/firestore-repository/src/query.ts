@@ -1,13 +1,15 @@
 import { ParentDocRef } from './repository.js';
-import type {
-  ArrayType,
-  Collection,
-  DocumentSchema,
-  DocFieldPath,
-  FieldType,
-  FieldTypeOfPath,
-  FieldValue,
+import {
+  type ArrayType,
+  array,
+  type Collection,
+  type DocumentSchema,
+  type DocFieldPath,
+  type FieldType,
+  type FieldTypeOfPath,
+  type FieldValue,
 } from './schema.js';
+import { assertNever } from './util.js';
 
 /**
  * A universal query definition
@@ -348,6 +350,36 @@ export type FilterOperand<T extends FieldType, U extends WhereFilterOp> = {
   'array-contains': T extends ArrayType<infer A> ? A : never;
   'array-contains-any': T extends ArrayType<infer A> ? ArrayType<A> : never;
 }[U];
+
+/**
+ * Runtime counterpart of {@link FilterOperand} (same operator mapping):
+ * resolves the `FieldType` describing a single operand of a filter condition
+ * on a field — the field's own type for comparisons, a list of it for
+ * `in`/`not-in`, the array's element type for `array-contains(-any)`.
+ */
+export const filterOperand = (fieldType: FieldType, opStr: WhereFilterOp): FieldType => {
+  switch (opStr) {
+    case '<':
+    case '<=':
+    case '==':
+    case '!=':
+    case '>=':
+    case '>':
+      return fieldType;
+    case 'in':
+    case 'not-in':
+      return array(fieldType);
+    case 'array-contains':
+    case 'array-contains-any': {
+      if (fieldType.type !== 'array') {
+        throw new Error(`operator "${opStr}" requires an array field`);
+      }
+      return opStr === 'array-contains' ? fieldType.dynamicPart : array(fieldType.dynamicPart);
+    }
+    default:
+      return assertNever(opStr);
+  }
+};
 
 /**
  * A filter condition operator

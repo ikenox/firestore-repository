@@ -12,7 +12,7 @@ import {
   serverTimestamp as firestoreServerTimestamp,
   vector,
 } from '@firebase/firestore';
-import type { WhereFilterOp } from 'firestore-repository/query';
+import { filterOperand, type WhereFilterOp } from 'firestore-repository/query';
 import {
   type Collection,
   type DocFieldPath,
@@ -198,9 +198,9 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
  * `where()` compares correctly. Sending references as `DocumentReference`
  * values also keeps `__name__` filters free of the SDK's scope-dependent
  * string conventions (see docs/querying-by-document-id.md): a reference
- * works in every scope. Only the operand arity is resolved here — `in`/
- * `not-in` take a list of field values and `array-contains(-any)` take
- * element values.
+ * works in every scope. The operand's shape per operator (`in` takes a list
+ * of field values, `array-contains` an element, ...) comes from
+ * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
  */
 export function buildEncodeFilterValue(
   schema: DocumentSchema,
@@ -211,42 +211,15 @@ export function buildEncodeFilterValue(
     const key = `${opStr}:${fieldPath}`;
     let operandSchema = operandSchemas.get(key);
     if (operandSchema === undefined) {
-      operandSchema = buildOperandSchema(schema, fieldPath, opStr, db);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
+      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
       operandSchemas.set(key, operandSchema);
     }
     return operandSchema.parse(value);
   };
 }
 
-function buildOperandSchema(
-  schema: DocumentSchema,
-  fieldPath: string,
-  opStr: WhereFilterOp,
-  db: Firestore,
-): ZodAny {
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
-  const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
-  switch (opStr) {
-    case 'in':
-    case 'not-in':
-      return z.array(buildEncodeField(fieldType, db));
-    case 'array-contains':
-      return fieldType.type === 'array' ? buildEncodeField(fieldType.dynamicPart, db) : z.unknown();
-    case 'array-contains-any':
-      return fieldType.type === 'array'
-        ? z.array(buildEncodeField(fieldType.dynamicPart, db))
-        : z.unknown();
-    case '==':
-    case '!=':
-    case '<':
-    case '<=':
-    case '>':
-    case '>=':
-      return buildEncodeField(fieldType, db);
-    default:
-      return assertNever(opStr);
-  }
-}
 /**
  * A zod schema for a `RefPath` segment path. A known collection's tuple shape
  * is exact — literal collection names at the even positions — while the
