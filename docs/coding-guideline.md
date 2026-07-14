@@ -7,8 +7,9 @@
 - **Record non-obvious design decisions (the WHY) — and route them by
   audience.** A rationale that affects how the API is USED (why a value is
   represented this way, why an input is rejected, why two similar-looking
-  types are distinct — e.g. why the context-free `DocRefType` reads/writes a
-  path string rather than a `string[]`) belongs in the **JSDoc**, where a
+  types are distinct — e.g. why a reference VALUE (`RefPath`) carries its
+  collection names while the repository's `DocRef` address does not) belongs
+  in the **JSDoc**, where a
   consumer hovering the symbol sees it. A rationale that only matters to
   maintainers (compiler workarounds, why an implementation shape was chosen
   over an alternative, probe references) stays a **plain comment** inside the
@@ -37,6 +38,21 @@ Follow the project's linting and formatting rules enforced by `pnpm check`.
   acceptable — a missing limb is recoverable, a wrong skeleton is not.
   Likewise, do not dismiss a consistent-but-rare case as "low practical
   utility"; uniformity of the system is itself the utility.
+- **Always-valid domain model ("parse, don't validate").** A value carrying a
+  precise type must be valid by construction — holding a `RefPath<Posts>`
+  means the segment path IS a Posts path, no re-checking downstream. Two
+  corollaries:
+  - Data of uncertain validity (untyped/context-free values, wire data)
+    enters the typed world only through a dedicated **narrowing function
+    that validates and returns the precise type** (`parseRefPath(collection,
+string[])` → `RefPath<T>`; the codecs' decode → read-space values).
+    Validation lives there, once.
+  - **Do not widen a function's parameter to also accept possibly-invalid
+    input for convenience** (e.g. `RefPath<T> | string[]`): the wide arm
+    swallows the precise one and silently downgrades compile-time checking
+    to runtime for every caller. Keep the function's contract precise and
+    let callers narrow first — the call site then documents where the
+    validity claim is made.
 
 ## Type assertions
 
@@ -53,6 +69,13 @@ Follow the project's linting and formatting rules enforced by `pnpm check`.
 - Every remaining assertion MUST carry an `oxlint-disable-next-line
 typescript/no-unsafe-type-assertion` comment stating the specific compiler
   limitation that makes it unavoidable.
+- **A function containing a type assertion MUST have exhaustive unit tests.**
+  An assertion is a claim the compiler no longer checks, so the tests carry
+  the proof instead: cover every input shape the function's contract admits
+  (each collection depth for path helpers, each operator for operand
+  encoders, each flavor of a descriptor) and the failure modes, not just one
+  happy path. Precedent: `path.test.ts` for `refPath` / `parseRefPath` /
+  `toDocRef`, `codec.test.ts` for `buildEncodeFilterValue`.
 
 ## Union / enum-like value handling
 

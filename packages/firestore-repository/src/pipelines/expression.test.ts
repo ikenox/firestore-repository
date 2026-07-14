@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import { refPath } from '../path.js';
 import {
   array,
   bool,
@@ -761,15 +762,15 @@ describe('reference / type / vector operators', () => {
 describe('document-reference values', () => {
   const authors = rootCollection({ name: 'authors', schema: { name: string() } });
 
-  it('docRefValue is a dedicated node carrying its collection and id', () => {
-    const ref = docRefValue(authors, ['a1']);
-    expect(ref).toStrictEqual(new DocRefValue(authors, ['a1']));
-    expect(ref.type).toStrictEqual(docRef(authors));
-    expectTypeOf(ref.type).toEqualTypeOf(docRef(authors));
+  it('docRefValue is a dedicated node carrying a RefPath segment path', () => {
+    const ref = docRefValue(refPath(authors, ['a1']));
+    expect(ref).toStrictEqual(new DocRefValue(['authors', 'a1']));
+    expect(ref.type).toStrictEqual(docRef());
+    expectTypeOf(ref.type).toEqualTypeOf(docRef());
   });
 
   it('compares against reference operands only (probed: strings never match)', () => {
-    const ref = constant(docRefValue(authors, ['a1']));
+    const ref = constant(docRefValue(refPath(authors, ['a1'])));
     equal(field(docRef(), '__name__'), ref);
     equal(field(docRef(authors), 'ref'), ref);
     // @ts-expect-error -- a reference never equals a string (always-false on the backend)
@@ -794,8 +795,8 @@ describe('document-reference values', () => {
   });
 
   it('doubles as a composite constant leaf, like geopoint/vector nodes', () => {
-    const c = constant({ author: docRefValue(authors, ['a1']) });
-    const oracle = map({ author: docRef(authors) });
+    const c = constant({ author: docRefValue(refPath(authors, ['a1'])) });
+    const oracle = map({ author: docRef() });
     expect(c.type).toStrictEqual(oracle);
     expectTypeOf(c.type).toEqualTypeOf(oracle);
   });

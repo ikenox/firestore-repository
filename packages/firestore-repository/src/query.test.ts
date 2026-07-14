@@ -1,8 +1,17 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { authorsCollection, postsCollection } from './__test__/specification.js';
-import { type FilterOperand, limit, orderBy, query } from './query.js';
-import { ArrayType, Int64Type, NullType, StringType, UnionType } from './schema.js';
+import { type FilterOperand, filterOperand, limit, orderBy, query } from './query.js';
+import {
+  type ArrayType,
+  array,
+  type Int64Type,
+  int64,
+  type NullType,
+  type StringType,
+  string,
+  type UnionType,
+} from './schema.js';
 
 describe('query', () => {
   describe('query function argument', () => {
@@ -67,5 +76,17 @@ describe('query', () => {
     expectTypeOf<FilterOperand<ArrayType<StringType>, 'array-contains-any'>>().toEqualTypeOf<
       ArrayType<StringType>
     >();
+  });
+
+  it('filterOperand (runtime counterpart of FilterOperand)', () => {
+    const int = int64();
+    expect(filterOperand(int, '==')).toStrictEqual(int);
+    expect(filterOperand(int, '>')).toStrictEqual(int);
+    expect(filterOperand(int, 'in')).toStrictEqual(array(int));
+    expect(filterOperand(int, 'not-in')).toStrictEqual(array(int));
+    expect(filterOperand(array(string()), 'array-contains')).toStrictEqual(string());
+    expect(filterOperand(array(string()), 'array-contains-any')).toStrictEqual(array(string()));
+    // type-level never — at runtime an explicit error
+    expect(() => filterOperand(int, 'array-contains')).toThrow(/requires an array field/);
   });
 });

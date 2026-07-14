@@ -1,29 +1,33 @@
-import { DocRef } from './repository.js';
-
 /**
  * A definition of a Firestore collection
  */
 export type Collection<
   Schema extends DocumentSchema = DocumentSchema,
+  Name extends string = string,
   Parent extends string[] = string[],
-> = { name: string; schema: Schema; parent: Parent };
+> = { name: Name; schema: Schema; parent: Parent };
 
 /** A root collection definition (no parent document) */
-export type RootCollection<Schema extends DocumentSchema = DocumentSchema> = Collection<Schema, []>;
+export type RootCollection<
+  Schema extends DocumentSchema = DocumentSchema,
+  Name extends string = string,
+> = Collection<Schema, Name, []>;
 
 /** A subcollection definition (nested under a parent document) */
 export type SubCollection<
   Schema extends DocumentSchema = DocumentSchema,
+  Name extends string = string,
   Parent extends [...string[], string] = [...string[], string],
-> = Collection<Schema, Parent>;
+> = Collection<Schema, Name, Parent>;
 
 /** Creates a root collection definition */
 export const rootCollection = <
   Schema extends DocumentSchema & WithoutDottedFieldNames<Schema>,
+  const Name extends string,
 >(params: {
-  name: string;
+  name: Name;
   schema: Schema;
-}): Collection<Schema, []> => {
+}): Collection<Schema, Name, []> => {
   assertNoDottedFieldNames(params.schema);
   return { ...params, parent: [] };
 };
@@ -31,12 +35,13 @@ export const rootCollection = <
 /** Creates a subcollection definition */
 export const subCollection = <
   Schema extends DocumentSchema & WithoutDottedFieldNames<Schema>,
+  const Name extends string,
   const Parent extends [...string[], string],
 >(params: {
-  name: string;
+  name: Name;
   schema: Schema;
   parent: Parent;
-}): SubCollection<Schema, Parent> => {
+}): SubCollection<Schema, Name, Parent> => {
   assertNoDottedFieldNames(params.schema);
   return params;
 };
@@ -151,6 +156,42 @@ export type TimestampType = {
   output: Date;
 };
 /**
+ * A document reference as a VALUE: the full segment path alternating
+ * collection names and document ids (`['Authors', 'a1']`,
+ * `['Authors', 'a1', 'Posts', 'p1']`). This is the one representation of a
+ * reference wherever it appears as data — a `docRef(...)` field's read/write
+ * value, a raw `'__name__'` key, a `docRefValue(...)` pipeline constant.
+ *
+ * It is deliberately distinct from `DocRef` (`repository.js`), the ids-only ADDRESS
+ * (`['a1', 'p1']`) used by the repository interface, where the collection is
+ * already fixed and repeating its name would be pure ceremony. Values carry
+ * their collection names because nothing in the surrounding context supplies
+ * them: this is what makes the known-collection and context-free flavors the
+ * same shape at different tuple precision (`RefPath<Posts>` is
+ * `['Authors', string, 'Posts', string]`; `RefPath<'unknown'>` degrades to
+ * `string[]`), instead of two unrelated representations. Convert between the
+ * two with `refPath()` / `toDocRef()`, and narrow a context-free `string[]`
+ * into a typed `RefPath` with `parseRefPath()` (`path.js`).
+ */
+export type RefPath<T extends Collection | 'unknown' = Collection | 'unknown'> =
+  T extends Collection ? SegmentTuple<[...T['parent'], T['name']]> : string[];
+
+/**
+ * Interleaves an id position after each collection-name position:
+ * `['Authors', 'Posts']` -> `['Authors', string, 'Posts', string]`. A
+ * non-tuple `string[]` input (a collection type whose names are not captured
+ * literally) degrades to `string[]`.
+ */
+type SegmentTuple<Names extends string[]> = Names extends [
+  infer H extends string,
+  ...infer Rest extends string[],
+]
+  ? [H, string, ...SegmentTuple<Rest>]
+  : Names extends []
+    ? []
+    : string[];
+
+/**
  * A document-reference descriptor. `T` is the referenced collection when the
  * schema knows it (a `docRef(collection)` data field), or the `'unknown'`
  * sentinel when it does not — the reserved `'__name__'` key resolves to
@@ -159,26 +200,20 @@ export type TimestampType = {
  * is a visible plain value, like the `Optional` marker, rather than
  * `undefined` ("the collection is unknown", not "there is no collection").
  *
- * The value representation follows the context: a known collection
- * round-trips `DocRef<T>` id tuples, while the context-free flavor reads AND
- * writes relative path strings (`'authors/a1'`). NOT a `string[]`: a
- * `DocRef` tuple holds ONLY ids (`['authorId', 'postId']` — the collection
- * names live in the schema and `documentPath` interleaves them), so a
- * context-free array would have to carry path SEGMENTS
- * (`['authors', 'a1']`) — a same-typed but differently-meaning shape,
- * indistinguishable from an id tuple in TS. The path string avoids that
- * collision, is the ecosystem's own context-free form (`ref.path` /
- * `db.doc(path)`), and is the core query API's id-filter contract
- * (`where(eq('__name__', id))`). Pipeline operator compatibility keys on the
- * shared `'reference'` tag, so both flavors compare with each other and
- * with `docRefValue(...)` constants.
+ * The value representation is a {@link RefPath} segment path in BOTH
+ * flavors: known/unknown is purely a gradient of tuple precision, not a
+ * change of shape. The ids-only `DocRef` address never appears as a field
+ * value — it belongs to the repository interface, whose collection context
+ * is fixed. Pipeline operator compatibility keys on the shared
+ * `'reference'` tag, so both flavors compare with each other and with
+ * `docRefValue(...)` constants.
  */
 export type DocRefType<T extends Collection | 'unknown' = Collection | 'unknown'> = {
   type: 'docRef';
   firestoreType: 'reference';
   collection: T;
-  input: T extends Collection ? DocRef<T> : string;
-  output: T extends Collection ? DocRef<T> : string;
+  input: RefPath<T>;
+  output: RefPath<T>;
 };
 export type BytesType = {
   type: 'bytes';

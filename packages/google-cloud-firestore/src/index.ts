@@ -21,7 +21,7 @@ import {
 import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeSchema } from './codec.js';
+import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -253,6 +253,7 @@ export const buildFirestoreUtilities = <T extends Collection>(
 ) => {
   const decodeSchema = buildDecodeSchema(collection.schema);
   const encodeSchema = buildEncodeSchema(collection.schema, db);
+  const encodeFilterValue = buildEncodeFilterValue(collection.schema, db);
 
   const toFirestore = {
     docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
@@ -305,7 +306,11 @@ export const buildFirestoreUtilities = <T extends Collection>(
     filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
       switch (expr.kind) {
         case 'fieldValueCondition':
-          return Filter.where(expr.fieldPath, expr.opStr, expr.value);
+          return Filter.where(
+            expr.fieldPath,
+            expr.opStr,
+            encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
+          );
         case 'and':
           return Filter.and(...expr.filters.map(toFirestore.filter));
         case 'or':

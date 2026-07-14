@@ -6,9 +6,14 @@ import {
   Timestamp as FirestoreTimestamp,
   VectorValue as FirestoreVectorValue,
 } from '@google-cloud/firestore';
-import { documentPath } from 'firestore-repository/path';
-import type { DocRef } from 'firestore-repository/repository';
-import type { Collection, DocumentSchema, FieldType } from 'firestore-repository/schema';
+import { filterOperand, type WhereFilterOp } from 'firestore-repository/query';
+import {
+  type Collection,
+  type DocFieldPath,
+  type DocumentSchema,
+  type FieldType,
+  fieldTypeOfPath,
+} from 'firestore-repository/schema';
 import {
   isArrayRemove,
   isArrayUnion,
@@ -60,29 +65,12 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
         .refine(isVectorValue)
         .transform((vv) => vv.toArray());
     case 'docRef':
-      if (fieldType.collection === 'unknown') {
-        // The context-free flavor (the '__name__' pseudo-descriptor): with no
-        // schema-known collection to build a DocRef id tuple from, a
-        // projected raw key decodes to its relative path string — the
-        // representation its `output` declares.
-        return z
-          .unknown()
-          .refine(isDocumentReference)
-          .transform((ref) => ref.path);
-      }
+      // Both flavors decode to the RefPath segment path — known/unknown is a
+      // gradient of tuple precision, not a change of shape.
       return z
         .unknown()
         .refine(isDocumentReference)
-        .transform((ref) => {
-          const ids: string[] = [];
-          let current: firestore.DocumentReference | null = ref;
-          while (current != null) {
-            ids.push(current.id);
-            current = current.parent.parent;
-          }
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-          return ids.reverse() as DocRef<Collection>;
-        });
+        .transform((ref) => ref.path.split('/'));
     case 'map': {
       return z.object(
         Object.fromEntries(
@@ -155,15 +143,8 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
           .transform(() => FieldValue.serverTimestamp()),
       ]);
     case 'docRef': {
-      if (fieldType.collection === 'unknown') {
-        // The context-free flavor writes a relative path string — the one
-        // reference representation that needs no collection context.
-        return z.string().transform((path) => db.doc(path));
-      }
-      const { collection } = fieldType;
-      return z.array(z.string()).transform((ref) =>
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        db.doc(documentPath(collection, ref as DocRef<Collection>)),
+      return refPathSchema(fieldType.collection).transform((segments) =>
+        db.doc(segments.join('/')),
       );
     }
     case 'map': {
@@ -198,6 +179,62 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
     default:
       return assertNever(fieldType);
   }
+}
+
+/**
+ * Builds the encoder for filter-condition operands, memoizing the operand
+ * schema per (field path, operator) like `buildEncodeSchema` builds the
+ * write schema once per collection. The operand schema reuses the write
+ * codec (`buildEncodeField`): a field's READ representation is a subset of
+ * its write `input` for every descriptor, and the write conversions
+ * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`,
+ * geopoint/bytes/vector to their SDK classes) are exactly the operand forms
+ * `where()` compares correctly. Sending references as `DocumentReference`
+ * values also keeps `__name__` filters free of the SDK's scope-dependent
+ * string conventions (see docs/querying-by-document-id.md): a reference
+ * works in every scope. The operand's shape per operator (`in` takes a list
+ * of field values, `array-contains` an element, ...) comes from
+ * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
+ */
+export function buildEncodeFilterValue(
+  schema: DocumentSchema,
+  db: firestore.Firestore,
+): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
+  const operandSchemas = new Map<string, ZodAny>();
+  return (fieldPath, opStr, value) => {
+    const key = `${opStr}:${fieldPath}`;
+    let operandSchema = operandSchemas.get(key);
+    if (operandSchema === undefined) {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
+      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
+      operandSchemas.set(key, operandSchema);
+    }
+    return operandSchema.parse(value);
+  };
+}
+
+/**
+ * A zod schema for a `RefPath` segment path. A known collection's tuple shape
+ * is exact — literal collection names at the even positions — while the
+ * context-free flavor accepts any even-length segment path.
+ */
+function refPathSchema(collection: Collection | 'unknown'): z.ZodType<string[]> {
+  if (collection === 'unknown') {
+    return z
+      .array(z.string())
+      .refine((segments) => segments.length >= 2 && segments.length % 2 === 0, {
+        message: 'a reference path must have an even number of segments',
+      });
+  }
+  const names = [...collection.parent, collection.name];
+  return z
+    .array(z.string())
+    .refine(
+      (segments) =>
+        segments.length === names.length * 2 && names.every((name, i) => segments[i * 2] === name),
+      { message: `not a reference path of collection '${collection.name}'` },
+    );
 }
 
 function zodUnion(schemas: ZodAny[]): ZodAny {

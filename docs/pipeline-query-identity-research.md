@@ -87,11 +87,13 @@ always-false — a trap, not an error.
 Comparison semantics (probed 2026-07): the pipeline backend never converts —
 `equal(__name__, <string>)` is `false` for EVERY string form (the bare id,
 the relative path, the full resource path), and only a reference constant
-matches (`constant(db.doc(...))` in the SDK / `docRefValue(collection, id)`
-in this library). The core query API's `where(eq('__name__', '1'))` accepting
-a string is an SDK convenience: the core query has a collection context to
+matches (`constant(db.doc(...))` in the SDK / `docRefValue(refPath)` in this
+library). The raw core query API's `where(eq('__name__', '1'))` accepting a
+string is an SDK convenience: the core query has a collection context to
 convert the string into a reference before it hits the wire; a pipeline has
-none, so the raw type shows through.
+none, so the raw type shows through. (This library encodes core-query
+`__name__` operands — `RefPath` segment paths — to references itself, so the
+convenience and its scope-dependent traps do not surface in its API.)
 
 A projected raw key (`field("__name__").as("k")`) materializes in the SDK as
 a `DocumentReference` instance (NOT a path string — an earlier note here was
@@ -104,12 +106,12 @@ the schema knows it, or the `'unknown'` sentinel when it does not) with the
 `'reference'` firestoreType tag, so string comparisons and string functions
 over the raw key are rejected at the type level; `documentId(field('__name__'))` /
 `collectionId(...)` bridge it into the string domain, and
-`docRefValue(collection, id)` is the matching comparand. The context-free
-flavor's `output` is `string`: the core query API's id-filter contract, and
-the decode of a projected raw key (the codecs decode the
-`DocumentReference` to its relative path string; a schema-known
-`docRef(collection)` field decodes to a `DocRef` id tuple as usual), and its
-`input` is likewise the relative path string (encoded via `db.doc(path)`).
+`docRefValue(refPath)` is the matching comparand. Both flavors' value
+representation is the `RefPath` segment path (`['Authors', 'a1']`) — the
+context-free flavor's is an untyped `string[]`, a schema-known
+`docRef(collection)` field's a tuple with literal collection-name positions —
+decoded from a projected raw key via `ref.path.split('/')` and encoded via
+`db.doc(segments.join('/'))`.
 
 ### Core query `__name__` string filters
 
