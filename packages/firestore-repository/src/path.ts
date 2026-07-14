@@ -44,15 +44,17 @@ export const parseRefPath = <T extends Collection>(collection: T, path: string[]
  * ADDRESS (`DocRef`) of the given collection, so a reference read from a
  * document field can be passed to that collection's repository. Takes the
  * typed `RefPath<T>` only — narrow a context-free `string[]` with
- * {@link parseRefPath} first. A `RefPath<T>` is valid by construction, so no
- * re-validation happens here; the ids are simply the odd positions. The
- * collection argument is not read at runtime — it anchors `T`, which cannot
- * be inferred from the structural segment tuple alone, and makes passing a
- * path of the wrong collection a compile error.
+ * {@link parseRefPath} first; the ids are the odd positions. A `RefPath<T>`
+ * is valid by construction, so the `parseRefPath` pass here never throws for
+ * a type-checked caller — it exists so that a lying type assertion upstream
+ * fails loudly instead of silently yielding the wrong ids. The collection
+ * argument also anchors `T`, which cannot be inferred from the structural
+ * segment tuple alone, making a path of the wrong collection a compile
+ * error.
  */
-export const toDocRef = <T extends Collection>(_collection: T, path: RefPath<T>): DocRef<T> =>
+export const toDocRef = <T extends Collection>(collection: T, path: RefPath<T>): DocRef<T> =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- filter cannot preserve the tuple shape
-  path.filter((_, i) => i % 2 === 1) as DocRef<T>;
+  parseRefPath(collection, path).filter((_, i) => i % 2 === 1) as DocRef<T>;
 /**
  * Returns the fully-qualified path of a document
  */
