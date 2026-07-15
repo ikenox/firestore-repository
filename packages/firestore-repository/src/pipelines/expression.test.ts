@@ -31,8 +31,9 @@ import {
   ceil,
   charLength,
   collectionId,
-  constant,
+  conditional,
   Constant,
+  constant,
   cosineDistance,
   currentTimestamp,
   divide,
@@ -42,7 +43,9 @@ import {
   dotProduct,
   endsWith,
   equal,
+  equalAny,
   euclideanDistance,
+  exists,
   exp,
   Field,
   field,
@@ -50,17 +53,25 @@ import {
   geoPointValue,
   greaterThan,
   greaterThanOrEqual,
+  ifAbsent,
+  ifError,
+  ifNull,
+  isAbsent,
+  isError,
   isType,
   lessThan,
   lessThanOrEqual,
   like,
   ln,
   log10,
+  logicalMaximum,
+  logicalMinimum,
   ltrim,
   mod,
   multiply,
   not,
   notEqual,
+  notEqualAny,
   NullaryFunction,
   or,
   pow,
@@ -104,6 +115,7 @@ import {
   VariadicFunction,
   vectorLength,
   vectorValue,
+  xor,
 } from './expression.js';
 
 describe('expression factories', () => {
@@ -768,6 +780,116 @@ describe('reference / type / vector operators', () => {
     dotProduct(vec, field(array(double()), 'nums'));
     // @ts-expect-error -- a string is not a vector
     vectorLength(field(string(), 'name'));
+  });
+});
+
+describe('existence / error / conditional operators (slice 5)', () => {
+  const name = field(string(), 'name');
+  const rank = field(int64(), 'rank');
+  const optName = field(optional(string()), 'optName');
+  const nullableName = field(nullable(string()), 'nullableName');
+
+  it('exists/isAbsent take FIELD references only and are total booleans', () => {
+    expect(exists(name)).toStrictEqual(new UnaryFunction('exists', bool(), name));
+    expect(isAbsent(optName)).toStrictEqual(new UnaryFunction('isAbsent', bool(), optName));
+    // @ts-expect-error -- the backend requires a field reference, not a constant
+    exists(constant(1));
+    // @ts-expect-error -- nor any computed expression
+    isAbsent(toUpper(name));
+    // Total: no nullable widening even over optional fields.
+    expectTypeOf(exists(optName).type).toEqualTypeOf(bool());
+  });
+
+  it('isError is total over any expression', () => {
+    expect(isError(divide(rank, constant(0)))).toStrictEqual(
+      new UnaryFunction('isError', bool(), divide(rank, constant(0))),
+    );
+    expectTypeOf(isError(field(optional(string()), 'o')).type).toEqualTypeOf(bool());
+  });
+
+  it('ifError unions try/catch and lets absence through the try side', () => {
+    const same = ifError(name, constant('x'));
+    expect(same.type).toStrictEqual(string());
+    const mixed = ifError(name, constant(0));
+    expect(mixed.type).toStrictEqual(union(string(), double()));
+    // An optional try side may come out absent -> nullable approximation.
+    const viaOptional = ifError(optName, constant('x'));
+    expect(viaOptional.type).toStrictEqual(nullable(string()));
+  });
+
+  it('ifAbsent unions value/fallback; a present null passes through', () => {
+    const t = ifAbsent(optName, constant('dflt'));
+    expect(t.type).toStrictEqual(string());
+    const nullableThrough = ifAbsent(nullableName, constant('dflt'));
+    // null is a VALUE for ifAbsent — it survives in the pass-through side.
+    expect(nullableThrough.type).toStrictEqual(union(nullable(string()), string()));
+  });
+
+  it('ifNull strips null from the pass-through side', () => {
+    const t = ifNull(nullableName, constant('dflt'));
+    expect(t.type).toStrictEqual(string());
+    expectTypeOf(t.type).toEqualTypeOf(string());
+    const widening = ifNull(nullableName, constant(0));
+    expect(widening.type).toStrictEqual(union(string(), double()));
+    // A pure-null value always falls back.
+    const pureNull = ifNull(field(nullType(), 'n'), constant('dflt'));
+    expect(pureNull.type).toStrictEqual(string());
+    expectTypeOf(pureNull.type).toEqualTypeOf(string());
+  });
+
+  it('conditional selects then/else; null, absent, and false all mean else', () => {
+    const flag = field(bool(), 'flag');
+    const t = conditional(flag, constant('a'), constant(0));
+    expect(t).toStrictEqual(
+      new TernaryFunction(
+        'conditional',
+        union(string(), double()),
+        flag,
+        constant('a'),
+        constant(0),
+      ),
+    );
+    const same = conditional(flag, name, field(string(), 'other'));
+    expect(same.type).toStrictEqual(string());
+    // @ts-expect-error -- the condition is a boolean operand
+    conditional(name, constant('a'), constant('b'));
+  });
+
+  it('logicalMaximum/Minimum ignore null and dedup operand types', () => {
+    const t = logicalMaximum(rank, field(double(), 'score'));
+    expect(t.type).toStrictEqual(union(int64(), double()));
+    const same = logicalMinimum(rank, rank);
+    expect(same.type).toStrictEqual(int64());
+    // Null-typed operands are ignored in the result type...
+    const withNull = logicalMaximum(rank, field(nullable(int64()), 'n'));
+    expect(withNull.type).toStrictEqual(int64());
+    expectTypeOf(withNull.type).toEqualTypeOf(int64());
+    // ...unless EVERY operand may be null/absent — then null can surface.
+    const allNullable = logicalMaximum(
+      field(nullable(int64()), 'a'),
+      field(optional(int64()), 'b'),
+    );
+    expect(allNullable.type).toStrictEqual(union(int64(), nullType()));
+  });
+
+  it('equalAny/notEqualAny take one array-typed options expression', () => {
+    const t = equalAny(rank, constant([1, 5, 9]));
+    expect(t).toStrictEqual(new BinaryFunction('equalAny', bool(), rank, constant([1, 5, 9])));
+    equalAny(rank, field(array(int64()), 'options'));
+    notEqualAny(name, constant(['a', 'b']));
+    // @ts-expect-error -- options must be an array, not a scalar
+    equalAny(rank, constant(1));
+    // @ts-expect-error -- elements must be comparable with the value
+    equalAny(rank, constant(['a', 'b']));
+  });
+
+  it('xor is a variadic Kleene boolean', () => {
+    const flag = field(bool(), 'flag');
+    expect(xor(flag, flag)).toStrictEqual(new VariadicFunction('xor', bool(), [flag, flag]));
+    const viaNullable = xor(flag, field(nullable(bool()), 'nb'));
+    expect(viaNullable.type).toStrictEqual(nullable(bool()));
+    // @ts-expect-error -- operands are boolean
+    xor(flag, name);
   });
 });
 

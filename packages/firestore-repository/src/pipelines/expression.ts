@@ -454,6 +454,10 @@ export type UnaryFunctionName =
   | 'unixMicrosToTimestamp'
   // type
   | 'type'
+  // existence & error
+  | 'exists'
+  | 'isAbsent'
+  | 'isError'
   // vector
   | 'vectorLength';
 
@@ -477,6 +481,12 @@ export type BinaryFunctionName =
   | 'lessThanOrEqual'
   | 'greaterThan'
   | 'greaterThanOrEqual'
+  | 'equalAny'
+  | 'notEqualAny'
+  // existence & error fallbacks
+  | 'ifError'
+  | 'ifAbsent'
+  | 'ifNull'
   // arithmetic
   | 'add'
   | 'subtract'
@@ -535,7 +545,9 @@ export type TernaryFunctionName =
   | 'timestampSubtract'
   | 'timestampDiff'
   | 'timestampTruncate'
-  | 'timestampExtract';
+  | 'timestampExtract'
+  // conditional
+  | 'conditional';
 
 /** A function call with two or more uniform operands. */
 export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -553,7 +565,10 @@ export type VariadicFunctionName =
   | 'and'
   | 'or'
   // string
-  | 'stringConcat';
+  | 'stringConcat'
+  | 'xor'
+  | 'logicalMaximum'
+  | 'logicalMinimum';
 
 /**
  * The value-domain predicate: descriptors whose `firestoreType` tags fit the
@@ -702,6 +717,33 @@ export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
   right: Expression<R> & Comparable<L, R>,
 ): BinaryFunction<BoolType> => new BinaryFunction('greaterThanOrEqual', bool(), left, right);
 
+/** The element domain of an array descriptor (wide/lenient for imprecise inputs, like `TagSetsComparable`). */
+type ElementsOf<T extends FieldType> = T extends {
+  type: 'array';
+  dynamicPart: infer E extends FieldType;
+}
+  ? E
+  : FieldType;
+
+/**
+ * Whether `value` equals ANY element of the `options` array. Total like the
+ * comparisons (probed): an absent value or a no-match is `false` — a null
+ * ELEMENT is matched as a value (`equalAny(null-field, constant([null]))` is
+ * `true`), never propagated. `options` is one array-typed expression
+ * (`constant([1, 5, 9])`, an array field, ...) whose elements must be
+ * comparable with `value`.
+ */
+export const equalAny = <L extends FieldType, R extends Valued<readonly FirestoreType[]>>(
+  value: Expression<L>,
+  options: Expression<R> & Comparable<L, ElementsOf<R>>,
+): BinaryFunction<BoolType> => new BinaryFunction('equalAny', bool(), value, options);
+
+/** Whether `value` differs from EVERY element of the `options` array — see {@link equalAny}. */
+export const notEqualAny = <L extends FieldType, R extends Valued<readonly FirestoreType[]>>(
+  value: Expression<L>,
+  options: Expression<R> & Comparable<L, ElementsOf<R>>,
+): BinaryFunction<BoolType> => new BinaryFunction('notEqualAny', bool(), value, options);
+
 /**
  * Null propagation for a function's RETURN descriptor: `T` when no operand
  * can be null, `nullable(T)` when one can. An operand "can be null" when its
@@ -797,6 +839,199 @@ function propagateAbsence(operands: readonly Expression[], type: FieldType): Fie
 /** Runtime twin of `Extract<Operands, Optional>`: the marker only. */
 const mayBeAbsent = (t: FieldType & { optional?: boolean }): boolean => t.optional === true;
 
+/**
+ * An operand descriptor as it appears in a RESULT descriptor: presence
+ * (the `Optional` marker) is a property of the operand's document slot, not
+ * of the values a function can produce, so it never carries over. Absence
+ * that flows through a function is expressed by the `PropagateAbsence`
+ * family instead.
+ */
+type WithoutOptional<T extends FieldType> = T extends Optional ? Omit<T, 'optional'> : T;
+
+/** Runtime counterpart of {@link WithoutOptional}. */
+const withoutOptional = (t: FieldType & { optional?: boolean }): FieldType => {
+  if (t.optional !== true) {
+    return t;
+  }
+  const { optional: _optional, ...rest } = t;
+  return rest;
+};
+
+/**
+ * The type of "one of these two expressions' values" — the return descriptor
+ * of the branching functions (`conditional`, the `if*` fallbacks): the single
+ * descriptor when both sides agree, their union otherwise. A `never` side
+ * (e.g. a fully null-stripped `StripNull`) collapses to the other. Operands'
+ * `Optional` markers are dropped (see {@link WithoutOptional}).
+ */
+type EitherType<A extends FieldType, B extends FieldType> = [A] extends [never]
+  ? WithoutOptional<B>
+  : DescriptorEquals<WithoutOptional<A>, WithoutOptional<B>> extends true
+    ? WithoutOptional<A>
+    : UnionType<[WithoutOptional<A>, WithoutOptional<B>]>;
+
+/** Runtime counterpart of {@link EitherType} (same bridge shape as `propagateNull`). */
+function eitherType<A extends Expression, B extends Expression>(
+  a: A,
+  b: B,
+): EitherType<A['type'], B['type']>;
+function eitherType(a: Expression, b: Expression): FieldType {
+  return fallbackType(withoutOptional(a.type), b.type);
+}
+
+/** `EitherType` over already-resolved descriptors, with the `never` side as `undefined`. */
+const fallbackType = (a: FieldType | undefined, b: FieldType): FieldType => {
+  const bare = withoutOptional(b);
+  if (a === undefined) {
+    return bare;
+  }
+  return descriptorEquals(a, bare) ? a : union(a, bare);
+};
+
+/**
+ * The descriptor with its null-ness removed — what remains of a value that
+ * was JUST OBSERVED to be non-null (`ifNull`'s pass-through side,
+ * `logicalMaximum`/`logicalMinimum`'s operands, whose null/absent inputs are
+ * ignored). `never` when nothing remains (a pure-null descriptor). Strips
+ * the `NullType` member from unions, `null` from literal value sets; wide
+ * inputs pass through (a recursion breaker, like `TagSetsComparable`).
+ */
+type StripNull<T extends FieldType> = FieldType extends T
+  ? T
+  : WithoutOptional<T> extends infer U extends FieldType
+    ? StripNullBare<U>
+    : never;
+
+type StripNullBare<T extends FieldType> = T extends NullType
+  ? never
+  : T extends { type: 'union'; elements: infer E extends readonly FieldType[] }
+    ? FieldType[] extends E
+      ? T
+      : RebuildUnion<NonNullElements<E>>
+    : T extends {
+          type: 'const';
+          values: infer V extends readonly (string | number | boolean | null)[];
+        }
+      ? NonNullLiteralValues<V> extends infer W extends readonly (string | number | boolean)[]
+        ? W extends readonly []
+          ? never
+          : LiteralType<[...W]>
+        : never
+      : T;
+
+type NonNullElements<E extends readonly FieldType[]> = E extends readonly [
+  infer H extends FieldType,
+  ...infer R extends readonly FieldType[],
+]
+  ? H extends NullType
+    ? NonNullElements<R>
+    : [H, ...NonNullElements<R>]
+  : [];
+
+type NonNullLiteralValues<V extends readonly (string | number | boolean | null)[]> =
+  V extends readonly [
+    infer H extends string | number | boolean | null,
+    ...infer R extends readonly (string | number | boolean | null)[],
+  ]
+    ? H extends null
+      ? NonNullLiteralValues<R>
+      : [H, ...NonNullLiteralValues<R>]
+    : [];
+
+type RebuildUnion<E extends readonly FieldType[]> = E extends readonly [infer One extends FieldType]
+  ? One
+  : E extends readonly []
+    ? never
+    : E extends [FieldType, FieldType, ...FieldType[]]
+      ? UnionType<E>
+      : never;
+
+/** Runtime counterpart of {@link StripNull} (`never` is `undefined`). */
+const stripNull = (raw: FieldType): FieldType | undefined => {
+  const t = withoutOptional(raw);
+  switch (t.type) {
+    case 'null':
+      return undefined;
+    case 'union': {
+      const [first, ...rest] = t.elements.filter((e) => e.type !== 'null');
+      if (first === undefined) {
+        return undefined;
+      }
+      return rest.length === 0 ? first : union(first, ...rest);
+    }
+    case 'const': {
+      const [first, ...rest] = t.values.filter((v) => v !== null);
+      return first === undefined ? undefined : literal(first, ...rest);
+    }
+    case 'bool':
+    case 'string':
+    case 'int64':
+    case 'double':
+    case 'timestamp':
+    case 'docRef':
+    case 'bytes':
+    case 'geoPoint':
+    case 'vector':
+    case 'map':
+    case 'array':
+      return t;
+    default:
+      return assertNever(t);
+  }
+};
+
+/**
+ * The return descriptor of `logicalMaximum` / `logicalMinimum`: the deduped
+ * union of the operands' null-stripped types (null/absent operands are
+ * IGNORED by the backend's value-type ordering — probed), plus `NullType`
+ * only when EVERY operand may be null or absent (the all-ignored case
+ * returns null — probed).
+ */
+type LogicalExtreme<Ops extends readonly Expression[]> = RebuildUnion<
+  DedupDescriptors<[...StrippedTypes<Ops>, ...(AllMayBeNull<Ops> extends true ? [NullType] : [])]>
+>;
+
+type StrippedTypes<Ops extends readonly Expression[]> = Ops extends readonly [
+  infer H extends Expression,
+  ...infer R extends readonly Expression[],
+]
+  ? [StripNull<H['type']>] extends [never]
+    ? StrippedTypes<R>
+    : [StripNull<H['type']>, ...StrippedTypes<R>]
+  : [];
+
+type AllMayBeNull<Ops extends readonly Expression[]> = Ops extends readonly [
+  infer H extends Expression,
+  ...infer R extends readonly Expression[],
+]
+  ? MayBeNullOrAbsent<H['type']> extends true
+    ? AllMayBeNull<R>
+    : false
+  : true;
+
+type MayBeNullOrAbsent<T extends FieldType> = [
+  Extract<T['firestoreType'], 'null'> | Extract<T, Optional>,
+] extends [never]
+  ? false
+  : true;
+
+/** Runtime counterpart of {@link LogicalExtreme} (same bridge shape as `propagateNull`). */
+function logicalExtremeType<Ops extends readonly Expression[]>(operands: Ops): LogicalExtreme<Ops>;
+function logicalExtremeType(operands: readonly Expression[]): FieldType {
+  const stripped = operands
+    .map((operand) => stripNull(operand.type))
+    .filter((t): t is FieldType => t !== undefined)
+    .filter((t, i, all) => all.findIndex((o) => descriptorEquals(o, t)) === i);
+  if (operands.every((operand) => mayBeNull(operand.type) || mayBeAbsent(operand.type))) {
+    stripped.push(nullType());
+  }
+  const [first, ...rest] = stripped;
+  if (first === undefined) {
+    return nullType();
+  }
+  return rest.length === 0 ? first : union(first, ...rest);
+}
+
 /** Logical conjunction of two or more boolean expressions (Kleene: null operands propagate). */
 export const and = <
   const Ops extends readonly [
@@ -826,6 +1061,55 @@ export const not = <C extends Expression<Valued<'boolean'>>>(
   condition: C,
 ): UnaryFunction<PropagateNull<C['type'], BoolType>> =>
   new UnaryFunction('not', propagateNull([condition], bool()), condition);
+
+/** Logical parity — true iff an odd number of operands is true (Kleene: null operands propagate). */
+export const xor = <
+  const Ops extends readonly [
+    Expression<Valued<'boolean'>>,
+    Expression<Valued<'boolean'>>,
+    ...Expression<Valued<'boolean'>>[],
+  ],
+>(
+  ...conditions: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new VariadicFunction('xor', propagateNull(conditions, bool()), conditions);
+
+/**
+ * Branches on a boolean condition: the `then` value when it is `true`, the
+ * `else` value otherwise — INCLUDING a null, absent, or false condition
+ * (probed: not Kleene; anything non-true selects `else`). An ERROR condition
+ * propagates.
+ */
+export const conditional = <
+  C extends Expression<Valued<'boolean'>>,
+  T extends Expression,
+  E extends Expression,
+>(
+  condition: C,
+  thenExpr: T,
+  elseExpr: E,
+): TernaryFunction<EitherType<T['type'], E['type']>> =>
+  new TernaryFunction('conditional', eitherType(thenExpr, elseExpr), condition, thenExpr, elseExpr);
+
+/**
+ * The largest operand under the backend's cross-type value ordering. Null
+ * and absent operands are IGNORED (probed — unlike `sort`'s null-first
+ * ordering); when every operand is null/absent the result is null.
+ */
+export const logicalMaximum = <
+  const Ops extends readonly [Expression, Expression, ...Expression[]],
+>(
+  ...operands: Ops
+): VariadicFunction<LogicalExtreme<Ops>> =>
+  new VariadicFunction('logicalMaximum', logicalExtremeType(operands), operands);
+
+/** The smallest operand — see {@link logicalMaximum}. */
+export const logicalMinimum = <
+  const Ops extends readonly [Expression, Expression, ...Expression[]],
+>(
+  ...operands: Ops
+): VariadicFunction<LogicalExtreme<Ops>> =>
+  new VariadicFunction('logicalMinimum', logicalExtremeType(operands), operands);
 
 // Operand shorthands for the factories below. These name EXPRESSION domains
 // (the null special-casing itself lives once, in `Valued`).
@@ -1325,6 +1609,76 @@ const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
     'regex',
     'request_timestamp',
   );
+
+// ---- existence & error ----
+// The error channel (probed): backend ERROR values (divide by zero, invalid
+// regex, out-of-range timestamps, ...) propagate through every function and
+// fail the query if they surface in a projection; `isError` / `ifError` are
+// the only observers. Null and absent are NOT errors.
+
+/**
+ * Whether the field is present on the document (`true` for a present null —
+ * absence-observing and total). The backend requires a FIELD REFERENCE here
+ * (probed: any other expression, constants included, is INVALID_ARGUMENT),
+ * so the factory takes a `Field`, not a general expression.
+ */
+export const exists = <F extends Field>(target: F): UnaryFunction<BoolType> =>
+  new UnaryFunction('exists', bool(), target);
+
+/** Whether the field is absent from the document — the negation of {@link exists}, with the same field-reference-only constraint. */
+export const isAbsent = <F extends Field>(target: F): UnaryFunction<BoolType> =>
+  new UnaryFunction('isAbsent', bool(), target);
+
+/** Whether the operand evaluates to a backend ERROR value (total: null/absent are `false`). */
+export const isError = <Op extends Expression>(value: Op): UnaryFunction<BoolType> =>
+  new UnaryFunction('isError', bool(), value);
+
+/**
+ * The `try` value, or the `catch` value if `try` evaluates to a backend
+ * ERROR. Null and absent pass through the `try` side untouched (probed) —
+ * they are values, not errors.
+ */
+export const ifError = <T extends Expression, C extends Expression>(
+  tryExpr: T,
+  catchExpr: C,
+): BinaryFunction<PropagateAbsence<T['type'], EitherType<T['type'], C['type']>>> =>
+  new BinaryFunction(
+    'ifError',
+    propagateAbsence([tryExpr], eitherType(tryExpr, catchExpr)),
+    tryExpr,
+    catchExpr,
+  );
+
+/**
+ * The value, or the fallback when the value is ABSENT. A present null passes
+ * through (probed) — absence is the only trigger. An ERROR propagates.
+ */
+export const ifAbsent = <T extends Expression, C extends Expression>(
+  value: T,
+  fallback: C,
+): BinaryFunction<EitherType<T['type'], C['type']>> =>
+  new BinaryFunction('ifAbsent', eitherType(value, fallback), value, fallback);
+
+/**
+ * The value, or the fallback when the value is null OR absent (probed:
+ * absence merges into null here, unlike {@link ifAbsent}). The pass-through
+ * side is null-stripped in the return descriptor — a value that got past
+ * the check cannot be null. An ERROR propagates.
+ */
+export const ifNull = <T extends Expression, C extends Expression>(
+  value: T,
+  fallback: C,
+): BinaryFunction<EitherType<StripNull<T['type']>, C['type']>> =>
+  new BinaryFunction('ifNull', ifNullType(value, fallback), value, fallback);
+
+/** Runtime counterpart of `ifNull`'s return descriptor (same bridge shape as `propagateNull`). */
+function ifNullType<T extends Expression, C extends Expression>(
+  value: T,
+  fallback: C,
+): EitherType<StripNull<T['type']>, C['type']>;
+function ifNullType(value: Expression, fallback: Expression): FieldType {
+  return fallbackType(stripNull(value.type), fallback.type);
+}
 
 // ---- timestamp ----
 // The unit/granularity/part argument and the timezone argument must be

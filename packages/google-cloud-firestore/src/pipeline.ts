@@ -270,6 +270,9 @@ const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines
   documentId: Pipelines.documentId,
   collectionId: Pipelines.collectionId,
   type: Pipelines.type,
+  exists: Pipelines.exists,
+  isAbsent: Pipelines.isAbsent,
+  isError: Pipelines.isError,
   timestampToUnixSeconds: Pipelines.timestampToUnixSeconds,
   timestampToUnixMillis: Pipelines.timestampToUnixMillis,
   timestampToUnixMicros: Pipelines.timestampToUnixMicros,
@@ -292,6 +295,16 @@ const binaryFns: Record<
   lessThanOrEqual: Pipelines.lessThanOrEqual,
   greaterThan: Pipelines.greaterThan,
   greaterThanOrEqual: Pipelines.greaterThanOrEqual,
+  // The options operand is an array-typed EXPRESSION. The runtime accepts it
+  // (probed; the firebase d.ts even declares this form) but this SDK's
+  // typings only declare the values-list convenience.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see above)
+  equalAny: (l, r) => Pipelines.equalAny(l, r as unknown as unknown[]),
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see above)
+  notEqualAny: (l, r) => Pipelines.notEqualAny(l, r as unknown as unknown[]),
+  ifError: Pipelines.ifError,
+  ifAbsent: Pipelines.ifAbsent,
+  ifNull: Pipelines.ifNull,
   add: Pipelines.add,
   subtract: Pipelines.subtract,
   multiply: Pipelines.multiply,
@@ -338,6 +351,7 @@ const ternaryFns: Record<
   stringReplaceAll: (a, b, c) => a.stringReplaceAll(b, c),
   stringReplaceOne: (a, b, c) => a.stringReplaceOne(b, c),
   substring: Pipelines.substring,
+  conditional: (a, b, c) => Pipelines.conditional(a.asBoolean(), b, c),
   timestampAdd: Pipelines.timestampAdd,
   timestampSubtract: Pipelines.timestampSubtract,
   timestampDiff: Pipelines.timestampDiff,
@@ -382,6 +396,9 @@ const variadicFns: Record<
   and: (f, s, ...r) => Pipelines.and(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
   or: (f, s, ...r) => Pipelines.or(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
   stringConcat: Pipelines.stringConcat,
+  xor: (f, s, ...r) => Pipelines.xor(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
+  logicalMaximum: Pipelines.logicalMaximum,
+  logicalMinimum: Pipelines.logicalMinimum,
 };
 
 /** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
