@@ -374,30 +374,37 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## Expressions — remaining gaps
 
-- [~] **Restructure `FunctionCall` into shape-grouped classes when the ~85
-  factories return.** DONE for the structure plus the comparison
-  (`equal` / `notEqual` / `lessThan` / `lessThanOrEqual` / `greaterThan` /
-  `greaterThanOrEqual`) and logical (`and` / `or` / `not`) factories;
-  remaining categories (arithmetic / string / array / map / timestamp /
-  vector / ...) slot into the same shapes as they return. Decided design
-  (2026-07): don't do one class per
-  function (SDK-style, ~85 classes, giant `Expression` union) and don't
-  keep the current single `FunctionCall` with untyped `args: Expression[]`
-  (forces runtime arity guards in every executor — see
-  `toSdkFunctionCall`'s `left === undefined` checks). Instead, one class
-  per **shape** (`UnaryFunction` / `BinaryFunction` / `VariadicFunction` /
-  individual classes for irregulars like `findNearest` / `cond`), each
-  with typed payload fields (`left` / `right` / `operands`) and a
-  per-shape `name: <Shape>FunctionName` string-literal union. - Executors then translate each shape with a
-  `Record<BinaryFunctionName, (l, r) => SdkExpr>` lookup table — the
-  `Record` requires every key, giving the same exhaustiveness guarantee
-  as `assertNever` without per-function `case`s, and the arity guards
-  disappear into the types. - Rationale: a Visitor and a `name` string-union switch are the same
-  case-analysis over a closed sum (same side of the expression problem);
-  the only substantive win available is typed payloads, and shape
-  granularity gets it with ~5 classes instead of ~85. Per-function
-  individuality (operand/return typing like `equal`'s overloads) stays
-  in the factory signatures.
+- [~] **Restructure the function-call AST into one class PER FUNCTION**
+  (agreed 2026-07, deliberately deferred — do after the function slices,
+  alongside or instead of other ergonomics work). This REVERSES the earlier
+  shape-grouped decision (one class per arity: `UnaryFunction` /
+  `BinaryFunction` / ..., recorded here previously), based on three
+  distortions the shape buckets accumulated as slices 2–4 landed:
+  1. **Dual-arity functions appear in TWO shape unions** (`round` / `trunc` /
+     the `trim` family / `substring` / `timestampTruncate` /
+     `timestampExtract` are both Binary and Ternary names) and force factory
+     overloads. With per-function classes the factory is a single
+     `(a, b, c?)` signature — no overloads — and the node holds the optional
+     field as optional.
+  2. **Positional payloads lose the meaning**: `TernaryFunction.first /
+second / third` is (ts, unit, amount) for `timestampAdd` but
+     (end, start, unit) for `timestampDiff`. Per-function classes carry
+     named fields.
+  3. **Backend-mandated literal arguments take a detour**: a literal (the
+     `isType` type name, the timestamp unit/granularity/timezone) is lifted
+     into a `Constant` operand only so the executors can recover the raw
+     string from the AST node (`literalStringOperand`). A per-function class
+     stores the literal AS a plain field and the whole recovery mechanism
+     disappears.
+     The earlier counterargument (SDK-style ~85 classes, giant `Expression`
+     union) is bought back deliberately: the classes are one-liners, the union
+     can be layered (`Expression = Field | Constant | FunctionCall` with
+     `FunctionCall` the per-function union discriminated by `name`), and the
+     executors keep the same `Record<Name, ...>` exhaustiveness — now with one
+     table over all functions, each entry typed against its own class instead
+     of a shared positional signature. Anything that traverses operands
+     generically (selection/decode walks) needs a uniform accessor on the base
+     class (e.g. `operands(): Expression[]`) to replace the per-shape arms.
 - [ ] Per-op numeric return type refinement (Int64-pair → Int64 vs
       auto-widen to Double) — TODO comments already in `expression.ts`.
 - [x] Improve `constant(value)` type inference from runtime value — see the
