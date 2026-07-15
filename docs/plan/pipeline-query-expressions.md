@@ -321,10 +321,32 @@ both executors and the basic backend semantics in one round trip per family.
       null iff all operands nullable), and `WithoutOptional` — an operand's
       `Optional` marker is a property of its document slot, never of a
       function result, so result descriptors drop it.
-- [ ] **6. Array + map families + `ArrayValue` / `MapValue` constructors**
-      (T3: element/subschema return typing; needs a wire probe for the
-      constructor encodings; ties into the existing `arrayGet` / `mapGet`
-      TODOs).
+- [~] **6. Array + map families + `arrayValue` / `mapValue` constructors**
+  (T3: element/subschema return typing). Probed (2026-07,
+  `.ikenox/probe-slice6.mjs` — full results there): - The constructors are EXPRESSION constructors, not value nodes:
+  elements/values may be expressions (`array([field('num'), 9])`),
+  recursively through nested plain arrays/objects; empty forms are
+  valid. They need their own AST shapes (element list / field record —
+  `VariadicFunction` requires >= 2 operands). - `mapGet`: the key MAY be dynamic (unlike the timestamp literals);
+  missing key -> ABSENT; null/absent map -> null; nests. - `arrayGet`: dynamic index OK, negative = from the end,
+  out-of-range -> ABSENT (isError false — NOT an error value). - `mapSet` keys are the one literal-constant requirement
+  ("map_set keys must be constants/literals"); dynamic values fine;
+  `mapSet(null-map, ...)` -> ABSENT (quirk). `mapMerge` is
+  last-wins; `mapRemove` of a missing key is a no-op. - contains family: the ARRAY operand's null/absent propagates
+  (`arrayContains(missing, 1)` -> null) but a null ELEMENT is compared
+  as a value (`arrayContains([1,null,3], null)` -> true;
+  `arrayContains([1,2,3], null)` -> false). `arrayContainsAll/Any`
+  accept one array-typed options expression (like `equalAny`). - `arrayConcat` is variadic (>= 2), null operand propagates. - `mapKeys` -> string[]; `mapValues` -> element union;
+  `mapEntries` -> array of `{ k, v }` maps.
+  Scope: the plan inventory + `arrayReverse`. The SDK's LARGER array
+  surface is deliberately deferred to a follow-up item (below).
+- [ ] **6b. Array extras (deferred from slice 6)**: the SDK also exports
+      arrayFirst/arrayLast(+N variants), arrayIndexOf(All)/arrayLastIndexOf,
+      arrayMaximum/arrayMinimum(+N), arraySlice, arraySum — mechanical
+      shapes — plus arrayFilter / arrayTransform(WithIndex) (need a LAMBDA
+      expression concept) and arrayAgg(Distinct) (aggregate-flavored).
+      Include the mechanical ones in a follow-up pass; the lambda and
+      aggregate ones need their own design.
 - [ ] **7. Numeric return refinement + any leftovers** (T4).
 - [ ] **8. Fluent methods on `ExpressionBase`** (decision pending — see open
       questions).
