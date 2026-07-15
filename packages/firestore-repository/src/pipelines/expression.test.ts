@@ -30,21 +30,30 @@ import {
   byteLength,
   ceil,
   charLength,
-  Constant,
+  collectionId,
   constant,
+  Constant,
+  cosineDistance,
+  currentTimestamp,
   divide,
+  DocRefValue,
+  docRefValue,
+  documentId,
+  dotProduct,
   endsWith,
   equal,
+  euclideanDistance,
   exp,
-  type ExpressionWithAlias,
   Field,
   field,
   floor,
   geoPointValue,
   greaterThan,
   greaterThanOrEqual,
+  isType,
   lessThan,
   lessThanOrEqual,
+  like,
   ln,
   log10,
   ltrim,
@@ -56,23 +65,14 @@ import {
   or,
   pow,
   rand,
-  round,
-  rtrim,
-  sqrt,
-  startsWith,
-  collectionId,
-  cosineDistance,
-  docRefValue,
-  DocRefValue,
-  documentId,
-  dotProduct,
-  euclideanDistance,
-  isType,
-  like,
   regexContains,
   regexFind,
   regexFindAll,
   regexMatch,
+  round,
+  rtrim,
+  sqrt,
+  startsWith,
   stringConcat,
   stringContains,
   stringIndexOf,
@@ -83,14 +83,26 @@ import {
   substring,
   subtract,
   TernaryFunction,
-  type,
-  vectorLength,
+  timestampAdd,
+  timestampDiff,
+  timestampExtract,
+  timestampSubtract,
+  timestampToUnixMicros,
+  timestampToUnixMillis,
+  timestampToUnixSeconds,
+  timestampTruncate,
   toLower,
   toUpper,
   trim,
   trunc,
+  type,
+  type ExpressionWithAlias,
   UnaryFunction,
+  unixMicrosToTimestamp,
+  unixMillisToTimestamp,
+  unixSecondsToTimestamp,
   VariadicFunction,
+  vectorLength,
   vectorValue,
 } from './expression.js';
 
@@ -756,6 +768,90 @@ describe('reference / type / vector operators', () => {
     dotProduct(vec, field(array(double()), 'nums'));
     // @ts-expect-error -- a string is not a vector
     vectorLength(field(string(), 'name'));
+  });
+});
+
+describe('timestamp operators', () => {
+  const ts = field(timestamp(), 'createdAt');
+  const num = field(int64(), 'secs');
+
+  it('currentTimestamp is a nullary timestamp', () => {
+    expect(currentTimestamp()).toStrictEqual(new NullaryFunction('currentTimestamp', timestamp()));
+  });
+
+  it('unix conversions map between the timestamp and numeric domains', () => {
+    expect(timestampToUnixSeconds(ts)).toStrictEqual(
+      new UnaryFunction('timestampToUnixSeconds', int64(), ts),
+    );
+    expect(timestampToUnixMillis(ts).name).toBe('timestampToUnixMillis');
+    expect(timestampToUnixMicros(ts).name).toBe('timestampToUnixMicros');
+    expect(unixSecondsToTimestamp(num)).toStrictEqual(
+      new UnaryFunction('unixSecondsToTimestamp', timestamp(), num),
+    );
+    expect(unixMillisToTimestamp(num).name).toBe('unixMillisToTimestamp');
+    expect(unixMicrosToTimestamp(num).name).toBe('unixMicrosToTimestamp');
+    // @ts-expect-error -- a number is not a timestamp
+    timestampToUnixSeconds(num);
+    // @ts-expect-error -- a timestamp is not a unix epoch number
+    unixSecondsToTimestamp(ts);
+    // A nullable/optional operand propagates.
+    const viaOptional = timestampToUnixSeconds(field(optional(timestamp()), 'ot'));
+    expect(viaOptional.type).toStrictEqual(nullable(int64()));
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(int64()));
+  });
+
+  it('add/subtract lift the literal unit into a constant operand', () => {
+    expect(timestampAdd(ts, 'day', constant(1))).toStrictEqual(
+      new TernaryFunction('timestampAdd', timestamp(), ts, constant('day'), constant(1)),
+    );
+    expect(timestampSubtract(ts, 'hour', constant(2)).name).toBe('timestampSubtract');
+    // @ts-expect-error -- an arbitrary string is not a time unit
+    timestampAdd(ts, 'fortnight', constant(1));
+    // @ts-expect-error -- calendar granularities are add units the backend rejects
+    timestampAdd(ts, 'month', constant(1));
+    // @ts-expect-error -- the amount is a numeric operand
+    timestampAdd(ts, 'day', constant('1'));
+    // The amount operand's nullability propagates.
+    const viaOptional = timestampAdd(ts, 'day', field(optional(int64()), 'n'));
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(timestamp()));
+  });
+
+  it('diff is end - start in whole units', () => {
+    expect(timestampDiff(ts, ts, 'hour')).toStrictEqual(
+      new TernaryFunction('timestampDiff', int64(), ts, ts, constant('hour')),
+    );
+    // @ts-expect-error -- units only: calendar granularities are rejected (probed)
+    timestampDiff(ts, ts, 'month');
+    // @ts-expect-error -- a number is not a timestamp
+    timestampDiff(ts, num, 'hour');
+  });
+
+  it('truncate/extract are dual-arity over the optional literal timezone', () => {
+    expect(timestampTruncate(ts, 'week(monday)')).toStrictEqual(
+      new BinaryFunction('timestampTruncate', timestamp(), ts, constant('week(monday)')),
+    );
+    expect(timestampTruncate(ts, 'day', 'Asia/Tokyo')).toStrictEqual(
+      new TernaryFunction(
+        'timestampTruncate',
+        timestamp(),
+        ts,
+        constant('day'),
+        constant('Asia/Tokyo'),
+      ),
+    );
+    expect(timestampExtract(ts, 'dayofweek')).toStrictEqual(
+      new BinaryFunction('timestampExtract', int64(), ts, constant('dayofweek')),
+    );
+    expect(timestampExtract(ts, 'hour', 'Asia/Tokyo').name).toBe('timestampExtract');
+    // @ts-expect-error -- not a granularity
+    timestampTruncate(ts, 'fortnight');
+    // @ts-expect-error -- 'week(noday)' is not a week start day
+    timestampTruncate(ts, 'week(noday)');
+    // @ts-expect-error -- 'dayofweek' is extract-only, not a truncation granularity
+    timestampTruncate(ts, 'dayofweek');
+    // A nullable operand propagates through both arities.
+    const viaOptional = timestampTruncate(field(optional(timestamp()), 'ot'), 'day');
+    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(timestamp()));
   });
 });
 

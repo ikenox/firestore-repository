@@ -36,7 +36,19 @@ import {
   notEqual as sdkNotEqual,
   or as sdkOr,
   pow as sdkPow,
+  currentTimestamp as sdkCurrentTimestamp,
   rand as sdkRand,
+  timestampAdd as sdkTimestampAdd,
+  timestampDiff as sdkTimestampDiff,
+  timestampExtract as sdkTimestampExtract,
+  timestampSubtract as sdkTimestampSubtract,
+  timestampToUnixMicros as sdkTimestampToUnixMicros,
+  timestampToUnixMillis as sdkTimestampToUnixMillis,
+  timestampToUnixSeconds as sdkTimestampToUnixSeconds,
+  timestampTruncate as sdkTimestampTruncate,
+  unixMicrosToTimestamp as sdkUnixMicrosToTimestamp,
+  unixMillisToTimestamp as sdkUnixMillisToTimestamp,
+  unixSecondsToTimestamp as sdkUnixSecondsToTimestamp,
   regexContains as sdkRegexContains,
   regexFind as sdkRegexFind,
   regexFindAll as sdkRegexFindAll,
@@ -307,7 +319,10 @@ const isConstantArrayValue = (value: Constant['value']): value is ConstantArray 
 // (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
 // type-tag only, no wire change.)
 
-const nullaryFns: Record<NullaryFunctionName, () => SdkExpression> = { rand: sdkRand };
+const nullaryFns: Record<NullaryFunctionName, () => SdkExpression> = {
+  rand: sdkRand,
+  currentTimestamp: sdkCurrentTimestamp,
+};
 
 const unaryFns: Record<UnaryFunctionName, (o: SdkExpression) => SdkExpression> = {
   not: (o) => sdkNot(o.asBoolean()),
@@ -331,6 +346,12 @@ const unaryFns: Record<UnaryFunctionName, (o: SdkExpression) => SdkExpression> =
   documentId: sdkDocumentId,
   collectionId: sdkCollectionId,
   type: sdkType,
+  timestampToUnixSeconds: sdkTimestampToUnixSeconds,
+  timestampToUnixMillis: sdkTimestampToUnixMillis,
+  timestampToUnixMicros: sdkTimestampToUnixMicros,
+  unixSecondsToTimestamp: sdkUnixSecondsToTimestamp,
+  unixMillisToTimestamp: sdkUnixMillisToTimestamp,
+  unixMicrosToTimestamp: sdkUnixMicrosToTimestamp,
   vectorLength: sdkVectorLength,
 };
 
@@ -370,6 +391,10 @@ const binaryFns: Record<
   regexFind: sdkRegexFind,
   regexFindAll: sdkRegexFindAll,
   isType: (l, _r, node) => sdkIsType(l, literalStringOperand(node.right)),
+  // The lifted literal constants (granularity / part) translate as constant
+  // expressions, which IS the literal form the backend validates — probed.
+  timestampTruncate: (l, r) => sdkTimestampTruncate(l, r),
+  timestampExtract: (l, r) => sdkTimestampExtract(l, r),
   cosineDistance: sdkCosineDistance,
   dotProduct: sdkDotProduct,
   euclideanDistance: sdkEuclideanDistance,
@@ -382,6 +407,11 @@ const ternaryFns: Record<
   stringReplaceAll: sdkStringReplaceAll,
   stringReplaceOne: sdkStringReplaceOne,
   substring: sdkSubstring,
+  timestampAdd: sdkTimestampAdd,
+  timestampSubtract: sdkTimestampSubtract,
+  timestampDiff: sdkTimestampDiff,
+  timestampTruncate: sdkTimestampTruncate,
+  timestampExtract: sdkTimestampExtract,
 };
 
 /**

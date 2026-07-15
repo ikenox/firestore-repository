@@ -257,9 +257,9 @@ both executors and the basic backend semantics in one round trip per family.
       `__name__` is a REFERENCE (probed via `type(__name__)`), so
       `FieldTypeOfPath` now resolves it to the context-free
       `DocRefType<'unknown'>` (ONE unified reference descriptor — the type
-      parameter is the known collection or the `'unknown'` sentinel; the
-      context-free flavor has `output: string` for the core query API's id
-      filters and `input: never`). Future refinement, same skeleton: while a
+      parameter is the known collection or the `'unknown'` sentinel; both
+      flavors read/write `RefPath` segment paths since the segment-path
+      unification). Future refinement, same skeleton: while a
       pipeline's read-identity is alive (`Id = DocRef<T>`), the source
       collection IS statically known — `fieldProvider` could resolve
       `'__name__'` to `DocRefType<T>` and fall back to `'unknown'` once the
@@ -277,8 +277,25 @@ both executors and the basic backend semantics in one round trip per family.
       `constant(new GeoPoint(...))` — this closed the hole where every value
       node inhabited every operand domain (`toUpper(geoPointValue(...))`
       type-checked), and needed no type-level membership trick.
-- [ ] **4. Timestamp family** (literal-union factory args pattern:
-      `TimeUnit`, truncation granularity).
+- [x] **4. Timestamp family** (`currentTimestamp`; unix conversions ×6;
+      `timestampAdd` / `timestampSubtract` / `timestampDiff` (ternary);
+      `timestampTruncate` / `timestampExtract` (dual arity over the optional
+      timezone) — the SDK-only extras `timestampDiff` / `timestampExtract`
+      were included beyond the original inventory). The isType literal-lift
+      pattern generalized cleanly: probed, the backend REQUIRES literal
+      constants for unit / granularity / part AND the timezone (a dynamic
+      operand is INVALID_ARGUMENT at validation, not an ERROR value), so the
+      factories take literal-union parameters (`TimeUnit` ⊂
+      `TimeGranularity` ⊂ `TimePart`, `timezone: string`) lifted via
+      `Constant.of`; the executors pass the translated constant expressions
+      straight through (no raw-string recovery needed — the SDK standalone
+      signatures accept expression forms). Probed semantics pinned in the
+      catalog: integer-only amounts/epochs (a fractional value cannot
+      coerce), diff truncates toward zero and is negative when end precedes
+      start, bare `'week'` truncates to Sunday vs `'week(monday)'` /
+      `'isoweek'`, `'dayofweek'` is 1-based from Sunday, out-of-range
+      results and invalid timezone VALUES are backend ERROR values. All
+      value functions propagate null (incl. absent → null).
 - [ ] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**
       (T2: operand-derived return types, fallback unions).
 - [ ] **6. Array + map families + `ArrayValue` / `MapValue` constructors**

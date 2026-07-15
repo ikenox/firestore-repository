@@ -5,40 +5,29 @@ import {
   abs,
   add,
   and,
-  collectionId,
-  cosineDistance,
-  documentId,
-  dotProduct,
-  euclideanDistance,
-  isType,
-  like,
-  regexContains,
-  regexFind,
-  regexFindAll,
-  regexMatch,
-  stringIndexOf,
-  stringRepeat,
-  stringReplaceAll,
-  stringReplaceOne,
-  substring,
-  type,
-  vectorLength,
-  docRefValue,
   byteLength,
   ceil,
   charLength,
+  collectionId,
   constant,
+  cosineDistance,
+  currentTimestamp,
   divide,
+  docRefValue,
+  documentId,
+  dotProduct,
   endsWith,
   equal,
+  euclideanDistance,
   exp,
   floor,
   geoPointValue,
-  vectorValue,
   greaterThan,
   greaterThanOrEqual,
+  isType,
   lessThan,
   lessThanOrEqual,
+  like,
   ln,
   log10,
   ltrim,
@@ -49,18 +38,41 @@ import {
   or,
   pow,
   rand,
+  regexContains,
+  regexFind,
+  regexFindAll,
+  regexMatch,
   round,
   rtrim,
   sqrt,
   startsWith,
   stringConcat,
   stringContains,
+  stringIndexOf,
+  stringRepeat,
+  stringReplaceAll,
+  stringReplaceOne,
   stringReverse,
+  substring,
   subtract,
+  timestampAdd,
+  timestampDiff,
+  timestampExtract,
+  timestampSubtract,
+  timestampToUnixMicros,
+  timestampToUnixMillis,
+  timestampToUnixSeconds,
+  timestampTruncate,
   toLower,
   toUpper,
   trim,
   trunc,
+  type,
+  unixMicrosToTimestamp,
+  unixMillisToTimestamp,
+  unixSecondsToTimestamp,
+  vectorLength,
+  vectorValue,
 } from '../pipelines/expression.js';
 import { asc, desc } from '../pipelines/ordering.js';
 import type {
@@ -593,6 +605,71 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           ]),
           [{ data: { id: 'a1', cid: collectionName() } }],
         );
+      });
+
+      it('timestamp', async () => {
+        const base = new Date('2024-03-15T10:30:45.123Z');
+        const later = new Date('2024-03-18T01:00:00Z');
+        await expectPipeline(
+          one().select(() => [
+            timestampAdd(constant(base), 'day', constant(1)).as('add'),
+            timestampSubtract(constant(base), 'hour', constant(2)).as('subtract'),
+            timestampToUnixSeconds(constant(base)).as('toSecs'),
+            timestampToUnixMillis(constant(base)).as('toMillis'),
+            timestampToUnixMicros(constant(base)).as('toMicros'),
+            unixSecondsToTimestamp(constant(1710498645)).as('fromSecs'),
+            unixMillisToTimestamp(constant(1710498645123)).as('fromMillis'),
+            unixMicrosToTimestamp(constant(1710498645123000)).as('fromMicros'),
+            timestampTruncate(constant(base), 'month').as('truncMonth'),
+            // bare 'week' starts on Sunday; 'week(monday)' picks the start day
+            timestampTruncate(constant(base), 'week').as('truncWeek'),
+            timestampTruncate(constant(base), 'week(monday)').as('truncWeekMon'),
+            timestampTruncate(constant(base), 'day', 'Asia/Tokyo').as('truncDayTokyo'),
+            timestampExtract(constant(base), 'year').as('extractYear'),
+            // 1-based from Sunday: 2024-03-15 is a Friday
+            timestampExtract(constant(base), 'dayofweek').as('extractDow'),
+            timestampExtract(constant(base), 'hour', 'Asia/Tokyo').as('extractHourTokyo'),
+            // end - start in whole units, truncated toward zero (2.6 days -> 2)
+            timestampDiff(constant(later), constant(base), 'day').as('diffDays'),
+            timestampDiff(constant(base), constant(later), 'hour').as('diffHoursNeg'),
+          ]),
+          [
+            {
+              data: {
+                add: new Date('2024-03-16T10:30:45.123Z'),
+                subtract: new Date('2024-03-15T08:30:45.123Z'),
+                toSecs: 1710498645,
+                toMillis: 1710498645123,
+                toMicros: 1710498645123000,
+                fromSecs: new Date('2024-03-15T10:30:45.000Z'),
+                fromMillis: new Date('2024-03-15T10:30:45.123Z'),
+                fromMicros: new Date('2024-03-15T10:30:45.123Z'),
+                truncMonth: new Date('2024-03-01T00:00:00Z'),
+                truncWeek: new Date('2024-03-10T00:00:00Z'),
+                truncWeekMon: new Date('2024-03-11T00:00:00Z'),
+                truncDayTokyo: new Date('2024-03-14T15:00:00Z'),
+                extractYear: 2024,
+                extractDow: 6,
+                extractHourTokyo: 19,
+                diffDays: 2,
+                diffHoursNeg: -62,
+              },
+            },
+          ],
+        );
+      });
+
+      it('currentTimestamp is the server time at evaluation', async () => {
+        const before = Date.now();
+        const results = await executor.execute(one().select(() => [currentTimestamp().as('now')]));
+        const after = Date.now();
+        const times = results.map((row) => row.data.now.getTime());
+        expect(times).toHaveLength(1);
+        for (const now of times) {
+          // generous clock-skew allowance — this asserts "server time", not precision
+          expect(now).toBeGreaterThanOrEqual(before - 60_000);
+          expect(now).toBeLessThanOrEqual(after + 60_000);
+        }
       });
 
       // rand (the remaining nullary) is covered by its own range test below —

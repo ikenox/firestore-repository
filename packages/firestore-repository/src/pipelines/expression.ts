@@ -402,7 +402,7 @@ export class NullaryFunction<T extends FieldType = FieldType> extends Expression
     super();
   }
 }
-export type NullaryFunctionName = 'rand';
+export type NullaryFunctionName = 'rand' | 'currentTimestamp';
 
 /** A function call with a single operand. */
 export class UnaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -445,6 +445,13 @@ export type UnaryFunctionName =
   // reference
   | 'documentId'
   | 'collectionId'
+  // timestamp
+  | 'timestampToUnixSeconds'
+  | 'timestampToUnixMillis'
+  | 'timestampToUnixMicros'
+  | 'unixSecondsToTimestamp'
+  | 'unixMillisToTimestamp'
+  | 'unixMicrosToTimestamp'
   // type
   | 'type'
   // vector
@@ -497,6 +504,9 @@ export type BinaryFunctionName =
   | 'regexFindAll'
   // type
   | 'isType'
+  // timestamp (2-arg forms; the 3-arg forms carry an explicit timezone)
+  | 'timestampTruncate'
+  | 'timestampExtract'
   // vector
   | 'cosineDistance'
   | 'dotProduct'
@@ -515,7 +525,17 @@ export class TernaryFunction<T extends FieldType = FieldType> extends Expression
     super();
   }
 }
-export type TernaryFunctionName = 'stringReplaceAll' | 'stringReplaceOne' | 'substring';
+export type TernaryFunctionName =
+  // string
+  | 'stringReplaceAll'
+  | 'stringReplaceOne'
+  | 'substring'
+  // timestamp
+  | 'timestampAdd'
+  | 'timestampSubtract'
+  | 'timestampDiff'
+  | 'timestampTruncate'
+  | 'timestampExtract';
 
 /** A function call with two or more uniform operands. */
 export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -1305,6 +1325,189 @@ const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
     'regex',
     'request_timestamp',
   );
+
+// ---- timestamp ----
+// The unit/granularity/part argument and the timezone argument must be
+// compile-time literals: the backend validates them as literal constants
+// (probed: a field operand is INVALID_ARGUMENT at query validation, not an
+// ERROR value), so the factories take literal parameters and lift them via
+// `Constant.of`, like `isType`. Out-of-range results and invalid timezone
+// VALUES, by contrast, are backend ERROR values (`isError`-catchable).
+// Integer-only positions (an add/subtract amount, a unix epoch input) are
+// typed as the numeric domain: `'integer'` alone cannot be demanded at the
+// type level (a number-valued descriptor honestly carries
+// `'integer' | 'double'` — see `Int64Type`), and a whole `number` wire-encodes
+// as an integer anyway; an actually-fractional value is a backend error.
+
+/** The time units accepted by `timestampAdd` / `timestampSubtract` / `timestampDiff`. */
+export type TimeUnit = 'microsecond' | 'millisecond' | 'second' | 'minute' | 'hour' | 'day';
+type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+/**
+ * The truncation granularities of `timestampTruncate`. Bare `'week'` starts
+ * weeks on Sunday; `'week(<day>)'` picks the start day; `'isoweek'` is
+ * `'week(monday)'` (probed).
+ */
+export type TimeGranularity =
+  | TimeUnit
+  | 'week'
+  | `week(${Weekday})`
+  | 'isoweek'
+  | 'month'
+  | 'quarter'
+  | 'year'
+  | 'isoyear';
+/** The extractable parts of `timestampExtract`. */
+export type TimePart = TimeGranularity | 'dayofweek' | 'dayofyear';
+
+/** A timestamp-domain operand. */
+type TimestampOperand = Expression<Valued<'timestamp'>>;
+
+/** The server's timestamp at query evaluation time. */
+export const currentTimestamp = (): NullaryFunction<TimestampType> =>
+  new NullaryFunction('currentTimestamp', timestamp());
+
+/** The operand as a unix epoch in seconds (fractions truncated toward zero). */
+export const timestampToUnixSeconds = <Op extends TimestampOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('timestampToUnixSeconds', propagateNull([value], int64()), value);
+
+/** The operand as a unix epoch in milliseconds. */
+export const timestampToUnixMillis = <Op extends TimestampOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('timestampToUnixMillis', propagateNull([value], int64()), value);
+
+/** The operand as a unix epoch in microseconds. */
+export const timestampToUnixMicros = <Op extends TimestampOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('timestampToUnixMicros', propagateNull([value], int64()), value);
+
+/** The timestamp at the given unix epoch in seconds (integers only — a fractional value is a backend error). */
+export const unixSecondsToTimestamp = <Op extends NumericOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], TimestampType>> =>
+  new UnaryFunction('unixSecondsToTimestamp', propagateNull([value], timestamp()), value);
+
+/** The timestamp at the given unix epoch in milliseconds (integers only). */
+export const unixMillisToTimestamp = <Op extends NumericOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], TimestampType>> =>
+  new UnaryFunction('unixMillisToTimestamp', propagateNull([value], timestamp()), value);
+
+/** The timestamp at the given unix epoch in microseconds (integers only). */
+export const unixMicrosToTimestamp = <Op extends NumericOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], TimestampType>> =>
+  new UnaryFunction('unixMicrosToTimestamp', propagateNull([value], timestamp()), value);
+
+/** The timestamp moved forward by `amount` `unit`s (out-of-range results are backend ERROR values). */
+export const timestampAdd = <Ts extends TimestampOperand, Amount extends NumericOperand>(
+  value: Ts,
+  unit: TimeUnit,
+  amount: Amount,
+): TernaryFunction<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
+  new TernaryFunction(
+    'timestampAdd',
+    propagateNull([value, amount], timestamp()),
+    value,
+    Constant.of(unit),
+    amount,
+  );
+
+/** The timestamp moved backward by `amount` `unit`s. */
+export const timestampSubtract = <Ts extends TimestampOperand, Amount extends NumericOperand>(
+  value: Ts,
+  unit: TimeUnit,
+  amount: Amount,
+): TernaryFunction<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
+  new TernaryFunction(
+    'timestampSubtract',
+    propagateNull([value, amount], timestamp()),
+    value,
+    Constant.of(unit),
+    amount,
+  );
+
+/**
+ * `end - start` in whole `unit`s, truncated toward zero (probed: 2.6 days →
+ * `2`; negative when `end` precedes `start`). Units only — calendar
+ * granularities (`'week'`, `'month'`, ...) are rejected by the backend.
+ */
+export const timestampDiff = <End extends TimestampOperand, Start extends TimestampOperand>(
+  end: End,
+  start: Start,
+  unit: TimeUnit,
+): TernaryFunction<PropagateNull<End['type'] | Start['type'], Int64Type>> =>
+  new TernaryFunction(
+    'timestampDiff',
+    propagateNull([end, start], int64()),
+    end,
+    start,
+    Constant.of(unit),
+  );
+
+/**
+ * The timestamp truncated down to the given granularity, in the given IANA
+ * timezone (default UTC). An invalid timezone VALUE is a backend ERROR value.
+ */
+export function timestampTruncate<Ts extends TimestampOperand>(
+  value: Ts,
+  granularity: TimeGranularity,
+): BinaryFunction<PropagateNull<Ts['type'], TimestampType>>;
+export function timestampTruncate<Ts extends TimestampOperand>(
+  value: Ts,
+  granularity: TimeGranularity,
+  timezone: string,
+): TernaryFunction<PropagateNull<Ts['type'], TimestampType>>;
+export function timestampTruncate(
+  value: Expression,
+  granularity: TimeGranularity,
+  timezone?: string,
+): BinaryFunction | TernaryFunction {
+  const type = propagateNull([value], timestamp());
+  return timezone === undefined
+    ? new BinaryFunction('timestampTruncate', type, value, Constant.of(granularity))
+    : new TernaryFunction(
+        'timestampTruncate',
+        type,
+        value,
+        Constant.of(granularity),
+        Constant.of(timezone),
+      );
+}
+
+/**
+ * The given part of the timestamp as an integer, in the given IANA timezone
+ * (default UTC). `'dayofweek'` is 1-based from Sunday (probed: a Friday →
+ * `6`).
+ */
+export function timestampExtract<Ts extends TimestampOperand>(
+  value: Ts,
+  part: TimePart,
+): BinaryFunction<PropagateNull<Ts['type'], Int64Type>>;
+export function timestampExtract<Ts extends TimestampOperand>(
+  value: Ts,
+  part: TimePart,
+  timezone: string,
+): TernaryFunction<PropagateNull<Ts['type'], Int64Type>>;
+export function timestampExtract(
+  value: Expression,
+  part: TimePart,
+  timezone?: string,
+): BinaryFunction | TernaryFunction {
+  const type = propagateNull([value], int64());
+  return timezone === undefined
+    ? new BinaryFunction('timestampExtract', type, value, Constant.of(part))
+    : new TernaryFunction(
+        'timestampExtract',
+        type,
+        value,
+        Constant.of(part),
+        Constant.of(timezone),
+      );
+}
 
 // ---- vector ----
 // Distance functions over mismatched dimensions are backend ERROR values.

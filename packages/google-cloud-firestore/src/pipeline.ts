@@ -243,6 +243,7 @@ const toSdkConstant = (db: Firestore, value: Constant['value']): Pipelines.Expre
 
 const nullaryFns: Record<NullaryFunctionName, () => Pipelines.Expression> = {
   rand: Pipelines.rand,
+  currentTimestamp: Pipelines.currentTimestamp,
 };
 
 const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines.Expression> = {
@@ -269,6 +270,12 @@ const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines
   documentId: Pipelines.documentId,
   collectionId: Pipelines.collectionId,
   type: Pipelines.type,
+  timestampToUnixSeconds: Pipelines.timestampToUnixSeconds,
+  timestampToUnixMillis: Pipelines.timestampToUnixMillis,
+  timestampToUnixMicros: Pipelines.timestampToUnixMicros,
+  unixSecondsToTimestamp: Pipelines.unixSecondsToTimestamp,
+  unixMillisToTimestamp: Pipelines.unixMillisToTimestamp,
+  unixMicrosToTimestamp: Pipelines.unixMicrosToTimestamp,
   vectorLength: Pipelines.vectorLength,
 };
 
@@ -311,6 +318,10 @@ const binaryFns: Record<
   regexFind: Pipelines.regexFind,
   regexFindAll: Pipelines.regexFindAll,
   isType: (l, _r, node) => Pipelines.isType(l, literalStringOperand(node.right)),
+  // The lifted literal constants (granularity / part) translate as constant
+  // expressions, which IS the literal form the backend validates — probed.
+  timestampTruncate: (l, r) => Pipelines.timestampTruncate(l, r),
+  timestampExtract: (l, r) => Pipelines.timestampExtract(l, r),
   cosineDistance: Pipelines.cosineDistance,
   dotProduct: Pipelines.dotProduct,
   euclideanDistance: Pipelines.euclideanDistance,
@@ -327,6 +338,11 @@ const ternaryFns: Record<
   stringReplaceAll: (a, b, c) => a.stringReplaceAll(b, c),
   stringReplaceOne: (a, b, c) => a.stringReplaceOne(b, c),
   substring: Pipelines.substring,
+  timestampAdd: Pipelines.timestampAdd,
+  timestampSubtract: Pipelines.timestampSubtract,
+  timestampDiff: Pipelines.timestampDiff,
+  timestampTruncate: Pipelines.timestampTruncate,
+  timestampExtract: Pipelines.timestampExtract,
 };
 
 /**
