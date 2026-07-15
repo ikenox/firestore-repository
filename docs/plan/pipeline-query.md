@@ -374,37 +374,39 @@ Deferred to a later iteration (still tracked here, not currently in scope):
 
 ## Expressions — remaining gaps
 
-- [~] **Restructure the function-call AST into one class PER FUNCTION**
-  (agreed 2026-07, deliberately deferred — do after the function slices,
-  alongside or instead of other ergonomics work). This REVERSES the earlier
-  shape-grouped decision (one class per arity: `UnaryFunction` /
-  `BinaryFunction` / ..., recorded here previously), based on three
-  distortions the shape buckets accumulated as slices 2–4 landed:
+- [~] **Restructure the function-call AST into ONE `FunctionCall` class
+  whose payload is a discriminated union with per-function parameters**
+  (agreed 2026-07, deliberately deferred — do after the function slices).
+  `FunctionCall<T>` carries `type: T` plus a `call` payload union —
+  `{ name: 'timestampAdd'; value: Expression; unit: TimeUnit; amount: Expression } | { name: 'isType'; ... } | ...`
+  — giving per-function structure WITHOUT per-function classes (classes
+  exist for the instanceof brand the value nodes need; payloads inside one
+  node need no brand). This REVERSES the earlier shape-grouped decision
+  (one class per arity: `UnaryFunction` / `BinaryFunction` / ...), based on
+  three distortions the arity buckets accumulated as slices 2–5 landed:
   1. **Dual-arity functions appear in TWO shape unions** (`round` / `trunc` /
      the `trim` family / `substring` / `timestampTruncate` /
      `timestampExtract` are both Binary and Ternary names) and force factory
-     overloads. With per-function classes the factory is a single
-     `(a, b, c?)` signature — no overloads — and the node holds the optional
-     field as optional.
+     overloads. With a per-function payload the factory is a single
+     `(a, b, c?)` signature — no overloads — and the payload holds the
+     optional parameter as an optional field.
   2. **Positional payloads lose the meaning**: `TernaryFunction.first /
 second / third` is (ts, unit, amount) for `timestampAdd` but
-     (end, start, unit) for `timestampDiff`. Per-function classes carry
-     named fields.
+     (end, start, unit) for `timestampDiff`. Payload records carry named
+     fields.
   3. **Backend-mandated literal arguments take a detour**: a literal (the
      `isType` type name, the timestamp unit/granularity/timezone) is lifted
      into a `Constant` operand only so the executors can recover the raw
-     string from the AST node (`literalStringOperand`). A per-function class
-     stores the literal AS a plain field and the whole recovery mechanism
-     disappears.
-     The earlier counterargument (SDK-style ~85 classes, giant `Expression`
-     union) is bought back deliberately: the classes are one-liners, the union
-     can be layered (`Expression = Field | Constant | FunctionCall` with
-     `FunctionCall` the per-function union discriminated by `name`), and the
-     executors keep the same `Record<Name, ...>` exhaustiveness — now with one
-     table over all functions, each entry typed against its own class instead
-     of a shared positional signature. Anything that traverses operands
-     generically (selection/decode walks) needs a uniform accessor on the base
-     class (e.g. `operands(): Expression[]`) to replace the per-shape arms.
+     string from the AST node (`literalStringOperand`). A payload stores the
+     literal AS a plain field and the whole recovery mechanism disappears.
+     `Expression` stays `Field | Constant | FunctionCall | ...` (no 85-member
+     union), and the executors keep exhaustiveness with one mapped table over
+     all function names —
+     `{ [K in FunctionName]: (call: Extract<FunctionPayload, { name: K }>) => SdkExpr }`
+     — each entry typed against its own payload instead of a shared positional
+     signature. Anything that would traverse operands generically must know
+     payloads per name (today nothing does — executors translate per-function
+     anyway).
 - [ ] Per-op numeric return type refinement (Int64-pair → Int64 vs
       auto-widen to Double) — TODO comments already in `expression.ts`.
 - [x] Improve `constant(value)` type inference from runtime value — see the
