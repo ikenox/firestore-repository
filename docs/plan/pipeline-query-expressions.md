@@ -296,8 +296,31 @@ both executors and the basic backend semantics in one round trip per family.
       `'isoweek'`, `'dayofweek'` is 1-based from Sunday, out-of-range
       results and invalid timezone VALUES are backend ERROR values. All
       value functions propagate null (incl. absent → null).
-- [ ] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**
-      (T2: operand-derived return types, fallback unions).
+- [x] **5. Existence/error + conditional + logicalMax/Min + equalAny/notEqualAny**
+      (T2: operand-derived return types, fallback unions; `ifNull` and `xor`
+      included beyond the inventory line). Probed semantics:
+      `exists`/`isAbsent` are absence-observing, total, and take FIELD
+      REFERENCES only (the backend rejects any other operand at validation —
+      the factories take `Field`); `isError` is total (null/absent are
+      `false`); `ifError` passes null AND absence through the try side (only
+      errors trigger the fallback); `ifAbsent` triggers on absence only (a
+      present null passes); `ifNull` triggers on null OR absence; ERROR
+      values propagate through everything except `isError`/`ifError`;
+      `conditional` is NOT Kleene — a null/absent/false condition selects
+      `else`; `logicalMaximum`/`logicalMinimum` IGNORE null/absent operands
+      (unlike sort's null-first order) and return null only when every
+      operand was ignored; `equalAny`/`notEqualAny` are total and take ONE
+      array-typed options expression (`constant([...])` / an array field —
+      the SDK's values-list form is client sugar, and a non-constant
+      expression inside it is rejected on the wire), with elements
+      type-checked comparable against the value (`ElementsOf` +
+      `Comparable`); `xor` is variadic parity with Kleene null propagation.
+      New return-type machinery, each with a runtime twin:
+      `EitherType` (branch union, deduped), `StripNull` (null-stripped
+      pass-through sides), `LogicalExtreme` (stripped operand union +
+      null iff all operands nullable), and `WithoutOptional` — an operand's
+      `Optional` marker is a property of its document slot, never of a
+      function result, so result descriptors drop it.
 - [ ] **6. Array + map families + `ArrayValue` / `MapValue` constructors**
       (T3: element/subschema return typing; needs a wire probe for the
       constructor encodings; ties into the existing `arrayGet` / `mapGet`
@@ -343,11 +366,13 @@ both executors and the basic backend semantics in one round trip per family.
    (`array` / `map` constructors — the old file aliased its schema imports).
    Proposal: SDK names verbatim, constructors as `arrayValue` / `mapValue` to
    dodge the schema collision.
-3. **`equalAny` sugar**: accept a plain JS array (`equalAny(f, [1, 2, 3])`)
-   lifted to an `ArrayValue`, or require explicit `arrayValue([...])`?
+3. **`equalAny` sugar** — RESOLVED (slice 5): the options operand is one
+   array-typed EXPRESSION (`constant([1, 2, 3])`, an array field, ...). No
+   plain-array sugar for now; it belongs to the deferred direct-literal
+   ergonomics layer.
 4. **How far to take T3 typing** for `mapGet` / `mapSet` / `mapMerge`
    (key-aware subschema lookup vs a loose `MapType` return) — the old TODOs
    suggest key-aware; cost is real type-level machinery.
-5. **`xor` arity** (SDK: variadic like `and`/`or`?) and `log` signature
-   (`log(x)` natural vs `log(x, base)`) — verify against the SDK during their
-   slices.
+5. ~~**`xor` arity**~~ — RESOLVED (slice 5): variadic parity like `and`/`or`.
+   `log` signature (`log(x)` natural vs `log(x, base)`) still to verify —
+   the SDK has no standalone `log` today.
