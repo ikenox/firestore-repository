@@ -1,6 +1,8 @@
 import {
+  type AnyUnionType,
   array,
   type ArrayType,
+  assertNoDottedFieldNames,
   bool,
   type BoolType,
   bytes,
@@ -58,7 +60,9 @@ export type Expression<T extends FieldType = FieldType> =
   | UnaryFunction<T>
   | BinaryFunction<T>
   | TernaryFunction<T>
-  | VariadicFunction<T>;
+  | VariadicFunction<T>
+  | ArrayConstructor<T>
+  | MapConstructor<T>;
 
 /**
  * An expression bound to an output name — the aliased form of a `select` /
@@ -458,6 +462,13 @@ export type UnaryFunctionName =
   | 'exists'
   | 'isAbsent'
   | 'isError'
+  // array
+  | 'arrayLength'
+  | 'arrayReverse'
+  // map
+  | 'mapKeys'
+  | 'mapValues'
+  | 'mapEntries'
   // vector
   | 'vectorLength';
 
@@ -514,6 +525,14 @@ export type BinaryFunctionName =
   | 'regexFindAll'
   // type
   | 'isType'
+  // array
+  | 'arrayGet'
+  | 'arrayContains'
+  | 'arrayContainsAll'
+  | 'arrayContainsAny'
+  // map
+  | 'mapGet'
+  | 'mapRemove'
   // timestamp (2-arg forms; the 3-arg forms carry an explicit timezone)
   | 'timestampTruncate'
   | 'timestampExtract'
@@ -547,7 +566,9 @@ export type TernaryFunctionName =
   | 'timestampTruncate'
   | 'timestampExtract'
   // conditional
-  | 'conditional';
+  | 'conditional'
+  // map
+  | 'mapSet';
 
 /** A function call with two or more uniform operands. */
 export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
@@ -560,6 +581,34 @@ export class VariadicFunction<T extends FieldType = FieldType> extends Expressio
     super();
   }
 }
+
+/**
+ * An array EXPRESSION constructor — `arrayValue([field('a'), constant(1)])`.
+ * Unlike the value nodes (which hold plain values and enter expressions via
+ * `constant()`), the elements here are expressions, evaluated per row
+ * (probed: fields nest arbitrarily). Non-empty, mirroring `constant([])`'s
+ * rejection: an empty literal has no element to infer a descriptor from.
+ */
+export class ArrayConstructor<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'arrayConstructor';
+  constructor(
+    readonly type: T,
+    readonly elements: readonly [Expression, ...Expression[]],
+  ) {
+    super();
+  }
+}
+
+/** A map EXPRESSION constructor — `mapValue({ x: field('num') })`. See {@link ArrayConstructor}. */
+export class MapConstructor<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'mapConstructor';
+  constructor(
+    readonly type: T,
+    readonly fields: Readonly<Record<string, Expression>>,
+  ) {
+    super();
+  }
+}
 export type VariadicFunctionName =
   // logical
   | 'and'
@@ -568,7 +617,10 @@ export type VariadicFunctionName =
   | 'stringConcat'
   | 'xor'
   | 'logicalMaximum'
-  | 'logicalMinimum';
+  | 'logicalMinimum'
+  // array / map
+  | 'arrayConcat'
+  | 'mapMerge';
 
 /**
  * The value-domain predicate: descriptors whose `firestoreType` tags fit the
@@ -1609,6 +1661,404 @@ const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
     'regex',
     'request_timestamp',
   );
+
+// ---- array ----
+// The contains family propagates the ARRAY operand's null/absence, while a
+// null ELEMENT operand is compared as a value (probed:
+// `arrayContains([1, null, 3], null)` is true, over a null-free array
+// false). `arrayContainsAll`/`arrayContainsAny` take one array-typed
+// options expression, like `equalAny`.
+
+/** An array-domain operand. */
+type ArrayOperand = Expression<Valued<readonly FirestoreType[]>>;
+
+/** The deduped element-type union of a tuple of element expressions. */
+type ElementUnion<Els extends readonly Expression[]> = RebuildUnion<
+  DedupDescriptors<ElementTypes<Els>>
+>;
+type ElementTypes<Els extends readonly Expression[]> = Els extends readonly [
+  infer H extends Expression,
+  ...infer R extends readonly Expression[],
+]
+  ? [WithoutOptional<H['type']>, ...ElementTypes<R>]
+  : [];
+
+/** Runtime counterpart of {@link ElementUnion} (same bridge shape as `propagateNull`). */
+function elementUnionType<Els extends readonly Expression[]>(elements: Els): ElementUnion<Els>;
+function elementUnionType(elements: readonly Expression[]): FieldType {
+  const [first, ...rest] = elements
+    .map((e) => withoutOptional(e.type))
+    .filter((t, i, all) => all.findIndex((o) => descriptorEquals(o, t)) === i);
+  if (first === undefined) {
+    throw new Error('an element list must not be empty');
+  }
+  return rest.length === 0 ? first : union(first, ...rest);
+}
+
+/** Builds an array expression from element expressions — see {@link ArrayConstructor}. */
+export const arrayValue = <const Els extends readonly [Expression, ...Expression[]]>(
+  elements: Els,
+): ArrayConstructor<ArrayType<ElementUnion<Els>>> =>
+  new ArrayConstructor(array(elementUnionType(elements)), elements);
+
+/** The number of elements. */
+export const arrayLength = <Op extends ArrayOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
+  new UnaryFunction('arrayLength', propagateNull([value], int64()), value);
+
+/** The array reversed. */
+export const arrayReverse = <Op extends ArrayOperand>(
+  value: Op,
+): UnaryFunction<PropagateNull<Op['type'], StripNull<Op['type']>>> =>
+  new UnaryFunction('arrayReverse', propagateNull([value], stripNullOf(value)), value);
+
+/** Runtime counterpart of `StripNull<Op['type']>` over an expression (same bridge shape as `propagateNull`). */
+function stripNullOf<Op extends Expression>(value: Op): StripNull<Op['type']>;
+function stripNullOf(value: Expression): FieldType {
+  return stripNull(value.type) ?? nullType();
+}
+
+/**
+ * The element at `index` (dynamic allowed; negative counts from the end —
+ * probed). Always nullable: an out-of-range index yields an ABSENT result
+ * (not an error), approximated as null in the descriptor, like `regexFind`'s
+ * no-match.
+ */
+export const arrayGet = <Arr extends ArrayOperand, Idx extends NumericOperand>(
+  value: Arr,
+  index: Idx,
+): BinaryFunction<UnionType<[ElementsOf<StripNull<Arr['type']>>, NullType]>> =>
+  new BinaryFunction('arrayGet', nullable(elementTypeOf(value)), value, index);
+
+/** Runtime counterpart of `ElementsOf<StripNull<...>>` (same bridge shape as `propagateNull`). */
+function elementTypeOf<Arr extends Expression>(value: Arr): ElementsOf<StripNull<Arr['type']>>;
+function elementTypeOf(value: Expression): FieldType {
+  const t = stripNull(value.type);
+  if (t === undefined || t.type !== 'array') {
+    throw new Error('operand is not an array');
+  }
+  return t.dynamicPart;
+}
+
+/** Whether the array contains the element (a null element is compared as a value). */
+export const arrayContains = <Arr extends ArrayOperand, El extends FieldType>(
+  value: Arr,
+  element: Expression<El> & Comparable<ElementsOf<StripNull<Arr['type']>>, El>,
+): BinaryFunction<PropagateNull<Arr['type'], BoolType>> =>
+  new BinaryFunction('arrayContains', propagateNull([value], bool()), value, element);
+
+/** Whether the array contains EVERY element of the options array. */
+export const arrayContainsAll = <Arr extends ArrayOperand, Opts extends ArrayOperand>(
+  value: Arr,
+  options: Opts &
+    Comparable<ElementsOf<StripNull<Arr['type']>>, ElementsOf<StripNull<Opts['type']>>>,
+): BinaryFunction<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
+  new BinaryFunction('arrayContainsAll', propagateNull([value, options], bool()), value, options);
+
+/** Whether the array contains ANY element of the options array. */
+export const arrayContainsAny = <Arr extends ArrayOperand, Opts extends ArrayOperand>(
+  value: Arr,
+  options: Opts &
+    Comparable<ElementsOf<StripNull<Arr['type']>>, ElementsOf<StripNull<Opts['type']>>>,
+): BinaryFunction<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
+  new BinaryFunction('arrayContainsAny', propagateNull([value, options], bool()), value, options);
+
+/** The concatenation of two or more arrays. */
+export const arrayConcat = <
+  const Ops extends readonly [ArrayOperand, ArrayOperand, ...ArrayOperand[]],
+>(
+  ...operands: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], ArrayType<ConcatElementUnion<Ops>>>> =>
+  new VariadicFunction(
+    'arrayConcat',
+    propagateNull(operands, array(concatElementUnionType(operands))),
+    operands,
+  );
+
+type ConcatElementUnion<Ops extends readonly Expression[]> = RebuildUnion<
+  DedupDescriptors<ConcatElementTypes<Ops>>
+>;
+type ConcatElementTypes<Ops extends readonly Expression[]> = Ops extends readonly [
+  infer H extends Expression,
+  ...infer R extends readonly Expression[],
+]
+  ? [ElementsOf<StripNull<H['type']>>, ...ConcatElementTypes<R>]
+  : [];
+
+/** Runtime counterpart of {@link ConcatElementUnion}. */
+function concatElementUnionType<Ops extends readonly Expression[]>(
+  operands: Ops,
+): ConcatElementUnion<Ops>;
+function concatElementUnionType(operands: readonly Expression[]): FieldType {
+  const [first, ...rest] = operands
+    .map((operand) => elementTypeOf(operand))
+    .filter((t, i, all) => all.findIndex((o) => descriptorEquals(o, t)) === i);
+  if (first === undefined) {
+    throw new Error('arrayConcat needs at least one operand');
+  }
+  return rest.length === 0 ? first : union(first, ...rest);
+}
+
+// ---- map ----
+// `mapSet` / `mapRemove` keys must be literal constants (probed:
+// "map_set keys must be constants/literals"), lifted like `isType`'s type
+// name. `mapGet`'s key MAY be dynamic on the backend, but the factory takes
+// a literal so the result subschema is key-aware; a dynamic-key overload is
+// deferred.
+
+/** A map-domain operand. */
+type MapOperand = Expression<Valued<{ readonly [field: string]: FirestoreType }>>;
+
+/** The fields record of a map descriptor (wide/lenient for imprecise inputs). */
+type FieldsOf<T extends FieldType> = T extends { type: 'map'; fields: infer F extends FieldsRecord }
+  ? F
+  : FieldsRecord;
+type FieldsRecord = Record<string, FieldType>;
+
+/** The literal keys addressable on the operand (any string for imprecise maps). */
+type MapKeysOf<T extends FieldType> =
+  FieldsRecord extends FieldsOf<StripNull<T>> ? string : keyof FieldsOf<StripNull<T>> & string;
+
+/**
+ * The value at a literal key. A missing key yields an ABSENT result
+ * (probed), so an `Optional` field reads as nullable; a null/absent map
+ * yields null.
+ */
+export const mapGet = <M extends MapOperand, K extends MapKeysOf<M['type']>>(
+  value: M,
+  key: K,
+): BinaryFunction<PropagateNull<M['type'], MapValueType<FieldsOf<StripNull<M['type']>>[K]>>> =>
+  new BinaryFunction(
+    'mapGet',
+    propagateNull([value], mapValueTypeOf(value, key)),
+    value,
+    Constant.of(key),
+  );
+
+type MapValueType<V extends FieldType> = [Extract<V, Optional>] extends [never]
+  ? V
+  : UnionType<[WithoutOptional<V>, NullType]>;
+
+/** Runtime counterpart of `MapValueType<FieldsOf<...>[K]>` (same bridge shape as `propagateNull`). */
+function mapValueTypeOf<M extends Expression, K extends string>(
+  value: M,
+  key: K,
+): MapValueType<FieldsOf<StripNull<M['type']>>[K]>;
+function mapValueTypeOf(value: Expression, key: string): FieldType {
+  const t = stripNull(value.type);
+  if (t === undefined || t.type !== 'map') {
+    throw new Error('operand is not a map');
+  }
+  const v = t.fields[key];
+  if (v === undefined) {
+    throw new Error(`map has no field "${key}"`);
+  }
+  return mayBeAbsent(v) ? nullable(withoutOptional(v)) : v;
+}
+
+/**
+ * `MapType` constructor for COMPUTED field records: the public `map()`
+ * factory's dotted-name F-bound cannot be discharged for a generically
+ * computed record, so dotted keys are rejected at runtime here instead
+ * (same policy — dots are the path separator).
+ */
+const mapDescriptor = <F extends FieldsRecord>(fields: F): MapType<F> => {
+  assertNoDottedFieldNames(fields);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- phantom input/output/firestoreType exist only at the type level (the schema factories' buildType precedent)
+  return { type: 'map', fields } as MapType<F>;
+};
+
+/** A record whose dotted keys are banned (the schema factories' rule — dots are the path separator). */
+type WithoutDottedKeys<F> = {
+  [K in keyof F]: K extends `${string}.${string}` ? never : F[K];
+};
+/** A key literal that must not contain the path separator. */
+type UndottedKey<K extends string> = K extends `${string}.${string}` ? never : K;
+
+/** Builds a map expression from field-value expressions — see {@link MapConstructor}. */
+export const mapValue = <const F extends Readonly<Record<string, Expression>>>(
+  fields: F & WithoutDottedKeys<F>,
+): MapConstructor<MapType<{ [K in keyof F & string]: WithoutOptional<F[K]['type']> }>> =>
+  new MapConstructor(mapDescriptor(mapConstructorFields(fields)), fields);
+
+/** Runtime counterpart of `mapValue`'s fields record (same bridge shape as `propagateNull`). */
+function mapConstructorFields<F extends Readonly<Record<string, Expression>>>(
+  fields: F,
+): { [K in keyof F & string]: WithoutOptional<F[K]['type']> };
+function mapConstructorFields(fields: Readonly<Record<string, Expression>>): FieldsRecord {
+  return Object.fromEntries(Object.entries(fields).map(([k, e]) => [k, withoutOptional(e.type)]));
+}
+
+/** The map's keys, as a string array. */
+export const mapKeys = <M extends MapOperand>(
+  value: M,
+): UnaryFunction<PropagateNull<M['type'], ArrayType<StringType>>> =>
+  new UnaryFunction('mapKeys', propagateNull([value], array(string())), value);
+
+/** The map's values, as an array of the deduped field-type union. */
+export const mapValues = <M extends MapOperand>(
+  value: M,
+): UnaryFunction<
+  PropagateNull<M['type'], ArrayType<MapFieldUnion<FieldsOf<StripNull<M['type']>>>>>
+> => new UnaryFunction('mapValues', propagateNull([value], array(mapFieldUnionType(value))), value);
+
+/** The map's entries, as an array of `{ k, v }` maps (probed shape). */
+export const mapEntries = <M extends MapOperand>(
+  value: M,
+): UnaryFunction<
+  PropagateNull<
+    M['type'],
+    ArrayType<MapType<{ k: StringType; v: MapFieldUnion<FieldsOf<StripNull<M['type']>>> }>>
+  >
+> =>
+  new UnaryFunction(
+    'mapEntries',
+    propagateNull([value], array(map({ k: string(), v: mapFieldUnionType(value) }))),
+    value,
+  );
+
+/**
+ * The element descriptor of a map's value collection. Key order is not
+ * observable at the type level (a record has no ordered key tuple), so a
+ * multi-type map degrades to the widest union descriptor — the runtime
+ * builds the concrete `UnionType`, a structural subtype of it. A
+ * single-type map keeps the precise descriptor; an empty map yields null
+ * values (runtime mirror: `mapFieldUnionType`).
+ */
+type MapFieldUnion<F extends FieldsRecord> = FieldsRecord extends F
+  ? AnyUnionType
+  : WithoutOptional<F[keyof F & string]> extends infer Vals extends FieldType
+    ? [Vals] extends [never]
+      ? NullType
+      : IsUnion<Vals> extends true
+        ? AnyUnionType
+        : Vals
+    : never;
+
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+
+/** Runtime counterpart of {@link MapFieldUnion} (same bridge shape as `propagateNull`). */
+function mapFieldUnionType<M extends Expression>(
+  value: M,
+): MapFieldUnion<FieldsOf<StripNull<M['type']>>>;
+function mapFieldUnionType(value: Expression): FieldType {
+  const t = stripNull(value.type);
+  if (t === undefined || t.type !== 'map') {
+    throw new Error('operand is not a map');
+  }
+  const [first, ...rest] = Object.values(t.fields)
+    .map((v) => withoutOptional(v))
+    .filter((v, i, all) => all.findIndex((o) => descriptorEquals(o, v)) === i);
+  if (first === undefined) {
+    return nullType();
+  }
+  return rest.length === 0 ? first : union(first, ...rest);
+}
+
+/**
+ * The map with `key` set to the value (shallow; probed: a later value wins).
+ * The key must be a literal constant (backend-validated), lifted like
+ * `isType`'s type name.
+ */
+export const mapSet = <M extends MapOperand, K extends string, V extends Expression>(
+  value: M,
+  key: K & UndottedKey<K>,
+  entry: V,
+): TernaryFunction<
+  PropagateNull<
+    M['type'],
+    MapType<
+      SetField<FieldsOf<StripNull<M['type']>>, K & UndottedKey<K>, WithoutOptional<V['type']>>
+    >
+  >
+> =>
+  new TernaryFunction(
+    'mapSet',
+    propagateNull([value], mapDescriptor(setField(value, key, entry))),
+    value,
+    Constant.of(key),
+    entry,
+  );
+
+type SetField<F extends FieldsRecord, K extends string, V extends FieldType> = {
+  [P in keyof F as P extends K ? never : P]: F[P];
+} & { [P in K]: V };
+
+/** Runtime counterpart of {@link SetField} (same bridge shape as `propagateNull`). */
+function setField<M extends Expression, K extends string, V extends Expression>(
+  value: M,
+  key: K,
+  entry: V,
+): SetField<FieldsOf<StripNull<M['type']>>, K, WithoutOptional<V['type']>>;
+function setField(value: Expression, key: string, entry: Expression): FieldsRecord {
+  const t = stripNull(value.type);
+  if (t === undefined || t.type !== 'map') {
+    throw new Error('operand is not a map');
+  }
+  return { ...t.fields, [key]: withoutOptional(entry.type) };
+}
+
+/** The map without `key` (a missing key is a no-op — probed). Literal key, like {@link mapSet}. */
+export const mapRemove = <M extends MapOperand, K extends string>(
+  value: M,
+  key: K & UndottedKey<K>,
+): BinaryFunction<
+  PropagateNull<M['type'], MapType<Omit<FieldsOf<StripNull<M['type']>>, K & UndottedKey<K>>>>
+> =>
+  new BinaryFunction(
+    'mapRemove',
+    propagateNull([value], mapDescriptor(removeField(value, key))),
+    value,
+    Constant.of(key),
+  );
+
+/** Runtime counterpart of `mapRemove`'s fields record (same bridge shape as `propagateNull`). */
+function removeField<M extends Expression, K extends string>(
+  value: M,
+  key: K,
+): Omit<FieldsOf<StripNull<M['type']>>, K>;
+function removeField(value: Expression, key: string): FieldsRecord {
+  const t = stripNull(value.type);
+  if (t === undefined || t.type !== 'map') {
+    throw new Error('operand is not a map');
+  }
+  const { [key]: _removed, ...rest } = t.fields;
+  return rest;
+}
+
+/** The shallow merge of two or more maps — a later operand's key wins (probed). */
+export const mapMerge = <const Ops extends readonly [MapOperand, MapOperand, ...MapOperand[]]>(
+  ...operands: Ops
+): VariadicFunction<PropagateNull<Ops[number]['type'], MapType<MergeFields<Ops>>>> =>
+  new VariadicFunction(
+    'mapMerge',
+    propagateNull(operands, mapDescriptor(mergeFields(operands))),
+    operands,
+  );
+
+type MergeFields<Ops extends readonly Expression[]> = Ops extends readonly [
+  infer H extends Expression,
+  ...infer R extends readonly Expression[],
+]
+  ? MergeTwo<FieldsOf<StripNull<H['type']>>, MergeFields<R>>
+  : // oxlint-disable-next-line typescript/no-empty-object-type -- the fold's identity element: "no fields yet"
+    {};
+type MergeTwo<A extends FieldsRecord, B> = {
+  [P in keyof A as P extends keyof B ? never : P]: A[P];
+} & B;
+
+/** Runtime counterpart of {@link MergeFields} (same bridge shape as `propagateNull`). */
+function mergeFields<Ops extends readonly Expression[]>(operands: Ops): MergeFields<Ops>;
+function mergeFields(operands: readonly Expression[]): FieldsRecord {
+  return operands.reduce<FieldsRecord>((acc, operand) => {
+    const t = stripNull(operand.type);
+    if (t === undefined || t.type !== 'map') {
+      throw new Error('operand is not a map');
+    }
+    return { ...acc, ...t.fields };
+  }, {});
+}
 
 // ---- existence & error ----
 // The error channel (probed): backend ERROR values (divide by zero, invalid

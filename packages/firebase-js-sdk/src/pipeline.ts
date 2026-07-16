@@ -30,12 +30,25 @@ import {
   log10 as sdkLog10,
   ltrim as sdkLtrim,
   map as sdkMap,
+  mapEntries as sdkMapEntries,
+  mapGet as sdkMapGet,
+  mapKeys as sdkMapKeys,
+  mapMerge as sdkMapMerge,
+  mapRemove as sdkMapRemove,
+  mapSet as sdkMapSet,
+  mapValues as sdkMapValues,
   mod as sdkMod,
   multiply as sdkMultiply,
   not as sdkNot,
   notEqual as sdkNotEqual,
   or as sdkOr,
   pow as sdkPow,
+  arrayConcat as sdkArrayConcat,
+  arrayContains as sdkArrayContains,
+  arrayContainsAll as sdkArrayContainsAll,
+  arrayContainsAny as sdkArrayContainsAny,
+  arrayGet as sdkArrayGet,
+  arrayLength as sdkArrayLength,
   conditional as sdkConditional,
   currentTimestamp as sdkCurrentTimestamp,
   equalAny as sdkEqualAny,
@@ -265,6 +278,14 @@ const toSdkExpression = (db: Firestore, expression: Expression): SdkExpression =
         ...rest.map((operand) => toSdkExpression(db, operand)),
       );
     }
+    case 'arrayConstructor':
+      return sdkArray(expression.elements.map((element) => toSdkExpression(db, element)));
+    case 'mapConstructor':
+      return sdkMap(
+        Object.fromEntries(
+          Object.entries(expression.fields).map(([k, e]) => [k, toSdkExpression(db, e)]),
+        ),
+      );
     default:
       return assertNever(expression);
   }
@@ -361,6 +382,12 @@ const unaryFns: Record<UnaryFunctionName, (o: SdkExpression) => SdkExpression> =
   exists: sdkExists,
   isAbsent: sdkIsAbsent,
   isError: sdkIsError,
+  arrayLength: sdkArrayLength,
+  // arrayReverse exists at runtime but the SDK's typings only declare the fluent form.
+  arrayReverse: (o) => o.arrayReverse(),
+  mapKeys: sdkMapKeys,
+  mapValues: sdkMapValues,
+  mapEntries: sdkMapEntries,
   timestampToUnixSeconds: sdkTimestampToUnixSeconds,
   timestampToUnixMillis: sdkTimestampToUnixMillis,
   timestampToUnixMicros: sdkTimestampToUnixMicros,
@@ -388,6 +415,13 @@ const binaryFns: Record<
   ifError: sdkIfError,
   ifAbsent: sdkIfAbsent,
   ifNull: sdkIfNull,
+  arrayGet: sdkArrayGet,
+  arrayContains: sdkArrayContains,
+  arrayContainsAll: sdkArrayContainsAll,
+  arrayContainsAny: sdkArrayContainsAny,
+  // The SDK's mapGet key parameter is a plain string — recover the lifted literal.
+  mapGet: (l, _r, node) => sdkMapGet(l, literalStringOperand(node.right)),
+  mapRemove: sdkMapRemove,
   add: sdkAdd,
   subtract: sdkSubtract,
   multiply: sdkMultiply,
@@ -428,6 +462,7 @@ const ternaryFns: Record<
   stringReplaceOne: sdkStringReplaceOne,
   substring: sdkSubstring,
   conditional: (a, b, c) => sdkConditional(a.asBoolean(), b, c),
+  mapSet: sdkMapSet,
   timestampAdd: sdkTimestampAdd,
   timestampSubtract: sdkTimestampSubtract,
   timestampDiff: sdkTimestampDiff,
@@ -455,6 +490,8 @@ const literalStringOperand = (operand: Expression): string => {
     case 'binaryFunction':
     case 'ternaryFunction':
     case 'variadicFunction':
+    case 'arrayConstructor':
+    case 'mapConstructor':
       throw new Error(`expected a constant operand, got ${operand.kind}`);
     default:
       return assertNever(operand);
@@ -471,6 +508,8 @@ const variadicFns: Record<
   xor: (f, s, ...r) => sdkXor(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
   logicalMaximum: sdkLogicalMaximum,
   logicalMinimum: sdkLogicalMinimum,
+  arrayConcat: sdkArrayConcat,
+  mapMerge: sdkMapMerge,
 };
 
 const toSdkOrdering = (ordering: Ordering) => {
@@ -484,6 +523,8 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'binaryFunction':
     case 'ternaryFunction':
     case 'variadicFunction':
+    case 'arrayConstructor':
+    case 'mapConstructor':
       throw new Error('firebase pipeline executor: only field orderings are supported in sort yet');
     default:
       return assertNever(expression);

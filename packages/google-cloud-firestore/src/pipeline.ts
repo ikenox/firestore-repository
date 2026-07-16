@@ -180,6 +180,14 @@ const toSdkExpression = (db: Firestore, expression: Expression): Pipelines.Expre
         ...rest.map((operand) => toSdkExpression(db, operand)),
       );
     }
+    case 'arrayConstructor':
+      return Pipelines.array(expression.elements.map((element) => toSdkExpression(db, element)));
+    case 'mapConstructor':
+      return Pipelines.map(
+        Object.fromEntries(
+          Object.entries(expression.fields).map(([k, e]) => [k, toSdkExpression(db, e)]),
+        ),
+      );
     default:
       return assertNever(expression);
   }
@@ -273,6 +281,11 @@ const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines
   exists: Pipelines.exists,
   isAbsent: Pipelines.isAbsent,
   isError: Pipelines.isError,
+  arrayLength: Pipelines.arrayLength,
+  arrayReverse: Pipelines.arrayReverse,
+  mapKeys: Pipelines.mapKeys,
+  mapValues: Pipelines.mapValues,
+  mapEntries: Pipelines.mapEntries,
   timestampToUnixSeconds: Pipelines.timestampToUnixSeconds,
   timestampToUnixMillis: Pipelines.timestampToUnixMillis,
   timestampToUnixMicros: Pipelines.timestampToUnixMicros,
@@ -305,6 +318,16 @@ const binaryFns: Record<
   ifError: Pipelines.ifError,
   ifAbsent: Pipelines.ifAbsent,
   ifNull: Pipelines.ifNull,
+  arrayGet: Pipelines.arrayGet,
+  arrayContains: Pipelines.arrayContains,
+  // Array-typed options expressions — the same typings gap as equalAny above.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see equalAny)
+  arrayContainsAll: (l, r) => Pipelines.arrayContainsAll(l, r as unknown as unknown[]),
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see equalAny)
+  arrayContainsAny: (l, r) => Pipelines.arrayContainsAny(l, r as unknown as unknown[]),
+  // The SDK's mapGet key parameter is a plain string — recover the lifted literal.
+  mapGet: (l, _r, node) => Pipelines.mapGet(l, literalStringOperand(node.right)),
+  mapRemove: Pipelines.mapRemove,
   add: Pipelines.add,
   subtract: Pipelines.subtract,
   multiply: Pipelines.multiply,
@@ -352,6 +375,7 @@ const ternaryFns: Record<
   stringReplaceOne: (a, b, c) => a.stringReplaceOne(b, c),
   substring: Pipelines.substring,
   conditional: (a, b, c) => Pipelines.conditional(a.asBoolean(), b, c),
+  mapSet: Pipelines.mapSet,
   timestampAdd: Pipelines.timestampAdd,
   timestampSubtract: Pipelines.timestampSubtract,
   timestampDiff: Pipelines.timestampDiff,
@@ -379,6 +403,8 @@ const literalStringOperand = (operand: Expression): string => {
     case 'binaryFunction':
     case 'ternaryFunction':
     case 'variadicFunction':
+    case 'arrayConstructor':
+    case 'mapConstructor':
       throw new Error(`expected a constant operand, got ${operand.kind}`);
     default:
       return assertNever(operand);
@@ -399,6 +425,8 @@ const variadicFns: Record<
   xor: (f, s, ...r) => Pipelines.xor(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
   logicalMaximum: Pipelines.logicalMaximum,
   logicalMinimum: Pipelines.logicalMinimum,
+  arrayConcat: Pipelines.arrayConcat,
+  mapMerge: Pipelines.mapMerge,
 };
 
 /** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
@@ -416,6 +444,8 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'binaryFunction':
     case 'ternaryFunction':
     case 'variadicFunction':
+    case 'arrayConstructor':
+    case 'mapConstructor':
       throw new Error(
         'google-cloud pipeline executor: only field orderings are supported in sort yet',
       );

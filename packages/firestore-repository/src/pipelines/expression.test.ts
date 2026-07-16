@@ -26,14 +26,22 @@ import {
   abs,
   add,
   and,
+  arrayConcat,
+  arrayContains,
+  arrayContainsAll,
+  arrayContainsAny,
+  arrayGet,
+  arrayLength,
+  arrayReverse,
+  arrayValue,
   BinaryFunction,
   byteLength,
   ceil,
   charLength,
   collectionId,
   conditional,
-  Constant,
   constant,
+  Constant,
   cosineDistance,
   currentTimestamp,
   divide,
@@ -67,6 +75,14 @@ import {
   logicalMaximum,
   logicalMinimum,
   ltrim,
+  mapEntries,
+  mapGet,
+  mapKeys,
+  mapMerge,
+  mapRemove,
+  mapSet,
+  mapValue,
+  mapValues,
   mod,
   multiply,
   not,
@@ -890,6 +906,103 @@ describe('existence / error / conditional operators (slice 5)', () => {
     expect(viaNullable.type).toStrictEqual(nullable(bool()));
     // @ts-expect-error -- operands are boolean
     xor(flag, name);
+  });
+});
+
+describe('array / map operators (slice 6)', () => {
+  const tags = field(array(string()), 'tags');
+  const rank = field(int64(), 'rank');
+  const profile = field(map({ age: int64(), name: string() }), 'profile');
+
+  it('constructors take expression elements and derive element/field types', () => {
+    const arr = arrayValue([rank, field(int64(), 'other')]);
+    expect(arr.type).toStrictEqual(array(int64()));
+    expectTypeOf(arr.type).toEqualTypeOf(array(int64()));
+    const mixed = arrayValue([rank, field(string(), 'name')]);
+    expect(mixed.type).toStrictEqual(array(union(int64(), string())));
+    // A number constant is a DoubleType — the honest numeric constant.
+    expect(arrayValue([rank, constant(1)]).type).toStrictEqual(array(union(int64(), double())));
+
+    const m = mapValue({ a: rank, b: constant('x') });
+    expect(m.type).toStrictEqual(map({ a: int64(), b: string() }));
+    expectTypeOf(m.type).toEqualTypeOf(map({ a: int64(), b: string() }));
+    // @ts-expect-error -- dotted keys are banned, as in the schema factories
+    void (() => mapValue({ 'a.b': rank }));
+    expect(() => mapValue({ ['a.b' as string]: rank })).toThrow(/must not contain/);
+  });
+
+  it('array accessors', () => {
+    expect(arrayLength(tags).type).toStrictEqual(int64());
+    expect(arrayReverse(tags).type).toStrictEqual(array(string()));
+    // A nullable array operand: reverse strips null from the payload and
+    // propagates it around it.
+    const nullableTags = field(nullable(array(string())), 'nt');
+    expect(arrayReverse(nullableTags).type).toStrictEqual(nullable(array(string())));
+    // arrayGet is always nullable (out-of-range is absent — probed).
+    const got = arrayGet(tags, constant(0));
+    expect(got.type).toStrictEqual(nullable(string()));
+    expectTypeOf(got.type).toEqualTypeOf(nullable(string()));
+    // @ts-expect-error -- not an array
+    arrayLength(rank);
+  });
+
+  it('contains family: element comparability and array-side null propagation', () => {
+    expect(arrayContains(tags, constant('x')).type).toStrictEqual(bool());
+    const nullableTags = field(nullable(array(string())), 'nt');
+    expect(arrayContains(nullableTags, constant('x')).type).toStrictEqual(nullable(bool()));
+    expect(arrayContainsAll(tags, constant(['a', 'b'])).type).toStrictEqual(bool());
+    expect(arrayContainsAny(tags, field(array(string()), 'other')).type).toStrictEqual(bool());
+    // @ts-expect-error -- a number element cannot be contained in a string array
+    arrayContains(tags, constant(1));
+    // @ts-expect-error -- options elements must be comparable with the array's
+    arrayContainsAll(tags, constant([1, 2]));
+  });
+
+  it('arrayConcat unions element types and propagates null', () => {
+    const c = arrayConcat(tags, field(array(int64()), 'nums'));
+    expect(c.type).toStrictEqual(array(union(string(), int64())));
+    expectTypeOf(c.type).toEqualTypeOf(array(union(string(), int64())));
+  });
+
+  it('mapGet is key-aware', () => {
+    const got = mapGet(profile, 'age');
+    expect(got).toStrictEqual(new BinaryFunction('mapGet', int64(), profile, constant('age')));
+    expectTypeOf(got.type).toEqualTypeOf(int64());
+    // @ts-expect-error -- unknown keys are rejected on a precise map
+    void (() => mapGet(profile, 'zz'));
+    // An Optional field may be absent -> nullable (probed: missing key is absent).
+    const withOptional = field(map({ o: optional(string()) }), 'm2');
+    expect(mapGet(withOptional, 'o').type).toStrictEqual(nullable(string()));
+    // A nullable map propagates around the value type.
+    const nm = field(nullable(map({ a: string() })), 'nm');
+    expect(mapGet(nm, 'a').type).toStrictEqual(nullable(string()));
+  });
+
+  it('map surgery updates the subschema', () => {
+    const set = mapSet(profile, 'flag', constant(true));
+    expect(set.type).toStrictEqual(map({ age: int64(), name: string(), flag: bool() }));
+    // (No toEqualTypeOf here: SetField is an intersection record — structurally
+    // the same fields, but not identical to the flat literal for exact-match.)
+    const overwrite = mapSet(profile, 'age', constant('now-a-string'));
+    expect(overwrite.type).toStrictEqual(map({ age: string(), name: string() }));
+    const removed = mapRemove(profile, 'age');
+    expect(removed.type).toStrictEqual(map({ name: string() }));
+    expectTypeOf(removed.type).toEqualTypeOf(map({ name: string() }));
+    const merged = mapMerge(profile, mapValue({ age: constant('s'), z: constant(1) }));
+    expect(merged.type).toStrictEqual(map({ name: string(), age: string(), z: double() }));
+    // @ts-expect-error -- dotted keys are banned
+    void (() => mapSet(profile, 'a.b', constant(1)));
+  });
+
+  it('map collections', () => {
+    expect(mapKeys(profile).type).toStrictEqual(array(string()));
+    // Mixed field types degrade to the runtime union (type-level: the wide
+    // union descriptor — record key order is not observable at the type level).
+    expect(mapValues(profile).type).toStrictEqual(array(union(int64(), string())));
+    const uniform = field(map({ a: string(), b: string() }), 'u');
+    expect(mapValues(uniform).type).toStrictEqual(array(string()));
+    expectTypeOf(mapValues(uniform).type).toEqualTypeOf(array(string()));
+    expect(mapEntries(uniform).type).toStrictEqual(array(map({ k: string(), v: string() })));
   });
 });
 

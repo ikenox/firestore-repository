@@ -291,6 +291,8 @@ const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fie
     case 'binaryFunction':
     case 'ternaryFunction':
     case 'variadicFunction':
+    case 'arrayConstructor':
+    case 'mapConstructor':
       return pathToSchema(alias, expression.type);
     default:
       return assertNever(expression);
