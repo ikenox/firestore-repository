@@ -373,12 +373,12 @@ export const serverOperation: unique symbol = Symbol();
  * path). Enforced by every factory that accepts a field map (`map`,
  * `rootCollection`, `subCollection`).
  */
-type WithoutDottedFieldNames<T> = {
+export type WithoutDottedFieldNames<T> = {
   [K in keyof T]: K extends `${string}.${string}` ? never : T[K];
 };
 
 /** Runtime counterpart of {@link WithoutDottedFieldNames}. */
-const assertNoDottedFieldNames = (fields: DocumentSchema): void => {
+export const assertNoDottedFieldNames = (fields: Record<string, unknown>): void => {
   for (const field of Object.keys(fields)) {
     if (field.includes('.')) {
       throw new Error(`schema field name "${field}" must not contain "."`);
