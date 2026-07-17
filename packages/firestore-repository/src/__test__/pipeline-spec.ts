@@ -31,6 +31,8 @@ import {
   euclideanDistance,
   exists,
   exp,
+  type Expression,
+  field,
   floor,
   geoPointValue,
   greaterThan,
@@ -115,13 +117,14 @@ import {
 } from '../pipelines/source.js';
 import type { Doc, DocRef, FirestoreEnvironment, PlainRepository } from '../repository.js';
 import {
-  type Collection,
-  type DocumentSchema,
   double,
+  int64,
   map,
   optional,
   rootCollection,
   string,
+  type Collection,
+  type DocumentSchema,
 } from '../schema.js';
 import {
   type AuthorsCollection,
@@ -793,32 +796,19 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
-      it('numeric result kinds: int64 pairs stay int64; pow and roots are doubles (slice 7)', async () => {
-        // constant(2) wire-encodes as an integer (a whole JS number), so the
-        // pairs below are int64 x int64 on the wire.
+      it('numeric constants wire-encode whole values as integers (the honest widening)', async () => {
+        // A number constant is DECLARED DoubleType, but a whole JS number
+        // wire-encodes as an integer — so the backend kind here is int64
+        // while the descriptor claim is double. This is the one deliberate
+        // claim/kind divergence (the honest 'integer' | 'double' tag makes
+        // it sound); field operands are oracle-tested exhaustively in the
+        // dedicated numeric-kinds suite below.
         await expectPipeline(
           one().select(() => [
-            type(add(constant(2), constant(3))).as('addKind'),
-            type(divide(constant(7), constant(2))).as('divideKind'),
-            type(abs(constant(-2))).as('absKind'),
-            type(round(constant(2.4))).as('roundDoubleKind'),
-            type(add(constant(2), constant(0.5))).as('mixedKind'),
-            type(pow(constant(2), constant(3))).as('powKind'),
-            type(sqrt(constant(9))).as('sqrtKind'),
+            type(add(constant(2), constant(3))).as('wholeConstants'),
+            type(add(constant(2), constant(0.5))).as('fractionalConstant'),
           ]),
-          [
-            {
-              data: {
-                addKind: 'int64',
-                divideKind: 'int64',
-                absKind: 'int64',
-                roundDoubleKind: 'float64',
-                mixedKind: 'float64',
-                powKind: 'float64',
-                sqrtKind: 'float64',
-              },
-            },
-          ],
+          [{ data: { wholeConstants: 'int64', fractionalConstant: 'float64' } }],
         );
       });
 
@@ -837,6 +827,80 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
       // rand (the remaining nullary) is covered by its own range test below —
       // its value is not deterministic.
+    });
+
+    describe('numeric result kinds (slice 7): the descriptor claim IS the oracle', () => {
+      const numericKindsCollection = rootCollection({
+        name: 'NumericKinds',
+        schema: { i: int64(), d: double() },
+      });
+      let numbers: typeof numericKindsCollection;
+      beforeEach(async () => {
+        numbers = uniqueCollection(numericKindsCollection);
+        // d holds a FRACTIONAL value: a whole value in a double() field would
+        // wire-encode as an integer and the field's kind would not exercise
+        // the double side (the honest tag).
+        await createRepository(numbers).batchSet([{ id: ['n1'], data: { i: 7, d: 2.5 } }]);
+      });
+
+      it('matches the backend kind for every arithmetic function and operand mix', async () => {
+        const i = field(int64(), 'i');
+        const d = field(double(), 'd');
+        const cases: [string, Expression][] = [];
+        const binary = [
+          ['add', add],
+          ['subtract', subtract],
+          ['multiply', multiply],
+          ['divide', divide],
+          ['mod', mod],
+          ['pow', pow],
+        ] as const;
+        for (const [name, fn] of binary) {
+          cases.push([`${name}_ii`, fn(i, i)], [`${name}_id`, fn(i, d)], [`${name}_dd`, fn(d, d)]);
+        }
+        const unary = [
+          ['abs', abs],
+          ['ceil', ceil],
+          ['floor', floor],
+          ['sqrt', sqrt],
+          ['exp', exp],
+          ['ln', ln],
+          ['log10', log10],
+        ] as const;
+        for (const [name, fn] of unary) {
+          cases.push([`${name}_i`, fn(i)], [`${name}_d`, fn(d)]);
+        }
+        // round/trunc are overloaded (dual-arity) — exercised individually,
+        // including the decimal-places forms.
+        cases.push(
+          ['round_i', round(i)],
+          ['round_d', round(d)],
+          ['round_i_places', round(i, i)],
+          ['round_d_places', round(d, i)],
+          ['trunc_i', trunc(i)],
+          ['trunc_d', trunc(d)],
+          ['trunc_i_places', trunc(i, i)],
+          ['trunc_d_places', trunc(d, i)],
+        );
+
+        // The ORACLE: each expression's own descriptor claim, mapped to the
+        // backend's kind vocabulary. Any divergence between the library's
+        // typing and the backend fails this test.
+        const expected = Object.fromEntries(
+          cases.map(([alias, e]) => [alias, e.type.type === 'int64' ? 'int64' : 'float64']),
+        );
+        const [head, ...rest] = cases;
+        if (head === undefined) {
+          throw new Error('no cases');
+        }
+        const results = await executor.execute(
+          collectionInput(numbers).select(() => [
+            type(head[1]).as(head[0]),
+            ...rest.map(([alias, e]) => type(e).as(alias)),
+          ]),
+        );
+        expect(results.map((row) => row.data)).toStrictEqual([expected]);
+      });
     });
 
     describe('arithmetic and string functions', () => {
