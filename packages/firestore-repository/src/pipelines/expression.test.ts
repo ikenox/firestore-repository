@@ -544,26 +544,54 @@ describe('arithmetic operators', () => {
     expect(add(rank, count)).toStrictEqual(new BinaryFunction('add', double(), rank, count));
   });
 
-  it('every unary function shares the numeric domain and DoubleType result', () => {
-    const table = [
+  it('unary functions share the numeric domain; the rounding family preserves int64', () => {
+    // Type-preserving (probed): int64 in, int64 out.
+    const preserving = [
       ['abs', abs],
       ['ceil', ceil],
       ['floor', floor],
+    ] as const;
+    for (const [fnName, fn] of preserving) {
+      expect(fn(count)).toStrictEqual(new UnaryFunction(fnName, int64(), count));
+      expect(fn(rank)).toStrictEqual(new UnaryFunction(fnName, double(), rank));
+    }
+    // Always-double (probed): sqrt/exp/ln/log10 leave the integer domain.
+    const alwaysDouble = [
       ['sqrt', sqrt],
       ['exp', exp],
       ['ln', ln],
       ['log10', log10],
     ] as const;
-    for (const [fnName, fn] of table) {
+    for (const [fnName, fn] of alwaysDouble) {
       expect(fn(count)).toStrictEqual(new UnaryFunction(fnName, double(), count));
       expect(fn(field(literal(1, 2), 'lv')).name).toBe(fnName);
     }
     // round/trunc are overloaded (dual-arity), so a union-typed table entry
-    // is not callable — exercised individually.
-    expect(round(count)).toStrictEqual(new UnaryFunction('round', double(), count));
-    expect(trunc(count)).toStrictEqual(new UnaryFunction('trunc', double(), count));
+    // is not callable — exercised individually. They preserve the FIRST
+    // operand's kind even with decimal places (probed).
+    expect(round(count)).toStrictEqual(new UnaryFunction('round', int64(), count));
+    expect(trunc(count, constant(1))).toStrictEqual(
+      new BinaryFunction('trunc', int64(), count, constant(1)),
+    );
+    expect(round(rank)).toStrictEqual(new UnaryFunction('round', double(), rank));
+    expectTypeOf(round(count).type).toEqualTypeOf(int64());
     // @ts-expect-error -- a string operand is not numeric
     abs(field(string(), 'name'));
+  });
+
+  it('binary type-preserving functions keep an int64 pair; any double side widens', () => {
+    expect(add(count, count)).toStrictEqual(new BinaryFunction('add', int64(), count, count));
+    expectTypeOf(add(count, count).type).toEqualTypeOf(int64());
+    expect(divide(count, count).type).toStrictEqual(int64());
+    expect(add(count, rank).type).toStrictEqual(double());
+    // A number constant is a DoubleType — it widens.
+    expect(add(count, constant(2)).type).toStrictEqual(double());
+    // pow is always a double, even over an int64 pair (probed).
+    expect(pow(count, count).type).toStrictEqual(double());
+    // Null propagation wraps around the refined kind.
+    const viaNullable = add(count, field(nullable(int64()), 'n'));
+    expect(viaNullable.type).toStrictEqual(nullable(int64()));
+    expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(int64()));
   });
 
   it('every binary function shares the numeric domain and DoubleType result', () => {
