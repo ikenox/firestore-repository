@@ -1169,12 +1169,35 @@ type NumericOperand = Expression<Valued<'integer' | 'double'>>;
 type StringOperand = Expression<Valued<'string'>>;
 
 // ---- arithmetic ----
-// All arithmetic returns a plain DoubleType (its 'integer' | 'double' tag is
-// the honest numeric domain; per-operator integer/double refinement is a
-// deferred cross-cutting item — see the expressions plan). Error edges
-// (divide by zero, ln(0), sqrt of a negative) produce backend ERROR values,
-// not null — observable/recoverable only through the error-channel
-// functions (isError / ifError; not implemented yet).
+// Numeric result kinds mirror the backend (probed): the type-preserving
+// operators (add / subtract / multiply / mod — and divide, which TRUNCATES
+// on integers — plus the rounding family abs / ceil / floor / round / trunc)
+// keep int64 when every numeric operand is declared int64 and are doubles
+// otherwise; pow / sqrt / exp / ln / log10 are ALWAYS doubles. The
+// declaration is what refines (`int64()` vs `double()` fields carry the same
+// honest 'integer' | 'double' tag — a whole JS number wire-encodes as an
+// integer either way). Error edges (divide by zero, ln(0), sqrt of a
+// negative) produce backend ERROR values, not null — observable and
+// recoverable only through the error channel (isError / ifError).
+
+/**
+ * The result kind of the type-preserving arithmetic: `Int64Type` when every
+ * numeric operand is a declared int64 (null-stripped), `DoubleType`
+ * otherwise.
+ */
+type NumericResult<Operands extends FieldType> = [StripNull<Operands>] extends [Int64Type]
+  ? Int64Type
+  : DoubleType;
+
+/** Runtime counterpart of {@link NumericResult} (same bridge shape as `propagateNull`). */
+function numericResultType<Ops extends readonly Expression[]>(
+  operands: Ops,
+): NumericResult<Ops[number]['type']>;
+function numericResultType(operands: readonly Expression[]): FieldType {
+  return operands.every((operand) => stripNull(operand.type)?.type === 'int64')
+    ? int64()
+    : double();
+}
 
 /** A uniformly distributed random double in [0, 1), regenerated per row. */
 export const rand = (): NullaryFunction<DoubleType> => new NullaryFunction('rand', double());
@@ -1183,36 +1206,61 @@ export const rand = (): NullaryFunction<DoubleType> => new NullaryFunction('rand
 export const add = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('add', propagateNull([left, right], double()), left, right);
+): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new BinaryFunction(
+    'add',
+    propagateNull([left, right], numericResultType([left, right])),
+    left,
+    right,
+  );
 
 /** Numeric subtraction (`left - right`). */
 export const subtract = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('subtract', propagateNull([left, right], double()), left, right);
+): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new BinaryFunction(
+    'subtract',
+    propagateNull([left, right], numericResultType([left, right])),
+    left,
+    right,
+  );
 
 /** Numeric multiplication. */
 export const multiply = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('multiply', propagateNull([left, right], double()), left, right);
+): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new BinaryFunction(
+    'multiply',
+    propagateNull([left, right], numericResultType([left, right])),
+    left,
+    right,
+  );
 
-/** Numeric division (`left / right`); a zero divisor is a backend ERROR value. */
+/** Numeric division (`left / right`) — TRUNCATING on an int64 pair (probed); a zero divisor is a backend ERROR value. */
 export const divide = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('divide', propagateNull([left, right], double()), left, right);
+): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new BinaryFunction(
+    'divide',
+    propagateNull([left, right], numericResultType([left, right])),
+    left,
+    right,
+  );
 
 /** Modulo (`left % right`). */
 export const mod = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('mod', propagateNull([left, right], double()), left, right);
+): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new BinaryFunction(
+    'mod',
+    propagateNull([left, right], numericResultType([left, right])),
+    left,
+    right,
+  );
 
 /** Exponentiation (`base ** exponent`). */
 export const pow = <L extends NumericOperand, R extends NumericOperand>(
@@ -1224,20 +1272,32 @@ export const pow = <L extends NumericOperand, R extends NumericOperand>(
 /** Absolute value. */
 export const abs = <Op extends NumericOperand>(
   expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('abs', propagateNull([expression], double()), expression);
+): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
+  new UnaryFunction(
+    'abs',
+    propagateNull([expression], numericResultType([expression])),
+    expression,
+  );
 
 /** Rounds up to the nearest whole number. */
 export const ceil = <Op extends NumericOperand>(
   expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('ceil', propagateNull([expression], double()), expression);
+): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
+  new UnaryFunction(
+    'ceil',
+    propagateNull([expression], numericResultType([expression])),
+    expression,
+  );
 
 /** Rounds down to the nearest whole number. */
 export const floor = <Op extends NumericOperand>(
   expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('floor', propagateNull([expression], double()), expression);
+): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
+  new UnaryFunction(
+    'floor',
+    propagateNull([expression], numericResultType([expression])),
+    expression,
+  );
 
 /** Square root; a negative operand is a backend ERROR value. */
 export const sqrt = <Op extends NumericOperand>(
@@ -1266,20 +1326,24 @@ export const log10 = <Op extends NumericOperand>(
 /** Rounds to the nearest whole number, or to `decimalPlaces` decimal places. */
 export function round<Op extends NumericOperand>(
   expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>>;
+): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>>;
 export function round<Op extends NumericOperand, P extends NumericOperand>(
   expression: Op,
   decimalPlaces: P,
-): BinaryFunction<PropagateNull<Op['type'] | P['type'], DoubleType>>;
+): BinaryFunction<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
 export function round(
   expression: Expression,
   decimalPlaces?: Expression,
 ): UnaryFunction | BinaryFunction {
   return decimalPlaces === undefined
-    ? new UnaryFunction('round', propagateNull([expression], double()), expression)
+    ? new UnaryFunction(
+        'round',
+        propagateNull([expression], numericResultType([expression])),
+        expression,
+      )
     : new BinaryFunction(
         'round',
-        propagateNull([expression, decimalPlaces], double()),
+        propagateNull([expression, decimalPlaces], numericResultType([expression])),
         expression,
         decimalPlaces,
       );
@@ -1288,20 +1352,24 @@ export function round(
 /** Truncates toward zero, to a whole number or to `decimalPlaces` decimal places. */
 export function trunc<Op extends NumericOperand>(
   expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>>;
+): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>>;
 export function trunc<Op extends NumericOperand, P extends NumericOperand>(
   expression: Op,
   decimalPlaces: P,
-): BinaryFunction<PropagateNull<Op['type'] | P['type'], DoubleType>>;
+): BinaryFunction<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
 export function trunc(
   expression: Expression,
   decimalPlaces?: Expression,
 ): UnaryFunction | BinaryFunction {
   return decimalPlaces === undefined
-    ? new UnaryFunction('trunc', propagateNull([expression], double()), expression)
+    ? new UnaryFunction(
+        'trunc',
+        propagateNull([expression], numericResultType([expression])),
+        expression,
+      )
     : new BinaryFunction(
         'trunc',
-        propagateNull([expression, decimalPlaces], double()),
+        propagateNull([expression, decimalPlaces], numericResultType([expression])),
         expression,
         decimalPlaces,
       );

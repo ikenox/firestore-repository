@@ -347,7 +347,17 @@ both executors and the basic backend semantics in one round trip per family.
       expression concept) and arrayAgg(Distinct) (aggregate-flavored).
       Include the mechanical ones in a follow-up pass; the lambda and
       aggregate ones need their own design.
-- [ ] **7. Numeric return refinement + any leftovers** (T4).
+- [x] **7. Numeric return refinement** (T4). Probed via `type(...)`: the
+      type-preserving operators (add / subtract / multiply / mod — and
+      divide, which truncates on integers — plus abs / ceil / floor /
+      round / trunc, decimal places notwithstanding) keep int64 when every
+      numeric operand is int64; `pow` / `sqrt` / `exp` / `ln` / `log10` are
+      ALWAYS doubles. `NumericResult<Ops>` (+ runtime twin) refines on the
+      DECLARED descriptor (`int64()` vs `double()` — both carry the same
+      honest tag; a stored `2.0` reads back as wire int64, confirming the
+      honest-tag design). Number constants are `DoubleType`, so a constant
+      operand widens to double. No other leftovers — the deferred lists
+      (6b array extras, lambda/aggregate functions) stand on their own.
 - [ ] **8. Fluent methods on `ExpressionBase`** (decision pending — see open
       questions).
 

@@ -793,6 +793,35 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('numeric result kinds: int64 pairs stay int64; pow and roots are doubles (slice 7)', async () => {
+        // constant(2) wire-encodes as an integer (a whole JS number), so the
+        // pairs below are int64 x int64 on the wire.
+        await expectPipeline(
+          one().select(() => [
+            type(add(constant(2), constant(3))).as('addKind'),
+            type(divide(constant(7), constant(2))).as('divideKind'),
+            type(abs(constant(-2))).as('absKind'),
+            type(round(constant(2.4))).as('roundDoubleKind'),
+            type(add(constant(2), constant(0.5))).as('mixedKind'),
+            type(pow(constant(2), constant(3))).as('powKind'),
+            type(sqrt(constant(9))).as('sqrtKind'),
+          ]),
+          [
+            {
+              data: {
+                addKind: 'int64',
+                divideKind: 'int64',
+                absKind: 'int64',
+                roundDoubleKind: 'float64',
+                mixedKind: 'float64',
+                powKind: 'float64',
+                sqrtKind: 'float64',
+              },
+            },
+          ],
+        );
+      });
+
       it('currentTimestamp is the server time at evaluation', async () => {
         const before = Date.now();
         const results = await executor.execute(one().select(() => [currentTimestamp().as('now')]));
