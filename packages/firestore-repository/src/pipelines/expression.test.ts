@@ -34,7 +34,6 @@ import {
   arrayLength,
   arrayReverse,
   arrayValue,
-  BinaryFunction,
   byteLength,
   ceil,
   charLength,
@@ -58,6 +57,7 @@ import {
   Field,
   field,
   floor,
+  FunctionCall,
   geoPointValue,
   greaterThan,
   greaterThanOrEqual,
@@ -88,7 +88,6 @@ import {
   not,
   notEqual,
   notEqualAny,
-  NullaryFunction,
   or,
   pow,
   rand,
@@ -109,7 +108,6 @@ import {
   stringReverse,
   substring,
   subtract,
-  TernaryFunction,
   timestampAdd,
   timestampDiff,
   timestampExtract,
@@ -124,11 +122,9 @@ import {
   trunc,
   type,
   type ExpressionWithAlias,
-  UnaryFunction,
   unixMicrosToTimestamp,
   unixMillisToTimestamp,
   unixSecondsToTimestamp,
-  VariadicFunction,
   vectorLength,
   vectorValue,
   xor,
@@ -145,7 +141,7 @@ describe('expression factories', () => {
     notEqual(rank, count); // Int64 and Double mix
     lessThan(count, rank);
     greaterThanOrEqual(rank, rank);
-    expectTypeOf(greaterThan(rank, count)).toEqualTypeOf<BinaryFunction<BoolType>>();
+    expectTypeOf(greaterThan(rank, count)).toEqualTypeOf<FunctionCall<BoolType>>();
   });
 
   it('comparisons reject cross-group operands', () => {
@@ -241,19 +237,23 @@ describe('expression factories', () => {
     equal(field(bool(), 'flag'), constant(false));
   });
 
-  it('builds shape-grouped nodes with typed payloads', () => {
+  it('builds function-call nodes with typed payloads', () => {
     // Whole-instance comparison: `toStrictEqual` checks the constructor and
     // every own field, so a payload field added later cannot silently escape.
     const cmp = lessThan(rank, count);
-    expect(cmp).toStrictEqual(new BinaryFunction('lessThan', bool(), rank, count));
+    expect(cmp).toStrictEqual(
+      new FunctionCall(bool(), { name: 'lessThan', left: rank, right: count }),
+    );
 
     const neg = not(flag);
-    expect(neg).toStrictEqual(new UnaryFunction('not', bool(), flag));
-    expectTypeOf(neg).toEqualTypeOf<UnaryFunction<BoolType>>();
+    expect(neg).toStrictEqual(new FunctionCall(bool(), { name: 'not', condition: flag }));
+    expectTypeOf(neg).toEqualTypeOf<FunctionCall<BoolType>>();
 
     const both = and(flag, cmp, neg);
-    expect(both).toStrictEqual(new VariadicFunction('and', bool(), [flag, cmp, neg]));
-    expectTypeOf(both).toEqualTypeOf<VariadicFunction<BoolType>>();
+    expect(both).toStrictEqual(
+      new FunctionCall(bool(), { name: 'and', conditions: [flag, cmp, neg] }),
+    );
+    expectTypeOf(both).toEqualTypeOf<FunctionCall<BoolType>>();
   });
 });
 
@@ -359,18 +359,20 @@ describe('comparison operators (table-driven over all six)', () => {
   it('every comparison shares the same operand domains', () => {
     for (const [fnName, cmp] of table) {
       // number domain (int64 / double / numeric literal / number constant)
-      expect(cmp(rank, count)).toStrictEqual(new BinaryFunction(fnName, bool(), rank, count));
-      expect(cmp(field(literal(1, 2), 'lv'), constant(2)).name).toBe(fnName);
+      expect(cmp(rank, count)).toStrictEqual(
+        new FunctionCall(bool(), { name: fnName, left: rank, right: count }),
+      );
+      expect(cmp(field(literal(1, 2), 'lv'), constant(2)).call.name).toBe(fnName);
       // string domain (plain / literal)
-      expect(cmp(field(literal('x', 'y'), 's'), constant('x')).name).toBe(fnName);
+      expect(cmp(field(literal('x', 'y'), 's'), constant('x')).call.name).toBe(fnName);
       // same-T pairs for the remaining groups
-      expect(cmp(field(timestamp(), 'at'), constant(new Date(0))).name).toBe(fnName);
-      expect(cmp(field(bytes(), 'raw'), constant(new Uint8Array([1]))).name).toBe(fnName);
-      expect(cmp(field(geoPoint(), 'geo'), constant(geoPointValue(1, 2))).name).toBe(fnName);
-      expect(cmp(field(vector(), 'vec'), constant(vectorValue([1]))).name).toBe(fnName);
-      expect(cmp(field(nullType(), 'z'), constant(null)).name).toBe(fnName);
+      expect(cmp(field(timestamp(), 'at'), constant(new Date(0))).call.name).toBe(fnName);
+      expect(cmp(field(bytes(), 'raw'), constant(new Uint8Array([1]))).call.name).toBe(fnName);
+      expect(cmp(field(geoPoint(), 'geo'), constant(geoPointValue(1, 2))).call.name).toBe(fnName);
+      expect(cmp(field(vector(), 'vec'), constant(vectorValue([1]))).call.name).toBe(fnName);
+      expect(cmp(field(nullType(), 'z'), constant(null)).call.name).toBe(fnName);
       // function operands nest (bool same-T)
-      expect(cmp(equal(rank, count), constant(true)).name).toBe(fnName);
+      expect(cmp(equal(rank, count), constant(true)).call.name).toBe(fnName);
     }
   });
 
@@ -472,8 +474,12 @@ describe('logical operator edges', () => {
   it('takes many operands and nests', () => {
     const cmp = equal(field(double(), 'rank'), constant(1));
     const five = and(flag, cmp, not(flag), or(flag, cmp), not(not(flag)));
-    expect(five.operands).toHaveLength(5);
-    expect(five.name).toBe('and');
+    expect(five).toStrictEqual(
+      new FunctionCall(bool(), {
+        name: 'and',
+        conditions: [flag, cmp, not(flag), or(flag, cmp), not(not(flag))],
+      }),
+    );
   });
 
   it("conditions are Valued<'boolean'>: boolean literals and nullable booleans qualify", () => {
@@ -538,10 +544,12 @@ describe('arithmetic operators', () => {
   const rank = field(double(), 'rank');
   const count = field(int64(), 'count');
 
-  it('builds shape-grouped nodes across all three arities', () => {
-    expect(rand()).toStrictEqual(new NullaryFunction('rand', double()));
-    expect(abs(rank)).toStrictEqual(new UnaryFunction('abs', double(), rank));
-    expect(add(rank, count)).toStrictEqual(new BinaryFunction('add', double(), rank, count));
+  it('builds function-call nodes across all three arities', () => {
+    expect(rand()).toStrictEqual(new FunctionCall(double(), { name: 'rand' }));
+    expect(abs(rank)).toStrictEqual(new FunctionCall(double(), { name: 'abs', value: rank }));
+    expect(add(rank, count)).toStrictEqual(
+      new FunctionCall(double(), { name: 'add', left: rank, right: count }),
+    );
   });
 
   it('unary functions share the numeric domain; the rounding family preserves int64', () => {
@@ -552,8 +560,8 @@ describe('arithmetic operators', () => {
       ['floor', floor],
     ] as const;
     for (const [fnName, fn] of preserving) {
-      expect(fn(count)).toStrictEqual(new UnaryFunction(fnName, int64(), count));
-      expect(fn(rank)).toStrictEqual(new UnaryFunction(fnName, double(), rank));
+      expect(fn(count)).toStrictEqual(new FunctionCall(int64(), { name: fnName, value: count }));
+      expect(fn(rank)).toStrictEqual(new FunctionCall(double(), { name: fnName, value: rank }));
     }
     // Always-double (probed): sqrt/exp/ln/log10 leave the integer domain.
     const alwaysDouble = [
@@ -563,24 +571,27 @@ describe('arithmetic operators', () => {
       ['log10', log10],
     ] as const;
     for (const [fnName, fn] of alwaysDouble) {
-      expect(fn(count)).toStrictEqual(new UnaryFunction(fnName, double(), count));
-      expect(fn(field(literal(1, 2), 'lv')).name).toBe(fnName);
+      expect(fn(count)).toStrictEqual(new FunctionCall(double(), { name: fnName, value: count }));
+      expect(fn(field(literal(1, 2), 'lv')).call.name).toBe(fnName);
     }
-    // round/trunc are overloaded (dual-arity), so a union-typed table entry
-    // is not callable — exercised individually. They preserve the FIRST
-    // operand's kind even with decimal places (probed).
-    expect(round(count)).toStrictEqual(new UnaryFunction('round', int64(), count));
+    // round/trunc carry an extra generic for the optional decimal-places
+    // operand, so a union-typed table entry is not callable — exercised
+    // individually. They preserve the FIRST operand's kind even with decimal
+    // places (probed).
+    expect(round(count)).toStrictEqual(new FunctionCall(int64(), { name: 'round', value: count }));
     expect(trunc(count, constant(1))).toStrictEqual(
-      new BinaryFunction('trunc', int64(), count, constant(1)),
+      new FunctionCall(int64(), { name: 'trunc', value: count, decimalPlaces: constant(1) }),
     );
-    expect(round(rank)).toStrictEqual(new UnaryFunction('round', double(), rank));
+    expect(round(rank)).toStrictEqual(new FunctionCall(double(), { name: 'round', value: rank }));
     expectTypeOf(round(count).type).toEqualTypeOf(int64());
     // @ts-expect-error -- a string operand is not numeric
     abs(field(string(), 'name'));
   });
 
   it('binary type-preserving functions keep an int64 pair; any double side widens', () => {
-    expect(add(count, count)).toStrictEqual(new BinaryFunction('add', int64(), count, count));
+    expect(add(count, count)).toStrictEqual(
+      new FunctionCall(int64(), { name: 'add', left: count, right: count }),
+    );
     expectTypeOf(add(count, count).type).toEqualTypeOf(int64());
     expect(divide(count, count).type).toStrictEqual(int64());
     expect(add(count, rank).type).toStrictEqual(double());
@@ -601,13 +612,17 @@ describe('arithmetic operators', () => {
       ['multiply', multiply],
       ['divide', divide],
       ['mod', mod],
-      ['pow', pow],
     ] as const;
     for (const [fnName, fn] of table) {
       expect(fn(rank, constant(2))).toStrictEqual(
-        new BinaryFunction(fnName, double(), rank, constant(2)),
+        new FunctionCall(double(), { name: fnName, left: rank, right: constant(2) }),
       );
     }
+    // pow's payload names its operands base/exponent, so it sits outside the
+    // left/right table.
+    expect(pow(rank, constant(2))).toStrictEqual(
+      new FunctionCall(double(), { name: 'pow', base: rank, exponent: constant(2) }),
+    );
     // @ts-expect-error -- a string operand is not numeric
     add(field(string(), 'name'), constant(1));
     // @ts-expect-error -- a boolean operand is not numeric
@@ -616,9 +631,11 @@ describe('arithmetic operators', () => {
 
   it('round/trunc are dual-arity: an optional decimal-places operand', () => {
     expect(round(rank, constant(2))).toStrictEqual(
-      new BinaryFunction('round', double(), rank, constant(2)),
+      new FunctionCall(double(), { name: 'round', value: rank, decimalPlaces: constant(2) }),
     );
-    expect(trunc(rank, count)).toStrictEqual(new BinaryFunction('trunc', double(), rank, count));
+    expect(trunc(rank, count)).toStrictEqual(
+      new FunctionCall(double(), { name: 'trunc', value: rank, decimalPlaces: count }),
+    );
     // @ts-expect-error -- decimal places must be numeric
     round(rank, constant('2'));
   });
@@ -651,40 +668,42 @@ describe('string operators', () => {
       ['byteLength', byteLength, int64()],
     ] as const;
     for (const [fnName, fn, resultType] of table) {
-      expect(fn(name)).toStrictEqual(new UnaryFunction(fnName, resultType, name));
+      expect(fn(name)).toStrictEqual(new FunctionCall(resultType, { name: fnName, value: name }));
       // Literal-typed string fields are inside the domain.
-      expect(fn(gender).name).toBe(fnName);
+      expect(fn(gender).call.name).toBe(fnName);
     }
-    // The trim family is overloaded (dual-arity), so a union-typed table
-    // entry is not callable — exercised individually.
-    expect(trim(name)).toStrictEqual(new UnaryFunction('trim', string(), name));
-    expect(ltrim(name)).toStrictEqual(new UnaryFunction('ltrim', string(), name));
-    expect(rtrim(name)).toStrictEqual(new UnaryFunction('rtrim', string(), name));
-    expect(trim(gender).name).toBe('trim');
+    // The trim family carries an extra generic for the optional character-set
+    // operand, so a union-typed table entry is not callable — exercised
+    // individually.
+    expect(trim(name)).toStrictEqual(new FunctionCall(string(), { name: 'trim', value: name }));
+    expect(ltrim(name)).toStrictEqual(new FunctionCall(string(), { name: 'ltrim', value: name }));
+    expect(rtrim(name)).toStrictEqual(new FunctionCall(string(), { name: 'rtrim', value: name }));
+    expect(trim(gender).call.name).toBe('trim');
     // @ts-expect-error -- a numeric operand is not a string
     toUpper(field(double(), 'rank'));
   });
 
   it('trim family is dual-arity: an optional character-set operand', () => {
     expect(trim(name, constant('"'))).toStrictEqual(
-      new BinaryFunction('trim', string(), name, constant('"')),
+      new FunctionCall(string(), { name: 'trim', value: name, characters: constant('"') }),
     );
-    expect(ltrim(name, constant('x')).name).toBe('ltrim');
-    expect(rtrim(name, constant('x')).name).toBe('rtrim');
+    expect(ltrim(name, constant('x')).call.name).toBe('ltrim');
+    expect(rtrim(name, constant('x')).call.name).toBe('rtrim');
     // @ts-expect-error -- the character set must be a string
     trim(name, constant(1));
   });
 
   it('predicates return BoolType but PROPAGATE null (unlike comparisons)', () => {
-    const table = [
-      ['startsWith', startsWith],
-      ['endsWith', endsWith],
-      ['stringContains', stringContains],
-    ] as const;
-    for (const [fnName, fn] of table) {
-      expect(fn(name, constant('a'))).toStrictEqual(
-        new BinaryFunction(fnName, bool(), name, constant('a')),
-      );
+    expect(startsWith(name, constant('a'))).toStrictEqual(
+      new FunctionCall(bool(), { name: 'startsWith', value: name, prefix: constant('a') }),
+    );
+    expect(endsWith(name, constant('a'))).toStrictEqual(
+      new FunctionCall(bool(), { name: 'endsWith', value: name, suffix: constant('a') }),
+    );
+    expect(stringContains(name, constant('a'))).toStrictEqual(
+      new FunctionCall(bool(), { name: 'stringContains', value: name, substring: constant('a') }),
+    );
+    for (const fn of [startsWith, endsWith, stringContains] as const) {
       const viaNullable = fn(field(nullable(string()), 'ns'), constant('a'));
       expect(viaNullable.type).toStrictEqual(nullable(bool()));
       expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(bool()));
@@ -698,7 +717,7 @@ describe('string operators', () => {
   it('stringConcat takes two or more strings and propagates nullability', () => {
     const c = stringConcat(name, constant('-'), gender);
     expect(c).toStrictEqual(
-      new VariadicFunction('stringConcat', string(), [name, constant('-'), gender]),
+      new FunctionCall(string(), { name: 'stringConcat', operands: [name, constant('-'), gender] }),
     );
     expectTypeOf(c.type).toEqualTypeOf(string());
     const viaNullable = stringConcat(name, field(nullable(string()), 'ns'));
@@ -726,16 +745,26 @@ describe('string operators (slice 3)', () => {
 
   it('indexOf / repeat / replace / substring shapes and domains', () => {
     expect(stringIndexOf(name, constant('b'))).toStrictEqual(
-      new BinaryFunction('stringIndexOf', int64(), name, constant('b')),
+      new FunctionCall(int64(), { name: 'stringIndexOf', value: name, substring: constant('b') }),
     );
     expect(stringRepeat(name, constant(2))).toStrictEqual(
-      new BinaryFunction('stringRepeat', string(), name, constant(2)),
+      new FunctionCall(string(), { name: 'stringRepeat', value: name, count: constant(2) }),
     );
     expect(stringReplaceAll(name, constant('a'), constant('x'))).toStrictEqual(
-      new TernaryFunction('stringReplaceAll', string(), name, constant('a'), constant('x')),
+      new FunctionCall(string(), {
+        name: 'stringReplaceAll',
+        value: name,
+        find: constant('a'),
+        replacement: constant('x'),
+      }),
     );
     expect(stringReplaceOne(name, constant('a'), constant('x'))).toStrictEqual(
-      new TernaryFunction('stringReplaceOne', string(), name, constant('a'), constant('x')),
+      new FunctionCall(string(), {
+        name: 'stringReplaceOne',
+        value: name,
+        find: constant('a'),
+        replacement: constant('x'),
+      }),
     );
     // @ts-expect-error -- the repeat count is numeric
     stringRepeat(name, constant('2'));
@@ -745,10 +774,15 @@ describe('string operators (slice 3)', () => {
 
   it('substring is dual-arity: an optional length operand', () => {
     expect(substring(name, constant(1))).toStrictEqual(
-      new BinaryFunction('substring', string(), name, constant(1)),
+      new FunctionCall(string(), { name: 'substring', value: name, position: constant(1) }),
     );
     expect(substring(name, constant(1), constant(2))).toStrictEqual(
-      new TernaryFunction('substring', string(), name, constant(1), constant(2)),
+      new FunctionCall(string(), {
+        name: 'substring',
+        value: name,
+        position: constant(1),
+        length: constant(2),
+      }),
     );
     // @ts-expect-error -- position is numeric
     substring(name, constant('1'));
@@ -778,8 +812,10 @@ describe('reference / type / vector operators', () => {
   it('documentId/collectionId take reference operands only', () => {
     const key = field(docRef(), '__name__');
     const refField = field(docRef(authors), 'ref');
-    expect(documentId(key)).toStrictEqual(new UnaryFunction('documentId', string(), key));
-    expect(collectionId(key).name).toBe('collectionId');
+    expect(documentId(key)).toStrictEqual(
+      new FunctionCall(string(), { name: 'documentId', reference: key }),
+    );
+    expect(collectionId(key).call.name).toBe('collectionId');
     documentId(refField);
     collectionId(refField);
     // @ts-expect-error -- a string is not a reference (probed: the backend rejects it too)
@@ -802,10 +838,14 @@ describe('reference / type / vector operators', () => {
     expect(viaOptional.type.type).toBe('union');
   });
 
-  it('isType lifts its literal type name into a constant operand', () => {
+  it('isType stores its literal type name as a plain payload field', () => {
     const call = isType(field(string(), 'name'), 'string');
     expect(call).toStrictEqual(
-      new BinaryFunction('isType', bool(), field(string(), 'name'), constant('string')),
+      new FunctionCall(bool(), {
+        name: 'isType',
+        value: field(string(), 'name'),
+        typeName: 'string',
+      }),
     );
     isType(field(double(), 'rank'), 'float64');
     // @ts-expect-error -- an arbitrary string is not a backend type name
@@ -815,11 +855,17 @@ describe('reference / type / vector operators', () => {
   it('vector functions take vector operands only', () => {
     const vec = field(vector(), 'vec');
     expect(dotProduct(vec, constant(vectorValue([1, 2])))).toStrictEqual(
-      new BinaryFunction('dotProduct', double(), vec, constant(vectorValue([1, 2]))),
+      new FunctionCall(double(), {
+        name: 'dotProduct',
+        left: vec,
+        right: constant(vectorValue([1, 2])),
+      }),
     );
-    expect(cosineDistance(vec, vec).name).toBe('cosineDistance');
-    expect(euclideanDistance(vec, vec).name).toBe('euclideanDistance');
-    expect(vectorLength(vec)).toStrictEqual(new UnaryFunction('vectorLength', int64(), vec));
+    expect(cosineDistance(vec, vec).call.name).toBe('cosineDistance');
+    expect(euclideanDistance(vec, vec).call.name).toBe('euclideanDistance');
+    expect(vectorLength(vec)).toStrictEqual(
+      new FunctionCall(int64(), { name: 'vectorLength', vector: vec }),
+    );
     // @ts-expect-error -- a number array field is not a vector (the tag axis at work)
     dotProduct(vec, field(array(double()), 'nums'));
     // @ts-expect-error -- a string is not a vector
@@ -834,8 +880,10 @@ describe('existence / error / conditional operators (slice 5)', () => {
   const nullableName = field(nullable(string()), 'nullableName');
 
   it('exists/isAbsent take FIELD references only and are total booleans', () => {
-    expect(exists(name)).toStrictEqual(new UnaryFunction('exists', bool(), name));
-    expect(isAbsent(optName)).toStrictEqual(new UnaryFunction('isAbsent', bool(), optName));
+    expect(exists(name)).toStrictEqual(new FunctionCall(bool(), { name: 'exists', target: name }));
+    expect(isAbsent(optName)).toStrictEqual(
+      new FunctionCall(bool(), { name: 'isAbsent', target: optName }),
+    );
     // @ts-expect-error -- the backend requires a field reference, not a constant
     exists(constant(1));
     // @ts-expect-error -- nor any computed expression
@@ -846,7 +894,7 @@ describe('existence / error / conditional operators (slice 5)', () => {
 
   it('isError is total over any expression', () => {
     expect(isError(divide(rank, constant(0)))).toStrictEqual(
-      new UnaryFunction('isError', bool(), divide(rank, constant(0))),
+      new FunctionCall(bool(), { name: 'isError', value: divide(rank, constant(0)) }),
     );
     expectTypeOf(isError(field(optional(string()), 'o')).type).toEqualTypeOf(bool());
   });
@@ -885,13 +933,12 @@ describe('existence / error / conditional operators (slice 5)', () => {
     const flag = field(bool(), 'flag');
     const t = conditional(flag, constant('a'), constant(0));
     expect(t).toStrictEqual(
-      new TernaryFunction(
-        'conditional',
-        union(string(), double()),
-        flag,
-        constant('a'),
-        constant(0),
-      ),
+      new FunctionCall(union(string(), double()), {
+        name: 'conditional',
+        condition: flag,
+        thenExpr: constant('a'),
+        elseExpr: constant(0),
+      }),
     );
     const same = conditional(flag, name, field(string(), 'other'));
     expect(same.type).toStrictEqual(string());
@@ -918,7 +965,9 @@ describe('existence / error / conditional operators (slice 5)', () => {
 
   it('equalAny/notEqualAny take one array-typed options expression', () => {
     const t = equalAny(rank, constant([1, 5, 9]));
-    expect(t).toStrictEqual(new BinaryFunction('equalAny', bool(), rank, constant([1, 5, 9])));
+    expect(t).toStrictEqual(
+      new FunctionCall(bool(), { name: 'equalAny', value: rank, options: constant([1, 5, 9]) }),
+    );
     equalAny(rank, field(array(int64()), 'options'));
     notEqualAny(name, constant(['a', 'b']));
     // @ts-expect-error -- options must be an array, not a scalar
@@ -929,7 +978,9 @@ describe('existence / error / conditional operators (slice 5)', () => {
 
   it('xor is a variadic Kleene boolean', () => {
     const flag = field(bool(), 'flag');
-    expect(xor(flag, flag)).toStrictEqual(new VariadicFunction('xor', bool(), [flag, flag]));
+    expect(xor(flag, flag)).toStrictEqual(
+      new FunctionCall(bool(), { name: 'xor', conditions: [flag, flag] }),
+    );
     const viaNullable = xor(flag, field(nullable(bool()), 'nb'));
     expect(viaNullable.type).toStrictEqual(nullable(bool()));
     // @ts-expect-error -- operands are boolean
@@ -994,7 +1045,9 @@ describe('array / map operators (slice 6)', () => {
 
   it('mapGet is key-aware', () => {
     const got = mapGet(profile, 'age');
-    expect(got).toStrictEqual(new BinaryFunction('mapGet', int64(), profile, constant('age')));
+    expect(got).toStrictEqual(
+      new FunctionCall(int64(), { name: 'mapGet', value: profile, key: 'age' }),
+    );
     expectTypeOf(got.type).toEqualTypeOf(int64());
     // @ts-expect-error -- unknown keys are rejected on a precise map
     void (() => mapGet(profile, 'zz'));
@@ -1039,20 +1092,22 @@ describe('timestamp operators', () => {
   const num = field(int64(), 'secs');
 
   it('currentTimestamp is a nullary timestamp', () => {
-    expect(currentTimestamp()).toStrictEqual(new NullaryFunction('currentTimestamp', timestamp()));
+    expect(currentTimestamp()).toStrictEqual(
+      new FunctionCall(timestamp(), { name: 'currentTimestamp' }),
+    );
   });
 
   it('unix conversions map between the timestamp and numeric domains', () => {
     expect(timestampToUnixSeconds(ts)).toStrictEqual(
-      new UnaryFunction('timestampToUnixSeconds', int64(), ts),
+      new FunctionCall(int64(), { name: 'timestampToUnixSeconds', value: ts }),
     );
-    expect(timestampToUnixMillis(ts).name).toBe('timestampToUnixMillis');
-    expect(timestampToUnixMicros(ts).name).toBe('timestampToUnixMicros');
+    expect(timestampToUnixMillis(ts).call.name).toBe('timestampToUnixMillis');
+    expect(timestampToUnixMicros(ts).call.name).toBe('timestampToUnixMicros');
     expect(unixSecondsToTimestamp(num)).toStrictEqual(
-      new UnaryFunction('unixSecondsToTimestamp', timestamp(), num),
+      new FunctionCall(timestamp(), { name: 'unixSecondsToTimestamp', value: num }),
     );
-    expect(unixMillisToTimestamp(num).name).toBe('unixMillisToTimestamp');
-    expect(unixMicrosToTimestamp(num).name).toBe('unixMicrosToTimestamp');
+    expect(unixMillisToTimestamp(num).call.name).toBe('unixMillisToTimestamp');
+    expect(unixMicrosToTimestamp(num).call.name).toBe('unixMicrosToTimestamp');
     // @ts-expect-error -- a number is not a timestamp
     timestampToUnixSeconds(num);
     // @ts-expect-error -- a timestamp is not a unix epoch number
@@ -1063,11 +1118,16 @@ describe('timestamp operators', () => {
     expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(int64()));
   });
 
-  it('add/subtract lift the literal unit into a constant operand', () => {
+  it('add/subtract store the literal unit as a plain payload field', () => {
     expect(timestampAdd(ts, 'day', constant(1))).toStrictEqual(
-      new TernaryFunction('timestampAdd', timestamp(), ts, constant('day'), constant(1)),
+      new FunctionCall(timestamp(), {
+        name: 'timestampAdd',
+        value: ts,
+        unit: 'day',
+        amount: constant(1),
+      }),
     );
-    expect(timestampSubtract(ts, 'hour', constant(2)).name).toBe('timestampSubtract');
+    expect(timestampSubtract(ts, 'hour', constant(2)).call.name).toBe('timestampSubtract');
     // @ts-expect-error -- an arbitrary string is not a time unit
     timestampAdd(ts, 'fortnight', constant(1));
     // @ts-expect-error -- calendar granularities are add units the backend rejects
@@ -1081,7 +1141,7 @@ describe('timestamp operators', () => {
 
   it('diff is end - start in whole units', () => {
     expect(timestampDiff(ts, ts, 'hour')).toStrictEqual(
-      new TernaryFunction('timestampDiff', int64(), ts, ts, constant('hour')),
+      new FunctionCall(int64(), { name: 'timestampDiff', end: ts, start: ts, unit: 'hour' }),
     );
     // @ts-expect-error -- units only: calendar granularities are rejected (probed)
     timestampDiff(ts, ts, 'month');
@@ -1091,21 +1151,24 @@ describe('timestamp operators', () => {
 
   it('truncate/extract are dual-arity over the optional literal timezone', () => {
     expect(timestampTruncate(ts, 'week(monday)')).toStrictEqual(
-      new BinaryFunction('timestampTruncate', timestamp(), ts, constant('week(monday)')),
+      new FunctionCall(timestamp(), {
+        name: 'timestampTruncate',
+        value: ts,
+        granularity: 'week(monday)',
+      }),
     );
     expect(timestampTruncate(ts, 'day', 'Asia/Tokyo')).toStrictEqual(
-      new TernaryFunction(
-        'timestampTruncate',
-        timestamp(),
-        ts,
-        constant('day'),
-        constant('Asia/Tokyo'),
-      ),
+      new FunctionCall(timestamp(), {
+        name: 'timestampTruncate',
+        value: ts,
+        granularity: 'day',
+        timezone: 'Asia/Tokyo',
+      }),
     );
     expect(timestampExtract(ts, 'dayofweek')).toStrictEqual(
-      new BinaryFunction('timestampExtract', int64(), ts, constant('dayofweek')),
+      new FunctionCall(int64(), { name: 'timestampExtract', value: ts, part: 'dayofweek' }),
     );
-    expect(timestampExtract(ts, 'hour', 'Asia/Tokyo').name).toBe('timestampExtract');
+    expect(timestampExtract(ts, 'hour', 'Asia/Tokyo').call.name).toBe('timestampExtract');
     // @ts-expect-error -- not a granularity
     timestampTruncate(ts, 'fortnight');
     // @ts-expect-error -- 'week(noday)' is not a week start day

@@ -103,7 +103,6 @@ import {
 } from '@firebase/firestore/pipelines';
 import { collectionPath } from 'firestore-repository/path';
 import {
-  type BinaryFunctionName,
   type Constant,
   type ConstantArray,
   type Expression,
@@ -111,11 +110,8 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
-  type BinaryFunction,
-  type NullaryFunctionName,
-  type TernaryFunctionName,
-  UnaryFunctionName,
-  VariadicFunctionName,
+  type FunctionName,
+  type FunctionPayload,
 } from 'firestore-repository/pipelines/expression';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
@@ -254,38 +250,8 @@ const toSdkExpression = (db: Firestore, expression: Expression): SdkExpression =
       return field(expression.path);
     case 'constant':
       return toSdkConstant(db, expression.value);
-    case 'nullaryFunction':
-      return nullaryFns[expression.name]();
-    case 'unaryFunction':
-      return unaryFns[expression.name](toSdkExpression(db, expression.operand));
-    case 'binaryFunction':
-      return binaryFns[expression.name](
-        toSdkExpression(db, expression.left),
-        toSdkExpression(db, expression.right),
-        expression,
-      );
-    case 'ternaryFunction':
-      return ternaryFns[expression.name](
-        toSdkExpression(db, expression.first),
-        toSdkExpression(db, expression.second),
-        toSdkExpression(db, expression.third),
-      );
-    case 'variadicFunction': {
-      const [first, second, ...rest] = expression.operands;
-      return variadicFns[expression.name](
-        toSdkExpression(db, first),
-        toSdkExpression(db, second),
-        ...rest.map((operand) => toSdkExpression(db, operand)),
-      );
-    }
-    case 'arrayConstructor':
-      return sdkArray(expression.elements.map((element) => toSdkExpression(db, element)));
-    case 'mapConstructor':
-      return sdkMap(
-        Object.fromEntries(
-          Object.entries(expression.fields).map(([k, e]) => [k, toSdkExpression(db, e)]),
-        ),
-      );
+    case 'functionCall':
+      return dispatch(expression.call, (e) => toSdkExpression(db, e));
     default:
       return assertNever(expression);
   }
@@ -347,169 +313,195 @@ const toSdkConstant = (db: Firestore, value: Constant['value']): SdkExpression =
 const isConstantArrayValue = (value: Constant['value']): value is ConstantArray =>
   Array.isArray(value);
 
-// Per-shape translation tables: `Record` over the name union requires every
-// key, so a newly added function name fails to compile here until translated.
-// (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
-// type-tag only, no wire change.)
-
-const nullaryFns: Record<NullaryFunctionName, () => SdkExpression> = {
-  rand: sdkRand,
-  currentTimestamp: sdkCurrentTimestamp,
-};
-
-const unaryFns: Record<UnaryFunctionName, (o: SdkExpression) => SdkExpression> = {
-  not: (o) => sdkNot(o.asBoolean()),
-  abs: sdkAbs,
-  ceil: sdkCeil,
-  floor: sdkFloor,
-  round: sdkRound,
-  trunc: sdkTrunc,
-  sqrt: sdkSqrt,
-  exp: sdkExp,
-  ln: sdkLn,
-  log10: sdkLog10,
-  charLength: sdkCharLength,
-  byteLength: sdkByteLength,
-  toLower: sdkToLower,
-  toUpper: sdkToUpper,
-  stringReverse: sdkStringReverse,
-  trim: sdkTrim,
-  ltrim: sdkLtrim,
-  rtrim: sdkRtrim,
-  documentId: sdkDocumentId,
-  collectionId: sdkCollectionId,
-  type: sdkType,
-  exists: sdkExists,
-  isAbsent: sdkIsAbsent,
-  isError: sdkIsError,
-  arrayLength: sdkArrayLength,
-  // arrayReverse exists at runtime but the SDK's typings only declare the fluent form.
-  arrayReverse: (o) => o.arrayReverse(),
-  mapKeys: sdkMapKeys,
-  mapValues: sdkMapValues,
-  mapEntries: sdkMapEntries,
-  timestampToUnixSeconds: sdkTimestampToUnixSeconds,
-  timestampToUnixMillis: sdkTimestampToUnixMillis,
-  timestampToUnixMicros: sdkTimestampToUnixMicros,
-  unixSecondsToTimestamp: sdkUnixSecondsToTimestamp,
-  unixMillisToTimestamp: sdkUnixMillisToTimestamp,
-  unixMicrosToTimestamp: sdkUnixMicrosToTimestamp,
-  vectorLength: sdkVectorLength,
-};
-
-// Entries receive the raw AST node too: functions with backend-mandated
-// LITERAL arguments (isType's type name) must hand the SDK helper the plain
-// string, which is unrecoverable from the translated constant expression.
-const binaryFns: Record<
-  BinaryFunctionName,
-  (l: SdkExpression, r: SdkExpression, node: BinaryFunction) => SdkExpression
-> = {
-  equal: sdkEqual,
-  notEqual: sdkNotEqual,
-  lessThan: sdkLessThan,
-  lessThanOrEqual: sdkLessThanOrEqual,
-  greaterThan: sdkGreaterThan,
-  greaterThanOrEqual: sdkGreaterThanOrEqual,
-  equalAny: sdkEqualAny,
-  notEqualAny: sdkNotEqualAny,
-  ifError: sdkIfError,
-  ifAbsent: sdkIfAbsent,
-  ifNull: sdkIfNull,
-  arrayGet: sdkArrayGet,
-  arrayContains: sdkArrayContains,
-  arrayContainsAll: sdkArrayContainsAll,
-  arrayContainsAny: sdkArrayContainsAny,
-  // The SDK's mapGet key parameter is a plain string — recover the lifted literal.
-  mapGet: (l, _r, node) => sdkMapGet(l, literalStringOperand(node.right)),
-  mapRemove: sdkMapRemove,
-  add: sdkAdd,
-  subtract: sdkSubtract,
-  multiply: sdkMultiply,
-  divide: sdkDivide,
-  mod: sdkMod,
-  pow: sdkPow,
-  round: sdkRound,
-  trunc: sdkTrunc,
-  trim: sdkTrim,
-  ltrim: sdkLtrim,
-  rtrim: sdkRtrim,
-  startsWith: sdkStartsWith,
-  endsWith: sdkEndsWith,
-  stringContains: sdkStringContains,
-  stringIndexOf: sdkStringIndexOf,
-  stringRepeat: sdkStringRepeat,
-  substring: (l, r) => sdkSubstring(l, r),
-  like: sdkLike,
-  regexContains: sdkRegexContains,
-  regexMatch: sdkRegexMatch,
-  regexFind: sdkRegexFind,
-  regexFindAll: sdkRegexFindAll,
-  isType: (l, _r, node) => sdkIsType(l, literalStringOperand(node.right)),
-  // The lifted literal constants (granularity / part) translate as constant
-  // expressions, which IS the literal form the backend validates — probed.
-  timestampTruncate: (l, r) => sdkTimestampTruncate(l, r),
-  timestampExtract: (l, r) => sdkTimestampExtract(l, r),
-  cosineDistance: sdkCosineDistance,
-  dotProduct: sdkDotProduct,
-  euclideanDistance: sdkEuclideanDistance,
-};
-
-const ternaryFns: Record<
-  TernaryFunctionName,
-  (a: SdkExpression, b: SdkExpression, c: SdkExpression) => SdkExpression
-> = {
-  stringReplaceAll: sdkStringReplaceAll,
-  stringReplaceOne: sdkStringReplaceOne,
-  substring: sdkSubstring,
-  conditional: (a, b, c) => sdkConditional(a.asBoolean(), b, c),
-  mapSet: sdkMapSet,
-  timestampAdd: sdkTimestampAdd,
-  timestampSubtract: sdkTimestampSubtract,
-  timestampDiff: sdkTimestampDiff,
-  timestampTruncate: sdkTimestampTruncate,
-  timestampExtract: sdkTimestampExtract,
-};
+/**
+ * Dispatches a function-call payload to its translator. The generic `K` ties
+ * the payload's `name` to the matching translator entry: TS cannot correlate a
+ * whole-union table index (`functionTranslators[call.name](call, ...)`) against
+ * the whole-union payload on its own, but a single type variable lets the
+ * mapped-type access `functionTranslators[K]` line up with the narrowed
+ * `Extract<FunctionPayload, { name: K }>` argument — so no assertion is needed.
+ */
+const dispatch = <K extends FunctionName>(
+  call: Extract<FunctionPayload, { name: K }>,
+  t: (e: Expression) => SdkExpression,
+): SdkExpression => functionTranslators[call.name](call, t);
 
 /**
- * Recovers the literal string a factory lifted into a constant operand
- * (e.g. `isType`'s type name): the backend requires the wire argument to be
- * a constant, and the SDK helper takes it as a plain string.
+ * One translator per function name: a `Record`-like mapped type over the name
+ * union requires every key, so a newly added function fails to compile here
+ * until translated. Each entry receives its NARROWED payload (typed named
+ * operands, literal fields as plain values) and `t`, the recursive translator
+ * for operand expressions.
+ *
+ * (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
+ * type-tag only, no wire change.)
  */
-const literalStringOperand = (operand: Expression): string => {
-  switch (operand.kind) {
-    case 'constant': {
-      const { value } = operand;
-      if (typeof value === 'string') {
-        return value;
-      }
-      throw new Error('expected a literal string constant operand');
-    }
-    case 'field':
-    case 'nullaryFunction':
-    case 'unaryFunction':
-    case 'binaryFunction':
-    case 'ternaryFunction':
-    case 'variadicFunction':
-    case 'arrayConstructor':
-    case 'mapConstructor':
-      throw new Error(`expected a constant operand, got ${operand.kind}`);
-    default:
-      return assertNever(operand);
-  }
+type FunctionTranslators = {
+  [K in FunctionName]: (
+    call: Extract<FunctionPayload, { name: K }>,
+    t: (e: Expression) => SdkExpression,
+  ) => SdkExpression;
 };
 
-const variadicFns: Record<
-  VariadicFunctionName,
-  (first: SdkExpression, second: SdkExpression, ...rest: SdkExpression[]) => SdkExpression
-> = {
-  and: (f, s, ...r) => sdkAnd(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
-  or: (f, s, ...r) => sdkOr(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
-  stringConcat: sdkStringConcat,
-  xor: (f, s, ...r) => sdkXor(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
-  logicalMaximum: sdkLogicalMaximum,
-  logicalMinimum: sdkLogicalMinimum,
-  arrayConcat: sdkArrayConcat,
-  mapMerge: sdkMapMerge,
+const functionTranslators: FunctionTranslators = {
+  // logical
+  and: (c, t) => {
+    const [f, s, ...r] = c.conditions;
+    return sdkAnd(t(f).asBoolean(), t(s).asBoolean(), ...r.map((e) => t(e).asBoolean()));
+  },
+  or: (c, t) => {
+    const [f, s, ...r] = c.conditions;
+    return sdkOr(t(f).asBoolean(), t(s).asBoolean(), ...r.map((e) => t(e).asBoolean()));
+  },
+  xor: (c, t) => {
+    const [f, s, ...r] = c.conditions;
+    return sdkXor(t(f).asBoolean(), t(s).asBoolean(), ...r.map((e) => t(e).asBoolean()));
+  },
+  not: (c, t) => sdkNot(t(c.condition).asBoolean()),
+  // comparison
+  equal: (c, t) => sdkEqual(t(c.left), t(c.right)),
+  notEqual: (c, t) => sdkNotEqual(t(c.left), t(c.right)),
+  lessThan: (c, t) => sdkLessThan(t(c.left), t(c.right)),
+  lessThanOrEqual: (c, t) => sdkLessThanOrEqual(t(c.left), t(c.right)),
+  greaterThan: (c, t) => sdkGreaterThan(t(c.left), t(c.right)),
+  greaterThanOrEqual: (c, t) => sdkGreaterThanOrEqual(t(c.left), t(c.right)),
+  // The SDK declares an (Expression, arrayExpression: Expression) overload —
+  // pass the translated array-typed operand directly.
+  equalAny: (c, t) => sdkEqualAny(t(c.value), t(c.options)),
+  notEqualAny: (c, t) => sdkNotEqualAny(t(c.value), t(c.options)),
+  // conditional & extremes
+  conditional: (c, t) => sdkConditional(t(c.condition).asBoolean(), t(c.thenExpr), t(c.elseExpr)),
+  logicalMaximum: (c, t) => {
+    const [f, s, ...r] = c.operands;
+    return sdkLogicalMaximum(t(f), t(s), ...r.map(t));
+  },
+  logicalMinimum: (c, t) => {
+    const [f, s, ...r] = c.operands;
+    return sdkLogicalMinimum(t(f), t(s), ...r.map(t));
+  },
+  // arithmetic
+  rand: () => sdkRand(),
+  add: (c, t) => sdkAdd(t(c.left), t(c.right)),
+  subtract: (c, t) => sdkSubtract(t(c.left), t(c.right)),
+  multiply: (c, t) => sdkMultiply(t(c.left), t(c.right)),
+  divide: (c, t) => sdkDivide(t(c.left), t(c.right)),
+  mod: (c, t) => sdkMod(t(c.left), t(c.right)),
+  pow: (c, t) => sdkPow(t(c.base), t(c.exponent)),
+  abs: (c, t) => sdkAbs(t(c.value)),
+  ceil: (c, t) => sdkCeil(t(c.value)),
+  floor: (c, t) => sdkFloor(t(c.value)),
+  round: (c, t) =>
+    c.decimalPlaces === undefined ? sdkRound(t(c.value)) : sdkRound(t(c.value), t(c.decimalPlaces)),
+  trunc: (c, t) =>
+    c.decimalPlaces === undefined ? sdkTrunc(t(c.value)) : sdkTrunc(t(c.value), t(c.decimalPlaces)),
+  sqrt: (c, t) => sdkSqrt(t(c.value)),
+  exp: (c, t) => sdkExp(t(c.value)),
+  ln: (c, t) => sdkLn(t(c.value)),
+  log10: (c, t) => sdkLog10(t(c.value)),
+  // string
+  charLength: (c, t) => sdkCharLength(t(c.value)),
+  byteLength: (c, t) => sdkByteLength(t(c.value)),
+  toLower: (c, t) => sdkToLower(t(c.value)),
+  toUpper: (c, t) => sdkToUpper(t(c.value)),
+  stringReverse: (c, t) => sdkStringReverse(t(c.value)),
+  trim: (c, t) =>
+    c.characters === undefined ? sdkTrim(t(c.value)) : sdkTrim(t(c.value), t(c.characters)),
+  ltrim: (c, t) =>
+    c.characters === undefined ? sdkLtrim(t(c.value)) : sdkLtrim(t(c.value), t(c.characters)),
+  rtrim: (c, t) =>
+    c.characters === undefined ? sdkRtrim(t(c.value)) : sdkRtrim(t(c.value), t(c.characters)),
+  startsWith: (c, t) => sdkStartsWith(t(c.value), t(c.prefix)),
+  endsWith: (c, t) => sdkEndsWith(t(c.value), t(c.suffix)),
+  stringContains: (c, t) => sdkStringContains(t(c.value), t(c.substring)),
+  stringConcat: (c, t) => {
+    const [f, s, ...r] = c.operands;
+    return sdkStringConcat(t(f), t(s), ...r.map(t));
+  },
+  stringIndexOf: (c, t) => sdkStringIndexOf(t(c.value), t(c.substring)),
+  stringRepeat: (c, t) => sdkStringRepeat(t(c.value), t(c.count)),
+  stringReplaceAll: (c, t) => sdkStringReplaceAll(t(c.value), t(c.find), t(c.replacement)),
+  stringReplaceOne: (c, t) => sdkStringReplaceOne(t(c.value), t(c.find), t(c.replacement)),
+  substring: (c, t) =>
+    c.length === undefined
+      ? sdkSubstring(t(c.value), t(c.position))
+      : sdkSubstring(t(c.value), t(c.position), t(c.length)),
+  like: (c, t) => sdkLike(t(c.value), t(c.pattern)),
+  // regex
+  regexContains: (c, t) => sdkRegexContains(t(c.value), t(c.pattern)),
+  regexMatch: (c, t) => sdkRegexMatch(t(c.value), t(c.pattern)),
+  regexFind: (c, t) => sdkRegexFind(t(c.value), t(c.pattern)),
+  regexFindAll: (c, t) => sdkRegexFindAll(t(c.value), t(c.pattern)),
+  // reference
+  documentId: (c, t) => sdkDocumentId(t(c.reference)),
+  collectionId: (c, t) => sdkCollectionId(t(c.reference)),
+  // type
+  type: (c, t) => sdkType(t(c.value)),
+  // The SDK's isType type name is a plain string — pass the literal payload field.
+  isType: (c, t) => sdkIsType(t(c.value), c.typeName),
+  // existence & error
+  exists: (c, t) => sdkExists(t(c.target)),
+  isAbsent: (c, t) => sdkIsAbsent(t(c.target)),
+  isError: (c, t) => sdkIsError(t(c.value)),
+  ifError: (c, t) => sdkIfError(t(c.tryExpr), t(c.catchExpr)),
+  ifAbsent: (c, t) => sdkIfAbsent(t(c.value), t(c.fallback)),
+  ifNull: (c, t) => sdkIfNull(t(c.value), t(c.fallback)),
+  // array
+  arrayValue: (c, t) => sdkArray(c.elements.map(t)),
+  arrayLength: (c, t) => sdkArrayLength(t(c.value)),
+  // arrayReverse exists at runtime but the SDK's typings only declare the fluent form.
+  arrayReverse: (c, t) => t(c.value).arrayReverse(),
+  arrayGet: (c, t) => sdkArrayGet(t(c.value), t(c.index)),
+  arrayContains: (c, t) => sdkArrayContains(t(c.value), t(c.element)),
+  arrayContainsAll: (c, t) => sdkArrayContainsAll(t(c.value), t(c.options)),
+  arrayContainsAny: (c, t) => sdkArrayContainsAny(t(c.value), t(c.options)),
+  arrayConcat: (c, t) => {
+    const [f, s, ...r] = c.operands;
+    return sdkArrayConcat(t(f), t(s), ...r.map(t));
+  },
+  // map
+  mapValue: (c, t) =>
+    sdkMap(Object.fromEntries(Object.entries(c.fields).map(([k, e]) => [k, t(e)]))),
+  // The SDK's map key parameters are plain strings — pass the literal payload fields.
+  mapGet: (c, t) => sdkMapGet(t(c.value), c.key),
+  mapKeys: (c, t) => sdkMapKeys(t(c.value)),
+  mapValues: (c, t) => sdkMapValues(t(c.value)),
+  mapEntries: (c, t) => sdkMapEntries(t(c.value)),
+  mapSet: (c, t) => sdkMapSet(t(c.value), c.key, t(c.entry)),
+  mapRemove: (c, t) => sdkMapRemove(t(c.value), c.key),
+  mapMerge: (c, t) => {
+    const [f, s, ...r] = c.operands;
+    return sdkMapMerge(t(f), t(s), ...r.map(t));
+  },
+  // timestamp
+  currentTimestamp: () => sdkCurrentTimestamp(),
+  timestampToUnixSeconds: (c, t) => sdkTimestampToUnixSeconds(t(c.value)),
+  timestampToUnixMillis: (c, t) => sdkTimestampToUnixMillis(t(c.value)),
+  timestampToUnixMicros: (c, t) => sdkTimestampToUnixMicros(t(c.value)),
+  unixSecondsToTimestamp: (c, t) => sdkUnixSecondsToTimestamp(t(c.value)),
+  unixMillisToTimestamp: (c, t) => sdkUnixMillisToTimestamp(t(c.value)),
+  unixMicrosToTimestamp: (c, t) => sdkUnixMicrosToTimestamp(t(c.value)),
+  // The literal `unit` has no (Expression, literal-unit, Expression-amount)
+  // overload — take the all-Expression form, lifting the unit to a constant
+  // (the same wire form the backend validates — probed).
+  timestampAdd: (c, t) => sdkTimestampAdd(t(c.value), sdkConstant(c.unit), t(c.amount)),
+  timestampSubtract: (c, t) => sdkTimestampSubtract(t(c.value), sdkConstant(c.unit), t(c.amount)),
+  timestampDiff: (c, t) => sdkTimestampDiff(t(c.end), t(c.start), c.unit),
+  // granularity / part / timezone are plain literals — the SDK's TimeGranularity
+  // / TimePart overloads take them directly (probed to be the literal form the
+  // backend validates).
+  timestampTruncate: (c, t) =>
+    c.timezone === undefined
+      ? sdkTimestampTruncate(t(c.value), c.granularity)
+      : sdkTimestampTruncate(t(c.value), c.granularity, c.timezone),
+  timestampExtract: (c, t) =>
+    c.timezone === undefined
+      ? sdkTimestampExtract(t(c.value), c.part)
+      : sdkTimestampExtract(t(c.value), c.part, c.timezone),
+  // vector
+  cosineDistance: (c, t) => sdkCosineDistance(t(c.left), t(c.right)),
+  dotProduct: (c, t) => sdkDotProduct(t(c.left), t(c.right)),
+  euclideanDistance: (c, t) => sdkEuclideanDistance(t(c.left), t(c.right)),
+  vectorLength: (c, t) => sdkVectorLength(t(c.vector)),
 };
 
 const toSdkOrdering = (ordering: Ordering) => {
@@ -518,13 +510,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'nullaryFunction':
-    case 'unaryFunction':
-    case 'binaryFunction':
-    case 'ternaryFunction':
-    case 'variadicFunction':
-    case 'arrayConstructor':
-    case 'mapConstructor':
+    case 'functionCall':
       throw new Error('firebase pipeline executor: only field orderings are supported in sort yet');
     default:
       return assertNever(expression);
