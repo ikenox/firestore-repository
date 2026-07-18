@@ -363,6 +363,33 @@ both executors and the basic backend semantics in one round trip per family.
 
 ## Test strategy
 
+- [ ] **Planned cleanup — layer the expression tests (agreed 2026-07, not
+      yet done).** A `toStrictEqual` whose expected value is a TRANSCRIPTION
+      of the implementation (the construction oracles like
+      `expect(add(l, r)).toStrictEqual(new FunctionCall(...))`) verifies
+      nothing durable: since the payload-union restructure the payload shape
+      is fully compile-checked, and a factory that forgets to lift an
+      operand is a compile error (payload fields are typed `Expression`).
+      Keep a `toStrictEqual` only when the two sides come from DIFFERENT
+      sources (another construction path, the live backend, a probed fact).
+      Concretely: 1. DELETE the per-function construction-restatement oracles and the
+      per-function raw-vs-`constant()` lifting oracles. 2. ADD one mechanism-layer describe for `toOperand` / `liftOperands` /
+      `liftFields` (scalar, value node, expression pass-through, tuple
+      arity, record — each once); the live direct-literal catalog case
+      stays as the end-to-end check. 3. KEEP the return-descriptor semantics tests (null propagation,
+      numeric kinds, `EitherType`/`StripNull`, key-aware map types, ...)
+      — they pin the loosely-checked runtime bridges — and unify their
+      `toStrictEqual` + `expectTypeOf` pairs behind a new
+      `expectTypedStrictEqual(actual, expected)` helper: runtime
+      `toStrictEqual` plus a compile-time EXACT type-equality guard
+      (invariance trick), so the value claim and the type claim can
+      never drift apart. vitest has no built-in for this (its matchers
+      stay loosely typed so asymmetric matchers like `expect.any` work);
+      the helper deliberately rejects matchers — descriptor expectations
+      are always whole values. Pure type-level assertions with no value
+      (`expectTypeOf<...>()` forms, `.guards`) stay as `expectTypeOf`. 4. Note the layering rule in `docs/coding-guideline.md` (the
+      whole-value principle targets DATA results; compiler-verified
+      construction is not restated in tests).
 - **Type tests** (operand compatibility incl. rejections, return types):
   every factory, in `expression.test.ts` — cheap, no I/O.
 - **Live spec**: one _batched_ case per category rather than one per function
