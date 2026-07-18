@@ -878,11 +878,8 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         const i = field(int64(), 'i');
         const d = field(double(), 'd');
         const cases: [string, Expression][] = [];
-        // `add` is prototyped with direct-literal operands (a superset
-        // signature), so it is exercised on its own rather than in the shared
-        // union table.
-        cases.push(['add_ii', add(i, i)], ['add_id', add(i, d)], ['add_dd', add(d, d)]);
         const binary = [
+          ['add', add],
           ['subtract', subtract],
           ['multiply', multiply],
           ['divide', divide],
