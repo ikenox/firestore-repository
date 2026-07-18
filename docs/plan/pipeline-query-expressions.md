@@ -389,7 +389,13 @@ both executors and the basic backend semantics in one round trip per family.
       are always whole values. Pure type-level assertions with no value
       (`expectTypeOf<...>()` forms, `.guards`) stay as `expectTypeOf`. 4. Note the layering rule in `docs/coding-guideline.md` (the
       whole-value principle targets DATA results; compiler-verified
-      construction is not restated in tests).
+      construction is not restated in tests). 5. FILL the
+      `ConstantTypeOf`/`constantTypeOf` oracle gaps (the element-position
+      side of otherwise-covered branches): `constant([1, null])` ->
+      `array(union(double(), nullType()))` and `constant({ a: null })`; a
+      `docRefValue` as an ARRAY element (the map-field leaf is covered);
+      dedup of same-kind value nodes
+      (`constant([vectorValue([1]), vectorValue([2])])` -> `array(vector())`).
 - **Type tests** (operand compatibility incl. rejections, return types):
   every factory, in `expression.test.ts` — cheap, no I/O.
 - **Live spec**: one _batched_ case per category rather than one per function
