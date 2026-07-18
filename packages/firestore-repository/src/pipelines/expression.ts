@@ -53,16 +53,7 @@ import { assertNever } from '../util.js';
 // (and like the official SDK's `constant(new GeoPoint(...))`). Every member
 // therefore carries `type: T` natively, which is what scopes operand domains
 // and feeds operator type inference.
-export type Expression<T extends FieldType = FieldType> =
-  | Field<T>
-  | Constant<T>
-  | NullaryFunction<T>
-  | UnaryFunction<T>
-  | BinaryFunction<T>
-  | TernaryFunction<T>
-  | VariadicFunction<T>
-  | ArrayConstructor<T>
-  | MapConstructor<T>;
+export type Expression<T extends FieldType = FieldType> = Field<T> | Constant<T> | FunctionCall<T>;
 
 /**
  * An expression bound to an output name — the aliased form of a `select` /
@@ -380,7 +371,7 @@ export const constant = <const V extends ConstantValue>(value: V): Constant<Cons
  * structurally it is just an object, so it would be ambiguous with map
  * constants (and tolerant of excess fields). Named `geoPointValue` to avoid
  * colliding with the `geoPoint()` descriptor factory in `schema.ts`, matching
- * the planned `arrayValue` / `mapValue` constructor naming.
+ * the `arrayValue` / `mapValue` constructor naming.
  */
 export const geoPointValue = (latitude: number, longitude: number): GeoPointValue =>
   new GeoPointValue(latitude, longitude);
@@ -388,239 +379,160 @@ export const geoPointValue = (latitude: number, longitude: number): GeoPointValu
 /** Builds a vector value from explicit components — see {@link VectorValue}. */
 export const vectorValue = (values: readonly number[]): VectorValue => new VectorValue(values);
 
-// Function-call nodes are grouped by SHAPE (arity), not one class per
-// function: each shape carries typed payload fields (no untyped `args` array,
-// so executors need no runtime arity guards), and its `name` is a
-// string-literal union so an executor can translate a whole shape with an
-// exhaustive `Record<Name, ...>` lookup. Per-function individuality (operand
-// compatibility, return types) lives in the factory signatures. See
-// "Restructure FunctionCall" in docs/plan/pipeline-query.md.
-
-/** A function call with no operands. */
-export class NullaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'nullaryFunction';
+/**
+ * A function-call expression node. ONE class for every function: per-function
+ * structure lives in the {@link FunctionPayload} union (discriminated by
+ * `name`), not in per-shape classes — a class exists where a node needs an
+ * `instanceof` brand (the value nodes, `Constant`'s sealed constructor), and
+ * a payload needs no brand, so it stays plain data. The node carries the
+ * function-independent parts (the `kind` discriminant, the return descriptor
+ * `type`, the `.as()` base); everything per-function — which operands exist
+ * and what they are named — is the payload's business, so executors translate
+ * calls with one exhaustive `switch (call.name)` over typed payload fields
+ * (no untyped `args` array, no runtime arity guards). Per-function operand
+ * compatibility and return-type inference live in the factory signatures.
+ */
+export class FunctionCall<T extends FieldType = FieldType> extends ExpressionBase {
+  readonly kind = 'functionCall';
   constructor(
-    readonly name: NullaryFunctionName,
     readonly type: T,
+    readonly call: FunctionPayload,
   ) {
     super();
   }
 }
-export type NullaryFunctionName = 'rand' | 'currentTimestamp';
 
-/** A function call with a single operand. */
-export class UnaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'unaryFunction';
-  constructor(
-    readonly name: UnaryFunctionName,
-    readonly type: T,
-    readonly operand: Expression,
-  ) {
-    super();
-  }
-}
-// A name appearing in two shape unions (round/trunc/trim/ltrim/rtrim) is the
-// dual-arity pattern: the factory overloads to a unary and a binary form and
-// each executor table translates its own arity.
-// The name unions are ordered by function CATEGORY (matching the factory
-// sections below), not by anything historical.
-export type UnaryFunctionName =
-  // logical
-  | 'not'
-  // arithmetic
-  | 'abs'
-  | 'ceil'
-  | 'floor'
-  | 'round'
-  | 'trunc'
-  | 'sqrt'
-  | 'exp'
-  | 'ln'
-  | 'log10'
-  // string
-  | 'charLength'
-  | 'byteLength'
-  | 'toLower'
-  | 'toUpper'
-  | 'stringReverse'
-  | 'trim'
-  | 'ltrim'
-  | 'rtrim'
-  // reference
-  | 'documentId'
-  | 'collectionId'
-  // timestamp
-  | 'timestampToUnixSeconds'
-  | 'timestampToUnixMillis'
-  | 'timestampToUnixMicros'
-  | 'unixSecondsToTimestamp'
-  | 'unixMillisToTimestamp'
-  | 'unixMicrosToTimestamp'
-  // type
-  | 'type'
-  // existence & error
-  | 'exists'
-  | 'isAbsent'
-  | 'isError'
-  // array
-  | 'arrayLength'
-  | 'arrayReverse'
-  // map
-  | 'mapKeys'
-  | 'mapValues'
-  | 'mapEntries'
-  // vector
-  | 'vectorLength';
-
-/** A function call with exactly two operands. */
-export class BinaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'binaryFunction';
-  constructor(
-    readonly name: BinaryFunctionName,
-    readonly type: T,
-    readonly left: Expression,
-    readonly right: Expression,
-  ) {
-    super();
-  }
-}
-export type BinaryFunctionName =
-  // comparison
-  | 'equal'
-  | 'notEqual'
-  | 'lessThan'
-  | 'lessThanOrEqual'
-  | 'greaterThan'
-  | 'greaterThanOrEqual'
-  | 'equalAny'
-  | 'notEqualAny'
-  // existence & error fallbacks
-  | 'ifError'
-  | 'ifAbsent'
-  | 'ifNull'
-  // arithmetic
-  | 'add'
-  | 'subtract'
-  | 'multiply'
-  | 'divide'
-  | 'mod'
-  | 'pow'
-  | 'round'
-  | 'trunc'
-  // string
-  | 'trim'
-  | 'ltrim'
-  | 'rtrim'
-  | 'startsWith'
-  | 'endsWith'
-  | 'stringContains'
-  | 'stringIndexOf'
-  | 'stringRepeat'
-  | 'substring'
-  | 'like'
-  // regex
-  | 'regexContains'
-  | 'regexMatch'
-  | 'regexFind'
-  | 'regexFindAll'
-  // type
-  | 'isType'
-  // array
-  | 'arrayGet'
-  | 'arrayContains'
-  | 'arrayContainsAll'
-  | 'arrayContainsAny'
-  // map
-  | 'mapGet'
-  | 'mapRemove'
-  // timestamp (2-arg forms; the 3-arg forms carry an explicit timezone)
-  | 'timestampTruncate'
-  | 'timestampExtract'
-  // vector
-  | 'cosineDistance'
-  | 'dotProduct'
-  | 'euclideanDistance';
-
-/** A function call with exactly three operands. */
-export class TernaryFunction<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'ternaryFunction';
-  constructor(
-    readonly name: TernaryFunctionName,
-    readonly type: T,
-    readonly first: Expression,
-    readonly second: Expression,
-    readonly third: Expression,
-  ) {
-    super();
-  }
-}
-export type TernaryFunctionName =
-  // string
-  | 'stringReplaceAll'
-  | 'stringReplaceOne'
-  | 'substring'
-  // timestamp
-  | 'timestampAdd'
-  | 'timestampSubtract'
-  | 'timestampDiff'
-  | 'timestampTruncate'
-  | 'timestampExtract'
-  // conditional
-  | 'conditional'
-  // map
-  | 'mapSet';
-
-/** A function call with two or more uniform operands. */
-export class VariadicFunction<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'variadicFunction';
-  constructor(
-    readonly name: VariadicFunctionName,
-    readonly type: T,
-    readonly operands: readonly [Expression, Expression, ...Expression[]],
-  ) {
-    super();
-  }
-}
+/** The name vocabulary of every supported function — {@link FunctionPayload}'s discriminant. */
+export type FunctionName = FunctionPayload['name'];
 
 /**
- * An array EXPRESSION constructor — `arrayValue([field('a'), constant(1)])`.
- * Unlike the value nodes (which hold plain values and enter expressions via
- * `constant()`), the elements here are expressions, evaluated per row
- * (probed: fields nest arbitrarily). Non-empty, mirroring `constant([])`'s
- * rejection: an empty literal has no element to infer a descriptor from.
+ * The per-function payload union, discriminated by `name`: each member states
+ * the exact named operands its function takes, so an executor destructures a
+ * narrowed payload without arity checks. Operand fields are `Expression`s;
+ * backend-mandated LITERAL arguments (`isType`'s type name, the timestamp
+ * units/granularities/parts/timezones, the map keys) are PLAIN fields of
+ * their literal type instead — the backend requires literal constants there
+ * (probed), so nothing is lost by not modelling them as expressions, and the
+ * executors serialize them as wire constants. A dual-arity function is one
+ * payload with an optional trailing field (`round.decimalPlaces?`,
+ * `substring.length?`, ...), never two members.
  */
-export class ArrayConstructor<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'arrayConstructor';
-  constructor(
-    readonly type: T,
-    readonly elements: readonly [Expression, ...Expression[]],
-  ) {
-    super();
-  }
-}
-
-/** A map EXPRESSION constructor — `mapValue({ x: field('num') })`. See {@link ArrayConstructor}. */
-export class MapConstructor<T extends FieldType = FieldType> extends ExpressionBase {
-  readonly kind = 'mapConstructor';
-  constructor(
-    readonly type: T,
-    readonly fields: Readonly<Record<string, Expression>>,
-  ) {
-    super();
-  }
-}
-export type VariadicFunctionName =
+// Grouped by function CATEGORY (matching the factory sections below), not by
+// anything historical.
+export type FunctionPayload =
   // logical
-  | 'and'
-  | 'or'
+  | { name: 'and'; conditions: readonly [Expression, Expression, ...Expression[]] }
+  | { name: 'or'; conditions: readonly [Expression, Expression, ...Expression[]] }
+  | { name: 'xor'; conditions: readonly [Expression, Expression, ...Expression[]] }
+  | { name: 'not'; condition: Expression }
+  // comparison
+  | { name: 'equal'; left: Expression; right: Expression }
+  | { name: 'notEqual'; left: Expression; right: Expression }
+  | { name: 'lessThan'; left: Expression; right: Expression }
+  | { name: 'lessThanOrEqual'; left: Expression; right: Expression }
+  | { name: 'greaterThan'; left: Expression; right: Expression }
+  | { name: 'greaterThanOrEqual'; left: Expression; right: Expression }
+  | { name: 'equalAny'; value: Expression; options: Expression }
+  | { name: 'notEqualAny'; value: Expression; options: Expression }
+  // conditional & extremes
+  | { name: 'conditional'; condition: Expression; thenExpr: Expression; elseExpr: Expression }
+  | { name: 'logicalMaximum'; operands: readonly [Expression, Expression, ...Expression[]] }
+  | { name: 'logicalMinimum'; operands: readonly [Expression, Expression, ...Expression[]] }
+  // arithmetic
+  | { name: 'rand' }
+  | { name: 'add'; left: Expression; right: Expression }
+  | { name: 'subtract'; left: Expression; right: Expression }
+  | { name: 'multiply'; left: Expression; right: Expression }
+  | { name: 'divide'; left: Expression; right: Expression }
+  | { name: 'mod'; left: Expression; right: Expression }
+  | { name: 'pow'; base: Expression; exponent: Expression }
+  | { name: 'abs'; value: Expression }
+  | { name: 'ceil'; value: Expression }
+  | { name: 'floor'; value: Expression }
+  | { name: 'round'; value: Expression; decimalPlaces?: Expression }
+  | { name: 'trunc'; value: Expression; decimalPlaces?: Expression }
+  | { name: 'sqrt'; value: Expression }
+  | { name: 'exp'; value: Expression }
+  | { name: 'ln'; value: Expression }
+  | { name: 'log10'; value: Expression }
   // string
-  | 'stringConcat'
-  | 'xor'
-  | 'logicalMaximum'
-  | 'logicalMinimum'
-  // array / map
-  | 'arrayConcat'
-  | 'mapMerge';
+  | { name: 'charLength'; value: Expression }
+  | { name: 'byteLength'; value: Expression }
+  | { name: 'toLower'; value: Expression }
+  | { name: 'toUpper'; value: Expression }
+  | { name: 'stringReverse'; value: Expression }
+  | { name: 'trim'; value: Expression; characters?: Expression }
+  | { name: 'ltrim'; value: Expression; characters?: Expression }
+  | { name: 'rtrim'; value: Expression; characters?: Expression }
+  | { name: 'startsWith'; value: Expression; prefix: Expression }
+  | { name: 'endsWith'; value: Expression; suffix: Expression }
+  | { name: 'stringContains'; value: Expression; substring: Expression }
+  | { name: 'stringConcat'; operands: readonly [Expression, Expression, ...Expression[]] }
+  | { name: 'stringIndexOf'; value: Expression; substring: Expression }
+  | { name: 'stringRepeat'; value: Expression; count: Expression }
+  | { name: 'stringReplaceAll'; value: Expression; find: Expression; replacement: Expression }
+  | { name: 'stringReplaceOne'; value: Expression; find: Expression; replacement: Expression }
+  | { name: 'substring'; value: Expression; position: Expression; length?: Expression }
+  | { name: 'like'; value: Expression; pattern: Expression }
+  // regex
+  | { name: 'regexContains'; value: Expression; pattern: Expression }
+  | { name: 'regexMatch'; value: Expression; pattern: Expression }
+  | { name: 'regexFind'; value: Expression; pattern: Expression }
+  | { name: 'regexFindAll'; value: Expression; pattern: Expression }
+  // reference
+  | { name: 'documentId'; reference: Expression }
+  | { name: 'collectionId'; reference: Expression }
+  // type
+  | { name: 'type'; value: Expression }
+  | { name: 'isType'; value: Expression; typeName: FirestoreTypeName }
+  // existence & error
+  | { name: 'exists'; target: Expression }
+  | { name: 'isAbsent'; target: Expression }
+  | { name: 'isError'; value: Expression }
+  | { name: 'ifError'; tryExpr: Expression; catchExpr: Expression }
+  | { name: 'ifAbsent'; value: Expression; fallback: Expression }
+  | { name: 'ifNull'; value: Expression; fallback: Expression }
+  // array
+  | { name: 'arrayValue'; elements: readonly [Expression, ...Expression[]] }
+  | { name: 'arrayLength'; value: Expression }
+  | { name: 'arrayReverse'; value: Expression }
+  | { name: 'arrayGet'; value: Expression; index: Expression }
+  | { name: 'arrayContains'; value: Expression; element: Expression }
+  | { name: 'arrayContainsAll'; value: Expression; options: Expression }
+  | { name: 'arrayContainsAny'; value: Expression; options: Expression }
+  | { name: 'arrayConcat'; operands: readonly [Expression, Expression, ...Expression[]] }
+  // map
+  | { name: 'mapValue'; fields: Readonly<Record<string, Expression>> }
+  | { name: 'mapGet'; value: Expression; key: string }
+  | { name: 'mapKeys'; value: Expression }
+  | { name: 'mapValues'; value: Expression }
+  | { name: 'mapEntries'; value: Expression }
+  | { name: 'mapSet'; value: Expression; key: string; entry: Expression }
+  | { name: 'mapRemove'; value: Expression; key: string }
+  | { name: 'mapMerge'; operands: readonly [Expression, Expression, ...Expression[]] }
+  // timestamp
+  | { name: 'currentTimestamp' }
+  | { name: 'timestampToUnixSeconds'; value: Expression }
+  | { name: 'timestampToUnixMillis'; value: Expression }
+  | { name: 'timestampToUnixMicros'; value: Expression }
+  | { name: 'unixSecondsToTimestamp'; value: Expression }
+  | { name: 'unixMillisToTimestamp'; value: Expression }
+  | { name: 'unixMicrosToTimestamp'; value: Expression }
+  | { name: 'timestampAdd'; value: Expression; unit: TimeUnit; amount: Expression }
+  | { name: 'timestampSubtract'; value: Expression; unit: TimeUnit; amount: Expression }
+  | { name: 'timestampDiff'; end: Expression; start: Expression; unit: TimeUnit }
+  | {
+      name: 'timestampTruncate';
+      value: Expression;
+      granularity: TimeGranularity;
+      timezone?: string;
+    }
+  | { name: 'timestampExtract'; value: Expression; part: TimePart; timezone?: string }
+  // vector
+  | { name: 'cosineDistance'; left: Expression; right: Expression }
+  | { name: 'dotProduct'; left: Expression; right: Expression }
+  | { name: 'euclideanDistance'; left: Expression; right: Expression }
+  | { name: 'vectorLength'; vector: Expression };
 
 /**
  * The value-domain predicate: descriptors whose `firestoreType` tags fit the
@@ -742,32 +654,32 @@ type SharedKeysComparable<
 export const equal = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,
   right: Expression<R> & Comparable<L, R>,
-): BinaryFunction<BoolType> => new BinaryFunction('equal', bool(), left, right);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'equal', left, right });
 
 export const notEqual = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,
   right: Expression<R> & Comparable<L, R>,
-): BinaryFunction<BoolType> => new BinaryFunction('notEqual', bool(), left, right);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'notEqual', left, right });
 
 export const lessThan = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,
   right: Expression<R> & Comparable<L, R>,
-): BinaryFunction<BoolType> => new BinaryFunction('lessThan', bool(), left, right);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'lessThan', left, right });
 
 export const lessThanOrEqual = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,
   right: Expression<R> & Comparable<L, R>,
-): BinaryFunction<BoolType> => new BinaryFunction('lessThanOrEqual', bool(), left, right);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'lessThanOrEqual', left, right });
 
 export const greaterThan = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,
   right: Expression<R> & Comparable<L, R>,
-): BinaryFunction<BoolType> => new BinaryFunction('greaterThan', bool(), left, right);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'greaterThan', left, right });
 
 export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
   left: Expression<L>,
   right: Expression<R> & Comparable<L, R>,
-): BinaryFunction<BoolType> => new BinaryFunction('greaterThanOrEqual', bool(), left, right);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'greaterThanOrEqual', left, right });
 
 /** The element domain of an array descriptor (wide/lenient for imprecise inputs, like `TagSetsComparable`). */
 type ElementsOf<T extends FieldType> = T extends {
@@ -788,13 +700,13 @@ type ElementsOf<T extends FieldType> = T extends {
 export const equalAny = <L extends FieldType, R extends Valued<readonly FirestoreType[]>>(
   value: Expression<L>,
   options: Expression<R> & Comparable<L, ElementsOf<R>>,
-): BinaryFunction<BoolType> => new BinaryFunction('equalAny', bool(), value, options);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'equalAny', value, options });
 
 /** Whether `value` differs from EVERY element of the `options` array — see {@link equalAny}. */
 export const notEqualAny = <L extends FieldType, R extends Valued<readonly FirestoreType[]>>(
   value: Expression<L>,
   options: Expression<R> & Comparable<L, ElementsOf<R>>,
-): BinaryFunction<BoolType> => new BinaryFunction('notEqualAny', bool(), value, options);
+): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'notEqualAny', value, options });
 
 /**
  * Null propagation for a function's RETURN descriptor: `T` when no operand
@@ -1093,8 +1005,8 @@ export const and = <
   ],
 >(
   ...conditions: Ops
-): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
-  new VariadicFunction('and', propagateNull(conditions, bool()), conditions);
+): FunctionCall<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new FunctionCall(propagateNull(conditions, bool()), { name: 'and', conditions });
 
 /** Logical disjunction of two or more boolean expressions (Kleene: null operands propagate). */
 export const or = <
@@ -1105,14 +1017,14 @@ export const or = <
   ],
 >(
   ...conditions: Ops
-): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
-  new VariadicFunction('or', propagateNull(conditions, bool()), conditions);
+): FunctionCall<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new FunctionCall(propagateNull(conditions, bool()), { name: 'or', conditions });
 
 /** Logical negation of a boolean expression (Kleene: a null operand propagates). */
 export const not = <C extends Expression<Valued<'boolean'>>>(
   condition: C,
-): UnaryFunction<PropagateNull<C['type'], BoolType>> =>
-  new UnaryFunction('not', propagateNull([condition], bool()), condition);
+): FunctionCall<PropagateNull<C['type'], BoolType>> =>
+  new FunctionCall(propagateNull([condition], bool()), { name: 'not', condition });
 
 /** Logical parity — true iff an odd number of operands is true (Kleene: null operands propagate). */
 export const xor = <
@@ -1123,8 +1035,8 @@ export const xor = <
   ],
 >(
   ...conditions: Ops
-): VariadicFunction<PropagateNull<Ops[number]['type'], BoolType>> =>
-  new VariadicFunction('xor', propagateNull(conditions, bool()), conditions);
+): FunctionCall<PropagateNull<Ops[number]['type'], BoolType>> =>
+  new FunctionCall(propagateNull(conditions, bool()), { name: 'xor', conditions });
 
 /**
  * Branches on a boolean condition: the `then` value when it is `true`, the
@@ -1140,8 +1052,13 @@ export const conditional = <
   condition: C,
   thenExpr: T,
   elseExpr: E,
-): TernaryFunction<EitherType<T['type'], E['type']>> =>
-  new TernaryFunction('conditional', eitherType(thenExpr, elseExpr), condition, thenExpr, elseExpr);
+): FunctionCall<EitherType<T['type'], E['type']>> =>
+  new FunctionCall(eitherType(thenExpr, elseExpr), {
+    name: 'conditional',
+    condition,
+    thenExpr,
+    elseExpr,
+  });
 
 /**
  * The largest operand under the backend's cross-type value ordering. Null
@@ -1152,16 +1069,16 @@ export const logicalMaximum = <
   const Ops extends readonly [Expression, Expression, ...Expression[]],
 >(
   ...operands: Ops
-): VariadicFunction<LogicalExtreme<Ops>> =>
-  new VariadicFunction('logicalMaximum', logicalExtremeType(operands), operands);
+): FunctionCall<LogicalExtreme<Ops>> =>
+  new FunctionCall(logicalExtremeType(operands), { name: 'logicalMaximum', operands });
 
 /** The smallest operand — see {@link logicalMaximum}. */
 export const logicalMinimum = <
   const Ops extends readonly [Expression, Expression, ...Expression[]],
 >(
   ...operands: Ops
-): VariadicFunction<LogicalExtreme<Ops>> =>
-  new VariadicFunction('logicalMinimum', logicalExtremeType(operands), operands);
+): FunctionCall<LogicalExtreme<Ops>> =>
+  new FunctionCall(logicalExtremeType(operands), { name: 'logicalMinimum', operands });
 
 // Operand shorthands for the factories below. These name EXPRESSION domains
 // (the null special-casing itself lives once, in `Valued`).
@@ -1200,277 +1117,226 @@ function numericResultType(operands: readonly Expression[]): FieldType {
 }
 
 /** A uniformly distributed random double in [0, 1), regenerated per row. */
-export const rand = (): NullaryFunction<DoubleType> => new NullaryFunction('rand', double());
+export const rand = (): FunctionCall<DoubleType> => new FunctionCall(double(), { name: 'rand' });
 
 /** Numeric addition. */
 export const add = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new BinaryFunction(
-    'add',
-    propagateNull([left, right], numericResultType([left, right])),
+): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+    name: 'add',
     left,
     right,
-  );
+  });
 
 /** Numeric subtraction (`left - right`). */
 export const subtract = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new BinaryFunction(
-    'subtract',
-    propagateNull([left, right], numericResultType([left, right])),
+): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+    name: 'subtract',
     left,
     right,
-  );
+  });
 
 /** Numeric multiplication. */
 export const multiply = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new BinaryFunction(
-    'multiply',
-    propagateNull([left, right], numericResultType([left, right])),
+): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+    name: 'multiply',
     left,
     right,
-  );
+  });
 
 /** Numeric division (`left / right`) — TRUNCATING on an int64 pair (probed); a zero divisor is a backend ERROR value. */
 export const divide = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new BinaryFunction(
-    'divide',
-    propagateNull([left, right], numericResultType([left, right])),
+): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+    name: 'divide',
     left,
     right,
-  );
+  });
 
 /** Modulo (`left % right`). */
 export const mod = <L extends NumericOperand, R extends NumericOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new BinaryFunction(
-    'mod',
-    propagateNull([left, right], numericResultType([left, right])),
+): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
+  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+    name: 'mod',
     left,
     right,
-  );
+  });
 
 /** Exponentiation (`base ** exponent`). */
 export const pow = <L extends NumericOperand, R extends NumericOperand>(
   base: L,
   exponent: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('pow', propagateNull([base, exponent], double()), base, exponent);
+): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([base, exponent], double()), { name: 'pow', base, exponent });
 
 /** Absolute value. */
 export const abs = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
-  new UnaryFunction(
-    'abs',
-    propagateNull([expression], numericResultType([expression])),
-    expression,
-  );
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
+  new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'abs', value });
 
 /** Rounds up to the nearest whole number. */
 export const ceil = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
-  new UnaryFunction(
-    'ceil',
-    propagateNull([expression], numericResultType([expression])),
-    expression,
-  );
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
+  new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'ceil', value });
 
 /** Rounds down to the nearest whole number. */
 export const floor = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
-  new UnaryFunction(
-    'floor',
-    propagateNull([expression], numericResultType([expression])),
-    expression,
-  );
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
+  new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'floor', value });
 
 /** Square root; a negative operand is a backend ERROR value. */
 export const sqrt = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('sqrt', propagateNull([expression], double()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([value], double()), { name: 'sqrt', value });
 
 /** The exponential function (e ** operand). */
 export const exp = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('exp', propagateNull([expression], double()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([value], double()), { name: 'exp', value });
 
 /** Natural logarithm; a non-positive operand is a backend ERROR value. */
 export const ln = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('ln', propagateNull([expression], double()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([value], double()), { name: 'ln', value });
 
 /** Base-10 logarithm; a non-positive operand is a backend ERROR value. */
 export const log10 = <Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], DoubleType>> =>
-  new UnaryFunction('log10', propagateNull([expression], double()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([value], double()), { name: 'log10', value });
+
+// The dual-arity factories (round/trunc, the trim family, substring,
+// timestampTruncate/timestampExtract) have ONE signature with an optional
+// trailing parameter, mirroring their single payload member. Where the extra
+// operand feeds null propagation, its type parameter defaults to `never` so
+// the omitted-argument call keeps the unwidened return descriptor
+// (`P['type']` is `never`, a no-op union member). The signature carries the
+// type-level result; the loose implementation signature is the usual
+// runtime-to-type bridge (same shape as `propagateNull`).
 
 /** Rounds to the nearest whole number, or to `decimalPlaces` decimal places. */
-export function round<Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>>;
-export function round<Op extends NumericOperand, P extends NumericOperand>(
-  expression: Op,
-  decimalPlaces: P,
-): BinaryFunction<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
-export function round(
-  expression: Expression,
-  decimalPlaces?: Expression,
-): UnaryFunction | BinaryFunction {
+export function round<Op extends NumericOperand, P extends NumericOperand = never>(
+  value: Op,
+  decimalPlaces?: P,
+): FunctionCall<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
+export function round(value: Expression, decimalPlaces?: Expression): FunctionCall {
   return decimalPlaces === undefined
-    ? new UnaryFunction(
-        'round',
-        propagateNull([expression], numericResultType([expression])),
-        expression,
-      )
-    : new BinaryFunction(
-        'round',
-        propagateNull([expression, decimalPlaces], numericResultType([expression])),
-        expression,
+    ? new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'round', value })
+    : new FunctionCall(propagateNull([value, decimalPlaces], numericResultType([value])), {
+        name: 'round',
+        value,
         decimalPlaces,
-      );
+      });
 }
 
 /** Truncates toward zero, to a whole number or to `decimalPlaces` decimal places. */
-export function trunc<Op extends NumericOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], NumericResult<Op['type']>>>;
-export function trunc<Op extends NumericOperand, P extends NumericOperand>(
-  expression: Op,
-  decimalPlaces: P,
-): BinaryFunction<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
-export function trunc(
-  expression: Expression,
-  decimalPlaces?: Expression,
-): UnaryFunction | BinaryFunction {
+export function trunc<Op extends NumericOperand, P extends NumericOperand = never>(
+  value: Op,
+  decimalPlaces?: P,
+): FunctionCall<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
+export function trunc(value: Expression, decimalPlaces?: Expression): FunctionCall {
   return decimalPlaces === undefined
-    ? new UnaryFunction(
-        'trunc',
-        propagateNull([expression], numericResultType([expression])),
-        expression,
-      )
-    : new BinaryFunction(
-        'trunc',
-        propagateNull([expression, decimalPlaces], numericResultType([expression])),
-        expression,
+    ? new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'trunc', value })
+    : new FunctionCall(propagateNull([value, decimalPlaces], numericResultType([value])), {
+        name: 'trunc',
+        value,
         decimalPlaces,
-      );
+      });
 }
 
 // ---- string ----
 
 /** The number of characters (Unicode code points) in a string. */
 export const charLength = <Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('charLength', propagateNull([expression], int64()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value], int64()), { name: 'charLength', value });
 
 /** The number of bytes in a string's UTF-8 encoding. */
 export const byteLength = <Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('byteLength', propagateNull([expression], int64()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value], int64()), { name: 'byteLength', value });
 
 /** Lowercases a string. */
 export const toLower = <Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
-  new UnaryFunction('toLower', propagateNull([expression], string()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], StringType>> =>
+  new FunctionCall(propagateNull([value], string()), { name: 'toLower', value });
 
 /** Uppercases a string. */
 export const toUpper = <Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
-  new UnaryFunction('toUpper', propagateNull([expression], string()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], StringType>> =>
+  new FunctionCall(propagateNull([value], string()), { name: 'toUpper', value });
 
 /** Reverses a string. */
 export const stringReverse = <Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
-  new UnaryFunction('stringReverse', propagateNull([expression], string()), expression);
+  value: Op,
+): FunctionCall<PropagateNull<Op['type'], StringType>> =>
+  new FunctionCall(propagateNull([value], string()), { name: 'stringReverse', value });
 
-/** Trims whitespace from both ends, or every character of `charactersToTrim`. */
-export function trim<Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>>;
-export function trim<Op extends StringOperand, C extends StringOperand>(
-  expression: Op,
-  charactersToTrim: C,
-): BinaryFunction<PropagateNull<Op['type'] | C['type'], StringType>>;
-export function trim(
-  expression: Expression,
-  charactersToTrim?: Expression,
-): UnaryFunction | BinaryFunction {
-  return charactersToTrim === undefined
-    ? new UnaryFunction('trim', propagateNull([expression], string()), expression)
-    : new BinaryFunction(
-        'trim',
-        propagateNull([expression, charactersToTrim], string()),
-        expression,
-        charactersToTrim,
-      );
+/** Trims whitespace from both ends, or every character of `characters`. */
+export function trim<Op extends StringOperand, C extends StringOperand = never>(
+  value: Op,
+  characters?: C,
+): FunctionCall<PropagateNull<Op['type'] | C['type'], StringType>>;
+export function trim(value: Expression, characters?: Expression): FunctionCall {
+  return characters === undefined
+    ? new FunctionCall(propagateNull([value], string()), { name: 'trim', value })
+    : new FunctionCall(propagateNull([value, characters], string()), {
+        name: 'trim',
+        value,
+        characters,
+      });
 }
 
 /** Trims the leading end — see {@link trim}. */
-export function ltrim<Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>>;
-export function ltrim<Op extends StringOperand, C extends StringOperand>(
-  expression: Op,
-  charactersToTrim: C,
-): BinaryFunction<PropagateNull<Op['type'] | C['type'], StringType>>;
-export function ltrim(
-  expression: Expression,
-  charactersToTrim?: Expression,
-): UnaryFunction | BinaryFunction {
-  return charactersToTrim === undefined
-    ? new UnaryFunction('ltrim', propagateNull([expression], string()), expression)
-    : new BinaryFunction(
-        'ltrim',
-        propagateNull([expression, charactersToTrim], string()),
-        expression,
-        charactersToTrim,
-      );
+export function ltrim<Op extends StringOperand, C extends StringOperand = never>(
+  value: Op,
+  characters?: C,
+): FunctionCall<PropagateNull<Op['type'] | C['type'], StringType>>;
+export function ltrim(value: Expression, characters?: Expression): FunctionCall {
+  return characters === undefined
+    ? new FunctionCall(propagateNull([value], string()), { name: 'ltrim', value })
+    : new FunctionCall(propagateNull([value, characters], string()), {
+        name: 'ltrim',
+        value,
+        characters,
+      });
 }
 
 /** Trims the trailing end — see {@link trim}. */
-export function rtrim<Op extends StringOperand>(
-  expression: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>>;
-export function rtrim<Op extends StringOperand, C extends StringOperand>(
-  expression: Op,
-  charactersToTrim: C,
-): BinaryFunction<PropagateNull<Op['type'] | C['type'], StringType>>;
-export function rtrim(
-  expression: Expression,
-  charactersToTrim?: Expression,
-): UnaryFunction | BinaryFunction {
-  return charactersToTrim === undefined
-    ? new UnaryFunction('rtrim', propagateNull([expression], string()), expression)
-    : new BinaryFunction(
-        'rtrim',
-        propagateNull([expression, charactersToTrim], string()),
-        expression,
-        charactersToTrim,
-      );
+export function rtrim<Op extends StringOperand, C extends StringOperand = never>(
+  value: Op,
+  characters?: C,
+): FunctionCall<PropagateNull<Op['type'] | C['type'], StringType>>;
+export function rtrim(value: Expression, characters?: Expression): FunctionCall {
+  return characters === undefined
+    ? new FunctionCall(propagateNull([value], string()), { name: 'rtrim', value })
+    : new FunctionCall(propagateNull([value, characters], string()), {
+        name: 'rtrim',
+        value,
+        characters,
+      });
 }
 
 // The string predicates PROPAGATE null (probed: startsWith(null, 'x') is
@@ -1481,44 +1347,52 @@ export function rtrim(
 export const startsWith = <L extends StringOperand, R extends StringOperand>(
   value: L,
   prefix: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new BinaryFunction('startsWith', propagateNull([value, prefix], bool()), value, prefix);
+): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, prefix], bool()), { name: 'startsWith', value, prefix });
 
 /** Whether `value` ends with `suffix`. */
 export const endsWith = <L extends StringOperand, R extends StringOperand>(
   value: L,
   suffix: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new BinaryFunction('endsWith', propagateNull([value, suffix], bool()), value, suffix);
+): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, suffix], bool()), { name: 'endsWith', value, suffix });
 
 /** Whether `value` contains `substring`. */
 export const stringContains = <L extends StringOperand, R extends StringOperand>(
   value: L,
   substring: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new BinaryFunction('stringContains', propagateNull([value, substring], bool()), value, substring);
+): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, substring], bool()), {
+    name: 'stringContains',
+    value,
+    substring,
+  });
 
 /** Concatenates two or more strings. */
 export const stringConcat = <
   const Ops extends readonly [StringOperand, StringOperand, ...StringOperand[]],
 >(
-  ...strings: Ops
-): VariadicFunction<PropagateNull<Ops[number]['type'], StringType>> =>
-  new VariadicFunction('stringConcat', propagateNull(strings, string()), strings);
+  ...operands: Ops
+): FunctionCall<PropagateNull<Ops[number]['type'], StringType>> =>
+  new FunctionCall(propagateNull(operands, string()), { name: 'stringConcat', operands });
 
 /** The 0-based index of the first occurrence of `substring`, or -1 if absent. */
 export const stringIndexOf = <L extends StringOperand, R extends StringOperand>(
   value: L,
   substring: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], Int64Type>> =>
-  new BinaryFunction('stringIndexOf', propagateNull([value, substring], int64()), value, substring);
+): FunctionCall<PropagateNull<L['type'] | R['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value, substring], int64()), {
+    name: 'stringIndexOf',
+    value,
+    substring,
+  });
 
 /** Repeats a string `count` times. */
 export const stringRepeat = <L extends StringOperand, R extends NumericOperand>(
   value: L,
   count: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], StringType>> =>
-  new BinaryFunction('stringRepeat', propagateNull([value, count], string()), value, count);
+): FunctionCall<PropagateNull<L['type'] | R['type'], StringType>> =>
+  new FunctionCall(propagateNull([value, count], string()), { name: 'stringRepeat', value, count });
 
 /** Replaces every occurrence of `find` with `replacement`. */
 export const stringReplaceAll = <
@@ -1529,14 +1403,13 @@ export const stringReplaceAll = <
   value: L,
   find: M,
   replacement: R,
-): TernaryFunction<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
-  new TernaryFunction(
-    'stringReplaceAll',
-    propagateNull([value, find, replacement], string()),
+): FunctionCall<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
+  new FunctionCall(propagateNull([value, find, replacement], string()), {
+    name: 'stringReplaceAll',
     value,
     find,
     replacement,
-  );
+  });
 
 /** Replaces the first occurrence of `find` with `replacement`. */
 export const stringReplaceOne = <
@@ -1547,54 +1420,52 @@ export const stringReplaceOne = <
   value: L,
   find: M,
   replacement: R,
-): TernaryFunction<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
-  new TernaryFunction(
-    'stringReplaceOne',
-    propagateNull([value, find, replacement], string()),
+): FunctionCall<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
+  new FunctionCall(propagateNull([value, find, replacement], string()), {
+    name: 'stringReplaceOne',
     value,
     find,
     replacement,
-  );
+  });
 
 /**
  * The substring from the 0-based `position`, spanning `length` characters or
  * (omitted) to the end of the string.
  */
-export function substring<Op extends StringOperand, P extends NumericOperand>(
-  value: Op,
-  position: P,
-): BinaryFunction<PropagateNull<Op['type'] | P['type'], StringType>>;
 export function substring<
   Op extends StringOperand,
   P extends NumericOperand,
-  Len extends NumericOperand,
+  Len extends NumericOperand = never,
 >(
   value: Op,
   position: P,
-  length: Len,
-): TernaryFunction<PropagateNull<Op['type'] | P['type'] | Len['type'], StringType>>;
+  length?: Len,
+): FunctionCall<PropagateNull<Op['type'] | P['type'] | Len['type'], StringType>>;
 export function substring(
   value: Expression,
   position: Expression,
   length?: Expression,
-): BinaryFunction | TernaryFunction {
+): FunctionCall {
   return length === undefined
-    ? new BinaryFunction('substring', propagateNull([value, position], string()), value, position)
-    : new TernaryFunction(
-        'substring',
-        propagateNull([value, position, length], string()),
+    ? new FunctionCall(propagateNull([value, position], string()), {
+        name: 'substring',
+        value,
+        position,
+      })
+    : new FunctionCall(propagateNull([value, position, length], string()), {
+        name: 'substring',
         value,
         position,
         length,
-      );
+      });
 }
 
 /** SQL LIKE match (`%` any sequence, `_` any single character). */
 export const like = <L extends StringOperand, R extends StringOperand>(
   value: L,
   pattern: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new BinaryFunction('like', propagateNull([value, pattern], bool()), value, pattern);
+): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, pattern], bool()), { name: 'like', value, pattern });
 
 // ---- regex ----
 // An invalid pattern is a backend ERROR value (see the error-channel note
@@ -1604,15 +1475,19 @@ export const like = <L extends StringOperand, R extends StringOperand>(
 export const regexContains = <L extends StringOperand, R extends StringOperand>(
   value: L,
   pattern: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new BinaryFunction('regexContains', propagateNull([value, pattern], bool()), value, pattern);
+): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, pattern], bool()), {
+    name: 'regexContains',
+    value,
+    pattern,
+  });
 
 /** Whether `value` ENTIRELY matches the RE2 `pattern`. */
 export const regexMatch = <L extends StringOperand, R extends StringOperand>(
   value: L,
   pattern: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new BinaryFunction('regexMatch', propagateNull([value, pattern], bool()), value, pattern);
+): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, pattern], bool()), { name: 'regexMatch', value, pattern });
 
 /**
  * The first match of the RE2 `pattern`, or `null` when there is none — the
@@ -1621,20 +1496,19 @@ export const regexMatch = <L extends StringOperand, R extends StringOperand>(
 export const regexFind = <L extends StringOperand, R extends StringOperand>(
   value: L,
   pattern: R,
-): BinaryFunction<UnionType<[StringType, NullType]>> =>
-  new BinaryFunction('regexFind', nullable(string()), value, pattern);
+): FunctionCall<UnionType<[StringType, NullType]>> =>
+  new FunctionCall(nullable(string()), { name: 'regexFind', value, pattern });
 
 /** Every match of the RE2 `pattern` (empty array when there is none). */
 export const regexFindAll = <L extends StringOperand, R extends StringOperand>(
   value: L,
   pattern: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], ArrayType<StringType>>> =>
-  new BinaryFunction(
-    'regexFindAll',
-    propagateNull([value, pattern], array(string())),
+): FunctionCall<PropagateNull<L['type'] | R['type'], ArrayType<StringType>>> =>
+  new FunctionCall(propagateNull([value, pattern], array(string())), {
+    name: 'regexFindAll',
     value,
     pattern,
-  );
+  });
 
 // ---- reference ----
 
@@ -1644,14 +1518,14 @@ type ReferenceOperand = Expression<Valued<'reference'>>;
 /** The document id (the path's last segment) of a reference. */
 export const documentId = <Op extends ReferenceOperand>(
   reference: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
-  new UnaryFunction('documentId', propagateNull([reference], string()), reference);
+): FunctionCall<PropagateNull<Op['type'], StringType>> =>
+  new FunctionCall(propagateNull([reference], string()), { name: 'documentId', reference });
 
 /** The id of the collection containing the referenced document. */
 export const collectionId = <Op extends ReferenceOperand>(
   reference: Op,
-): UnaryFunction<PropagateNull<Op['type'], StringType>> =>
-  new UnaryFunction('collectionId', propagateNull([reference], string()), reference);
+): FunctionCall<PropagateNull<Op['type'], StringType>> =>
+  new FunctionCall(propagateNull([reference], string()), { name: 'collectionId', reference });
 
 // ---- type ----
 
@@ -1690,20 +1564,20 @@ export type FirestoreTypeName =
  */
 export const type = <Op extends Expression>(
   value: Op,
-): UnaryFunction<PropagateAbsence<Op['type'], LiteralType<FirestoreTypeName[]>>> =>
-  new UnaryFunction('type', propagateAbsence([value], typeNameLiteral()), value);
+): FunctionCall<PropagateAbsence<Op['type'], LiteralType<FirestoreTypeName[]>>> =>
+  new FunctionCall(propagateAbsence([value], typeNameLiteral()), { name: 'type', value });
 
 /**
  * Whether the operand's value is of the named backend type. The name must be
- * a compile-time literal (the backend requires a constant — probed), lifted
- * into a constant operand wire-faithfully. Type-observing like {@link type}:
- * only absence propagates.
+ * a compile-time literal (the backend requires a constant — probed), stored
+ * as a plain payload field; the executors serialize it as the wire constant.
+ * Type-observing like {@link type}: only absence propagates.
  */
 export const isType = <Op extends Expression>(
   value: Op,
   typeName: FirestoreTypeName,
-): BinaryFunction<PropagateAbsence<Op['type'], BoolType>> =>
-  new BinaryFunction('isType', propagateAbsence([value], bool()), value, Constant.of(typeName));
+): FunctionCall<PropagateAbsence<Op['type'], BoolType>> =>
+  new FunctionCall(propagateAbsence([value], bool()), { name: 'isType', value, typeName });
 
 /** The `type()` return descriptor: the closed backend type-name vocabulary. */
 const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
@@ -1763,23 +1637,29 @@ function elementUnionType(elements: readonly Expression[]): FieldType {
   return rest.length === 0 ? first : union(first, ...rest);
 }
 
-/** Builds an array expression from element expressions — see {@link ArrayConstructor}. */
+/**
+ * Builds an array EXPRESSION — `arrayValue([field('a'), constant(1)])`.
+ * Unlike the value nodes (which hold plain values and enter expressions via
+ * `constant()`), the elements here are expressions, evaluated per row
+ * (probed: fields nest arbitrarily). Non-empty, mirroring `constant([])`'s
+ * rejection: an empty literal has no element to infer a descriptor from.
+ */
 export const arrayValue = <const Els extends readonly [Expression, ...Expression[]]>(
   elements: Els,
-): ArrayConstructor<ArrayType<ElementUnion<Els>>> =>
-  new ArrayConstructor(array(elementUnionType(elements)), elements);
+): FunctionCall<ArrayType<ElementUnion<Els>>> =>
+  new FunctionCall(array(elementUnionType(elements)), { name: 'arrayValue', elements });
 
 /** The number of elements. */
 export const arrayLength = <Op extends ArrayOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('arrayLength', propagateNull([value], int64()), value);
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value], int64()), { name: 'arrayLength', value });
 
 /** The array reversed. */
 export const arrayReverse = <Op extends ArrayOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], StripNull<Op['type']>>> =>
-  new UnaryFunction('arrayReverse', propagateNull([value], stripNullOf(value)), value);
+): FunctionCall<PropagateNull<Op['type'], StripNull<Op['type']>>> =>
+  new FunctionCall(propagateNull([value], stripNullOf(value)), { name: 'arrayReverse', value });
 
 /** Runtime counterpart of `StripNull<Op['type']>` over an expression (same bridge shape as `propagateNull`). */
 function stripNullOf<Op extends Expression>(value: Op): StripNull<Op['type']>;
@@ -1796,8 +1676,8 @@ function stripNullOf(value: Expression): FieldType {
 export const arrayGet = <Arr extends ArrayOperand, Idx extends NumericOperand>(
   value: Arr,
   index: Idx,
-): BinaryFunction<UnionType<[ElementsOf<StripNull<Arr['type']>>, NullType]>> =>
-  new BinaryFunction('arrayGet', nullable(elementTypeOf(value)), value, index);
+): FunctionCall<UnionType<[ElementsOf<StripNull<Arr['type']>>, NullType]>> =>
+  new FunctionCall(nullable(elementTypeOf(value)), { name: 'arrayGet', value, index });
 
 /** Runtime counterpart of `ElementsOf<StripNull<...>>` (same bridge shape as `propagateNull`). */
 function elementTypeOf<Arr extends Expression>(value: Arr): ElementsOf<StripNull<Arr['type']>>;
@@ -1813,36 +1693,43 @@ function elementTypeOf(value: Expression): FieldType {
 export const arrayContains = <Arr extends ArrayOperand, El extends FieldType>(
   value: Arr,
   element: Expression<El> & Comparable<ElementsOf<StripNull<Arr['type']>>, El>,
-): BinaryFunction<PropagateNull<Arr['type'], BoolType>> =>
-  new BinaryFunction('arrayContains', propagateNull([value], bool()), value, element);
+): FunctionCall<PropagateNull<Arr['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value], bool()), { name: 'arrayContains', value, element });
 
 /** Whether the array contains EVERY element of the options array. */
 export const arrayContainsAll = <Arr extends ArrayOperand, Opts extends ArrayOperand>(
   value: Arr,
   options: Opts &
     Comparable<ElementsOf<StripNull<Arr['type']>>, ElementsOf<StripNull<Opts['type']>>>,
-): BinaryFunction<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
-  new BinaryFunction('arrayContainsAll', propagateNull([value, options], bool()), value, options);
+): FunctionCall<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, options], bool()), {
+    name: 'arrayContainsAll',
+    value,
+    options,
+  });
 
 /** Whether the array contains ANY element of the options array. */
 export const arrayContainsAny = <Arr extends ArrayOperand, Opts extends ArrayOperand>(
   value: Arr,
   options: Opts &
     Comparable<ElementsOf<StripNull<Arr['type']>>, ElementsOf<StripNull<Opts['type']>>>,
-): BinaryFunction<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
-  new BinaryFunction('arrayContainsAny', propagateNull([value, options], bool()), value, options);
+): FunctionCall<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
+  new FunctionCall(propagateNull([value, options], bool()), {
+    name: 'arrayContainsAny',
+    value,
+    options,
+  });
 
 /** The concatenation of two or more arrays. */
 export const arrayConcat = <
   const Ops extends readonly [ArrayOperand, ArrayOperand, ...ArrayOperand[]],
 >(
   ...operands: Ops
-): VariadicFunction<PropagateNull<Ops[number]['type'], ArrayType<ConcatElementUnion<Ops>>>> =>
-  new VariadicFunction(
-    'arrayConcat',
-    propagateNull(operands, array(concatElementUnionType(operands))),
+): FunctionCall<PropagateNull<Ops[number]['type'], ArrayType<ConcatElementUnion<Ops>>>> =>
+  new FunctionCall(propagateNull(operands, array(concatElementUnionType(operands))), {
+    name: 'arrayConcat',
     operands,
-  );
+  });
 
 type ConcatElementUnion<Ops extends readonly Expression[]> = RebuildUnion<
   DedupDescriptors<ConcatElementTypes<Ops>>
@@ -1870,10 +1757,11 @@ function concatElementUnionType(operands: readonly Expression[]): FieldType {
 
 // ---- map ----
 // `mapSet` / `mapRemove` keys must be literal constants (probed:
-// "map_set keys must be constants/literals"), lifted like `isType`'s type
-// name. `mapGet`'s key MAY be dynamic on the backend, but the factory takes
-// a literal so the result subschema is key-aware; a dynamic-key overload is
-// deferred.
+// "map_set keys must be constants/literals"), so they are plain payload
+// fields like `isType`'s type name, serialized as wire constants by the
+// executors. `mapGet`'s key MAY be dynamic on the backend, but the factory
+// takes a literal so the result subschema is key-aware; a dynamic-key
+// overload is deferred.
 
 /** A map-domain operand. */
 type MapOperand = Expression<Valued<{ readonly [field: string]: FirestoreType }>>;
@@ -1896,13 +1784,12 @@ type MapKeysOf<T extends FieldType> =
 export const mapGet = <M extends MapOperand, K extends MapKeysOf<M['type']>>(
   value: M,
   key: K,
-): BinaryFunction<PropagateNull<M['type'], MapValueType<FieldsOf<StripNull<M['type']>>[K]>>> =>
-  new BinaryFunction(
-    'mapGet',
-    propagateNull([value], mapValueTypeOf(value, key)),
+): FunctionCall<PropagateNull<M['type'], MapValueType<FieldsOf<StripNull<M['type']>>[K]>>> =>
+  new FunctionCall(propagateNull([value], mapValueTypeOf(value, key)), {
+    name: 'mapGet',
     value,
-    Constant.of(key),
-  );
+    key,
+  });
 
 type MapValueType<V extends FieldType> = [Extract<V, Optional>] extends [never]
   ? V
@@ -1944,46 +1831,49 @@ type WithoutDottedKeys<F> = {
 /** A key literal that must not contain the path separator. */
 type UndottedKey<K extends string> = K extends `${string}.${string}` ? never : K;
 
-/** Builds a map expression from field-value expressions — see {@link MapConstructor}. */
+/** Builds a map EXPRESSION from field-value expressions — `mapValue({ x: field('num') })`. See {@link arrayValue}. */
 export const mapValue = <const F extends Readonly<Record<string, Expression>>>(
   fields: F & WithoutDottedKeys<F>,
-): MapConstructor<MapType<{ [K in keyof F & string]: WithoutOptional<F[K]['type']> }>> =>
-  new MapConstructor(mapDescriptor(mapConstructorFields(fields)), fields);
+): FunctionCall<MapType<{ [K in keyof F & string]: WithoutOptional<F[K]['type']> }>> =>
+  new FunctionCall(mapDescriptor(mapValueFields(fields)), { name: 'mapValue', fields });
 
 /** Runtime counterpart of `mapValue`'s fields record (same bridge shape as `propagateNull`). */
-function mapConstructorFields<F extends Readonly<Record<string, Expression>>>(
+function mapValueFields<F extends Readonly<Record<string, Expression>>>(
   fields: F,
 ): { [K in keyof F & string]: WithoutOptional<F[K]['type']> };
-function mapConstructorFields(fields: Readonly<Record<string, Expression>>): FieldsRecord {
+function mapValueFields(fields: Readonly<Record<string, Expression>>): FieldsRecord {
   return Object.fromEntries(Object.entries(fields).map(([k, e]) => [k, withoutOptional(e.type)]));
 }
 
 /** The map's keys, as a string array. */
 export const mapKeys = <M extends MapOperand>(
   value: M,
-): UnaryFunction<PropagateNull<M['type'], ArrayType<StringType>>> =>
-  new UnaryFunction('mapKeys', propagateNull([value], array(string())), value);
+): FunctionCall<PropagateNull<M['type'], ArrayType<StringType>>> =>
+  new FunctionCall(propagateNull([value], array(string())), { name: 'mapKeys', value });
 
 /** The map's values, as an array of the deduped field-type union. */
 export const mapValues = <M extends MapOperand>(
   value: M,
-): UnaryFunction<
+): FunctionCall<
   PropagateNull<M['type'], ArrayType<MapFieldUnion<FieldsOf<StripNull<M['type']>>>>>
-> => new UnaryFunction('mapValues', propagateNull([value], array(mapFieldUnionType(value))), value);
+> =>
+  new FunctionCall(propagateNull([value], array(mapFieldUnionType(value))), {
+    name: 'mapValues',
+    value,
+  });
 
 /** The map's entries, as an array of `{ k, v }` maps (probed shape). */
 export const mapEntries = <M extends MapOperand>(
   value: M,
-): UnaryFunction<
+): FunctionCall<
   PropagateNull<
     M['type'],
     ArrayType<MapType<{ k: StringType; v: MapFieldUnion<FieldsOf<StripNull<M['type']>>> }>>
   >
 > =>
-  new UnaryFunction(
-    'mapEntries',
+  new FunctionCall(
     propagateNull([value], array(map({ k: string(), v: mapFieldUnionType(value) }))),
-    value,
+    { name: 'mapEntries', value },
   );
 
 /**
@@ -2026,14 +1916,15 @@ function mapFieldUnionType(value: Expression): FieldType {
 
 /**
  * The map with `key` set to the value (shallow; probed: a later value wins).
- * The key must be a literal constant (backend-validated), lifted like
- * `isType`'s type name.
+ * The key must be a literal constant (backend-validated) — a plain payload
+ * field like `isType`'s type name, serialized as a wire constant by the
+ * executors.
  */
 export const mapSet = <M extends MapOperand, K extends string, V extends Expression>(
   value: M,
   key: K & UndottedKey<K>,
   entry: V,
-): TernaryFunction<
+): FunctionCall<
   PropagateNull<
     M['type'],
     MapType<
@@ -2041,13 +1932,12 @@ export const mapSet = <M extends MapOperand, K extends string, V extends Express
     >
   >
 > =>
-  new TernaryFunction(
-    'mapSet',
-    propagateNull([value], mapDescriptor(setField(value, key, entry))),
+  new FunctionCall(propagateNull([value], mapDescriptor(setField(value, key, entry))), {
+    name: 'mapSet',
     value,
-    Constant.of(key),
+    key,
     entry,
-  );
+  });
 
 type SetField<F extends FieldsRecord, K extends string, V extends FieldType> = {
   [P in keyof F as P extends K ? never : P]: F[P];
@@ -2071,15 +1961,14 @@ function setField(value: Expression, key: string, entry: Expression): FieldsReco
 export const mapRemove = <M extends MapOperand, K extends string>(
   value: M,
   key: K & UndottedKey<K>,
-): BinaryFunction<
+): FunctionCall<
   PropagateNull<M['type'], MapType<Omit<FieldsOf<StripNull<M['type']>>, K & UndottedKey<K>>>>
 > =>
-  new BinaryFunction(
-    'mapRemove',
-    propagateNull([value], mapDescriptor(removeField(value, key))),
+  new FunctionCall(propagateNull([value], mapDescriptor(removeField(value, key))), {
+    name: 'mapRemove',
     value,
-    Constant.of(key),
-  );
+    key,
+  });
 
 /** Runtime counterpart of `mapRemove`'s fields record (same bridge shape as `propagateNull`). */
 function removeField<M extends Expression, K extends string>(
@@ -2098,12 +1987,11 @@ function removeField(value: Expression, key: string): FieldsRecord {
 /** The shallow merge of two or more maps — a later operand's key wins (probed). */
 export const mapMerge = <const Ops extends readonly [MapOperand, MapOperand, ...MapOperand[]]>(
   ...operands: Ops
-): VariadicFunction<PropagateNull<Ops[number]['type'], MapType<MergeFields<Ops>>>> =>
-  new VariadicFunction(
-    'mapMerge',
-    propagateNull(operands, mapDescriptor(mergeFields(operands))),
+): FunctionCall<PropagateNull<Ops[number]['type'], MapType<MergeFields<Ops>>>> =>
+  new FunctionCall(propagateNull(operands, mapDescriptor(mergeFields(operands))), {
+    name: 'mapMerge',
     operands,
-  );
+  });
 
 type MergeFields<Ops extends readonly Expression[]> = Ops extends readonly [
   infer H extends Expression,
@@ -2140,16 +2028,16 @@ function mergeFields(operands: readonly Expression[]): FieldsRecord {
  * (probed: any other expression, constants included, is INVALID_ARGUMENT),
  * so the factory takes a `Field`, not a general expression.
  */
-export const exists = <F extends Field>(target: F): UnaryFunction<BoolType> =>
-  new UnaryFunction('exists', bool(), target);
+export const exists = <F extends Field>(target: F): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'exists', target });
 
 /** Whether the field is absent from the document — the negation of {@link exists}, with the same field-reference-only constraint. */
-export const isAbsent = <F extends Field>(target: F): UnaryFunction<BoolType> =>
-  new UnaryFunction('isAbsent', bool(), target);
+export const isAbsent = <F extends Field>(target: F): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'isAbsent', target });
 
 /** Whether the operand evaluates to a backend ERROR value (total: null/absent are `false`). */
-export const isError = <Op extends Expression>(value: Op): UnaryFunction<BoolType> =>
-  new UnaryFunction('isError', bool(), value);
+export const isError = <Op extends Expression>(value: Op): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'isError', value });
 
 /**
  * The `try` value, or the `catch` value if `try` evaluates to a backend
@@ -2159,13 +2047,12 @@ export const isError = <Op extends Expression>(value: Op): UnaryFunction<BoolTyp
 export const ifError = <T extends Expression, C extends Expression>(
   tryExpr: T,
   catchExpr: C,
-): BinaryFunction<PropagateAbsence<T['type'], EitherType<T['type'], C['type']>>> =>
-  new BinaryFunction(
-    'ifError',
-    propagateAbsence([tryExpr], eitherType(tryExpr, catchExpr)),
+): FunctionCall<PropagateAbsence<T['type'], EitherType<T['type'], C['type']>>> =>
+  new FunctionCall(propagateAbsence([tryExpr], eitherType(tryExpr, catchExpr)), {
+    name: 'ifError',
     tryExpr,
     catchExpr,
-  );
+  });
 
 /**
  * The value, or the fallback when the value is ABSENT. A present null passes
@@ -2174,8 +2061,8 @@ export const ifError = <T extends Expression, C extends Expression>(
 export const ifAbsent = <T extends Expression, C extends Expression>(
   value: T,
   fallback: C,
-): BinaryFunction<EitherType<T['type'], C['type']>> =>
-  new BinaryFunction('ifAbsent', eitherType(value, fallback), value, fallback);
+): FunctionCall<EitherType<T['type'], C['type']>> =>
+  new FunctionCall(eitherType(value, fallback), { name: 'ifAbsent', value, fallback });
 
 /**
  * The value, or the fallback when the value is null OR absent (probed:
@@ -2186,8 +2073,8 @@ export const ifAbsent = <T extends Expression, C extends Expression>(
 export const ifNull = <T extends Expression, C extends Expression>(
   value: T,
   fallback: C,
-): BinaryFunction<EitherType<StripNull<T['type']>, C['type']>> =>
-  new BinaryFunction('ifNull', ifNullType(value, fallback), value, fallback);
+): FunctionCall<EitherType<StripNull<T['type']>, C['type']>> =>
+  new FunctionCall(ifNullType(value, fallback), { name: 'ifNull', value, fallback });
 
 /** Runtime counterpart of `ifNull`'s return descriptor (same bridge shape as `propagateNull`). */
 function ifNullType<T extends Expression, C extends Expression>(
@@ -2202,8 +2089,9 @@ function ifNullType(value: Expression, fallback: Expression): FieldType {
 // The unit/granularity/part argument and the timezone argument must be
 // compile-time literals: the backend validates them as literal constants
 // (probed: a field operand is INVALID_ARGUMENT at query validation, not an
-// ERROR value), so the factories take literal parameters and lift them via
-// `Constant.of`, like `isType`. Out-of-range results and invalid timezone
+// ERROR value), so the factories take literal parameters stored as plain
+// payload fields, like `isType`'s type name — the executors serialize them
+// as wire constants. Out-of-range results and invalid timezone
 // VALUES, by contrast, are backend ERROR values (`isError`-catchable).
 // Integer-only positions (an add/subtract amount, a unix epoch input) are
 // typed as the numeric domain: `'integer'` alone cannot be demanded at the
@@ -2235,72 +2123,70 @@ export type TimePart = TimeGranularity | 'dayofweek' | 'dayofyear';
 type TimestampOperand = Expression<Valued<'timestamp'>>;
 
 /** The server's timestamp at query evaluation time. */
-export const currentTimestamp = (): NullaryFunction<TimestampType> =>
-  new NullaryFunction('currentTimestamp', timestamp());
+export const currentTimestamp = (): FunctionCall<TimestampType> =>
+  new FunctionCall(timestamp(), { name: 'currentTimestamp' });
 
 /** The operand as a unix epoch in seconds (fractions truncated toward zero). */
 export const timestampToUnixSeconds = <Op extends TimestampOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('timestampToUnixSeconds', propagateNull([value], int64()), value);
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value], int64()), { name: 'timestampToUnixSeconds', value });
 
 /** The operand as a unix epoch in milliseconds. */
 export const timestampToUnixMillis = <Op extends TimestampOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('timestampToUnixMillis', propagateNull([value], int64()), value);
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value], int64()), { name: 'timestampToUnixMillis', value });
 
 /** The operand as a unix epoch in microseconds. */
 export const timestampToUnixMicros = <Op extends TimestampOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('timestampToUnixMicros', propagateNull([value], int64()), value);
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([value], int64()), { name: 'timestampToUnixMicros', value });
 
 /** The timestamp at the given unix epoch in seconds (integers only — a fractional value is a backend error). */
 export const unixSecondsToTimestamp = <Op extends NumericOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], TimestampType>> =>
-  new UnaryFunction('unixSecondsToTimestamp', propagateNull([value], timestamp()), value);
+): FunctionCall<PropagateNull<Op['type'], TimestampType>> =>
+  new FunctionCall(propagateNull([value], timestamp()), { name: 'unixSecondsToTimestamp', value });
 
 /** The timestamp at the given unix epoch in milliseconds (integers only). */
 export const unixMillisToTimestamp = <Op extends NumericOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], TimestampType>> =>
-  new UnaryFunction('unixMillisToTimestamp', propagateNull([value], timestamp()), value);
+): FunctionCall<PropagateNull<Op['type'], TimestampType>> =>
+  new FunctionCall(propagateNull([value], timestamp()), { name: 'unixMillisToTimestamp', value });
 
 /** The timestamp at the given unix epoch in microseconds (integers only). */
 export const unixMicrosToTimestamp = <Op extends NumericOperand>(
   value: Op,
-): UnaryFunction<PropagateNull<Op['type'], TimestampType>> =>
-  new UnaryFunction('unixMicrosToTimestamp', propagateNull([value], timestamp()), value);
+): FunctionCall<PropagateNull<Op['type'], TimestampType>> =>
+  new FunctionCall(propagateNull([value], timestamp()), { name: 'unixMicrosToTimestamp', value });
 
 /** The timestamp moved forward by `amount` `unit`s (out-of-range results are backend ERROR values). */
 export const timestampAdd = <Ts extends TimestampOperand, Amount extends NumericOperand>(
   value: Ts,
   unit: TimeUnit,
   amount: Amount,
-): TernaryFunction<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
-  new TernaryFunction(
-    'timestampAdd',
-    propagateNull([value, amount], timestamp()),
+): FunctionCall<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
+  new FunctionCall(propagateNull([value, amount], timestamp()), {
+    name: 'timestampAdd',
     value,
-    Constant.of(unit),
+    unit,
     amount,
-  );
+  });
 
 /** The timestamp moved backward by `amount` `unit`s. */
 export const timestampSubtract = <Ts extends TimestampOperand, Amount extends NumericOperand>(
   value: Ts,
   unit: TimeUnit,
   amount: Amount,
-): TernaryFunction<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
-  new TernaryFunction(
-    'timestampSubtract',
-    propagateNull([value, amount], timestamp()),
+): FunctionCall<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
+  new FunctionCall(propagateNull([value, amount], timestamp()), {
+    name: 'timestampSubtract',
     value,
-    Constant.of(unit),
+    unit,
     amount,
-  );
+  });
 
 /**
  * `end - start` in whole `unit`s, truncated toward zero (probed: 2.6 days →
@@ -2311,75 +2197,46 @@ export const timestampDiff = <End extends TimestampOperand, Start extends Timest
   end: End,
   start: Start,
   unit: TimeUnit,
-): TernaryFunction<PropagateNull<End['type'] | Start['type'], Int64Type>> =>
-  new TernaryFunction(
-    'timestampDiff',
-    propagateNull([end, start], int64()),
+): FunctionCall<PropagateNull<End['type'] | Start['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([end, start], int64()), {
+    name: 'timestampDiff',
     end,
     start,
-    Constant.of(unit),
-  );
+    unit,
+  });
 
 /**
  * The timestamp truncated down to the given granularity, in the given IANA
  * timezone (default UTC). An invalid timezone VALUE is a backend ERROR value.
  */
-export function timestampTruncate<Ts extends TimestampOperand>(
+export const timestampTruncate = <Ts extends TimestampOperand>(
   value: Ts,
-  granularity: TimeGranularity,
-): BinaryFunction<PropagateNull<Ts['type'], TimestampType>>;
-export function timestampTruncate<Ts extends TimestampOperand>(
-  value: Ts,
-  granularity: TimeGranularity,
-  timezone: string,
-): TernaryFunction<PropagateNull<Ts['type'], TimestampType>>;
-export function timestampTruncate(
-  value: Expression,
   granularity: TimeGranularity,
   timezone?: string,
-): BinaryFunction | TernaryFunction {
-  const type = propagateNull([value], timestamp());
-  return timezone === undefined
-    ? new BinaryFunction('timestampTruncate', type, value, Constant.of(granularity))
-    : new TernaryFunction(
-        'timestampTruncate',
-        type,
-        value,
-        Constant.of(granularity),
-        Constant.of(timezone),
-      );
-}
+): FunctionCall<PropagateNull<Ts['type'], TimestampType>> =>
+  new FunctionCall(
+    propagateNull([value], timestamp()),
+    timezone === undefined
+      ? { name: 'timestampTruncate', value, granularity }
+      : { name: 'timestampTruncate', value, granularity, timezone },
+  );
 
 /**
  * The given part of the timestamp as an integer, in the given IANA timezone
  * (default UTC). `'dayofweek'` is 1-based from Sunday (probed: a Friday →
  * `6`).
  */
-export function timestampExtract<Ts extends TimestampOperand>(
+export const timestampExtract = <Ts extends TimestampOperand>(
   value: Ts,
-  part: TimePart,
-): BinaryFunction<PropagateNull<Ts['type'], Int64Type>>;
-export function timestampExtract<Ts extends TimestampOperand>(
-  value: Ts,
-  part: TimePart,
-  timezone: string,
-): TernaryFunction<PropagateNull<Ts['type'], Int64Type>>;
-export function timestampExtract(
-  value: Expression,
   part: TimePart,
   timezone?: string,
-): BinaryFunction | TernaryFunction {
-  const type = propagateNull([value], int64());
-  return timezone === undefined
-    ? new BinaryFunction('timestampExtract', type, value, Constant.of(part))
-    : new TernaryFunction(
-        'timestampExtract',
-        type,
-        value,
-        Constant.of(part),
-        Constant.of(timezone),
-      );
-}
+): FunctionCall<PropagateNull<Ts['type'], Int64Type>> =>
+  new FunctionCall(
+    propagateNull([value], int64()),
+    timezone === undefined
+      ? { name: 'timestampExtract', value, part }
+      : { name: 'timestampExtract', value, part, timezone },
+  );
 
 // ---- vector ----
 // Distance functions over mismatched dimensions are backend ERROR values.
@@ -2391,25 +2248,29 @@ type VectorOperand = Expression<Valued<'vector'>>;
 export const cosineDistance = <L extends VectorOperand, R extends VectorOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('cosineDistance', propagateNull([left, right], double()), left, right);
+): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([left, right], double()), { name: 'cosineDistance', left, right });
 
 /** The dot product of two vectors. */
 export const dotProduct = <L extends VectorOperand, R extends VectorOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('dotProduct', propagateNull([left, right], double()), left, right);
+): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([left, right], double()), { name: 'dotProduct', left, right });
 
 /** The euclidean distance between two vectors. */
 export const euclideanDistance = <L extends VectorOperand, R extends VectorOperand>(
   left: L,
   right: R,
-): BinaryFunction<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new BinaryFunction('euclideanDistance', propagateNull([left, right], double()), left, right);
+): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
+  new FunctionCall(propagateNull([left, right], double()), {
+    name: 'euclideanDistance',
+    left,
+    right,
+  });
 
 /** The number of dimensions of a vector. */
 export const vectorLength = <Op extends VectorOperand>(
   vector: Op,
-): UnaryFunction<PropagateNull<Op['type'], Int64Type>> =>
-  new UnaryFunction('vectorLength', propagateNull([vector], int64()), vector);
+): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
+  new FunctionCall(propagateNull([vector], int64()), { name: 'vectorLength', vector });

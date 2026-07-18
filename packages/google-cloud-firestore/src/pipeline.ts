@@ -1,7 +1,6 @@
 import { FieldValue, type Firestore, GeoPoint, Pipelines } from '@google-cloud/firestore';
 import { collectionPath } from 'firestore-repository/path';
 import {
-  type BinaryFunctionName,
   type Constant,
   type ConstantArray,
   type Expression,
@@ -9,11 +8,8 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
-  type BinaryFunction,
-  type NullaryFunctionName,
-  type TernaryFunctionName,
-  UnaryFunctionName,
-  VariadicFunctionName,
+  type FunctionName,
+  type FunctionPayload,
 } from 'firestore-repository/pipelines/expression';
 import type { Ordering } from 'firestore-repository/pipelines/ordering';
 import type {
@@ -156,38 +152,8 @@ const toSdkExpression = (db: Firestore, expression: Expression): Pipelines.Expre
       return Pipelines.field(expression.path);
     case 'constant':
       return toSdkConstant(db, expression.value);
-    case 'nullaryFunction':
-      return nullaryFns[expression.name]();
-    case 'unaryFunction':
-      return unaryFns[expression.name](toSdkExpression(db, expression.operand));
-    case 'binaryFunction':
-      return binaryFns[expression.name](
-        toSdkExpression(db, expression.left),
-        toSdkExpression(db, expression.right),
-        expression,
-      );
-    case 'ternaryFunction':
-      return ternaryFns[expression.name](
-        toSdkExpression(db, expression.first),
-        toSdkExpression(db, expression.second),
-        toSdkExpression(db, expression.third),
-      );
-    case 'variadicFunction': {
-      const [first, second, ...rest] = expression.operands;
-      return variadicFns[expression.name](
-        toSdkExpression(db, first),
-        toSdkExpression(db, second),
-        ...rest.map((operand) => toSdkExpression(db, operand)),
-      );
-    }
-    case 'arrayConstructor':
-      return Pipelines.array(expression.elements.map((element) => toSdkExpression(db, element)));
-    case 'mapConstructor':
-      return Pipelines.map(
-        Object.fromEntries(
-          Object.entries(expression.fields).map(([k, e]) => [k, toSdkExpression(db, e)]),
-        ),
-      );
+    case 'functionCall':
+      return dispatchFunctionCall(expression.call, (e) => toSdkExpression(db, e));
     default:
       return assertNever(expression);
   }
@@ -244,189 +210,236 @@ const toSdkConstant = (db: Firestore, value: Constant['value']): Pipelines.Expre
   }
 };
 
-// Per-shape translation tables: `Record` over the name union requires every
-// key, so a newly added function name fails to compile here until translated.
-// (`asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters — a
-// type-tag only, no wire change.)
+/**
+ * Dispatches a function-call payload to its {@link functionTranslators} entry.
+ * Generic over the concrete function name `K` so the indexed table lookup and
+ * the narrowed payload stay correlated: TS resolves `functionTranslators[name]`
+ * and the `call` argument against the SAME `Extract<FunctionPayload,
+ * { name: K }>`, which is what lets a single table dispatch the whole union
+ * without a type assertion.
+ */
+const dispatchFunctionCall = <K extends FunctionName>(
+  call: Extract<FunctionPayload, { name: K }>,
+  translate: Translate,
+): Pipelines.Expression => functionTranslators[call.name](call, translate);
 
-const nullaryFns: Record<NullaryFunctionName, () => Pipelines.Expression> = {
-  rand: Pipelines.rand,
-  currentTimestamp: Pipelines.currentTimestamp,
-};
-
-const unaryFns: Record<UnaryFunctionName, (o: Pipelines.Expression) => Pipelines.Expression> = {
-  not: (o) => Pipelines.not(o.asBoolean()),
-  abs: Pipelines.abs,
-  ceil: Pipelines.ceil,
-  // floor/ltrim/rtrim exist at runtime but the SDK's namespace typings only
-  // declare their fluent forms — translate through those.
-  floor: (o) => o.floor(),
-  round: Pipelines.round,
-  trunc: Pipelines.trunc,
-  sqrt: Pipelines.sqrt,
-  exp: Pipelines.exp,
-  ln: Pipelines.ln,
-  log10: Pipelines.log10,
-  charLength: Pipelines.charLength,
-  byteLength: Pipelines.byteLength,
-  toLower: Pipelines.toLower,
-  toUpper: Pipelines.toUpper,
-  stringReverse: Pipelines.stringReverse,
-  trim: Pipelines.trim,
-  ltrim: (o) => o.ltrim(),
-  rtrim: (o) => o.rtrim(),
-  documentId: Pipelines.documentId,
-  collectionId: Pipelines.collectionId,
-  type: Pipelines.type,
-  exists: Pipelines.exists,
-  isAbsent: Pipelines.isAbsent,
-  isError: Pipelines.isError,
-  arrayLength: Pipelines.arrayLength,
-  arrayReverse: Pipelines.arrayReverse,
-  mapKeys: Pipelines.mapKeys,
-  mapValues: Pipelines.mapValues,
-  mapEntries: Pipelines.mapEntries,
-  timestampToUnixSeconds: Pipelines.timestampToUnixSeconds,
-  timestampToUnixMillis: Pipelines.timestampToUnixMillis,
-  timestampToUnixMicros: Pipelines.timestampToUnixMicros,
-  unixSecondsToTimestamp: Pipelines.unixSecondsToTimestamp,
-  unixMillisToTimestamp: Pipelines.unixMillisToTimestamp,
-  unixMicrosToTimestamp: Pipelines.unixMicrosToTimestamp,
-  vectorLength: Pipelines.vectorLength,
-};
-
-// Entries receive the raw AST node too: functions with backend-mandated
-// LITERAL arguments (isType's type name) must hand the SDK helper the plain
-// string, which is unrecoverable from the translated constant expression.
-const binaryFns: Record<
-  BinaryFunctionName,
-  (l: Pipelines.Expression, r: Pipelines.Expression, node: BinaryFunction) => Pipelines.Expression
-> = {
-  equal: Pipelines.equal,
-  notEqual: Pipelines.notEqual,
-  lessThan: Pipelines.lessThan,
-  lessThanOrEqual: Pipelines.lessThanOrEqual,
-  greaterThan: Pipelines.greaterThan,
-  greaterThanOrEqual: Pipelines.greaterThanOrEqual,
-  // The options operand is an array-typed EXPRESSION. The runtime accepts it
-  // (probed; the firebase d.ts even declares this form) but this SDK's
-  // typings only declare the values-list convenience.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see above)
-  equalAny: (l, r) => Pipelines.equalAny(l, r as unknown as unknown[]),
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see above)
-  notEqualAny: (l, r) => Pipelines.notEqualAny(l, r as unknown as unknown[]),
-  ifError: Pipelines.ifError,
-  ifAbsent: Pipelines.ifAbsent,
-  ifNull: Pipelines.ifNull,
-  arrayGet: Pipelines.arrayGet,
-  arrayContains: Pipelines.arrayContains,
-  // Array-typed options expressions — the same typings gap as equalAny above.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see equalAny)
-  arrayContainsAll: (l, r) => Pipelines.arrayContainsAll(l, r as unknown as unknown[]),
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SDK typings gap (see equalAny)
-  arrayContainsAny: (l, r) => Pipelines.arrayContainsAny(l, r as unknown as unknown[]),
-  // The SDK's mapGet key parameter is a plain string — recover the lifted literal.
-  mapGet: (l, _r, node) => Pipelines.mapGet(l, literalStringOperand(node.right)),
-  mapRemove: Pipelines.mapRemove,
-  add: Pipelines.add,
-  subtract: Pipelines.subtract,
-  multiply: Pipelines.multiply,
-  divide: Pipelines.divide,
-  mod: Pipelines.mod,
-  pow: Pipelines.pow,
-  round: Pipelines.round,
-  trunc: Pipelines.trunc,
-  trim: Pipelines.trim,
-  ltrim: (l, r) => l.ltrim(r),
-  rtrim: (l, r) => l.rtrim(r),
-  startsWith: Pipelines.startsWith,
-  endsWith: Pipelines.endsWith,
-  stringContains: Pipelines.stringContains,
-  // stringIndexOf/stringRepeat (and the ternary stringReplace* below) exist
-  // at runtime but the SDK's namespace typings only declare their fluent
-  // forms — translate through those.
-  stringIndexOf: (l, r) => l.stringIndexOf(r),
-  stringRepeat: (l, r) => l.stringRepeat(r),
-  substring: (l, r) => Pipelines.substring(l, r),
-  like: Pipelines.like,
-  regexContains: Pipelines.regexContains,
-  regexMatch: Pipelines.regexMatch,
-  regexFind: Pipelines.regexFind,
-  regexFindAll: Pipelines.regexFindAll,
-  isType: (l, _r, node) => Pipelines.isType(l, literalStringOperand(node.right)),
-  // The lifted literal constants (granularity / part) translate as constant
-  // expressions, which IS the literal form the backend validates — probed.
-  timestampTruncate: (l, r) => Pipelines.timestampTruncate(l, r),
-  timestampExtract: (l, r) => Pipelines.timestampExtract(l, r),
-  cosineDistance: Pipelines.cosineDistance,
-  dotProduct: Pipelines.dotProduct,
-  euclideanDistance: Pipelines.euclideanDistance,
-};
-
-const ternaryFns: Record<
-  TernaryFunctionName,
-  (
-    a: Pipelines.Expression,
-    b: Pipelines.Expression,
-    c: Pipelines.Expression,
-  ) => Pipelines.Expression
-> = {
-  stringReplaceAll: (a, b, c) => a.stringReplaceAll(b, c),
-  stringReplaceOne: (a, b, c) => a.stringReplaceOne(b, c),
-  substring: Pipelines.substring,
-  conditional: (a, b, c) => Pipelines.conditional(a.asBoolean(), b, c),
-  mapSet: Pipelines.mapSet,
-  timestampAdd: Pipelines.timestampAdd,
-  timestampSubtract: Pipelines.timestampSubtract,
-  timestampDiff: Pipelines.timestampDiff,
-  timestampTruncate: Pipelines.timestampTruncate,
-  timestampExtract: Pipelines.timestampExtract,
-};
+/** Translates one operand expression into its SDK form (threads `db` internally). */
+type Translate = (expression: Expression) => Pipelines.Expression;
 
 /**
- * Recovers the literal string a factory lifted into a constant operand
- * (e.g. `isType`'s type name): the backend requires the wire argument to be
- * a constant, and the SDK helper takes it as a plain string.
+ * Per-function translation into the SDK, keyed by function name — the single
+ * source that a newly added {@link FunctionName} must extend (a missing key
+ * fails to compile). Each entry receives its NARROWED payload, so it reads
+ * named operand fields directly.
+ *
+ * `asBoolean()` wraps satisfy the SDK's `BooleanExpression` parameters (a
+ * type-tag only, no wire change). Backend-mandated LITERAL arguments arrive as
+ * plain payload fields: the map keys and `isType`'s type name pass straight to
+ * the SDK's string parameters, while the timestamp units / granularities /
+ * parts / timezones are lifted back to constant expressions
+ * (`Pipelines.constant(...)`) — the literal wire form the backend validates
+ * (probed). A dual-arity payload (its trailing operand optional) branches on
+ * that field's presence.
  */
-const literalStringOperand = (operand: Expression): string => {
-  switch (operand.kind) {
-    case 'constant': {
-      const { value } = operand;
-      if (typeof value === 'string') {
-        return value;
-      }
-      throw new Error('expected a literal string constant operand');
-    }
-    case 'field':
-    case 'nullaryFunction':
-    case 'unaryFunction':
-    case 'binaryFunction':
-    case 'ternaryFunction':
-    case 'variadicFunction':
-    case 'arrayConstructor':
-    case 'mapConstructor':
-      throw new Error(`expected a constant operand, got ${operand.kind}`);
-    default:
-      return assertNever(operand);
-  }
+type FunctionTranslators = {
+  [K in FunctionName]: (
+    call: Extract<FunctionPayload, { name: K }>,
+    t: Translate,
+  ) => Pipelines.Expression;
 };
 
-const variadicFns: Record<
-  VariadicFunctionName,
-  (
-    first: Pipelines.Expression,
-    second: Pipelines.Expression,
-    ...rest: Pipelines.Expression[]
-  ) => Pipelines.Expression
-> = {
-  and: (f, s, ...r) => Pipelines.and(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
-  or: (f, s, ...r) => Pipelines.or(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
-  stringConcat: Pipelines.stringConcat,
-  xor: (f, s, ...r) => Pipelines.xor(f.asBoolean(), s.asBoolean(), ...r.map((e) => e.asBoolean())),
-  logicalMaximum: Pipelines.logicalMaximum,
-  logicalMinimum: Pipelines.logicalMinimum,
-  arrayConcat: Pipelines.arrayConcat,
-  mapMerge: Pipelines.mapMerge,
+const functionTranslators: FunctionTranslators = {
+  // ---- logical ----
+  and: (c, t) => {
+    const [first, second, ...rest] = c.conditions;
+    return Pipelines.and(
+      t(first).asBoolean(),
+      t(second).asBoolean(),
+      ...rest.map((e) => t(e).asBoolean()),
+    );
+  },
+  or: (c, t) => {
+    const [first, second, ...rest] = c.conditions;
+    return Pipelines.or(
+      t(first).asBoolean(),
+      t(second).asBoolean(),
+      ...rest.map((e) => t(e).asBoolean()),
+    );
+  },
+  xor: (c, t) => {
+    const [first, second, ...rest] = c.conditions;
+    return Pipelines.xor(
+      t(first).asBoolean(),
+      t(second).asBoolean(),
+      ...rest.map((e) => t(e).asBoolean()),
+    );
+  },
+  not: (c, t) => Pipelines.not(t(c.condition).asBoolean()),
+  // ---- comparison ----
+  equal: (c, t) => Pipelines.equal(t(c.left), t(c.right)),
+  notEqual: (c, t) => Pipelines.notEqual(t(c.left), t(c.right)),
+  lessThan: (c, t) => Pipelines.lessThan(t(c.left), t(c.right)),
+  lessThanOrEqual: (c, t) => Pipelines.lessThanOrEqual(t(c.left), t(c.right)),
+  greaterThan: (c, t) => Pipelines.greaterThan(t(c.left), t(c.right)),
+  greaterThanOrEqual: (c, t) => Pipelines.greaterThanOrEqual(t(c.left), t(c.right)),
+  // The options operand is one array-typed EXPRESSION; the SDK's Expression
+  // overload accepts it directly (probed at runtime, and the d.ts declares it).
+  equalAny: (c, t) => Pipelines.equalAny(t(c.value), t(c.options)),
+  notEqualAny: (c, t) => Pipelines.notEqualAny(t(c.value), t(c.options)),
+  // ---- conditional & extremes ----
+  conditional: (c, t) =>
+    Pipelines.conditional(t(c.condition).asBoolean(), t(c.thenExpr), t(c.elseExpr)),
+  logicalMaximum: (c, t) => {
+    const [first, second, ...rest] = c.operands;
+    return Pipelines.logicalMaximum(t(first), t(second), ...rest.map(t));
+  },
+  logicalMinimum: (c, t) => {
+    const [first, second, ...rest] = c.operands;
+    return Pipelines.logicalMinimum(t(first), t(second), ...rest.map(t));
+  },
+  // ---- arithmetic ----
+  rand: () => Pipelines.rand(),
+  add: (c, t) => Pipelines.add(t(c.left), t(c.right)),
+  subtract: (c, t) => Pipelines.subtract(t(c.left), t(c.right)),
+  multiply: (c, t) => Pipelines.multiply(t(c.left), t(c.right)),
+  divide: (c, t) => Pipelines.divide(t(c.left), t(c.right)),
+  mod: (c, t) => Pipelines.mod(t(c.left), t(c.right)),
+  pow: (c, t) => Pipelines.pow(t(c.base), t(c.exponent)),
+  abs: (c, t) => Pipelines.abs(t(c.value)),
+  ceil: (c, t) => Pipelines.ceil(t(c.value)),
+  // floor exists at runtime but the SDK's namespace typings only declare its
+  // fluent form — translate through that.
+  floor: (c, t) => t(c.value).floor(),
+  round: (c, t) =>
+    c.decimalPlaces === undefined
+      ? Pipelines.round(t(c.value))
+      : Pipelines.round(t(c.value), t(c.decimalPlaces)),
+  trunc: (c, t) =>
+    c.decimalPlaces === undefined
+      ? Pipelines.trunc(t(c.value))
+      : Pipelines.trunc(t(c.value), t(c.decimalPlaces)),
+  sqrt: (c, t) => Pipelines.sqrt(t(c.value)),
+  exp: (c, t) => Pipelines.exp(t(c.value)),
+  ln: (c, t) => Pipelines.ln(t(c.value)),
+  log10: (c, t) => Pipelines.log10(t(c.value)),
+  // ---- string ----
+  charLength: (c, t) => Pipelines.charLength(t(c.value)),
+  byteLength: (c, t) => Pipelines.byteLength(t(c.value)),
+  toLower: (c, t) => Pipelines.toLower(t(c.value)),
+  toUpper: (c, t) => Pipelines.toUpper(t(c.value)),
+  stringReverse: (c, t) => Pipelines.stringReverse(t(c.value)),
+  trim: (c, t) =>
+    c.characters === undefined
+      ? Pipelines.trim(t(c.value))
+      : Pipelines.trim(t(c.value), t(c.characters)),
+  // ltrim/rtrim exist at runtime but the SDK's namespace typings only declare
+  // their fluent forms — translate through those.
+  ltrim: (c, t) =>
+    c.characters === undefined ? t(c.value).ltrim() : t(c.value).ltrim(t(c.characters)),
+  rtrim: (c, t) =>
+    c.characters === undefined ? t(c.value).rtrim() : t(c.value).rtrim(t(c.characters)),
+  startsWith: (c, t) => Pipelines.startsWith(t(c.value), t(c.prefix)),
+  endsWith: (c, t) => Pipelines.endsWith(t(c.value), t(c.suffix)),
+  stringContains: (c, t) => Pipelines.stringContains(t(c.value), t(c.substring)),
+  stringConcat: (c, t) => {
+    const [first, second, ...rest] = c.operands;
+    return Pipelines.stringConcat(t(first), t(second), ...rest.map(t));
+  },
+  // stringIndexOf/stringRepeat and the stringReplace* pair exist at runtime but
+  // the SDK's namespace typings only declare their fluent forms.
+  stringIndexOf: (c, t) => t(c.value).stringIndexOf(t(c.substring)),
+  stringRepeat: (c, t) => t(c.value).stringRepeat(t(c.count)),
+  stringReplaceAll: (c, t) => t(c.value).stringReplaceAll(t(c.find), t(c.replacement)),
+  stringReplaceOne: (c, t) => t(c.value).stringReplaceOne(t(c.find), t(c.replacement)),
+  substring: (c, t) =>
+    c.length === undefined
+      ? Pipelines.substring(t(c.value), t(c.position))
+      : Pipelines.substring(t(c.value), t(c.position), t(c.length)),
+  like: (c, t) => Pipelines.like(t(c.value), t(c.pattern)),
+  // ---- regex ----
+  regexContains: (c, t) => Pipelines.regexContains(t(c.value), t(c.pattern)),
+  regexMatch: (c, t) => Pipelines.regexMatch(t(c.value), t(c.pattern)),
+  regexFind: (c, t) => Pipelines.regexFind(t(c.value), t(c.pattern)),
+  regexFindAll: (c, t) => Pipelines.regexFindAll(t(c.value), t(c.pattern)),
+  // ---- reference ----
+  documentId: (c, t) => Pipelines.documentId(t(c.reference)),
+  collectionId: (c, t) => Pipelines.collectionId(t(c.reference)),
+  // ---- type ----
+  type: (c, t) => Pipelines.type(t(c.value)),
+  // The SDK's isType takes the type name as a plain string.
+  isType: (c, t) => Pipelines.isType(t(c.value), c.typeName),
+  // ---- existence & error ----
+  exists: (c, t) => Pipelines.exists(t(c.target)),
+  isAbsent: (c, t) => Pipelines.isAbsent(t(c.target)),
+  isError: (c, t) => Pipelines.isError(t(c.value)),
+  ifError: (c, t) => Pipelines.ifError(t(c.tryExpr), t(c.catchExpr)),
+  ifAbsent: (c, t) => Pipelines.ifAbsent(t(c.value), t(c.fallback)),
+  ifNull: (c, t) => Pipelines.ifNull(t(c.value), t(c.fallback)),
+  // ---- array ----
+  arrayValue: (c, t) => Pipelines.array(c.elements.map(t)),
+  arrayLength: (c, t) => Pipelines.arrayLength(t(c.value)),
+  arrayReverse: (c, t) => Pipelines.arrayReverse(t(c.value)),
+  arrayGet: (c, t) => Pipelines.arrayGet(t(c.value), t(c.index)),
+  arrayContains: (c, t) => Pipelines.arrayContains(t(c.value), t(c.element)),
+  // Array-typed options expressions — the SDK's Expression overload accepts
+  // them directly (see equalAny).
+  arrayContainsAll: (c, t) => Pipelines.arrayContainsAll(t(c.value), t(c.options)),
+  arrayContainsAny: (c, t) => Pipelines.arrayContainsAny(t(c.value), t(c.options)),
+  arrayConcat: (c, t) => {
+    const [first, second, ...rest] = c.operands;
+    return Pipelines.arrayConcat(t(first), t(second), ...rest.map(t));
+  },
+  // ---- map ----
+  mapValue: (c, t) =>
+    Pipelines.map(Object.fromEntries(Object.entries(c.fields).map(([k, e]) => [k, t(e)]))),
+  // The SDK's mapGet/mapSet/mapRemove key parameter is a plain string.
+  mapGet: (c, t) => Pipelines.mapGet(t(c.value), c.key),
+  mapKeys: (c, t) => Pipelines.mapKeys(t(c.value)),
+  mapValues: (c, t) => Pipelines.mapValues(t(c.value)),
+  mapEntries: (c, t) => Pipelines.mapEntries(t(c.value)),
+  mapSet: (c, t) => Pipelines.mapSet(t(c.value), c.key, t(c.entry)),
+  mapRemove: (c, t) => Pipelines.mapRemove(t(c.value), c.key),
+  mapMerge: (c, t) => {
+    const [first, second, ...rest] = c.operands;
+    return Pipelines.mapMerge(t(first), t(second), ...rest.map(t));
+  },
+  // ---- timestamp ----
+  currentTimestamp: () => Pipelines.currentTimestamp(),
+  timestampToUnixSeconds: (c, t) => Pipelines.timestampToUnixSeconds(t(c.value)),
+  timestampToUnixMillis: (c, t) => Pipelines.timestampToUnixMillis(t(c.value)),
+  timestampToUnixMicros: (c, t) => Pipelines.timestampToUnixMicros(t(c.value)),
+  unixSecondsToTimestamp: (c, t) => Pipelines.unixSecondsToTimestamp(t(c.value)),
+  unixMillisToTimestamp: (c, t) => Pipelines.unixMillisToTimestamp(t(c.value)),
+  unixMicrosToTimestamp: (c, t) => Pipelines.unixMicrosToTimestamp(t(c.value)),
+  // The unit/granularity/part/timezone literals lift back to constant
+  // expressions — the literal wire form the backend validates (probed).
+  timestampAdd: (c, t) =>
+    Pipelines.timestampAdd(t(c.value), Pipelines.constant(c.unit), t(c.amount)),
+  timestampSubtract: (c, t) =>
+    Pipelines.timestampSubtract(t(c.value), Pipelines.constant(c.unit), t(c.amount)),
+  timestampDiff: (c, t) =>
+    Pipelines.timestampDiff(t(c.end), t(c.start), Pipelines.constant(c.unit)),
+  timestampTruncate: (c, t) =>
+    c.timezone === undefined
+      ? Pipelines.timestampTruncate(t(c.value), Pipelines.constant(c.granularity))
+      : Pipelines.timestampTruncate(
+          t(c.value),
+          Pipelines.constant(c.granularity),
+          Pipelines.constant(c.timezone),
+        ),
+  timestampExtract: (c, t) =>
+    c.timezone === undefined
+      ? Pipelines.timestampExtract(t(c.value), Pipelines.constant(c.part))
+      : Pipelines.timestampExtract(
+          t(c.value),
+          Pipelines.constant(c.part),
+          Pipelines.constant(c.timezone),
+        ),
+  // ---- vector ----
+  cosineDistance: (c, t) => Pipelines.cosineDistance(t(c.left), t(c.right)),
+  dotProduct: (c, t) => Pipelines.dotProduct(t(c.left), t(c.right)),
+  euclideanDistance: (c, t) => Pipelines.euclideanDistance(t(c.left), t(c.right)),
+  vectorLength: (c, t) => Pipelines.vectorLength(t(c.vector)),
 };
 
 /** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */
@@ -439,13 +452,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'nullaryFunction':
-    case 'unaryFunction':
-    case 'binaryFunction':
-    case 'ternaryFunction':
-    case 'variadicFunction':
-    case 'arrayConstructor':
-    case 'mapConstructor':
+    case 'functionCall':
       throw new Error(
         'google-cloud pipeline executor: only field orderings are supported in sort yet',
       );

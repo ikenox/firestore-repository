@@ -407,8 +407,19 @@ second / third` is (ts, unit, amount) for `timestampAdd` but
      signature. Anything that would traverse operands generically must know
      payloads per name (today nothing does — executors translate per-function
      anyway).
-- [ ] Per-op numeric return type refinement (Int64-pair → Int64 vs
-      auto-widen to Double) — TODO comments already in `expression.ts`.
+     DONE (2026-07): all three distortions resolved — no factory overloads
+     remain (dual-arity families are single `(a, b, c?)` signatures with
+     optional payload fields), payloads carry named per-function fields, and
+     backend-literal arguments (`typeName`, timestamp `unit` / `granularity`
+     / `part` / `timezone`, map `key`) are plain payload fields with the
+     whole `literalStringOperand` recovery mechanism deleted. Both executors
+     dispatch through one `FunctionTranslators` mapped table via a generic
+     helper — the correlated-union dispatch needed NO type assertion — and
+     the gcloud `equalAny`-family options assertion fell away too (the d.ts
+     does declare the array-expression overload; the earlier gap report
+     missed it). Wire behavior verified unchanged by the full live catalog.
+- [x] Per-op numeric return type refinement (Int64-pair → Int64 vs
+      auto-widen to Double) — done in expressions slice 7 (`NumericResult`).
 - [x] Improve `constant(value)` type inference from runtime value — see the
       expressions plan, slice 1.
 - [ ] Tighten `arrayGet` return type via element typing.
