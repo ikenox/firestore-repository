@@ -147,6 +147,21 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
 
 ## Test assertions
 
+- **Prefer `expectTypedStrictEqual(actual, expected)` whenever the static
+  type of the asserted value is part of the claim** — above all for type
+  descriptors, whose type-level and runtime forms are produced by separate
+  mechanisms (the typed-overload/loose-implementation bridges) and must be
+  pinned TOGETHER. It is vitest's `toStrictEqual` plus a compile-time
+  EXACT type-equality guard on the two arguments, replacing the fragile
+  two-line `toStrictEqual` + `expectTypeOf` pairing where either half can
+  be forgotten independently. vitest has no built-in equivalent — its
+  matchers stay loosely typed so asymmetric matchers (`expect.any`, ...)
+  can inhabit expected values; `expectTypedStrictEqual` deliberately
+  rejects them, which is correct here: descriptor expectations are always
+  whole values. Fall back to plain `toStrictEqual` only when the types are
+  intentionally unequal (e.g. an intersection record vs its flattened
+  equivalent — say why in a comment), and to `expectTypeOf` only for
+  assertions with no runtime value (`expectTypeOf<T>()` forms, `.guards`).
 - **Compare whole values, not field lists.** Assert a result against a single
   hand-written expected value with `toStrictEqual` (which also checks the
   constructor for class instances) instead of enumerating per-field
