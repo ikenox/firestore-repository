@@ -121,6 +121,30 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
   rules, and oxlint's custom JS plugins don't expose type information. Until
   such a rule exists, it is upheld by review.
 
+## Test coverage
+
+- **Derive coverage from the input domain's structure, not from the change
+  that prompted the test.** The recurring failure mode: a test written
+  alongside a feature covers "the new thing works once", and later "is this
+  covered?" gets answered by recalling that a test exists somewhere. For any
+  closed domain (a descriptor union, the `ConstantValue` categories, an
+  operator × operand-kind space), enumerate the required cases FROM the type
+  definition and diff the test file against that enumeration — sufficiency
+  is never judged from memory.
+- **Branches compose with positions — cover the product, not the branch
+  list.** A category being exercised "somewhere" is not coverage: `null` as
+  a scalar constant, as an array ELEMENT, and as a map FIELD are three
+  distinct cells, and int64/double operands compose per SIDE of a binary
+  operator (ii/id/dd). When a domain has structural positions (top-level /
+  element / field / operand side / arity variant), write the matrix into the
+  test explicitly (loop over an enumerated table) so a reviewer reads the
+  enumeration instead of trusting it.
+- **Prefer exhaustive-by-construction.** Where the domain is a closed union,
+  key the test table on the union itself (`Record<Member, Case>` — the
+  executor-table trick) so adding a member fails to compile until it has a
+  test row; a visible literal matrix is the fallback when the compiler
+  cannot carry the enumeration.
+
 ## Test assertions
 
 - **Compare whole values, not field lists.** Assert a result against a single
