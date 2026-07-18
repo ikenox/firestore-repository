@@ -221,6 +221,29 @@ describe('expression factories', () => {
     const nestedMixedOracle = map({ deep: array(union(double(), string())) });
     expect(nestedMixed.type).toStrictEqual(nestedMixedOracle);
     expectTypeOf(nestedMixed.type).toEqualTypeOf(nestedMixedOracle);
+
+    // Null in ELEMENT position: an element/field descriptor like any other.
+    const nullElement = constant([1, null]);
+    const nullElementOracle = array(union(double(), nullType()));
+    expect(nullElement.type).toStrictEqual(nullElementOracle);
+    expectTypeOf(nullElement.type).toEqualTypeOf(nullElementOracle);
+    const nullField = constant({ a: null });
+    const nullFieldOracle = map({ a: nullType() });
+    expect(nullField.type).toStrictEqual(nullFieldOracle);
+    expectTypeOf(nullField.type).toEqualTypeOf(nullFieldOracle);
+
+    // A reference node as an ARRAY element (the map-field leaf is covered above).
+    const refElement = constant([docRefValue(['authors', 'a1'])]);
+    const refElementOracle = array(docRef());
+    expect(refElement.type).toStrictEqual(refElementOracle);
+    expectTypeOf(refElement.type).toEqualTypeOf(refElementOracle);
+
+    // Same-kind value nodes dedup to one element descriptor.
+    const vectors = constant([vectorValue([1]), vectorValue([2])]);
+    const vectorsOracle = array(vector());
+    expect(vectors.type).toStrictEqual(vectorsOracle);
+    expectTypeOf(vectors.type).toEqualTypeOf(vectorsOracle);
+
     expect(() =>
       // @ts-expect-error -- an empty array literal has no element to infer from
       constant([]),
