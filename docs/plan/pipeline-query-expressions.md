@@ -129,20 +129,46 @@ double())), field(string()))` is legal; reference-vs-`array(string())`,
 - Return types widen to the plain descriptor (`toUpper` of a literal returns
   `StringType`) — values are transformed, so precision loss is correct.
 
-### Planned ergonomics: direct literal operands (no explicit `constant()`)
+### Direct literal operands (no explicit `constant()`) — DONE (2026-07)
 
-Deliberately deferred (2026-07): nice-to-have ergonomics, not blocking any
-slice — revisit after the function slices land.
-
-Raw values should be writable directly as operands —
+Raw values are writable directly as operands —
 `equal(field('rank'), 1)`, `startsWith(field('name'), 'a')`,
 `equal(field('__name__'), docRefValue(...))` — with the factory lifting them
 via `constant()` internally, exactly like the official SDK
-(`equal(field('x'), 5)`). ONE lifting rule applied uniformly across every
-factory (an operand position accepts `Expression<D> | <the ConstantValue
-subset whose inferred descriptor fits D>`), not per-function ad-hoc
-overloads. Value constructors (`geoPointValue` / `vectorValue` /
-`docRefValue`) are values, so they ride the same rule.
+(`equal(field('x'), 5)`).
+
+The final rule, applied uniformly across EVERY factory (no per-function
+ad-hoc overloads):
+
+- An operand position takes `OperandInput` (`Expression | ConstantValue`),
+  narrowed by a domain-input alias where the domain is constrained
+  (`NumericOperandInput`, `StringOperandInput`, `BooleanOperandInput`,
+  `TimestampOperandInput`, `ArrayOperandInput`, `MapOperandInput`,
+  `ReferenceOperandInput`, `VectorOperandInput`; each is the expression domain
+  widened with the raws that lift into it, plus `null`). Unconstrained
+  positions (conditional branches, `logicalMaximum`/`logicalMinimum`,
+  `if*` fallbacks, `type`/`isError`) take the bare `OperandInput`.
+- The operand's descriptor is read type-side via `TypeOfOperand<X>` (never
+  `X['type']`), and lifted runtime-side via `toOperand` / `liftOperands`
+  (tuple-preserving) / `liftFields` (record-preserving for `mapValue`) BEFORE
+  any runtime type-computation bridge (`propagateNull`, `numericResultType`,
+  ...). Every generalized type parameter is `const` so raw literals infer
+  their narrow descriptor.
+- BOTH sides may be raw (`equal(1, 2)`, `add(1, 2)`) — inference is anchored
+  by the parameter positions, no `Expression` needed anywhere.
+- Value constructors (`geoPointValue` / `vectorValue` / `docRefValue`) are
+  `ConstantValue` leaves, so they ride the exact same lifting rule.
+- `equalAny` / `notEqualAny` accept a **raw array** in the `options` position
+  (`equalAny(f, [1, 5, 9])`): a plain array is a `ConstantValue`, so it lifts
+  to an array constant and the element-comparability guard runs against the
+  lifted `ArrayType`'s element — this is the resolution of open question 3's
+  remainder (plain-array sugar), not a special case. Likewise a raw plain
+  object in a map operand lifts through `Constant.of` to a map CONSTANT (NOT
+  a `mapValue(...)` constructor node).
+- EXCLUDED: `exists` / `isAbsent` keep `Field`-only operands — the backend
+  requires a field reference there (probed: any other expression, constants
+  included, is `INVALID_ARGUMENT`), so widening would only defer a guaranteed
+  failure to runtime.
 
 ### Optional arguments (e.g. `substring(s, start, len?)`)
 
@@ -428,10 +454,12 @@ both executors and the basic backend semantics in one round trip per family.
    (`array` / `map` constructors — the old file aliased its schema imports).
    Proposal: SDK names verbatim, constructors as `arrayValue` / `mapValue` to
    dodge the schema collision.
-3. **`equalAny` sugar** — RESOLVED (slice 5): the options operand is one
-   array-typed EXPRESSION (`constant([1, 2, 3])`, an array field, ...). No
-   plain-array sugar for now; it belongs to the deferred direct-literal
-   ergonomics layer.
+3. **`equalAny` sugar** — RESOLVED (slice 5 + direct-literal operands,
+   2026-07): the options operand is one array-typed operand — an array
+   EXPRESSION (`constant([1, 2, 3])`, an array field, ...) OR a raw array
+   `[1, 2, 3]` that lifts to an array constant under the uniform direct-literal
+   rule (see "Direct literal operands" above). The plain-array sugar is that
+   lifting rule, not a special case.
 4. **How far to take T3 typing** for `mapGet` / `mapSet` / `mapMerge`
    (key-aware subschema lookup vs a loose `MapType` return) — the old TODOs
    suggest key-aware; cost is real type-level machinery.

@@ -351,8 +351,32 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
                 spot: geoPointValue(1, 3),
               }).as('m'),
+              constant(docRefValue(['SomeCollection', 'x1'])).as('ref'),
+              constant([1, null]).as('arrNull'),
+              constant({ a: null }).as('mNull'),
+              constant([vectorValue([1]), vectorValue([2])]).as('vecs'),
+              constant([docRefValue(['SomeCollection', 'x2'])]).as('refs'),
+              constant({}).as('emptyMap'),
             ])
-            .select(() => ['s', 'n', 'b', 'z', 't', 'by', 'g', 'v', 'arr', 'mixed', 'm']),
+            .select(() => [
+              's',
+              'n',
+              'b',
+              'z',
+              't',
+              'by',
+              'g',
+              'v',
+              'arr',
+              'mixed',
+              'm',
+              'ref',
+              'arrNull',
+              'mNull',
+              'vecs',
+              'refs',
+              'emptyMap',
+            ]),
           [
             {
               data: {
@@ -372,6 +396,12 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                   inner: { flag: true, blob: new Uint8Array([9, 8]), xs: [1, 2] },
                   spot: { latitude: 1, longitude: 3 },
                 },
+                ref: ['SomeCollection', 'x1'],
+                arrNull: [1, null],
+                mNull: { a: null },
+                vecs: [[1], [2]],
+                refs: [['SomeCollection', 'x2']],
+                emptyMap: {},
               },
             },
           ],
@@ -790,6 +820,37 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
                 mapKeys: ['a', 'b'],
                 mapValues: [1, 2],
                 mapEntries: [{ k: 'a', v: 1 }],
+              },
+            },
+          ],
+        );
+      });
+
+      it('direct literal operands evaluate like their constant() forms', async () => {
+        // Raw operands lift internally via constant() — so these evaluate
+        // exactly as the explicit-constant catalog cases above.
+        // Deterministic single row: a1 (rank 1, name 'alice').
+        const first = source()
+          .sort((field) => [asc(field('rank'))])
+          .limit(1);
+        await expectPipeline(
+          first.select((field) => [
+            equal(field('rank'), 1).as('equal'),
+            startsWith(field('name'), 'a').as('startsWith'),
+            equalAny(field('rank'), [1, 5, 9]).as('equalAny'),
+            add(field('rank'), 1).as('add'),
+            conditional(greaterThan(field('rank'), 1), 'big', 'small').as('conditional'),
+            arrayValue([1, field('rank')]).as('arrayValue'),
+          ]),
+          [
+            {
+              data: {
+                equal: true,
+                startsWith: true,
+                equalAny: true,
+                add: 2,
+                conditional: 'small',
+                arrayValue: [1, 1],
               },
             },
           ],
