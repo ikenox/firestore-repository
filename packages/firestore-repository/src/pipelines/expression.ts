@@ -651,35 +651,127 @@ type SharedKeysComparable<
   K extends keyof A & keyof B,
 > = false extends (K extends unknown ? TagSetsComparable<A[K], B[K]> : never) ? false : true;
 
-export const equal = <L extends FieldType, R extends FieldType>(
-  left: Expression<L>,
-  right: Expression<R> & Comparable<L, R>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'equal', left, right });
+// ---- Prototype: direct literal operands (branch `direct-literal-operands`) ----
+// An operand position accepts a raw value alongside an expression; the factory
+// lifts the raw via `Constant.of` internally — exactly the official SDK's
+// `equal(field('x'), 5)`. ONE lifting rule, applied uniformly, NOT per-function
+// overloads. Prototyped on five factories (`equal` / `add` / `startsWith` /
+// `and` / `timestampAdd`); the rest still take `Expression`s.
 
-export const notEqual = <L extends FieldType, R extends FieldType>(
-  left: Expression<L>,
-  right: Expression<R> & Comparable<L, R>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'notEqual', left, right });
+/** Anything usable in an operand position: an expression, or a raw value liftable via `constant()`. */
+type OperandInput = Expression | ConstantValue;
 
-export const lessThan = <L extends FieldType, R extends FieldType>(
-  left: Expression<L>,
-  right: Expression<R> & Comparable<L, R>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'lessThan', left, right });
+/**
+ * The descriptor an operand input carries (an expression) or would lift to (a
+ * raw value). Distributes over a union input (used by the variadic factories).
+ */
+type TypeOfOperand<V extends OperandInput> = V extends Expression
+  ? V['type']
+  : V extends ConstantValue
+    ? ConstantTypeOf<V>
+    : never;
 
-export const lessThanOrEqual = <L extends FieldType, R extends FieldType>(
-  left: Expression<L>,
-  right: Expression<R> & Comparable<L, R>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'lessThanOrEqual', left, right });
+/**
+ * Runtime twin of the lifting rule: pass an expression through, wrap a raw
+ * value with `Constant.of`. The value nodes (`GeoPointValue` / `VectorValue` /
+ * `DocRefValue`) are NOT `ExpressionBase` — they are `ConstantValue` leaves,
+ * so they take the lifting branch, matching `constant(geoPointValue(...))`.
+ *
+ * The overload signature preserves the operand's PRECISE descriptor
+ * (`Expression<TypeOfOperand<V>>`, not a widened `Expression`): a factory that
+ * lifts first then reads `[l, r][number]['type']` for `propagateNull` /
+ * `NumericResult` must keep the precise type or its return descriptor collapses
+ * to the wide/nullable branch. The loose impl is the runtime-to-type bridge
+ * (same shape as `propagateNull`).
+ */
+function toOperand<V extends OperandInput>(v: V): Expression<TypeOfOperand<V>>;
+function toOperand(v: OperandInput): Expression {
+  return v instanceof ExpressionBase ? v : Constant.of(v);
+}
 
-export const greaterThan = <L extends FieldType, R extends FieldType>(
-  left: Expression<L>,
-  right: Expression<R> & Comparable<L, R>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'greaterThan', left, right });
+/**
+ * The lifted form of an operand-input tuple: each raw value replaced by the
+ * expression it lifts to, preserving arity and order — the type-level twin of
+ * {@link liftOperands}, fed to the variadic return-descriptor operators
+ * (`LogicalExtreme`, `ConcatElementUnion`, `MergeFields`, ...).
+ */
+type LiftedOperands<Ops extends readonly OperandInput[]> = {
+  [K in keyof Ops]: Expression<TypeOfOperand<Ops[K]>>;
+};
 
-export const greaterThanOrEqual = <L extends FieldType, R extends FieldType>(
-  left: Expression<L>,
-  right: Expression<R> & Comparable<L, R>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'greaterThanOrEqual', left, right });
+/** Tuple-preserving {@link toOperand} for the variadic factories (mirrors the input tuple's arity). */
+function liftOperands<Ops extends readonly OperandInput[]>(ops: Ops): LiftedOperands<Ops>;
+function liftOperands(ops: readonly OperandInput[]): Expression[] {
+  return ops.map(toOperand);
+}
+
+/** Record-preserving {@link toOperand} for {@link mapValue}: lift each field value to an expression. */
+function liftFields<F extends Readonly<Record<string, OperandInput>>>(
+  fields: F,
+): { [K in keyof F & string]: Expression<TypeOfOperand<F[K]>> };
+function liftFields(fields: Readonly<Record<string, OperandInput>>): Record<string, Expression> {
+  return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, toOperand(v)]));
+}
+
+// Operand-INPUT domains: the expression domain widened with the raw values
+// that lift INTO it. `null` is a member of every domain (its `NullType` is
+// null-tolerated by `Valued`, so a nullable expression already qualifies) —
+// keeping `equal(x, null)` / `add(x, null)` uniform with `constant(null)`.
+type NumericOperandInput = NumericOperand | number | null;
+type StringOperandInput = StringOperand | string | null;
+type BooleanOperandInput = Expression<Valued<'boolean'>> | boolean | null;
+type TimestampOperandInput = TimestampOperand | Date | null;
+// The composite / value-node domains: a raw array lifts to an array constant,
+// a raw plain object to a map constant, and the value nodes (`docRefValue` /
+// `vectorValue`) are `ConstantValue` leaves that lift like any other raw.
+type ArrayOperandInput = ArrayOperand | ConstantArray | null;
+type MapOperandInput = MapOperand | ConstantMap | null;
+type ReferenceOperandInput = ReferenceOperand | DocRefValue | null;
+type VectorOperandInput = VectorOperand | VectorValue | null;
+
+export const equal = <const L extends OperandInput, const R extends OperandInput>(
+  left: L,
+  right: R & Comparable<TypeOfOperand<L>, TypeOfOperand<R>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'equal', left: toOperand(left), right: toOperand(right) });
+
+export const notEqual = <const L extends OperandInput, const R extends OperandInput>(
+  left: L,
+  right: R & Comparable<TypeOfOperand<L>, TypeOfOperand<R>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'notEqual', left: toOperand(left), right: toOperand(right) });
+
+export const lessThan = <const L extends OperandInput, const R extends OperandInput>(
+  left: L,
+  right: R & Comparable<TypeOfOperand<L>, TypeOfOperand<R>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'lessThan', left: toOperand(left), right: toOperand(right) });
+
+export const lessThanOrEqual = <const L extends OperandInput, const R extends OperandInput>(
+  left: L,
+  right: R & Comparable<TypeOfOperand<L>, TypeOfOperand<R>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), {
+    name: 'lessThanOrEqual',
+    left: toOperand(left),
+    right: toOperand(right),
+  });
+
+export const greaterThan = <const L extends OperandInput, const R extends OperandInput>(
+  left: L,
+  right: R & Comparable<TypeOfOperand<L>, TypeOfOperand<R>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'greaterThan', left: toOperand(left), right: toOperand(right) });
+
+export const greaterThanOrEqual = <const L extends OperandInput, const R extends OperandInput>(
+  left: L,
+  right: R & Comparable<TypeOfOperand<L>, TypeOfOperand<R>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), {
+    name: 'greaterThanOrEqual',
+    left: toOperand(left),
+    right: toOperand(right),
+  });
 
 /** The element domain of an array descriptor (wide/lenient for imprecise inputs, like `TagSetsComparable`). */
 type ElementsOf<T extends FieldType> = T extends {
@@ -693,20 +785,33 @@ type ElementsOf<T extends FieldType> = T extends {
  * Whether `value` equals ANY element of the `options` array. Total like the
  * comparisons (probed): an absent value or a no-match is `false` — a null
  * ELEMENT is matched as a value (`equalAny(null-field, constant([null]))` is
- * `true`), never propagated. `options` is one array-typed expression
- * (`constant([1, 5, 9])`, an array field, ...) whose elements must be
+ * `true`), never propagated. `options` is one array-typed operand — an array
+ * field, `constant([1, 5, 9])`, or a **raw array** `[1, 5, 9]` that lifts to
+ * an array constant (resolving the plan's `equalAny` sugar question: the raw
+ * array is just the ordinary lifting rule, and the element-comparability
+ * guard runs against the lifted `ArrayType`'s element). Its elements must be
  * comparable with `value`.
  */
-export const equalAny = <L extends FieldType, R extends Valued<readonly FirestoreType[]>>(
-  value: Expression<L>,
-  options: Expression<R> & Comparable<L, ElementsOf<R>>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'equalAny', value, options });
+export const equalAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
+  value: L,
+  options: R & Comparable<TypeOfOperand<L>, ElementsOf<TypeOfOperand<R>>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), {
+    name: 'equalAny',
+    value: toOperand(value),
+    options: toOperand(options),
+  });
 
 /** Whether `value` differs from EVERY element of the `options` array — see {@link equalAny}. */
-export const notEqualAny = <L extends FieldType, R extends Valued<readonly FirestoreType[]>>(
-  value: Expression<L>,
-  options: Expression<R> & Comparable<L, ElementsOf<R>>,
-): FunctionCall<BoolType> => new FunctionCall(bool(), { name: 'notEqualAny', value, options });
+export const notEqualAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
+  value: L,
+  options: R & Comparable<TypeOfOperand<L>, ElementsOf<TypeOfOperand<R>>>,
+): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), {
+    name: 'notEqualAny',
+    value: toOperand(value),
+    options: toOperand(options),
+  });
 
 /**
  * Null propagation for a function's RETURN descriptor: `T` when no operand
@@ -998,45 +1103,41 @@ function logicalExtremeType(operands: readonly Expression[]): FieldType {
 
 /** Logical conjunction of two or more boolean expressions (Kleene: null operands propagate). */
 export const and = <
-  const Ops extends readonly [
-    Expression<Valued<'boolean'>>,
-    Expression<Valued<'boolean'>>,
-    ...Expression<Valued<'boolean'>>[],
-  ],
+  const Ops extends readonly [BooleanOperandInput, BooleanOperandInput, ...BooleanOperandInput[]],
 >(
   ...conditions: Ops
-): FunctionCall<PropagateNull<Ops[number]['type'], BoolType>> =>
-  new FunctionCall(propagateNull(conditions, bool()), { name: 'and', conditions });
+): FunctionCall<PropagateNull<TypeOfOperand<Ops[number]>, BoolType>> => {
+  const lifted = liftOperands(conditions);
+  return new FunctionCall(propagateNull(lifted, bool()), { name: 'and', conditions: lifted });
+};
 
 /** Logical disjunction of two or more boolean expressions (Kleene: null operands propagate). */
 export const or = <
-  const Ops extends readonly [
-    Expression<Valued<'boolean'>>,
-    Expression<Valued<'boolean'>>,
-    ...Expression<Valued<'boolean'>>[],
-  ],
+  const Ops extends readonly [BooleanOperandInput, BooleanOperandInput, ...BooleanOperandInput[]],
 >(
   ...conditions: Ops
-): FunctionCall<PropagateNull<Ops[number]['type'], BoolType>> =>
-  new FunctionCall(propagateNull(conditions, bool()), { name: 'or', conditions });
+): FunctionCall<PropagateNull<TypeOfOperand<Ops[number]>, BoolType>> => {
+  const lifted = liftOperands(conditions);
+  return new FunctionCall(propagateNull(lifted, bool()), { name: 'or', conditions: lifted });
+};
 
 /** Logical negation of a boolean expression (Kleene: a null operand propagates). */
-export const not = <C extends Expression<Valued<'boolean'>>>(
+export const not = <const C extends BooleanOperandInput>(
   condition: C,
-): FunctionCall<PropagateNull<C['type'], BoolType>> =>
-  new FunctionCall(propagateNull([condition], bool()), { name: 'not', condition });
+): FunctionCall<PropagateNull<TypeOfOperand<C>, BoolType>> => {
+  const c = toOperand(condition);
+  return new FunctionCall(propagateNull([c], bool()), { name: 'not', condition: c });
+};
 
 /** Logical parity — true iff an odd number of operands is true (Kleene: null operands propagate). */
 export const xor = <
-  const Ops extends readonly [
-    Expression<Valued<'boolean'>>,
-    Expression<Valued<'boolean'>>,
-    ...Expression<Valued<'boolean'>>[],
-  ],
+  const Ops extends readonly [BooleanOperandInput, BooleanOperandInput, ...BooleanOperandInput[]],
 >(
   ...conditions: Ops
-): FunctionCall<PropagateNull<Ops[number]['type'], BoolType>> =>
-  new FunctionCall(propagateNull(conditions, bool()), { name: 'xor', conditions });
+): FunctionCall<PropagateNull<TypeOfOperand<Ops[number]>, BoolType>> => {
+  const lifted = liftOperands(conditions);
+  return new FunctionCall(propagateNull(lifted, bool()), { name: 'xor', conditions: lifted });
+};
 
 /**
  * Branches on a boolean condition: the `then` value when it is `true`, the
@@ -1045,20 +1146,24 @@ export const xor = <
  * propagates.
  */
 export const conditional = <
-  C extends Expression<Valued<'boolean'>>,
-  T extends Expression,
-  E extends Expression,
+  const C extends BooleanOperandInput,
+  const T extends OperandInput,
+  const E extends OperandInput,
 >(
   condition: C,
   thenExpr: T,
   elseExpr: E,
-): FunctionCall<EitherType<T['type'], E['type']>> =>
-  new FunctionCall(eitherType(thenExpr, elseExpr), {
+): FunctionCall<EitherType<TypeOfOperand<T>, TypeOfOperand<E>>> => {
+  const c = toOperand(condition);
+  const t = toOperand(thenExpr);
+  const e = toOperand(elseExpr);
+  return new FunctionCall(eitherType(t, e), {
     name: 'conditional',
-    condition,
-    thenExpr,
-    elseExpr,
+    condition: c,
+    thenExpr: t,
+    elseExpr: e,
   });
+};
 
 /**
  * The largest operand under the backend's cross-type value ordering. Null
@@ -1066,19 +1171,23 @@ export const conditional = <
  * ordering); when every operand is null/absent the result is null.
  */
 export const logicalMaximum = <
-  const Ops extends readonly [Expression, Expression, ...Expression[]],
+  const Ops extends readonly [OperandInput, OperandInput, ...OperandInput[]],
 >(
   ...operands: Ops
-): FunctionCall<LogicalExtreme<Ops>> =>
-  new FunctionCall(logicalExtremeType(operands), { name: 'logicalMaximum', operands });
+): FunctionCall<LogicalExtreme<LiftedOperands<Ops>>> => {
+  const lifted = liftOperands(operands);
+  return new FunctionCall(logicalExtremeType(lifted), { name: 'logicalMaximum', operands: lifted });
+};
 
 /** The smallest operand — see {@link logicalMaximum}. */
 export const logicalMinimum = <
-  const Ops extends readonly [Expression, Expression, ...Expression[]],
+  const Ops extends readonly [OperandInput, OperandInput, ...OperandInput[]],
 >(
   ...operands: Ops
-): FunctionCall<LogicalExtreme<Ops>> =>
-  new FunctionCall(logicalExtremeType(operands), { name: 'logicalMinimum', operands });
+): FunctionCall<LogicalExtreme<LiftedOperands<Ops>>> => {
+  const lifted = liftOperands(operands);
+  return new FunctionCall(logicalExtremeType(lifted), { name: 'logicalMinimum', operands: lifted });
+};
 
 // Operand shorthands for the factories below. These name EXPRESSION domains
 // (the null special-casing itself lives once, in `Valued`).
@@ -1120,108 +1229,165 @@ function numericResultType(operands: readonly Expression[]): FieldType {
 export const rand = (): FunctionCall<DoubleType> => new FunctionCall(double(), { name: 'rand' });
 
 /** Numeric addition. */
-export const add = <L extends NumericOperand, R extends NumericOperand>(
+export const add = <const L extends NumericOperandInput, const R extends NumericOperandInput>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+): FunctionCall<
+  PropagateNull<
+    TypeOfOperand<L> | TypeOfOperand<R>,
+    NumericResult<TypeOfOperand<L> | TypeOfOperand<R>>
+  >
+> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], numericResultType([l, r])), {
     name: 'add',
-    left,
-    right,
+    left: l,
+    right: r,
   });
+};
 
 /** Numeric subtraction (`left - right`). */
-export const subtract = <L extends NumericOperand, R extends NumericOperand>(
+export const subtract = <const L extends NumericOperandInput, const R extends NumericOperandInput>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+): FunctionCall<
+  PropagateNull<
+    TypeOfOperand<L> | TypeOfOperand<R>,
+    NumericResult<TypeOfOperand<L> | TypeOfOperand<R>>
+  >
+> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], numericResultType([l, r])), {
     name: 'subtract',
-    left,
-    right,
+    left: l,
+    right: r,
   });
+};
 
 /** Numeric multiplication. */
-export const multiply = <L extends NumericOperand, R extends NumericOperand>(
+export const multiply = <const L extends NumericOperandInput, const R extends NumericOperandInput>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+): FunctionCall<
+  PropagateNull<
+    TypeOfOperand<L> | TypeOfOperand<R>,
+    NumericResult<TypeOfOperand<L> | TypeOfOperand<R>>
+  >
+> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], numericResultType([l, r])), {
     name: 'multiply',
-    left,
-    right,
+    left: l,
+    right: r,
   });
+};
 
 /** Numeric division (`left / right`) — TRUNCATING on an int64 pair (probed); a zero divisor is a backend ERROR value. */
-export const divide = <L extends NumericOperand, R extends NumericOperand>(
+export const divide = <const L extends NumericOperandInput, const R extends NumericOperandInput>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+): FunctionCall<
+  PropagateNull<
+    TypeOfOperand<L> | TypeOfOperand<R>,
+    NumericResult<TypeOfOperand<L> | TypeOfOperand<R>>
+  >
+> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], numericResultType([l, r])), {
     name: 'divide',
-    left,
-    right,
+    left: l,
+    right: r,
   });
+};
 
 /** Modulo (`left % right`). */
-export const mod = <L extends NumericOperand, R extends NumericOperand>(
+export const mod = <const L extends NumericOperandInput, const R extends NumericOperandInput>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], NumericResult<L['type'] | R['type']>>> =>
-  new FunctionCall(propagateNull([left, right], numericResultType([left, right])), {
+): FunctionCall<
+  PropagateNull<
+    TypeOfOperand<L> | TypeOfOperand<R>,
+    NumericResult<TypeOfOperand<L> | TypeOfOperand<R>>
+  >
+> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], numericResultType([l, r])), {
     name: 'mod',
-    left,
-    right,
+    left: l,
+    right: r,
   });
+};
 
 /** Exponentiation (`base ** exponent`). */
-export const pow = <L extends NumericOperand, R extends NumericOperand>(
+export const pow = <const L extends NumericOperandInput, const R extends NumericOperandInput>(
   base: L,
   exponent: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([base, exponent], double()), { name: 'pow', base, exponent });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, DoubleType>> => {
+  const b = toOperand(base);
+  const e = toOperand(exponent);
+  return new FunctionCall(propagateNull([b, e], double()), { name: 'pow', base: b, exponent: e });
+};
 
 /** Absolute value. */
-export const abs = <Op extends NumericOperand>(
+export const abs = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
-  new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'abs', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, NumericResult<TypeOfOperand<Op>>>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], numericResultType([v])), { name: 'abs', value: v });
+};
 
 /** Rounds up to the nearest whole number. */
-export const ceil = <Op extends NumericOperand>(
+export const ceil = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
-  new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'ceil', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, NumericResult<TypeOfOperand<Op>>>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], numericResultType([v])), { name: 'ceil', value: v });
+};
 
 /** Rounds down to the nearest whole number. */
-export const floor = <Op extends NumericOperand>(
+export const floor = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], NumericResult<Op['type']>>> =>
-  new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'floor', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, NumericResult<TypeOfOperand<Op>>>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], numericResultType([v])), { name: 'floor', value: v });
+};
 
 /** Square root; a negative operand is a backend ERROR value. */
-export const sqrt = <Op extends NumericOperand>(
+export const sqrt = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([value], double()), { name: 'sqrt', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, DoubleType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], double()), { name: 'sqrt', value: v });
+};
 
 /** The exponential function (e ** operand). */
-export const exp = <Op extends NumericOperand>(
+export const exp = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([value], double()), { name: 'exp', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, DoubleType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], double()), { name: 'exp', value: v });
+};
 
 /** Natural logarithm; a non-positive operand is a backend ERROR value. */
-export const ln = <Op extends NumericOperand>(
+export const ln = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([value], double()), { name: 'ln', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, DoubleType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], double()), { name: 'ln', value: v });
+};
 
 /** Base-10 logarithm; a non-positive operand is a backend ERROR value. */
-export const log10 = <Op extends NumericOperand>(
+export const log10 = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([value], double()), { name: 'log10', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, DoubleType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], double()), { name: 'log10', value: v });
+};
 
 // The dual-arity factories (round/trunc, the trim family, substring,
 // timestampTruncate/timestampExtract) have ONE signature with an optional
@@ -1233,110 +1399,160 @@ export const log10 = <Op extends NumericOperand>(
 // runtime-to-type bridge (same shape as `propagateNull`).
 
 /** Rounds to the nearest whole number, or to `decimalPlaces` decimal places. */
-export function round<Op extends NumericOperand, P extends NumericOperand = never>(
+export function round<
+  const Op extends NumericOperandInput,
+  const P extends NumericOperandInput = never,
+>(
   value: Op,
   decimalPlaces?: P,
-): FunctionCall<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
-export function round(value: Expression, decimalPlaces?: Expression): FunctionCall {
-  return decimalPlaces === undefined
-    ? new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'round', value })
-    : new FunctionCall(propagateNull([value, decimalPlaces], numericResultType([value])), {
-        name: 'round',
-        value,
-        decimalPlaces,
-      });
+): FunctionCall<
+  PropagateNull<TypeOfOperand<Op> | TypeOfOperand<P>, NumericResult<TypeOfOperand<Op>>>
+>;
+export function round(value: OperandInput, decimalPlaces?: OperandInput): FunctionCall {
+  const v = toOperand(value);
+  if (decimalPlaces === undefined) {
+    return new FunctionCall(propagateNull([v], numericResultType([v])), {
+      name: 'round',
+      value: v,
+    });
+  }
+  const d = toOperand(decimalPlaces);
+  return new FunctionCall(propagateNull([v, d], numericResultType([v])), {
+    name: 'round',
+    value: v,
+    decimalPlaces: d,
+  });
 }
 
 /** Truncates toward zero, to a whole number or to `decimalPlaces` decimal places. */
-export function trunc<Op extends NumericOperand, P extends NumericOperand = never>(
+export function trunc<
+  const Op extends NumericOperandInput,
+  const P extends NumericOperandInput = never,
+>(
   value: Op,
   decimalPlaces?: P,
-): FunctionCall<PropagateNull<Op['type'] | P['type'], NumericResult<Op['type']>>>;
-export function trunc(value: Expression, decimalPlaces?: Expression): FunctionCall {
-  return decimalPlaces === undefined
-    ? new FunctionCall(propagateNull([value], numericResultType([value])), { name: 'trunc', value })
-    : new FunctionCall(propagateNull([value, decimalPlaces], numericResultType([value])), {
-        name: 'trunc',
-        value,
-        decimalPlaces,
-      });
+): FunctionCall<
+  PropagateNull<TypeOfOperand<Op> | TypeOfOperand<P>, NumericResult<TypeOfOperand<Op>>>
+>;
+export function trunc(value: OperandInput, decimalPlaces?: OperandInput): FunctionCall {
+  const v = toOperand(value);
+  if (decimalPlaces === undefined) {
+    return new FunctionCall(propagateNull([v], numericResultType([v])), {
+      name: 'trunc',
+      value: v,
+    });
+  }
+  const d = toOperand(decimalPlaces);
+  return new FunctionCall(propagateNull([v, d], numericResultType([v])), {
+    name: 'trunc',
+    value: v,
+    decimalPlaces: d,
+  });
 }
 
 // ---- string ----
 
 /** The number of characters (Unicode code points) in a string. */
-export const charLength = <Op extends StringOperand>(
+export const charLength = <const Op extends StringOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value], int64()), { name: 'charLength', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], int64()), { name: 'charLength', value: v });
+};
 
 /** The number of bytes in a string's UTF-8 encoding. */
-export const byteLength = <Op extends StringOperand>(
+export const byteLength = <const Op extends StringOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value], int64()), { name: 'byteLength', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], int64()), { name: 'byteLength', value: v });
+};
 
 /** Lowercases a string. */
-export const toLower = <Op extends StringOperand>(
+export const toLower = <const Op extends StringOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], StringType>> =>
-  new FunctionCall(propagateNull([value], string()), { name: 'toLower', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, StringType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], string()), { name: 'toLower', value: v });
+};
 
 /** Uppercases a string. */
-export const toUpper = <Op extends StringOperand>(
+export const toUpper = <const Op extends StringOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], StringType>> =>
-  new FunctionCall(propagateNull([value], string()), { name: 'toUpper', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, StringType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], string()), { name: 'toUpper', value: v });
+};
 
 /** Reverses a string. */
-export const stringReverse = <Op extends StringOperand>(
+export const stringReverse = <const Op extends StringOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], StringType>> =>
-  new FunctionCall(propagateNull([value], string()), { name: 'stringReverse', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, StringType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], string()), { name: 'stringReverse', value: v });
+};
 
 /** Trims whitespace from both ends, or every character of `characters`. */
-export function trim<Op extends StringOperand, C extends StringOperand = never>(
+export function trim<
+  const Op extends StringOperandInput,
+  const C extends StringOperandInput = never,
+>(
   value: Op,
   characters?: C,
-): FunctionCall<PropagateNull<Op['type'] | C['type'], StringType>>;
-export function trim(value: Expression, characters?: Expression): FunctionCall {
-  return characters === undefined
-    ? new FunctionCall(propagateNull([value], string()), { name: 'trim', value })
-    : new FunctionCall(propagateNull([value, characters], string()), {
-        name: 'trim',
-        value,
-        characters,
-      });
+): FunctionCall<PropagateNull<TypeOfOperand<Op> | TypeOfOperand<C>, StringType>>;
+export function trim(value: OperandInput, characters?: OperandInput): FunctionCall {
+  const v = toOperand(value);
+  if (characters === undefined) {
+    return new FunctionCall(propagateNull([v], string()), { name: 'trim', value: v });
+  }
+  const c = toOperand(characters);
+  return new FunctionCall(propagateNull([v, c], string()), {
+    name: 'trim',
+    value: v,
+    characters: c,
+  });
 }
 
 /** Trims the leading end — see {@link trim}. */
-export function ltrim<Op extends StringOperand, C extends StringOperand = never>(
+export function ltrim<
+  const Op extends StringOperandInput,
+  const C extends StringOperandInput = never,
+>(
   value: Op,
   characters?: C,
-): FunctionCall<PropagateNull<Op['type'] | C['type'], StringType>>;
-export function ltrim(value: Expression, characters?: Expression): FunctionCall {
-  return characters === undefined
-    ? new FunctionCall(propagateNull([value], string()), { name: 'ltrim', value })
-    : new FunctionCall(propagateNull([value, characters], string()), {
-        name: 'ltrim',
-        value,
-        characters,
-      });
+): FunctionCall<PropagateNull<TypeOfOperand<Op> | TypeOfOperand<C>, StringType>>;
+export function ltrim(value: OperandInput, characters?: OperandInput): FunctionCall {
+  const v = toOperand(value);
+  if (characters === undefined) {
+    return new FunctionCall(propagateNull([v], string()), { name: 'ltrim', value: v });
+  }
+  const c = toOperand(characters);
+  return new FunctionCall(propagateNull([v, c], string()), {
+    name: 'ltrim',
+    value: v,
+    characters: c,
+  });
 }
 
 /** Trims the trailing end — see {@link trim}. */
-export function rtrim<Op extends StringOperand, C extends StringOperand = never>(
+export function rtrim<
+  const Op extends StringOperandInput,
+  const C extends StringOperandInput = never,
+>(
   value: Op,
   characters?: C,
-): FunctionCall<PropagateNull<Op['type'] | C['type'], StringType>>;
-export function rtrim(value: Expression, characters?: Expression): FunctionCall {
-  return characters === undefined
-    ? new FunctionCall(propagateNull([value], string()), { name: 'rtrim', value })
-    : new FunctionCall(propagateNull([value, characters], string()), {
-        name: 'rtrim',
-        value,
-        characters,
-      });
+): FunctionCall<PropagateNull<TypeOfOperand<Op> | TypeOfOperand<C>, StringType>>;
+export function rtrim(value: OperandInput, characters?: OperandInput): FunctionCall {
+  const v = toOperand(value);
+  if (characters === undefined) {
+    return new FunctionCall(propagateNull([v], string()), { name: 'rtrim', value: v });
+  }
+  const c = toOperand(characters);
+  return new FunctionCall(propagateNull([v, c], string()), {
+    name: 'rtrim',
+    value: v,
+    characters: c,
+  });
 }
 
 // The string predicates PROPAGATE null (probed: startsWith(null, 'x') is
@@ -1344,171 +1560,251 @@ export function rtrim(value: Expression, characters?: Expression): FunctionCall 
 // PropagateNull in their return types.
 
 /** Whether `value` starts with `prefix`. */
-export const startsWith = <L extends StringOperand, R extends StringOperand>(
+export const startsWith = <const L extends StringOperandInput, const R extends StringOperandInput>(
   value: L,
   prefix: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, prefix], bool()), { name: 'startsWith', value, prefix });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, BoolType>> => {
+  const v = toOperand(value);
+  const p = toOperand(prefix);
+  return new FunctionCall(propagateNull([v, p], bool()), {
+    name: 'startsWith',
+    value: v,
+    prefix: p,
+  });
+};
 
 /** Whether `value` ends with `suffix`. */
-export const endsWith = <L extends StringOperand, R extends StringOperand>(
+export const endsWith = <const L extends StringOperandInput, const R extends StringOperandInput>(
   value: L,
   suffix: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, suffix], bool()), { name: 'endsWith', value, suffix });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, BoolType>> => {
+  const v = toOperand(value);
+  const s = toOperand(suffix);
+  return new FunctionCall(propagateNull([v, s], bool()), { name: 'endsWith', value: v, suffix: s });
+};
 
 /** Whether `value` contains `substring`. */
-export const stringContains = <L extends StringOperand, R extends StringOperand>(
+export const stringContains = <
+  const L extends StringOperandInput,
+  const R extends StringOperandInput,
+>(
   value: L,
   substring: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, substring], bool()), {
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, BoolType>> => {
+  const v = toOperand(value);
+  const s = toOperand(substring);
+  return new FunctionCall(propagateNull([v, s], bool()), {
     name: 'stringContains',
-    value,
-    substring,
+    value: v,
+    substring: s,
   });
+};
 
 /** Concatenates two or more strings. */
 export const stringConcat = <
-  const Ops extends readonly [StringOperand, StringOperand, ...StringOperand[]],
+  const Ops extends readonly [StringOperandInput, StringOperandInput, ...StringOperandInput[]],
 >(
   ...operands: Ops
-): FunctionCall<PropagateNull<Ops[number]['type'], StringType>> =>
-  new FunctionCall(propagateNull(operands, string()), { name: 'stringConcat', operands });
+): FunctionCall<PropagateNull<TypeOfOperand<Ops[number]>, StringType>> => {
+  const lifted = liftOperands(operands);
+  return new FunctionCall(propagateNull(lifted, string()), {
+    name: 'stringConcat',
+    operands: lifted,
+  });
+};
 
 /** The 0-based index of the first occurrence of `substring`, or -1 if absent. */
-export const stringIndexOf = <L extends StringOperand, R extends StringOperand>(
+export const stringIndexOf = <
+  const L extends StringOperandInput,
+  const R extends StringOperandInput,
+>(
   value: L,
   substring: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value, substring], int64()), {
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, Int64Type>> => {
+  const v = toOperand(value);
+  const s = toOperand(substring);
+  return new FunctionCall(propagateNull([v, s], int64()), {
     name: 'stringIndexOf',
-    value,
-    substring,
+    value: v,
+    substring: s,
   });
+};
 
 /** Repeats a string `count` times. */
-export const stringRepeat = <L extends StringOperand, R extends NumericOperand>(
+export const stringRepeat = <
+  const L extends StringOperandInput,
+  const R extends NumericOperandInput,
+>(
   value: L,
   count: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], StringType>> =>
-  new FunctionCall(propagateNull([value, count], string()), { name: 'stringRepeat', value, count });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, StringType>> => {
+  const v = toOperand(value);
+  const c = toOperand(count);
+  return new FunctionCall(propagateNull([v, c], string()), {
+    name: 'stringRepeat',
+    value: v,
+    count: c,
+  });
+};
 
 /** Replaces every occurrence of `find` with `replacement`. */
 export const stringReplaceAll = <
-  L extends StringOperand,
-  M extends StringOperand,
-  R extends StringOperand,
+  const L extends StringOperandInput,
+  const M extends StringOperandInput,
+  const R extends StringOperandInput,
 >(
   value: L,
   find: M,
   replacement: R,
-): FunctionCall<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
-  new FunctionCall(propagateNull([value, find, replacement], string()), {
+): FunctionCall<
+  PropagateNull<TypeOfOperand<L> | TypeOfOperand<M> | TypeOfOperand<R>, StringType>
+> => {
+  const v = toOperand(value);
+  const f = toOperand(find);
+  const r = toOperand(replacement);
+  return new FunctionCall(propagateNull([v, f, r], string()), {
     name: 'stringReplaceAll',
-    value,
-    find,
-    replacement,
+    value: v,
+    find: f,
+    replacement: r,
   });
+};
 
 /** Replaces the first occurrence of `find` with `replacement`. */
 export const stringReplaceOne = <
-  L extends StringOperand,
-  M extends StringOperand,
-  R extends StringOperand,
+  const L extends StringOperandInput,
+  const M extends StringOperandInput,
+  const R extends StringOperandInput,
 >(
   value: L,
   find: M,
   replacement: R,
-): FunctionCall<PropagateNull<L['type'] | M['type'] | R['type'], StringType>> =>
-  new FunctionCall(propagateNull([value, find, replacement], string()), {
+): FunctionCall<
+  PropagateNull<TypeOfOperand<L> | TypeOfOperand<M> | TypeOfOperand<R>, StringType>
+> => {
+  const v = toOperand(value);
+  const f = toOperand(find);
+  const r = toOperand(replacement);
+  return new FunctionCall(propagateNull([v, f, r], string()), {
     name: 'stringReplaceOne',
-    value,
-    find,
-    replacement,
+    value: v,
+    find: f,
+    replacement: r,
   });
+};
 
 /**
  * The substring from the 0-based `position`, spanning `length` characters or
  * (omitted) to the end of the string.
  */
 export function substring<
-  Op extends StringOperand,
-  P extends NumericOperand,
-  Len extends NumericOperand = never,
+  const Op extends StringOperandInput,
+  const P extends NumericOperandInput,
+  const Len extends NumericOperandInput = never,
 >(
   value: Op,
   position: P,
   length?: Len,
-): FunctionCall<PropagateNull<Op['type'] | P['type'] | Len['type'], StringType>>;
+): FunctionCall<
+  PropagateNull<TypeOfOperand<Op> | TypeOfOperand<P> | TypeOfOperand<Len>, StringType>
+>;
 export function substring(
-  value: Expression,
-  position: Expression,
-  length?: Expression,
+  value: OperandInput,
+  position: OperandInput,
+  length?: OperandInput,
 ): FunctionCall {
-  return length === undefined
-    ? new FunctionCall(propagateNull([value, position], string()), {
-        name: 'substring',
-        value,
-        position,
-      })
-    : new FunctionCall(propagateNull([value, position, length], string()), {
-        name: 'substring',
-        value,
-        position,
-        length,
-      });
+  const v = toOperand(value);
+  const p = toOperand(position);
+  if (length === undefined) {
+    return new FunctionCall(propagateNull([v, p], string()), {
+      name: 'substring',
+      value: v,
+      position: p,
+    });
+  }
+  const l = toOperand(length);
+  return new FunctionCall(propagateNull([v, p, l], string()), {
+    name: 'substring',
+    value: v,
+    position: p,
+    length: l,
+  });
 }
 
 /** SQL LIKE match (`%` any sequence, `_` any single character). */
-export const like = <L extends StringOperand, R extends StringOperand>(
+export const like = <const L extends StringOperandInput, const R extends StringOperandInput>(
   value: L,
   pattern: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, pattern], bool()), { name: 'like', value, pattern });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, BoolType>> => {
+  const v = toOperand(value);
+  const p = toOperand(pattern);
+  return new FunctionCall(propagateNull([v, p], bool()), { name: 'like', value: v, pattern: p });
+};
 
 // ---- regex ----
 // An invalid pattern is a backend ERROR value (see the error-channel note
 // on the arithmetic section).
 
 /** Whether `value` contains a match of the RE2 `pattern`. */
-export const regexContains = <L extends StringOperand, R extends StringOperand>(
+export const regexContains = <
+  const L extends StringOperandInput,
+  const R extends StringOperandInput,
+>(
   value: L,
   pattern: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, pattern], bool()), {
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, BoolType>> => {
+  const v = toOperand(value);
+  const p = toOperand(pattern);
+  return new FunctionCall(propagateNull([v, p], bool()), {
     name: 'regexContains',
-    value,
-    pattern,
+    value: v,
+    pattern: p,
   });
+};
 
 /** Whether `value` ENTIRELY matches the RE2 `pattern`. */
-export const regexMatch = <L extends StringOperand, R extends StringOperand>(
+export const regexMatch = <const L extends StringOperandInput, const R extends StringOperandInput>(
   value: L,
   pattern: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, pattern], bool()), { name: 'regexMatch', value, pattern });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, BoolType>> => {
+  const v = toOperand(value);
+  const p = toOperand(pattern);
+  return new FunctionCall(propagateNull([v, p], bool()), {
+    name: 'regexMatch',
+    value: v,
+    pattern: p,
+  });
+};
 
 /**
  * The first match of the RE2 `pattern`, or `null` when there is none — the
  * result is ALWAYS nullable (probed), independent of operand nullability.
  */
-export const regexFind = <L extends StringOperand, R extends StringOperand>(
+export const regexFind = <const L extends StringOperandInput, const R extends StringOperandInput>(
   value: L,
   pattern: R,
-): FunctionCall<UnionType<[StringType, NullType]>> =>
-  new FunctionCall(nullable(string()), { name: 'regexFind', value, pattern });
+): FunctionCall<UnionType<[StringType, NullType]>> => {
+  const v = toOperand(value);
+  const p = toOperand(pattern);
+  return new FunctionCall(nullable(string()), { name: 'regexFind', value: v, pattern: p });
+};
 
 /** Every match of the RE2 `pattern` (empty array when there is none). */
-export const regexFindAll = <L extends StringOperand, R extends StringOperand>(
+export const regexFindAll = <
+  const L extends StringOperandInput,
+  const R extends StringOperandInput,
+>(
   value: L,
   pattern: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], ArrayType<StringType>>> =>
-  new FunctionCall(propagateNull([value, pattern], array(string())), {
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, ArrayType<StringType>>> => {
+  const v = toOperand(value);
+  const p = toOperand(pattern);
+  return new FunctionCall(propagateNull([v, p], array(string())), {
     name: 'regexFindAll',
-    value,
-    pattern,
+    value: v,
+    pattern: p,
   });
+};
 
 // ---- reference ----
 
@@ -1516,16 +1812,20 @@ export const regexFindAll = <L extends StringOperand, R extends StringOperand>(
 type ReferenceOperand = Expression<Valued<'reference'>>;
 
 /** The document id (the path's last segment) of a reference. */
-export const documentId = <Op extends ReferenceOperand>(
+export const documentId = <const Op extends ReferenceOperandInput>(
   reference: Op,
-): FunctionCall<PropagateNull<Op['type'], StringType>> =>
-  new FunctionCall(propagateNull([reference], string()), { name: 'documentId', reference });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, StringType>> => {
+  const r = toOperand(reference);
+  return new FunctionCall(propagateNull([r], string()), { name: 'documentId', reference: r });
+};
 
 /** The id of the collection containing the referenced document. */
-export const collectionId = <Op extends ReferenceOperand>(
+export const collectionId = <const Op extends ReferenceOperandInput>(
   reference: Op,
-): FunctionCall<PropagateNull<Op['type'], StringType>> =>
-  new FunctionCall(propagateNull([reference], string()), { name: 'collectionId', reference });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, StringType>> => {
+  const r = toOperand(reference);
+  return new FunctionCall(propagateNull([r], string()), { name: 'collectionId', reference: r });
+};
 
 // ---- type ----
 
@@ -1562,10 +1862,12 @@ export type FirestoreTypeName =
  * value yields `'null'` (not a null result), so only ABSENCE propagates —
  * see {@link PropagateAbsence}.
  */
-export const type = <Op extends Expression>(
+export const type = <const Op extends OperandInput>(
   value: Op,
-): FunctionCall<PropagateAbsence<Op['type'], LiteralType<FirestoreTypeName[]>>> =>
-  new FunctionCall(propagateAbsence([value], typeNameLiteral()), { name: 'type', value });
+): FunctionCall<PropagateAbsence<TypeOfOperand<Op>, LiteralType<FirestoreTypeName[]>>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateAbsence([v], typeNameLiteral()), { name: 'type', value: v });
+};
 
 /**
  * Whether the operand's value is of the named backend type. The name must be
@@ -1573,11 +1875,13 @@ export const type = <Op extends Expression>(
  * as a plain payload field; the executors serialize it as the wire constant.
  * Type-observing like {@link type}: only absence propagates.
  */
-export const isType = <Op extends Expression>(
+export const isType = <const Op extends OperandInput>(
   value: Op,
   typeName: FirestoreTypeName,
-): FunctionCall<PropagateAbsence<Op['type'], BoolType>> =>
-  new FunctionCall(propagateAbsence([value], bool()), { name: 'isType', value, typeName });
+): FunctionCall<PropagateAbsence<TypeOfOperand<Op>, BoolType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateAbsence([v], bool()), { name: 'isType', value: v, typeName });
+};
 
 /** The `type()` return descriptor: the closed backend type-name vocabulary. */
 const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
@@ -1644,22 +1948,31 @@ function elementUnionType(elements: readonly Expression[]): FieldType {
  * (probed: fields nest arbitrarily). Non-empty, mirroring `constant([])`'s
  * rejection: an empty literal has no element to infer a descriptor from.
  */
-export const arrayValue = <const Els extends readonly [Expression, ...Expression[]]>(
+export const arrayValue = <const Els extends readonly [OperandInput, ...OperandInput[]]>(
   elements: Els,
-): FunctionCall<ArrayType<ElementUnion<Els>>> =>
-  new FunctionCall(array(elementUnionType(elements)), { name: 'arrayValue', elements });
+): FunctionCall<ArrayType<ElementUnion<LiftedOperands<Els>>>> => {
+  const lifted = liftOperands(elements);
+  return new FunctionCall(array(elementUnionType(lifted)), {
+    name: 'arrayValue',
+    elements: lifted,
+  });
+};
 
 /** The number of elements. */
-export const arrayLength = <Op extends ArrayOperand>(
+export const arrayLength = <const Op extends ArrayOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value], int64()), { name: 'arrayLength', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], int64()), { name: 'arrayLength', value: v });
+};
 
 /** The array reversed. */
-export const arrayReverse = <Op extends ArrayOperand>(
+export const arrayReverse = <const Op extends ArrayOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], StripNull<Op['type']>>> =>
-  new FunctionCall(propagateNull([value], stripNullOf(value)), { name: 'arrayReverse', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, StripNull<TypeOfOperand<Op>>>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], stripNullOf(v)), { name: 'arrayReverse', value: v });
+};
 
 /** Runtime counterpart of `StripNull<Op['type']>` over an expression (same bridge shape as `propagateNull`). */
 function stripNullOf<Op extends Expression>(value: Op): StripNull<Op['type']>;
@@ -1673,11 +1986,17 @@ function stripNullOf(value: Expression): FieldType {
  * (not an error), approximated as null in the descriptor, like `regexFind`'s
  * no-match.
  */
-export const arrayGet = <Arr extends ArrayOperand, Idx extends NumericOperand>(
+export const arrayGet = <
+  const Arr extends ArrayOperandInput,
+  const Idx extends NumericOperandInput,
+>(
   value: Arr,
   index: Idx,
-): FunctionCall<UnionType<[ElementsOf<StripNull<Arr['type']>>, NullType]>> =>
-  new FunctionCall(nullable(elementTypeOf(value)), { name: 'arrayGet', value, index });
+): FunctionCall<UnionType<[ElementsOf<StripNull<TypeOfOperand<Arr>>>, NullType]>> => {
+  const v = toOperand(value);
+  const i = toOperand(index);
+  return new FunctionCall(nullable(elementTypeOf(v)), { name: 'arrayGet', value: v, index: i });
+};
 
 /** Runtime counterpart of `ElementsOf<StripNull<...>>` (same bridge shape as `propagateNull`). */
 function elementTypeOf<Arr extends Expression>(value: Arr): ElementsOf<StripNull<Arr['type']>>;
@@ -1690,46 +2009,80 @@ function elementTypeOf(value: Expression): FieldType {
 }
 
 /** Whether the array contains the element (a null element is compared as a value). */
-export const arrayContains = <Arr extends ArrayOperand, El extends FieldType>(
+export const arrayContains = <const Arr extends ArrayOperandInput, const El extends OperandInput>(
   value: Arr,
-  element: Expression<El> & Comparable<ElementsOf<StripNull<Arr['type']>>, El>,
-): FunctionCall<PropagateNull<Arr['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value], bool()), { name: 'arrayContains', value, element });
+  element: El & Comparable<ElementsOf<StripNull<TypeOfOperand<Arr>>>, TypeOfOperand<El>>,
+): FunctionCall<PropagateNull<TypeOfOperand<Arr>, BoolType>> => {
+  const v = toOperand(value);
+  const e = toOperand(element);
+  return new FunctionCall(propagateNull([v], bool()), {
+    name: 'arrayContains',
+    value: v,
+    element: e,
+  });
+};
 
 /** Whether the array contains EVERY element of the options array. */
-export const arrayContainsAll = <Arr extends ArrayOperand, Opts extends ArrayOperand>(
+export const arrayContainsAll = <
+  const Arr extends ArrayOperandInput,
+  const Opts extends ArrayOperandInput,
+>(
   value: Arr,
   options: Opts &
-    Comparable<ElementsOf<StripNull<Arr['type']>>, ElementsOf<StripNull<Opts['type']>>>,
-): FunctionCall<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, options], bool()), {
+    Comparable<
+      ElementsOf<StripNull<TypeOfOperand<Arr>>>,
+      ElementsOf<StripNull<TypeOfOperand<Opts>>>
+    >,
+): FunctionCall<PropagateNull<TypeOfOperand<Arr> | TypeOfOperand<Opts>, BoolType>> => {
+  const v = toOperand(value);
+  // Drop the `& Comparable<...>` guard before lifting: the guard constrains
+  // the CALLER but must not leak into the operand's descriptor computation.
+  const opts: Opts = options;
+  const o = toOperand(opts);
+  return new FunctionCall(propagateNull([v, o], bool()), {
     name: 'arrayContainsAll',
-    value,
-    options,
+    value: v,
+    options: o,
   });
+};
 
 /** Whether the array contains ANY element of the options array. */
-export const arrayContainsAny = <Arr extends ArrayOperand, Opts extends ArrayOperand>(
+export const arrayContainsAny = <
+  const Arr extends ArrayOperandInput,
+  const Opts extends ArrayOperandInput,
+>(
   value: Arr,
   options: Opts &
-    Comparable<ElementsOf<StripNull<Arr['type']>>, ElementsOf<StripNull<Opts['type']>>>,
-): FunctionCall<PropagateNull<Arr['type'] | Opts['type'], BoolType>> =>
-  new FunctionCall(propagateNull([value, options], bool()), {
+    Comparable<
+      ElementsOf<StripNull<TypeOfOperand<Arr>>>,
+      ElementsOf<StripNull<TypeOfOperand<Opts>>>
+    >,
+): FunctionCall<PropagateNull<TypeOfOperand<Arr> | TypeOfOperand<Opts>, BoolType>> => {
+  const v = toOperand(value);
+  // Drop the `& Comparable<...>` guard before lifting (see arrayContainsAll).
+  const opts: Opts = options;
+  const o = toOperand(opts);
+  return new FunctionCall(propagateNull([v, o], bool()), {
     name: 'arrayContainsAny',
-    value,
-    options,
+    value: v,
+    options: o,
   });
+};
 
 /** The concatenation of two or more arrays. */
 export const arrayConcat = <
-  const Ops extends readonly [ArrayOperand, ArrayOperand, ...ArrayOperand[]],
+  const Ops extends readonly [ArrayOperandInput, ArrayOperandInput, ...ArrayOperandInput[]],
 >(
   ...operands: Ops
-): FunctionCall<PropagateNull<Ops[number]['type'], ArrayType<ConcatElementUnion<Ops>>>> =>
-  new FunctionCall(propagateNull(operands, array(concatElementUnionType(operands))), {
+): FunctionCall<
+  PropagateNull<TypeOfOperand<Ops[number]>, ArrayType<ConcatElementUnion<LiftedOperands<Ops>>>>
+> => {
+  const lifted = liftOperands(operands);
+  return new FunctionCall(propagateNull(lifted, array(concatElementUnionType(lifted))), {
     name: 'arrayConcat',
-    operands,
+    operands: lifted,
   });
+};
 
 type ConcatElementUnion<Ops extends readonly Expression[]> = RebuildUnion<
   DedupDescriptors<ConcatElementTypes<Ops>>
@@ -1781,15 +2134,19 @@ type MapKeysOf<T extends FieldType> =
  * (probed), so an `Optional` field reads as nullable; a null/absent map
  * yields null.
  */
-export const mapGet = <M extends MapOperand, K extends MapKeysOf<M['type']>>(
+export const mapGet = <const M extends MapOperandInput, K extends MapKeysOf<TypeOfOperand<M>>>(
   value: M,
   key: K,
-): FunctionCall<PropagateNull<M['type'], MapValueType<FieldsOf<StripNull<M['type']>>[K]>>> =>
-  new FunctionCall(propagateNull([value], mapValueTypeOf(value, key)), {
+): FunctionCall<
+  PropagateNull<TypeOfOperand<M>, MapValueType<FieldsOf<StripNull<TypeOfOperand<M>>>[K]>>
+> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], mapValueTypeOf(v, key)), {
     name: 'mapGet',
-    value,
+    value: v,
     key,
   });
+};
 
 type MapValueType<V extends FieldType> = [Extract<V, Optional>] extends [never]
   ? V
@@ -1832,10 +2189,18 @@ type WithoutDottedKeys<F> = {
 type UndottedKey<K extends string> = K extends `${string}.${string}` ? never : K;
 
 /** Builds a map EXPRESSION from field-value expressions — `mapValue({ x: field('num') })`. See {@link arrayValue}. */
-export const mapValue = <const F extends Readonly<Record<string, Expression>>>(
+export const mapValue = <const F extends Readonly<Record<string, OperandInput>>>(
   fields: F & WithoutDottedKeys<F>,
-): FunctionCall<MapType<{ [K in keyof F & string]: WithoutOptional<F[K]['type']> }>> =>
-  new FunctionCall(mapDescriptor(mapValueFields(fields)), { name: 'mapValue', fields });
+): FunctionCall<MapType<{ [K in keyof F & string]: WithoutOptional<TypeOfOperand<F[K]>> }>> => {
+  // Drop the `& WithoutDottedKeys<F>` guard before lifting: it constrains the
+  // CALLER's keys but must not leak into the field descriptors' computation.
+  const clean: F = fields;
+  const lifted = liftFields(clean);
+  return new FunctionCall(mapDescriptor(mapValueFields(lifted)), {
+    name: 'mapValue',
+    fields: lifted,
+  });
+};
 
 /** Runtime counterpart of `mapValue`'s fields record (same bridge shape as `propagateNull`). */
 function mapValueFields<F extends Readonly<Record<string, Expression>>>(
@@ -1846,35 +2211,41 @@ function mapValueFields(fields: Readonly<Record<string, Expression>>): FieldsRec
 }
 
 /** The map's keys, as a string array. */
-export const mapKeys = <M extends MapOperand>(
+export const mapKeys = <const M extends MapOperandInput>(
   value: M,
-): FunctionCall<PropagateNull<M['type'], ArrayType<StringType>>> =>
-  new FunctionCall(propagateNull([value], array(string())), { name: 'mapKeys', value });
+): FunctionCall<PropagateNull<TypeOfOperand<M>, ArrayType<StringType>>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], array(string())), { name: 'mapKeys', value: v });
+};
 
 /** The map's values, as an array of the deduped field-type union. */
-export const mapValues = <M extends MapOperand>(
+export const mapValues = <const M extends MapOperandInput>(
   value: M,
 ): FunctionCall<
-  PropagateNull<M['type'], ArrayType<MapFieldUnion<FieldsOf<StripNull<M['type']>>>>>
-> =>
-  new FunctionCall(propagateNull([value], array(mapFieldUnionType(value))), {
+  PropagateNull<TypeOfOperand<M>, ArrayType<MapFieldUnion<FieldsOf<StripNull<TypeOfOperand<M>>>>>>
+> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], array(mapFieldUnionType(v))), {
     name: 'mapValues',
-    value,
+    value: v,
   });
+};
 
 /** The map's entries, as an array of `{ k, v }` maps (probed shape). */
-export const mapEntries = <M extends MapOperand>(
+export const mapEntries = <const M extends MapOperandInput>(
   value: M,
 ): FunctionCall<
   PropagateNull<
-    M['type'],
-    ArrayType<MapType<{ k: StringType; v: MapFieldUnion<FieldsOf<StripNull<M['type']>>> }>>
+    TypeOfOperand<M>,
+    ArrayType<MapType<{ k: StringType; v: MapFieldUnion<FieldsOf<StripNull<TypeOfOperand<M>>>> }>>
   >
-> =>
-  new FunctionCall(
-    propagateNull([value], array(map({ k: string(), v: mapFieldUnionType(value) }))),
-    { name: 'mapEntries', value },
+> => {
+  const v = toOperand(value);
+  return new FunctionCall(
+    propagateNull([v], array(map({ k: string(), v: mapFieldUnionType(v) }))),
+    { name: 'mapEntries', value: v },
   );
+};
 
 /**
  * The element descriptor of a map's value collection. Key order is not
@@ -1920,24 +2291,35 @@ function mapFieldUnionType(value: Expression): FieldType {
  * field like `isType`'s type name, serialized as a wire constant by the
  * executors.
  */
-export const mapSet = <M extends MapOperand, K extends string, V extends Expression>(
+export const mapSet = <
+  const M extends MapOperandInput,
+  K extends string,
+  const V extends OperandInput,
+>(
   value: M,
   key: K & UndottedKey<K>,
   entry: V,
 ): FunctionCall<
   PropagateNull<
-    M['type'],
+    TypeOfOperand<M>,
     MapType<
-      SetField<FieldsOf<StripNull<M['type']>>, K & UndottedKey<K>, WithoutOptional<V['type']>>
+      SetField<
+        FieldsOf<StripNull<TypeOfOperand<M>>>,
+        K & UndottedKey<K>,
+        WithoutOptional<TypeOfOperand<V>>
+      >
     >
   >
-> =>
-  new FunctionCall(propagateNull([value], mapDescriptor(setField(value, key, entry))), {
+> => {
+  const v = toOperand(value);
+  const e = toOperand(entry);
+  return new FunctionCall(propagateNull([v], mapDescriptor(setField(v, key, e))), {
     name: 'mapSet',
-    value,
+    value: v,
     key,
-    entry,
+    entry: e,
   });
+};
 
 type SetField<F extends FieldsRecord, K extends string, V extends FieldType> = {
   [P in keyof F as P extends K ? never : P]: F[P];
@@ -1958,17 +2340,22 @@ function setField(value: Expression, key: string, entry: Expression): FieldsReco
 }
 
 /** The map without `key` (a missing key is a no-op — probed). Literal key, like {@link mapSet}. */
-export const mapRemove = <M extends MapOperand, K extends string>(
+export const mapRemove = <const M extends MapOperandInput, K extends string>(
   value: M,
   key: K & UndottedKey<K>,
 ): FunctionCall<
-  PropagateNull<M['type'], MapType<Omit<FieldsOf<StripNull<M['type']>>, K & UndottedKey<K>>>>
-> =>
-  new FunctionCall(propagateNull([value], mapDescriptor(removeField(value, key))), {
+  PropagateNull<
+    TypeOfOperand<M>,
+    MapType<Omit<FieldsOf<StripNull<TypeOfOperand<M>>>, K & UndottedKey<K>>>
+  >
+> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], mapDescriptor(removeField(v, key))), {
     name: 'mapRemove',
-    value,
+    value: v,
     key,
   });
+};
 
 /** Runtime counterpart of `mapRemove`'s fields record (same bridge shape as `propagateNull`). */
 function removeField<M extends Expression, K extends string>(
@@ -1984,14 +2371,24 @@ function removeField(value: Expression, key: string): FieldsRecord {
   return rest;
 }
 
-/** The shallow merge of two or more maps — a later operand's key wins (probed). */
-export const mapMerge = <const Ops extends readonly [MapOperand, MapOperand, ...MapOperand[]]>(
+/**
+ * The shallow merge of two or more maps — a later operand's key wins (probed).
+ * A raw plain object lifts to a map CONSTANT (`mapMerge(m, { z: 1 })` is
+ * `mapMerge(m, constant({ z: 1 }))`), NOT a `mapValue(...)` constructor node.
+ */
+export const mapMerge = <
+  const Ops extends readonly [MapOperandInput, MapOperandInput, ...MapOperandInput[]],
+>(
   ...operands: Ops
-): FunctionCall<PropagateNull<Ops[number]['type'], MapType<MergeFields<Ops>>>> =>
-  new FunctionCall(propagateNull(operands, mapDescriptor(mergeFields(operands))), {
+): FunctionCall<
+  PropagateNull<TypeOfOperand<Ops[number]>, MapType<MergeFields<LiftedOperands<Ops>>>>
+> => {
+  const lifted = liftOperands(operands);
+  return new FunctionCall(propagateNull(lifted, mapDescriptor(mergeFields(lifted))), {
     name: 'mapMerge',
-    operands,
+    operands: lifted,
   });
+};
 
 type MergeFields<Ops extends readonly Expression[]> = Ops extends readonly [
   infer H extends Expression,
@@ -2036,33 +2433,41 @@ export const isAbsent = <F extends Field>(target: F): FunctionCall<BoolType> =>
   new FunctionCall(bool(), { name: 'isAbsent', target });
 
 /** Whether the operand evaluates to a backend ERROR value (total: null/absent are `false`). */
-export const isError = <Op extends Expression>(value: Op): FunctionCall<BoolType> =>
-  new FunctionCall(bool(), { name: 'isError', value });
+export const isError = <const Op extends OperandInput>(value: Op): FunctionCall<BoolType> =>
+  new FunctionCall(bool(), { name: 'isError', value: toOperand(value) });
 
 /**
  * The `try` value, or the `catch` value if `try` evaluates to a backend
  * ERROR. Null and absent pass through the `try` side untouched (probed) —
  * they are values, not errors.
  */
-export const ifError = <T extends Expression, C extends Expression>(
+export const ifError = <const T extends OperandInput, const C extends OperandInput>(
   tryExpr: T,
   catchExpr: C,
-): FunctionCall<PropagateAbsence<T['type'], EitherType<T['type'], C['type']>>> =>
-  new FunctionCall(propagateAbsence([tryExpr], eitherType(tryExpr, catchExpr)), {
+): FunctionCall<
+  PropagateAbsence<TypeOfOperand<T>, EitherType<TypeOfOperand<T>, TypeOfOperand<C>>>
+> => {
+  const t = toOperand(tryExpr);
+  const c = toOperand(catchExpr);
+  return new FunctionCall(propagateAbsence([t], eitherType(t, c)), {
     name: 'ifError',
-    tryExpr,
-    catchExpr,
+    tryExpr: t,
+    catchExpr: c,
   });
+};
 
 /**
  * The value, or the fallback when the value is ABSENT. A present null passes
  * through (probed) — absence is the only trigger. An ERROR propagates.
  */
-export const ifAbsent = <T extends Expression, C extends Expression>(
+export const ifAbsent = <const T extends OperandInput, const C extends OperandInput>(
   value: T,
   fallback: C,
-): FunctionCall<EitherType<T['type'], C['type']>> =>
-  new FunctionCall(eitherType(value, fallback), { name: 'ifAbsent', value, fallback });
+): FunctionCall<EitherType<TypeOfOperand<T>, TypeOfOperand<C>>> => {
+  const v = toOperand(value);
+  const f = toOperand(fallback);
+  return new FunctionCall(eitherType(v, f), { name: 'ifAbsent', value: v, fallback: f });
+};
 
 /**
  * The value, or the fallback when the value is null OR absent (probed:
@@ -2070,11 +2475,14 @@ export const ifAbsent = <T extends Expression, C extends Expression>(
  * side is null-stripped in the return descriptor — a value that got past
  * the check cannot be null. An ERROR propagates.
  */
-export const ifNull = <T extends Expression, C extends Expression>(
+export const ifNull = <const T extends OperandInput, const C extends OperandInput>(
   value: T,
   fallback: C,
-): FunctionCall<EitherType<StripNull<T['type']>, C['type']>> =>
-  new FunctionCall(ifNullType(value, fallback), { name: 'ifNull', value, fallback });
+): FunctionCall<EitherType<StripNull<TypeOfOperand<T>>, TypeOfOperand<C>>> => {
+  const v = toOperand(value);
+  const f = toOperand(fallback);
+  return new FunctionCall(ifNullType(v, f), { name: 'ifNull', value: v, fallback: f });
+};
 
 /** Runtime counterpart of `ifNull`'s return descriptor (same bridge shape as `propagateNull`). */
 function ifNullType<T extends Expression, C extends Expression>(
@@ -2127,116 +2535,162 @@ export const currentTimestamp = (): FunctionCall<TimestampType> =>
   new FunctionCall(timestamp(), { name: 'currentTimestamp' });
 
 /** The operand as a unix epoch in seconds (fractions truncated toward zero). */
-export const timestampToUnixSeconds = <Op extends TimestampOperand>(
+export const timestampToUnixSeconds = <const Op extends TimestampOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value], int64()), { name: 'timestampToUnixSeconds', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], int64()), {
+    name: 'timestampToUnixSeconds',
+    value: v,
+  });
+};
 
 /** The operand as a unix epoch in milliseconds. */
-export const timestampToUnixMillis = <Op extends TimestampOperand>(
+export const timestampToUnixMillis = <const Op extends TimestampOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value], int64()), { name: 'timestampToUnixMillis', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], int64()), { name: 'timestampToUnixMillis', value: v });
+};
 
 /** The operand as a unix epoch in microseconds. */
-export const timestampToUnixMicros = <Op extends TimestampOperand>(
+export const timestampToUnixMicros = <const Op extends TimestampOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([value], int64()), { name: 'timestampToUnixMicros', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], int64()), { name: 'timestampToUnixMicros', value: v });
+};
 
 /** The timestamp at the given unix epoch in seconds (integers only — a fractional value is a backend error). */
-export const unixSecondsToTimestamp = <Op extends NumericOperand>(
+export const unixSecondsToTimestamp = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], TimestampType>> =>
-  new FunctionCall(propagateNull([value], timestamp()), { name: 'unixSecondsToTimestamp', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, TimestampType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], timestamp()), {
+    name: 'unixSecondsToTimestamp',
+    value: v,
+  });
+};
 
 /** The timestamp at the given unix epoch in milliseconds (integers only). */
-export const unixMillisToTimestamp = <Op extends NumericOperand>(
+export const unixMillisToTimestamp = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], TimestampType>> =>
-  new FunctionCall(propagateNull([value], timestamp()), { name: 'unixMillisToTimestamp', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, TimestampType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], timestamp()), {
+    name: 'unixMillisToTimestamp',
+    value: v,
+  });
+};
 
 /** The timestamp at the given unix epoch in microseconds (integers only). */
-export const unixMicrosToTimestamp = <Op extends NumericOperand>(
+export const unixMicrosToTimestamp = <const Op extends NumericOperandInput>(
   value: Op,
-): FunctionCall<PropagateNull<Op['type'], TimestampType>> =>
-  new FunctionCall(propagateNull([value], timestamp()), { name: 'unixMicrosToTimestamp', value });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, TimestampType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(propagateNull([v], timestamp()), {
+    name: 'unixMicrosToTimestamp',
+    value: v,
+  });
+};
 
 /** The timestamp moved forward by `amount` `unit`s (out-of-range results are backend ERROR values). */
-export const timestampAdd = <Ts extends TimestampOperand, Amount extends NumericOperand>(
+export const timestampAdd = <
+  const Ts extends TimestampOperandInput,
+  const Amount extends NumericOperandInput,
+>(
   value: Ts,
   unit: TimeUnit,
   amount: Amount,
-): FunctionCall<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
-  new FunctionCall(propagateNull([value, amount], timestamp()), {
+): FunctionCall<PropagateNull<TypeOfOperand<Ts> | TypeOfOperand<Amount>, TimestampType>> => {
+  const v = toOperand(value);
+  const a = toOperand(amount);
+  return new FunctionCall(propagateNull([v, a], timestamp()), {
     name: 'timestampAdd',
-    value,
+    value: v,
     unit,
-    amount,
+    amount: a,
   });
+};
 
 /** The timestamp moved backward by `amount` `unit`s. */
-export const timestampSubtract = <Ts extends TimestampOperand, Amount extends NumericOperand>(
+export const timestampSubtract = <
+  const Ts extends TimestampOperandInput,
+  const Amount extends NumericOperandInput,
+>(
   value: Ts,
   unit: TimeUnit,
   amount: Amount,
-): FunctionCall<PropagateNull<Ts['type'] | Amount['type'], TimestampType>> =>
-  new FunctionCall(propagateNull([value, amount], timestamp()), {
+): FunctionCall<PropagateNull<TypeOfOperand<Ts> | TypeOfOperand<Amount>, TimestampType>> => {
+  const v = toOperand(value);
+  const a = toOperand(amount);
+  return new FunctionCall(propagateNull([v, a], timestamp()), {
     name: 'timestampSubtract',
-    value,
+    value: v,
     unit,
-    amount,
+    amount: a,
   });
+};
 
 /**
  * `end - start` in whole `unit`s, truncated toward zero (probed: 2.6 days →
  * `2`; negative when `end` precedes `start`). Units only — calendar
  * granularities (`'week'`, `'month'`, ...) are rejected by the backend.
  */
-export const timestampDiff = <End extends TimestampOperand, Start extends TimestampOperand>(
+export const timestampDiff = <
+  const End extends TimestampOperandInput,
+  const Start extends TimestampOperandInput,
+>(
   end: End,
   start: Start,
   unit: TimeUnit,
-): FunctionCall<PropagateNull<End['type'] | Start['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([end, start], int64()), {
+): FunctionCall<PropagateNull<TypeOfOperand<End> | TypeOfOperand<Start>, Int64Type>> => {
+  const e = toOperand(end);
+  const s = toOperand(start);
+  return new FunctionCall(propagateNull([e, s], int64()), {
     name: 'timestampDiff',
-    end,
-    start,
+    end: e,
+    start: s,
     unit,
   });
+};
 
 /**
  * The timestamp truncated down to the given granularity, in the given IANA
  * timezone (default UTC). An invalid timezone VALUE is a backend ERROR value.
  */
-export const timestampTruncate = <Ts extends TimestampOperand>(
+export const timestampTruncate = <const Ts extends TimestampOperandInput>(
   value: Ts,
   granularity: TimeGranularity,
   timezone?: string,
-): FunctionCall<PropagateNull<Ts['type'], TimestampType>> =>
-  new FunctionCall(
-    propagateNull([value], timestamp()),
+): FunctionCall<PropagateNull<TypeOfOperand<Ts>, TimestampType>> => {
+  const v = toOperand(value);
+  return new FunctionCall(
+    propagateNull([v], timestamp()),
     timezone === undefined
-      ? { name: 'timestampTruncate', value, granularity }
-      : { name: 'timestampTruncate', value, granularity, timezone },
+      ? { name: 'timestampTruncate', value: v, granularity }
+      : { name: 'timestampTruncate', value: v, granularity, timezone },
   );
+};
 
 /**
  * The given part of the timestamp as an integer, in the given IANA timezone
  * (default UTC). `'dayofweek'` is 1-based from Sunday (probed: a Friday →
  * `6`).
  */
-export const timestampExtract = <Ts extends TimestampOperand>(
+export const timestampExtract = <const Ts extends TimestampOperandInput>(
   value: Ts,
   part: TimePart,
   timezone?: string,
-): FunctionCall<PropagateNull<Ts['type'], Int64Type>> =>
-  new FunctionCall(
-    propagateNull([value], int64()),
+): FunctionCall<PropagateNull<TypeOfOperand<Ts>, Int64Type>> => {
+  const v = toOperand(value);
+  return new FunctionCall(
+    propagateNull([v], int64()),
     timezone === undefined
-      ? { name: 'timestampExtract', value, part }
-      : { name: 'timestampExtract', value, part, timezone },
+      ? { name: 'timestampExtract', value: v, part }
+      : { name: 'timestampExtract', value: v, part, timezone },
   );
+};
 
 // ---- vector ----
 // Distance functions over mismatched dimensions are backend ERROR values.
@@ -2245,32 +2699,57 @@ export const timestampExtract = <Ts extends TimestampOperand>(
 type VectorOperand = Expression<Valued<'vector'>>;
 
 /** The cosine distance between two vectors. */
-export const cosineDistance = <L extends VectorOperand, R extends VectorOperand>(
+export const cosineDistance = <
+  const L extends VectorOperandInput,
+  const R extends VectorOperandInput,
+>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([left, right], double()), { name: 'cosineDistance', left, right });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, DoubleType>> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], double()), {
+    name: 'cosineDistance',
+    left: l,
+    right: r,
+  });
+};
 
 /** The dot product of two vectors. */
-export const dotProduct = <L extends VectorOperand, R extends VectorOperand>(
+export const dotProduct = <const L extends VectorOperandInput, const R extends VectorOperandInput>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([left, right], double()), { name: 'dotProduct', left, right });
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, DoubleType>> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], double()), {
+    name: 'dotProduct',
+    left: l,
+    right: r,
+  });
+};
 
 /** The euclidean distance between two vectors. */
-export const euclideanDistance = <L extends VectorOperand, R extends VectorOperand>(
+export const euclideanDistance = <
+  const L extends VectorOperandInput,
+  const R extends VectorOperandInput,
+>(
   left: L,
   right: R,
-): FunctionCall<PropagateNull<L['type'] | R['type'], DoubleType>> =>
-  new FunctionCall(propagateNull([left, right], double()), {
+): FunctionCall<PropagateNull<TypeOfOperand<L> | TypeOfOperand<R>, DoubleType>> => {
+  const l = toOperand(left);
+  const r = toOperand(right);
+  return new FunctionCall(propagateNull([l, r], double()), {
     name: 'euclideanDistance',
-    left,
-    right,
+    left: l,
+    right: r,
   });
+};
 
 /** The number of dimensions of a vector. */
-export const vectorLength = <Op extends VectorOperand>(
+export const vectorLength = <const Op extends VectorOperandInput>(
   vector: Op,
-): FunctionCall<PropagateNull<Op['type'], Int64Type>> =>
-  new FunctionCall(propagateNull([vector], int64()), { name: 'vectorLength', vector });
+): FunctionCall<PropagateNull<TypeOfOperand<Op>, Int64Type>> => {
+  const v = toOperand(vector);
+  return new FunctionCall(propagateNull([v], int64()), { name: 'vectorLength', vector: v });
+};

@@ -796,6 +796,37 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('direct literal operands evaluate like their constant() forms', async () => {
+        // Raw operands lift internally via constant() — so these evaluate
+        // exactly as the explicit-constant catalog cases above.
+        // Deterministic single row: a1 (rank 1, name 'alice').
+        const first = source()
+          .sort((field) => [asc(field('rank'))])
+          .limit(1);
+        await expectPipeline(
+          first.select((field) => [
+            equal(field('rank'), 1).as('equal'),
+            startsWith(field('name'), 'a').as('startsWith'),
+            equalAny(field('rank'), [1, 5, 9]).as('equalAny'),
+            add(field('rank'), 1).as('add'),
+            conditional(greaterThan(field('rank'), 1), 'big', 'small').as('conditional'),
+            arrayValue([1, field('rank')]).as('arrayValue'),
+          ]),
+          [
+            {
+              data: {
+                equal: true,
+                startsWith: true,
+                equalAny: true,
+                add: 2,
+                conditional: 'small',
+                arrayValue: [1, 1],
+              },
+            },
+          ],
+        );
+      });
+
       it('numeric constants wire-encode whole values as integers (the honest widening)', async () => {
         // A number constant is DECLARED DoubleType, but a whole JS number
         // wire-encodes as an integer — so the backend kind here is int64
@@ -847,8 +878,11 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         const i = field(int64(), 'i');
         const d = field(double(), 'd');
         const cases: [string, Expression][] = [];
+        // `add` is prototyped with direct-literal operands (a superset
+        // signature), so it is exercised on its own rather than in the shared
+        // union table.
+        cases.push(['add_ii', add(i, i)], ['add_id', add(i, d)], ['add_dd', add(d, d)]);
         const binary = [
-          ['add', add],
           ['subtract', subtract],
           ['multiply', multiply],
           ['divide', divide],
