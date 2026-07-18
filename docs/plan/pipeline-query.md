@@ -525,6 +525,49 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
 - [ ] User-facing usage doc (README excerpt / examples) once the public
       surface is stable.
 
+## Deferred backlog (cross-cutting; gathered so nothing lives only in chat)
+
+Items agreed in discussion but previously recorded only inline in DONE notes
+(or not at all). Elevated to checklist items:
+
+- [ ] **Shorthand layer — "an address where a static context exists"**
+      (feasibility confirmed; details inline in the segment-path DONE notes
+      above): (a) core query `__name__` operands as bare ids / `DocRef`
+      tuples where the source collection is statically known (the 2n-vs-n
+      length parity disambiguates ids from segments once names are literal);
+      (b) `docRefValue(authors, ['a1'])` — the collection+address form,
+      typed `DocRefType<Authors>` (decided: receiving the collection
+      definition is what makes known-collection typing possible).
+- [ ] **Typed cursor constraints.** `Cursor` is an untyped `unknown[]`
+      pass-through; typing it per orderBy field would also require encoding
+      reference cursor values like the filter operands
+      (`buildEncodeFilterValue` precedent).
+- [ ] **Identity-based `__name__` typing.** While a pipeline's read-identity
+      is alive (`Id = DocRef<T>`) the source collection is statically known,
+      so the field provider could resolve `'__name__'` to `DocRefType<T>`
+      and fall back to `'unknown'` once the identity ratchet drops.
+      Deferred alongside the DML-capability type-state work; `documentId()`
+      covers today's uses.
+- [ ] **`mapGet` dynamic-key overload.** The backend accepts a dynamic key
+      expression (probed); the factory takes a literal for key-aware
+      subschema typing. A dynamic overload would return the loose value
+      union.
+- [ ] **`mapSet` multi-pair form.** The SDK signature accepts
+      `...moreKeyValues`; the factory supports a single key/value pair.
+- [ ] **`int64`-asserting constant constructor** (e.g. `int64Value(2)`), if
+      a need appears: number constants are uniformly `DoubleType` (the
+      honest widening — a whole JS number wire-encodes as an integer
+      anyway), which forfeits `NumericResult`'s int64 preservation when a
+      constant operand is mixed in. No concrete need yet.
+- [ ] **Run the firebase (client) adapter's pipeline suite live at least
+      once** before the `pipeline-query` → `main` merge (needs
+      `FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY`; the suite is
+      skipIf-gated and has never executed against the real backend — the
+      admin adapter covers the shared spec live today).
+- [ ] **`ArrayType` fixed-part / tuple support** — tracked in issue #218
+      (includes the arrayRemove/arrayUnion interaction constraint noted
+      there).
+
 ## Known issues / loose ends
 
 - [ ] **The schema-level type logic needs careful human review.** The
@@ -535,10 +578,8 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       them.
 - [x] `pipelines/pipeline.test.ts` select-callback typecheck failures — cleaned
       up (moved to callback form; schema coverage lives in `selection.test.ts`).
-- [ ] `constant(value)` still uses a placeholder `type` (`'todo' as unknown as T`,
-      with a lint-disable). TODO: derive the `FieldType` from the runtime value
-      (number → Double, string → String, ...). Needed before `constant` /
-      `functionCall` expressions can be serialized to the SDK.
+- [x] `constant(value)` placeholder `type` — resolved by expressions slice 1
+      (`ConstantTypeOf` / `constantTypeOf`).
 - [ ] **Stale editor diagnostics:** the LSP may flag imports of
       `PipelineQueryExecutor` / `PipelineNode` etc. from
       `firestore-repository/pipelines/pipeline` as "no exported member". This is
