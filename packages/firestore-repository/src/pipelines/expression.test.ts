@@ -1266,8 +1266,21 @@ describe('document-reference values', () => {
     const ref = docRefValue(refPath(authors, ['a1']));
     // Cross-source: the segment array is produced by refPath, checked against
     // the independently-written path — not a construction restatement.
-    expect(ref).toStrictEqual(new DocRefValue(['authors', 'a1']));
+    expect(ref).toStrictEqual(DocRefValue.of(['authors', 'a1']));
     expectTypedStrictEqual(ref.type, docRef());
+  });
+
+  it('the collection+address form is typed with the known collection', () => {
+    const typed = docRefValue(authors, ['a1']);
+    // The address normalizes to the SAME segment payload as the value form —
+    // only the descriptor claim gains the collection.
+    expect(typed.path).toStrictEqual(docRefValue(refPath(authors, ['a1'])).path);
+    expectTypedStrictEqual(typed.type, docRef(authors));
+    // @ts-expect-error -- the id tuple must match the collection's depth
+    void (() => docRefValue(authors, ['a1', 'extra']));
+    // Comparisons: typed and context-free flavors share the 'reference' tag.
+    equal(field(docRef(authors), 'ref'), docRefValue(authors, ['a1']));
+    equal(field(docRef(), '__name__'), docRefValue(authors, ['a1']));
   });
 
   it('compares against reference operands only (probed: strings never match)', () => {
