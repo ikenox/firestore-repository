@@ -174,6 +174,32 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     },
   ];
 
+  /**
+   * Executes `pipeline` (however sourced) and asserts the result rows
+   * equal `expected`.
+   *
+   * Order-sensitive by default (the result order is part of what a query
+   * asserts — e.g. `sort` / `limit`). For queries whose order is unspecified
+   * (e.g. a bare `collection` input, whose order is Firestore-internal), pass
+   * `{ ordered: false }` to compare as a set.
+   */
+  const expectPipeline = async <S extends DocumentSchema, Id extends PipelineRowIdentity>(
+    pipeline: Pipeline<S, Id>,
+    // `NoInfer` so `S`/`Id` are inferred from `pipeline` only, not from the
+    // expected rows (which would otherwise widen `S` to its constraint).
+    expected: readonly NoInfer<PipelineResult<S, Id>>[],
+    options?: { ordered?: boolean },
+  ): Promise<void> => {
+    const results = await executor.execute(pipeline);
+    if (options?.ordered === false) {
+      // The result order of an unordered query is unspecified — compare as a
+      // set (order-independent deep equality).
+      assert.sameDeepMembers(results, [...expected]);
+    } else {
+      expect(results).toStrictEqual(expected);
+    }
+  };
+
   const setup = () => {
     let collection: AuthorsCollection;
     beforeEach(async () => {
@@ -185,43 +211,16 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     const source = (): Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> =>
       collectionInput(collection);
 
-    /**
-     * Executes `pipeline` (built from {@link source}) and asserts the result rows
-     * equal `expected`.
-     *
-     * Order-sensitive by default (the result order is part of what a query
-     * asserts — e.g. `sort` / `limit`). For queries whose order is unspecified
-     * (e.g. a bare `collection` input, whose order is Firestore-internal), pass
-     * `{ ordered: false }` to compare as a set.
-     */
-    const expectPipeline = async <S extends DocumentSchema, Id extends PipelineRowIdentity>(
-      pipeline: Pipeline<S, Id>,
-      // `NoInfer` so `S`/`Id` are inferred from `pipeline` only, not from the
-      // expected rows (which would otherwise widen `S` to its constraint).
-      expected: readonly NoInfer<PipelineResult<S, Id>>[],
-      options?: { ordered?: boolean },
-    ): Promise<void> => {
-      const results = await executor.execute(pipeline);
-      if (options?.ordered === false) {
-        // The result order of an unordered query is unspecified — compare as a
-        // set (order-independent deep equality).
-        assert.sameDeepMembers(results, [...expected]);
-      } else {
-        expect(results).toStrictEqual(expected);
-      }
-    };
-
     return {
       items,
       source,
-      expectPipeline,
       collectionName: () => collection.name,
       liveCollection: () => collection,
     };
   };
 
   describe('pipeline specification', () => {
-    const { items, source, expectPipeline } = setup();
+    const { items, source } = setup();
 
     describe('input source (no transformation stages)', () => {
       it('fetches all documents of a collection with their ids', async () => {
@@ -426,7 +425,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     // its basic backend semantics in one round trip per family. Every future
     // slice MUST add its functions to this catalog.
     describe('function catalog (one straightforward evaluation per function)', () => {
-      const { items, source, expectPipeline, collectionName, liveCollection } = setup();
+      const { items, source, collectionName, liveCollection } = setup();
       /** A single-row source: the catalog evaluates constant expressions only. */
       const one = () => source().limit(1);
 
@@ -977,7 +976,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
     });
 
     describe('arithmetic and string functions', () => {
-      const { source, expectPipeline } = setup();
+      const { source } = setup();
 
       it('computes nested arithmetic over fields and constants', async () => {
         await expectPipeline(
@@ -1608,25 +1607,11 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
       const src = () => collectionInput(coll);
 
-      /** Executes and compares rows (unordered by default — grouped output has no defined order). */
-      const expectRows = async <S extends DocumentSchema, Id extends PipelineRowIdentity>(
-        pipeline: Pipeline<S, Id>,
-        expected: readonly NoInfer<PipelineResult<S, Id>>[],
-        options?: { ordered?: boolean },
-      ): Promise<void> => {
-        const results = await executor.execute(pipeline);
-        if (options?.ordered === true) {
-          expect(results).toStrictEqual(expected);
-        } else {
-          assert.sameDeepMembers(results, [...expected]);
-        }
-      };
-
       it('groups by a bare path; null and absent keys merge into one null group', async () => {
         // d4 (g=null) and d5 (g absent) collapse into ONE group whose key reads
         // back as `null` (not absent) — the "absent merges into null" rule for
         // grouping. sum ignores nothing here (all n present); countAll counts rows.
-        await expectRows(
+        await expectPipeline(
           src().aggregate((field) => ({
             accumulators: [sum(field('n')).as('s'), countAll().as('c')],
             groups: ['g'],
@@ -1636,17 +1621,19 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             { data: { g: 'y', s: 4, c: 1 } },
             { data: { g: null, s: 30, c: 2 } },
           ],
+          { ordered: false },
         );
       });
 
       it('groups by an aliased expression (the computed key is projected)', async () => {
         // greaterThan(n, 5): d1/d2/d3 → false, d4/d5 → true.
-        await expectRows(
+        await expectPipeline(
           src().aggregate((field) => ({
             accumulators: [countAll().as('c')],
             groups: [greaterThan(field('n'), constant(5)).as('big')],
           })),
           [{ data: { big: false, c: 3 } }, { data: { big: true, c: 2 } }],
+          { ordered: false },
         );
       });
 
@@ -1654,7 +1641,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // countAll counts all 5 rows; count(m) counts only the 3 non-null,
         // present m values (d3 null, d5 absent excluded); average(m) divides by
         // that same non-null count (18 / 3 = 6), not by 5.
-        await expectRows(
+        await expectPipeline(
           src().aggregate((field) => ({
             accumulators: [
               sum(field('n')).as('sumN'),
@@ -1670,7 +1657,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
 
       it('empty input WITH groups yields zero rows', async () => {
-        await expectRows(
+        await expectPipeline(
           collectionInput(emptyColl).aggregate(() => ({
             accumulators: [countAll().as('c')],
             groups: ['g'],
@@ -1682,7 +1669,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('empty input WITHOUT groups yields one row with the empty values (sum/average null, countAll 0)', async () => {
         // The whole-input group always emits one row; sum and average are NULL
         // over an empty group (NOT 0, unlike SQL), while countAll is 0.
-        await expectRows(
+        await expectPipeline(
           collectionInput(emptyColl).aggregate((field) => ({
             accumulators: [
               sum(field('n')).as('s'),
@@ -1697,7 +1684,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('countDistinct / countIf over the whole input', async () => {
         // countDistinct(g): distinct non-null values {x, y} → 2.
         // countIf(n > 5): d4/d5 → 2.
-        await expectRows(
+        await expectPipeline(
           src().aggregate((field) => ({
             accumulators: [
               countDistinct(field('g')).as('distinctG'),
@@ -1725,14 +1712,13 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // Sorted by n asc: d1(g x), d2(g x), d3(g y), d4(g null), d5(g absent).
         // first(g) is 'x' (positional); last(g) is d5's absent key merged into
         // null (kept, not skipped).
-        await expectRows(
+        await expectPipeline(
           src()
             .sort((field) => [asc(field('n'))])
             .aggregate((field) => ({
               accumulators: [first(field('g')).as('first'), last(field('g')).as('last')],
             })),
           [{ data: { first: 'x', last: null } }],
-          { ordered: true },
         );
       });
 
@@ -1740,9 +1726,10 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // Grouping by the optional `g` alone (a distinct-like aggregate): the
         // merged null/absent group decodes with `g: null` PRESENT — the key is
         // null, never missing.
-        await expectRows(
+        await expectPipeline(
           src().aggregate(() => ({ accumulators: [countAll().as('c')], groups: ['g'] })),
           [{ data: { g: 'x', c: 2 } }, { data: { g: 'y', c: 1 } }, { data: { g: null, c: 2 } }],
+          { ordered: false },
         );
       });
     });
