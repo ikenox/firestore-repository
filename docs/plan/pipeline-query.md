@@ -569,6 +569,11 @@ Items agreed in discussion but previously recorded only inline in DONE notes
       `FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY`; the suite is
       skipIf-gated and has never executed against the real backend — the
       admin adapter covers the shared spec live today).
+- [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
+      the aggregate node ships as `AggregateFunction` (the SDK's name), which
+      makes the pair with the expression node asymmetric — rename
+      `FunctionCall` to the SDK's `FunctionExpression` in a follow-up so the
+      internal naming rule becomes "SDK vocabulary", consistently.
 - [ ] **`ArrayType` fixed-part / tuple support** — tracked in issue #218
       (includes the arrayRemove/arrayUnion interaction constraint noted
       there).
