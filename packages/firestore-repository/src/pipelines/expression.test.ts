@@ -31,7 +31,11 @@ import {
 import {
   abs,
   add,
+  AggregateFunction,
+  type AggregateWithAlias,
   and,
+  arrayAgg,
+  arrayAggDistinct,
   arrayConcat,
   arrayContains,
   arrayContainsAll,
@@ -41,6 +45,7 @@ import {
   arrayReverse,
   arrayValue,
   byteLength,
+  average,
   ceil,
   charLength,
   collectionId,
@@ -48,6 +53,10 @@ import {
   constant,
   Constant,
   cosineDistance,
+  count,
+  countAll,
+  countDistinct,
+  countIf,
   currentTimestamp,
   divide,
   DocRefValue,
@@ -63,6 +72,7 @@ import {
   type Expression,
   Field,
   field,
+  first,
   floor,
   FunctionCall,
   geoPointValue,
@@ -74,6 +84,7 @@ import {
   isAbsent,
   isError,
   isType,
+  last,
   lessThan,
   lessThanOrEqual,
   like,
@@ -82,6 +93,8 @@ import {
   logicalMaximum,
   logicalMinimum,
   ltrim,
+  maximum,
+  minimum,
   mapEntries,
   mapGet,
   mapKeys,
@@ -115,6 +128,7 @@ import {
   stringReverse,
   substring,
   subtract,
+  sum,
   timestampAdd,
   timestampDiff,
   timestampExtract,
@@ -1484,5 +1498,134 @@ describe('operand lifting mechanism (toOperand / liftOperands / liftFields)', ()
       // An expression field passes through by identity.
       expect(node.call.fields['b']).toBe(num);
     }
+  });
+});
+
+// The accumulator factories' RETURN descriptors, derived from the type
+// definitions (`AggregatePayload` members × the operand nullability the
+// `NullableStripped` / `NumericResult` / `WithoutOptional` operators fold over).
+// Oracles come from docs/pipeline-query-aggregate-research.md.
+describe('aggregate factories', () => {
+  // Representative operands across the presence/nullability axis.
+  const str = field(string(), 'name'); // plain
+  const nstr = field(nullable(string()), 'ns'); // nullable
+  const ostr = field(optional(string()), 'os'); // optional (possibly absent)
+  const pnull = field(nullType(), 'z'); // pure-null
+  const i = field(int64(), 'i'); // declared int64
+  const d = field(double(), 'd'); // declared double
+  const ni = field(nullable(int64()), 'ni'); // nullable int64
+  const mixed = field(union(int64(), double()), 'mix'); // int64 | double
+  const flag = field(bool(), 'flag');
+
+  describe('count family is always plain int64 (never null, even over nullable operands)', () => {
+    it('countAll / count / countDistinct / countIf → int64()', () => {
+      expectTypedStrictEqual(countAll().type, int64());
+      // Even over a nullable / optional operand the count itself is a plain
+      // int64 (0 on empty, never null — probed).
+      expectTypedStrictEqual(count(nstr).type, int64());
+      expectTypedStrictEqual(countDistinct(nstr).type, int64());
+      expectTypedStrictEqual(countIf(field(nullable(bool()), 'nb')).type, int64());
+      expectTypedStrictEqual(countIf(flag).type, int64());
+    });
+  });
+
+  describe('sum: nullable(NumericResult) with no double-nesting', () => {
+    it('int64 operand → nullable(int64())', () => {
+      expectTypedStrictEqual(sum(i).type, nullable(int64()));
+    });
+    it('double / mixed operand → nullable(double())', () => {
+      expectTypedStrictEqual(sum(d).type, nullable(double()));
+      expectTypedStrictEqual(sum(mixed).type, nullable(double()));
+    });
+    it('nullable(int64()) operand stays nullable(int64()) — the operand null is stripped before re-adding', () => {
+      expectTypedStrictEqual(sum(ni).type, nullable(int64()));
+    });
+  });
+
+  describe('average is always nullable(double())', () => {
+    it('over int64 and over nullable(double()) operands alike', () => {
+      expectTypedStrictEqual(average(i).type, nullable(double()));
+      expectTypedStrictEqual(average(field(nullable(double()), 'nd')).type, nullable(double()));
+    });
+  });
+
+  describe('minimum / maximum / first / last: nullable(stripped operand), pure-null degenerates to nullType()', () => {
+    // All four share the `NullableStripped` return shape — table the factories
+    // and run the operand-nullability matrix over each.
+    const extremes = [
+      ['minimum', minimum],
+      ['maximum', maximum],
+      ['first', first],
+      ['last', last],
+    ] as const;
+
+    it('plain / nullable / optional operands all yield nullable(stripped)', () => {
+      for (const [, fn] of extremes) {
+        expectTypedStrictEqual(fn(str).type, nullable(string()));
+        // A nullable operand's null is stripped then re-added — no double nest.
+        expectTypedStrictEqual(fn(nstr).type, nullable(string()));
+        // The Optional presence marker is dropped; the empty-group null re-added.
+        expectTypedStrictEqual(fn(ostr).type, nullable(string()));
+      }
+    });
+
+    it('a pure-null operand degenerates to nullType() (nothing survives stripping)', () => {
+      for (const [, fn] of extremes) {
+        expectTypedStrictEqual(fn(pnull).type, nullType());
+      }
+    });
+  });
+
+  describe('arrayAgg / arrayAggDistinct: array element drops Optional, keeps the null tag', () => {
+    const collectors = [
+      ['arrayAgg', arrayAgg],
+      ['arrayAggDistinct', arrayAggDistinct],
+    ] as const;
+
+    it('plain operand → array of the plain element', () => {
+      for (const [, fn] of collectors) {
+        expectTypedStrictEqual(fn(str).type, array(string()));
+      }
+    });
+    it('optional operand → the Optional marker is dropped from the element', () => {
+      for (const [, fn] of collectors) {
+        expectTypedStrictEqual(fn(ostr).type, array(string()));
+      }
+    });
+    it('nullable operand → the null tag is KEPT as a possible element (absent skipped, null kept — probed)', () => {
+      for (const [, fn] of collectors) {
+        expectTypedStrictEqual(fn(nstr).type, array(nullable(string())));
+      }
+    });
+  });
+
+  describe('operand-domain negatives', () => {
+    it('rejects out-of-domain operands', () => {
+      // @ts-expect-error -- sum's operand domain is numeric, not string
+      sum(str);
+      // @ts-expect-error -- countIf's condition must be boolean-valued
+      countIf(str);
+    });
+  });
+
+  describe('direct-literal lifting (factories accept raw OperandInput)', () => {
+    it('a raw numeric operand lifts exactly like its constant() form', () => {
+      // ONE representative: `sum(5)` lifts the raw 5 via constant(), so it is
+      // the SAME node (value + descriptor) as `sum(constant(5))`.
+      expectTypedStrictEqual(sum(5), sum(constant(5)));
+    });
+  });
+
+  describe('aliasing (.as) forms the aggregate selectable', () => {
+    it('wraps the accumulator in an { aggregate, alias } pair, keeping the result descriptor', () => {
+      const acc = sum(i).as('total');
+      // The alias is a literal, the aggregate is the accumulator node, and the
+      // pair shape is the aggregate selectable (a DIFFERENT shape from an
+      // expression's `{ expression, alias }`).
+      expectTypeOf(acc).toMatchTypeOf<AggregateWithAlias>();
+      expectTypeOf(acc.alias).toEqualTypeOf<'total'>();
+      expectTypedStrictEqual(acc.aggregate.type, nullable(int64()));
+      expect(acc.aggregate).toBeInstanceOf(AggregateFunction);
+    });
   });
 });

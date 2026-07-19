@@ -307,14 +307,22 @@ Deferred to a later iteration (still tracked here, not currently in scope):
       translate to `field(path).ascending()/.descending()`. Only **field**
       orderings are supported (a computed-expression ordering throws in the
       executor). Verified live. See the spec `sort` tests.
-- [ ] `aggregate(...)` — needs:
-  - A separate `AggregateFunction` AST node (distinct from `Expression`).
-  - Aggregate function factories: `sum`, `count`, `countAll`,
-    `countDistinct`, `countIf`, `average`, `first`, `last`, `minimum`,
-    `maximum`, `arrayAgg`, `arrayAggDistinct`, `arraySum`.
-  - `aggregate({ accumulators, groups })` stage that:
-    - rebuilds Context from accumulator aliases + group field types,
-    - breaks identity (returns `UnidentifiedPipeline`).
+- [x] `aggregate(...)` — done (2026-07; semantics in
+      `../pipeline-query-aggregate-research.md`): `AggregateFunction` (SDK
+      name; payload-union like `FunctionCall`, NOT an `Expression` member so
+      misplacement is a type error) with all 12 factories (`arraySum` was an
+      expression, not an accumulator — dropped from this list); probed
+      return descriptors (count family plain int64; `sum`
+      nullable+NumericResult; `average` nullable double;
+      `minimum`/`maximum`/`first`/`last` `NullableStripped`; `arrayAgg*`
+      element drops Optional, keeps the null tag). The
+      `aggregate((field) => ({ accumulators, groups? }))` stage synthesizes
+      `AggregateSchema` = groups' BuildSelection output through
+      `AbsentMergesIntoNull` (null and absent group keys merge — probed) +
+      accumulator overlay (accumulator wins on collision), identity breaks
+      (`Id = undefined`). Executors: one `aggregateTranslators` mapped table
+      per adapter; groups translate like select selections. Live catalog
+      pins the probe matrix incl. empty-input and null/absent-merge cases.
 - [ ] `ascending(...)` / `descending(...)` — ordering factories used by
       `sort` (and by cursor lowering in `__PRIVATE_toPipeline`).
 - [ ] Type-level tests for `Ordering` / `AggregateFunction` along the lines

@@ -7,7 +7,7 @@ import {
 } from '../__test__/specification.js';
 import type { DocRef } from '../repository.js';
 import type { StringType } from '../schema.js';
-import { documentId, equal } from './expression.js';
+import { countAll, documentId, equal, sum } from './expression.js';
 import { collection, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
 
@@ -95,5 +95,36 @@ describe('pipeline', () => {
     base.where((field) => equal(documentId(field('__name__')), field('name')));
     // @ts-expect-error -- a reference does not compare against a string field
     base.where((field) => equal(field('__name__'), field('name')));
+  });
+
+  it('aggregate is identity-breaking (Id = undefined): a grouped row is not a source document', () => {
+    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
+
+    const grouped = base.aggregate((field) => ({
+      accumulators: [sum(field('rank')).as('total')],
+      groups: ['name'],
+    }));
+    // No `id` on the result rows — the identity ratchet dropped it.
+    expectTypeOf<RowOf<typeof grouped>>().not.toHaveProperty('id');
+
+    // @ts-expect-error -- an aggregate pipeline cannot pose as identity-preserving
+    const _lie: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = grouped;
+  });
+
+  it('accumulators and expressions do not interchange across stages (misplacement is a type error)', () => {
+    // An accumulator is deliberately NOT an Expression: it only makes sense
+    // inside `aggregate`, so misplacing one where a value expression / a
+    // selection is expected is a compile error, not a runtime failure. These
+    // are compile-time claims only — the closure is never invoked, since
+    // `select`/`addFields` would eagerly fold the (ill-typed) selection.
+    const _misplacements = () => {
+      // @ts-expect-error -- an AggregateFunction is not a boolean-valued condition
+      base.where(() => countAll());
+      // @ts-expect-error -- an aggregate selectable is not a select selection
+      base.select(() => [countAll().as('n')]);
+      // @ts-expect-error -- an aggregate selectable is not an addFields selection
+      base.addFields((field) => [sum(field('rank')).as('total')]);
+    };
+    void _misplacements;
   });
 });

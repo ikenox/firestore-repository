@@ -7,19 +7,22 @@ import {
   type DocumentSchema,
   double,
   type DoubleType,
+  int64,
   literal,
   type LiteralType,
   map,
   type MapType,
+  nullable,
   optional,
   type Optional,
   string,
   type StringType,
 } from '../schema.js';
-import { constant, equal, field } from './expression.js';
+import { constant, countAll, equal, field, greaterThan, sum } from './expression.js';
 import {
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
+  buildAggregateSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   type ExpressionWithAlias,
@@ -498,6 +501,80 @@ describe('buildSelectionSchema (runtime)', () => {
     // keys. See `ExpressionBase.as`.
     const oracle = { a: map({ __name__: schema.name }) };
     const actual = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+});
+
+// Stage-schema synthesis of the `aggregate` stage. Each case asserts one
+// hand-written oracle on BOTH sides — `toStrictEqual` for the runtime value and
+// `expectTypeOf(...).toEqualTypeOf(oracle)` for the type-level computation (the
+// return type IS `AggregateSchema<...>`) — the safety net for the bridging
+// assertion inside `buildAggregateSchema`. Oracles derive from the
+// `AggregateSchema` operators: `AccumulatorSchema` merged (A-wins) on top of
+// `AbsentMergesIntoNull<BuildSelectionSchema<groups>>`.
+describe('buildAggregateSchema (runtime)', () => {
+  const gender = optional(literal('male', 'female'));
+  const profile = map({ age: double(), gender });
+  const schema = {
+    name: string(),
+    g: string(),
+    opt: optional(string()),
+    profile,
+    rank: double(),
+  } satisfies DocumentSchema;
+
+  const total = sum(field(schema.rank, 'rank')).as('total');
+  const n = countAll().as('n');
+
+  it('accumulators only (no groups): a flat alias -> descriptor record', () => {
+    // sum(double) is nullable (the empty no-groups row carries null); countAll
+    // is a plain int64 (0, never null).
+    const oracle = { total: nullable(double()), n: int64() };
+    const actual = buildAggregateSchema(schema, [total, n]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('a bare-path group key passes through unchanged (non-optional stays as-is)', () => {
+    const oracle = { n: int64(), g: string() };
+    const actual = buildAggregateSchema(schema, [n], ['g']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('an aliased-expression group projects the expression at its alias', () => {
+    const oracle = { n: int64(), big: bool() };
+    const actual = buildAggregateSchema(
+      schema,
+      [n],
+      [greaterThan(field(schema.rank, 'rank'), constant(4)).as('big')],
+    );
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('a top-level optional group key merges absent into null (nullable, never absent)', () => {
+    // null and absent group keys merge into ONE null group (probed) — the
+    // `& Optional` field is rewritten to nullable.
+    const oracle = { n: int64(), opt: nullable(string()) };
+    const actual = buildAggregateSchema(schema, [n], ['opt']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('a nested (dotted) optional group key is rewritten to nullable in place', () => {
+    const oracle = { n: int64(), profile: map({ gender: nullable(literal('male', 'female')) }) };
+    const actual = buildAggregateSchema(schema, [n], ['profile.gender']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('an accumulator alias colliding with a group name wins', () => {
+    // `MergeSchemas` puts the accumulator record first, so its `g` overlays the
+    // group key `g` — the accumulator is the more specific intent.
+    const oracle = { g: int64() };
+    const actual = buildAggregateSchema(schema, [countAll().as('g')], ['g']);
     expect(actual).toStrictEqual(oracle);
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });

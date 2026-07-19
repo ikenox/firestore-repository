@@ -7,11 +7,20 @@ import {
   map,
   type MapFieldPath,
   type MapType,
+  nullable,
+  type NullType,
   type Optional,
   optional,
+  type UnionType,
 } from '../schema.js';
 import { assertNever } from '../util.js';
-import type { ExpressionWithAlias, Field } from './expression.js';
+import {
+  type AggregateWithAlias,
+  type ExpressionWithAlias,
+  type Field,
+  type WithoutOptional,
+  withoutOptional,
+} from './expression.js';
 
 // Re-exported for consumers of the selection model; the type itself lives in
 // `expression.ts` (it is produced by `Expression.as(...)`).
@@ -110,6 +119,81 @@ export type BuildAddFieldsSchema<
 > = Args extends readonly ExpressionWithAlias[]
   ? MergeSchemas<BuildSelectionSchema<Context, Args>, Context>
   : never;
+
+/**
+ * Output schema of the `aggregate` stage: the group keys' schema, transformed
+ * so no key can be absent ({@link AbsentMergesIntoNull}), with the accumulator
+ * results overlaid on top.
+ *
+ * The groups' {@link BuildSelectionSchema} output (identical projection rules
+ * to `distinct` — probed) is passed through {@link AbsentMergesIntoNull}
+ * because null and absent group keys merge into one `null` group (probed), so
+ * a group key reads back as nullable, never absent. The accumulator record is
+ * then merged ON TOP: an accumulator alias colliding with a group name **wins**
+ * (the accumulator is the more specific intent, and `MergeSchemas`'s
+ * first-argument-wins rule expresses it). Empty groups yield an
+ * accumulators-only schema (the whole-input group).
+ */
+export type AggregateSchema<
+  Context extends Fields,
+  Accs extends readonly AggregateWithAlias[],
+  Groups extends readonly Selection<Context>[],
+  // The `Accs extends ...` guard is always true; it defers evaluation so the
+  // result is accepted as a `DocumentSchema` (same trick as BuildAddFieldsSchema).
+> = Accs extends readonly AggregateWithAlias[]
+  ? MergeSchemas<
+      AccumulatorSchema<Accs>,
+      AbsentMergesIntoNull<BuildSelectionSchema<Context, Groups>>
+    > extends infer R extends Fields
+    ? // The `infer R extends Fields` re-binding discharges the `MapFields`
+      // constraint lazily: the merged mapped type's value positions are not
+      // PROVABLY `FieldType` while `Accs`/`Groups` are unresolved generics,
+      // so a direct use fails `Pipeline`'s schema bound.
+      R
+    : never
+  : never;
+
+/**
+ * Folds the accumulators into a flat `alias -> result descriptor` record. A
+ * later accumulator with a repeated alias wins (plain overwrite — accumulator
+ * aliases are always top-level names, so there is nothing to deep-merge,
+ * unlike the group schema).
+ */
+type AccumulatorSchema<Accs extends readonly AggregateWithAlias[]> = Accs extends readonly [
+  infer H extends AggregateWithAlias,
+  ...infer R extends readonly AggregateWithAlias[],
+]
+  ? OverwriteMerge<AccumulatorEntry<H>, AccumulatorSchema<R>>
+  : {};
+
+/** The single-entry schema an accumulator contributes: its alias mapped to its result descriptor. */
+type AccumulatorEntry<A extends AggregateWithAlias> = { [K in A['alias']]: A['aggregate']['type'] };
+
+/** Shallow overwrite merge (`B` wins per key; no deep map merge) — the accumulator fold's combiner. */
+type OverwriteMerge<A, B> = {
+  [K in keyof A | keyof B]: K extends keyof B ? B[K] : K extends keyof A ? A[K] : never;
+};
+
+/**
+ * Rewrites every `X & Optional` field — at ANY map depth — to
+ * `UnionType<[WithoutOptional<X>, NullType]>`: null and absent group keys
+ * merge into one `null` group (probed), so a group key is never absent in the
+ * result schema. Recurses through nested maps (a required map may hold an
+ * optional descendant, e.g. a `profile.gender` group key), and an optional map
+ * itself is made nullable in addition to its descendants being rewritten.
+ */
+export type AbsentMergesIntoNull<S extends Fields> = {
+  [K in keyof S]: RewriteAbsentField<S[K]>;
+};
+
+type RewriteAbsentField<T extends FieldType> =
+  T extends MapType<infer F>
+    ? T extends Optional
+      ? UnionType<[MapType<AbsentMergesIntoNull<F>>, NullType]>
+      : MapType<AbsentMergesIntoNull<F>>
+    : T extends Optional
+      ? UnionType<[WithoutOptional<T>, NullType]>
+      : T;
 
 /**
  * Resolves one selection into the partial schema it contributes to the output.
@@ -238,6 +322,60 @@ export const buildAddFieldsSchema = <
     foldSelections(schema, dropOverriddenSelections(selections)),
     schema,
   ) as BuildAddFieldsSchema<Context, Selections>;
+
+/**
+ * Runtime counterpart of {@link AggregateSchema}: computed with the same
+ * decomposition as the type —
+ * `mergeSchemas(accumulatorSchema(...), absentMergesIntoNull(buildSelectionSchema(...)))`
+ * mirrors `MergeSchemas<AccumulatorSchema<...>, AbsentMergesIntoNull<BuildSelectionSchema<...>>>`,
+ * so each step can be checked against its type-level twin. The result feeds
+ * the executors' row decoding, so it must mirror the type exactly — the tests
+ * in `selection.test.ts` are the safety net for the bridging assertion.
+ */
+export const buildAggregateSchema = <
+  Context extends Fields,
+  const Accs extends readonly AggregateWithAlias[],
+  const Groups extends readonly Selection<Context>[] = readonly [],
+>(
+  schema: Context,
+  accumulators: Accs,
+  groups?: Groups,
+): AggregateSchema<Context, Accs, Groups> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `AggregateSchema`, but the compiler cannot connect a runtime schema value to the type-level result
+  mergeSchemas(
+    accumulatorSchema(accumulators),
+    absentMergesIntoNull(buildSelectionSchema(schema, groups ?? [])),
+  ) as AggregateSchema<Context, Accs, Groups>;
+
+/**
+ * Runtime counterpart of {@link AccumulatorSchema}: a flat `alias -> descriptor`
+ * record built by iterating in order, so a repeated alias's later entry wins
+ * (mirrors the type's `OverwriteMerge` fold).
+ */
+const accumulatorSchema = (accumulators: readonly AggregateWithAlias[]): Fields => {
+  const result: Record<string, FieldType> = {};
+  for (const { aggregate, alias } of accumulators) {
+    result[alias] = aggregate.type;
+  }
+  return result;
+};
+
+/** Runtime counterpart of {@link AbsentMergesIntoNull}. */
+const absentMergesIntoNull = (schema: Fields): Fields =>
+  Object.fromEntries(Object.entries(schema).map(([k, v]) => [k, rewriteAbsentField(v)]));
+
+/** Runtime counterpart of {@link RewriteAbsentField}. */
+const rewriteAbsentField = (t: FieldType & { optional?: boolean }): FieldType => {
+  // Read the marker before `isMapType` narrows the descriptor to `AnyMapType`
+  // (narrowing drops the `optional?` part of the intersection) — the
+  // `isConditionalPath` precedent.
+  const isOptional = t.optional === true;
+  if (isMapType(t)) {
+    const inner = map(absentMergesIntoNull(t.fields));
+    return isOptional ? nullable(inner) : inner;
+  }
+  return isOptional ? nullable(withoutOptional(t)) : t;
+};
 
 /**
  * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection

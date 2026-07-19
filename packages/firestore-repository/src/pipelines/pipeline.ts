@@ -12,10 +12,12 @@ import {
   type OmitPaths,
   omitPaths,
 } from '../schema.js';
-import { AggregateWithAlias } from './aggregate.js';
+import type { AggregateWithAlias } from './expression.js';
 import { field, type Expression, type Field, type Valued } from './expression.js';
 import { Ordering } from './ordering.js';
 import {
+  type AggregateSchema,
+  buildAggregateSchema,
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
   type BuildSelectionSchema,
@@ -203,13 +205,32 @@ export class Pipeline<
   unnest(..._args: unknown[]): Pipeline<Fields, Id> {
     return unimplemented();
   }
-  aggregate(
-    _aggreate: (field: FieldProvider<Schema>) => {
-      accumulators: AggregateWithAlias[];
-      options?: { groupBy: Expression[] };
-    },
-  ): Pipeline<Fields, undefined> {
-    return unimplemented();
+  /**
+   * Groups the rows by the `groups` keys (the whole input when omitted) and
+   * reduces each group to one row of the `accumulators`. Identity-breaking
+   * (`Id = undefined`): a grouped row is not a source document.
+   *
+   * The result schema is the group keys (each made nullable — null and absent
+   * keys merge into one `null` group, probed) overlaid with the accumulator
+   * results (an accumulator alias colliding with a group name wins). With
+   * groups, an empty input yields ZERO rows; without groups, exactly ONE row
+   * carrying each accumulator's empty value (probed). See {@link AggregateSchema}.
+   */
+  // At least one accumulator is required (an aggregate with none is `distinct`).
+  aggregate<
+    const Accs extends readonly [AggregateWithAlias, ...AggregateWithAlias[]],
+    const Groups extends readonly Selection<Schema>[] = readonly [],
+  >(
+    spec: (field: FieldProvider<Schema>) => { accumulators: Accs; groups?: Groups },
+  ): Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined> {
+    const { accumulators, groups } = spec(fieldProvider(this.node.schema));
+    return new Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined>({
+      schema: buildAggregateSchema<Schema, Accs, Groups>(this.node.schema, accumulators, groups),
+      // Resolve last-wins on the groups here so the stage carries a
+      // conflict-free list that matches the schema (executors translate 1:1).
+      stage: { kind: 'aggregate', accumulators, groups: dropOverriddenSelections(groups ?? []) },
+      parent: this.node,
+    });
   }
   distinct<const Selections extends readonly Selection<Schema>[]>(
     _groups: (field: FieldProvider<Schema>) => Selections,

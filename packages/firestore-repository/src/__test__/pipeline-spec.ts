@@ -5,6 +5,7 @@ import {
   abs,
   add,
   and,
+  arrayAgg,
   arrayConcat,
   arrayContains,
   arrayContainsAll,
@@ -13,6 +14,7 @@ import {
   arrayLength,
   arrayReverse,
   arrayValue,
+  average,
   byteLength,
   ceil,
   charLength,
@@ -20,6 +22,10 @@ import {
   conditional,
   constant,
   cosineDistance,
+  count,
+  countAll,
+  countDistinct,
+  countIf,
   currentTimestamp,
   divide,
   docRefValue,
@@ -33,6 +39,7 @@ import {
   exp,
   type Expression,
   field,
+  first,
   floor,
   geoPointValue,
   greaterThan,
@@ -43,6 +50,7 @@ import {
   isAbsent,
   isError,
   isType,
+  last,
   lessThan,
   lessThanOrEqual,
   like,
@@ -51,6 +59,8 @@ import {
   logicalMaximum,
   logicalMinimum,
   ltrim,
+  maximum,
+  minimum,
   mapEntries,
   mapGet,
   mapKeys,
@@ -84,6 +94,7 @@ import {
   stringReverse,
   substring,
   subtract,
+  sum,
   timestampAdd,
   timestampDiff,
   timestampExtract,
@@ -120,6 +131,7 @@ import {
   double,
   int64,
   map,
+  nullable,
   optional,
   rootCollection,
   string,
@@ -1561,6 +1573,176 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             { id: ['a2'], data: { name: 'bob', rank: 2, score: 2 } },
             { id: ['a1'], data: { name: 'alice', rank: 1, score: 1 } },
           ],
+        );
+      });
+    });
+
+    // The `aggregate` stage, seeded to reproduce the probe matrix in
+    // docs/pipeline-query-aggregate-research.md. Oracles are hand-written FROM
+    // that doc. `aggregate` breaks read-identity, so the rows carry no `id`.
+    describe('aggregate', () => {
+      // `g` is the group key: it holds a value, `null`, OR is absent — so that
+      // the null-key and absent-key docs can be shown merging into one `null`
+      // group (hence `optional(nullable(...))`). `m` exercises count(expr) /
+      // average denominators over null + absent.
+      const aggregateCollection = rootCollection({
+        name: 'Aggregate',
+        schema: { g: optional(nullable(string())), n: int64(), m: optional(nullable(int64())) },
+      });
+      type AggregateDoc = Doc<typeof aggregateCollection>;
+      const aggregateItems: AggregateDoc[] = [
+        { id: ['d1'], data: { g: 'x', n: 1, m: 5 } },
+        { id: ['d2'], data: { g: 'x', n: 2, m: 7 } },
+        { id: ['d3'], data: { g: 'y', n: 4, m: null } }, // m null
+        { id: ['d4'], data: { g: null, n: 10, m: 6 } }, // g null
+        { id: ['d5'], data: { n: 20 } }, // g absent, m absent
+      ];
+
+      let coll: typeof aggregateCollection;
+      let emptyColl: typeof aggregateCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(aggregateCollection);
+        await createRepository(coll).batchSet(aggregateItems);
+        // A separate collection left unseeded — the empty-input cases.
+        emptyColl = uniqueCollection(aggregateCollection);
+      });
+      const src = () => collectionInput(coll);
+
+      /** Executes and compares rows (unordered by default — grouped output has no defined order). */
+      const expectRows = async <S extends DocumentSchema, Id extends PipelineRowIdentity>(
+        pipeline: Pipeline<S, Id>,
+        expected: readonly NoInfer<PipelineResult<S, Id>>[],
+        options?: { ordered?: boolean },
+      ): Promise<void> => {
+        const results = await executor.execute(pipeline);
+        if (options?.ordered === true) {
+          expect(results).toStrictEqual(expected);
+        } else {
+          assert.sameDeepMembers(results, [...expected]);
+        }
+      };
+
+      it('groups by a bare path; null and absent keys merge into one null group', async () => {
+        // d4 (g=null) and d5 (g absent) collapse into ONE group whose key reads
+        // back as `null` (not absent) — the "absent merges into null" rule for
+        // grouping. sum ignores nothing here (all n present); countAll counts rows.
+        await expectRows(
+          src().aggregate((field) => ({
+            accumulators: [sum(field('n')).as('s'), countAll().as('c')],
+            groups: ['g'],
+          })),
+          [
+            { data: { g: 'x', s: 3, c: 2 } },
+            { data: { g: 'y', s: 4, c: 1 } },
+            { data: { g: null, s: 30, c: 2 } },
+          ],
+        );
+      });
+
+      it('groups by an aliased expression (the computed key is projected)', async () => {
+        // greaterThan(n, 5): d1/d2/d3 → false, d4/d5 → true.
+        await expectRows(
+          src().aggregate((field) => ({
+            accumulators: [countAll().as('c')],
+            groups: [greaterThan(field('n'), constant(5)).as('big')],
+          })),
+          [{ data: { big: false, c: 3 } }, { data: { big: true, c: 2 } }],
+        );
+      });
+
+      it('no groups: one whole-input row (null excluded from count(expr) and the average denominator)', async () => {
+        // countAll counts all 5 rows; count(m) counts only the 3 non-null,
+        // present m values (d3 null, d5 absent excluded); average(m) divides by
+        // that same non-null count (18 / 3 = 6), not by 5.
+        await expectRows(
+          src().aggregate((field) => ({
+            accumulators: [
+              sum(field('n')).as('sumN'),
+              countAll().as('countAll'),
+              count(field('m')).as('countM'),
+              average(field('m')).as('avgM'),
+              minimum(field('n')).as('minN'),
+              maximum(field('n')).as('maxN'),
+            ],
+          })),
+          [{ data: { sumN: 37, countAll: 5, countM: 3, avgM: 6, minN: 1, maxN: 20 } }],
+        );
+      });
+
+      it('empty input WITH groups yields zero rows', async () => {
+        await expectRows(
+          collectionInput(emptyColl).aggregate(() => ({
+            accumulators: [countAll().as('c')],
+            groups: ['g'],
+          })),
+          [],
+        );
+      });
+
+      it('empty input WITHOUT groups yields one row with the empty values (sum/average null, countAll 0)', async () => {
+        // The whole-input group always emits one row; sum and average are NULL
+        // over an empty group (NOT 0, unlike SQL), while countAll is 0.
+        await expectRows(
+          collectionInput(emptyColl).aggregate((field) => ({
+            accumulators: [
+              sum(field('n')).as('s'),
+              countAll().as('c'),
+              average(field('n')).as('a'),
+            ],
+          })),
+          [{ data: { s: null, c: 0, a: null } }],
+        );
+      });
+
+      it('countDistinct / countIf over the whole input', async () => {
+        // countDistinct(g): distinct non-null values {x, y} → 2.
+        // countIf(n > 5): d4/d5 → 2.
+        await expectRows(
+          src().aggregate((field) => ({
+            accumulators: [
+              countDistinct(field('g')).as('distinctG'),
+              countIf(greaterThan(field('n'), constant(5))).as('bigN'),
+            ],
+          })),
+          [{ data: { distinctG: 2, bigN: 2 } }],
+        );
+      });
+
+      it('arrayAgg keeps null values as elements but skips absent ones', async () => {
+        // g over the five docs: 'x','x','y', null (d4), absent (d5). arrayAgg
+        // KEEPS the null but SKIPS the absent → a 4-element bag. Its order is
+        // backend-determined without a sort, so compare as a multiset.
+        const results = await executor.execute(
+          src().aggregate((field) => ({ accumulators: [arrayAgg(field('g')).as('vals')] })),
+        );
+        expect(results).toHaveLength(1);
+        const [row] = results;
+        assert(row !== undefined);
+        assert.sameDeepMembers(row.data.vals, ['x', 'x', 'y', null]);
+      });
+
+      it('first / last follow a preceding sort; last of an absent key is null (merged)', async () => {
+        // Sorted by n asc: d1(g x), d2(g x), d3(g y), d4(g null), d5(g absent).
+        // first(g) is 'x' (positional); last(g) is d5's absent key merged into
+        // null (kept, not skipped).
+        await expectRows(
+          src()
+            .sort((field) => [asc(field('n'))])
+            .aggregate((field) => ({
+              accumulators: [first(field('g')).as('first'), last(field('g')).as('last')],
+            })),
+          [{ data: { first: 'x', last: null } }],
+          { ordered: true },
+        );
+      });
+
+      it('an optional group key round-trips as null (present, not absent) in the decoded row', async () => {
+        // Grouping by the optional `g` alone (a distinct-like aggregate): the
+        // merged null/absent group decodes with `g: null` PRESENT — the key is
+        // null, never missing.
+        await expectRows(
+          src().aggregate(() => ({ accumulators: [countAll().as('c')], groups: ['g'] })),
+          [{ data: { g: 'x', c: 2 } }, { data: { g: 'y', c: 1 } }, { data: { g: null, c: 2 } }],
         );
       });
     });
