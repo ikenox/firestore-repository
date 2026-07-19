@@ -188,7 +188,7 @@ export class DocRefValue<T extends Collection | 'unknown' = 'unknown'> {
   }
 
   /** Context-free form: an untyped segment path — `DocRefType<'unknown'>`. */
-  static of(path: readonly string[]): DocRefValue;
+  static of(this: void, path: readonly string[]): DocRefValue;
   /**
    * Collection + address form: `DocRefValue.of(authors, ['a1'])`, typed
    * `DocRefType<Authors>`. Receiving the collection DEFINITION is what makes
@@ -197,8 +197,9 @@ export class DocRefValue<T extends Collection | 'unknown' = 'unknown'> {
    * segment-path payload, so the wire form is identical to the
    * context-free flavor.
    */
-  static of<T extends Collection>(collection: T, id: DocRef<T>): DocRefValue<T>;
+  static of<T extends Collection>(this: void, collection: T, id: DocRef<T>): DocRefValue<T>;
   static of(
+    this: void,
     first: readonly string[] | Collection,
     id?: [...string[], string],
   ): DocRefValue<Collection | 'unknown'> {
@@ -212,28 +213,13 @@ export class DocRefValue<T extends Collection | 'unknown' = 'unknown'> {
   }
 }
 
-/** Builds a document-reference value — see {@link DocRefValue} (and its typed collection+address form). */
-export function docRefValue(path: readonly string[]): DocRefValue;
-export function docRefValue<T extends Collection>(collection: T, id: DocRef<T>): DocRefValue<T>;
-export function docRefValue(
-  first: readonly string[] | Collection,
-  id?: [...string[], string],
-): DocRefValue<Collection | 'unknown'> {
-  return isSegments(first) ? DocRefValue.of(first) : DocRefValue.of(first, requireId(id));
-}
+/** Builds a document-reference value — sugar for {@link DocRefValue}.of, like `constant` for `Constant.of`. */
+export const docRefValue = DocRefValue.of;
 
 // `Array.isArray`'s built-in `arg is any[]` does not narrow READONLY array
 // unions (the `isConstantArray` precedent) — the annotation deliberately
 // overrides it.
 const isSegments = (v: readonly string[] | Collection): v is readonly string[] => Array.isArray(v);
-
-/** The overload-impl bridge cannot see that the collection form always carries an id. */
-const requireId = (id: [...string[], string] | undefined): [...string[], string] => {
-  if (id === undefined) {
-    throw new Error('the collection form requires an id tuple');
-  }
-  return id;
-};
 
 /**
  * The value domain `constant()` accepts — everything with an unambiguous
