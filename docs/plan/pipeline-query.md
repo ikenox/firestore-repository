@@ -577,6 +577,25 @@ Items agreed in discussion but previously recorded only inline in DONE notes
       `FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY`; the suite is
       skipIf-gated and has never executed against the real backend — the
       admin adapter covers the shared spec live today).
+- [ ] **Canonical union normalization — `UnionType` valid-by-construction**
+      (agreed 2026-07, NEXT UP after the aggregate stage lands). The
+      always-valid principle applied to descriptors: union normalization is
+      today re-implemented at every construction site (`EitherType` /
+      `LogicalExtreme` / `ElementUnion` / `ConcatElementUnion` /
+      `MapFieldUnion` dedups, `NullableStripped`'s strip-then-reattach,
+      and `arrayGet`'s pinned union-NESTING wrap), because nothing
+      guarantees a `UnionType` is canonical. Introduce ONE `Normalize`
+      (type + runtime twin) owned by the union constructors (`union()`,
+      `nullable()`, `RebuildUnion`, ...): 1. flatten nested unions; 2. dedup members by `DescriptorEquals` (first-occurrence order —
+      deterministic, matching the existing dedup rule); 3. drop `never` members; 4. unwrap a singleton to the bare descriptor.
+      Consequences: `NullableStripped` collapses to
+      `Normalize<[StripNull<T>, NullType]>`-composition; the per-helper
+      dedups become `Normalize` calls (N implementations → 1); `arrayGet`'s
+      nested-union pin flips to flattened (update that test as "fixed");
+      `nullable(nullable(x))` becomes idempotent. Watch TS recursion
+      cost; the runtime twin mirrors branch-for-branch as usual. Scope is
+      a cross-cutting refactor comparable to the payload-union one — its
+      own PR, with the shape-oracle tests updated alongside.
 - [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
       the aggregate node ships as `AggregateFunction` (the SDK's name), which
       makes the pair with the expression node asymmetric — rename
