@@ -389,8 +389,9 @@ both executors and the basic backend semantics in one round trip per family.
 
 ## Test strategy
 
-- [ ] **Planned cleanup — layer the expression tests (agreed 2026-07, not
-      yet done).** A `toStrictEqual` whose expected value is a TRANSCRIPTION
+- [x] **Layer the expression tests (done 2026-07; 21/22 inventory cells
+      filled — the ElementsOf wide-fallback cell is unreachable without a
+      banned assertion, noted in-file).** A `toStrictEqual` whose expected value is a TRANSCRIPTION
       of the implementation (the construction oracles like
       `expect(add(l, r)).toStrictEqual(new FunctionCall(...))`) verifies
       nothing durable: since the payload-union restructure the payload shape

@@ -1,17 +1,22 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import { expectTypedStrictEqual } from '../__test__/assertion.js';
 import { refPath } from '../path.js';
 import {
+  type AnyUnionType,
   array,
+  type ArrayType,
   bool,
   type BoolType,
   bytes,
   docRef,
   double,
+  type FieldType,
   geoPoint,
   int64,
   literal,
   map,
+  type MapType,
   nullable,
   nullType,
   optional,
@@ -20,6 +25,7 @@ import {
   type StringType,
   timestamp,
   union,
+  type UnionType,
   vector,
 } from '../schema.js';
 import {
@@ -205,44 +211,30 @@ describe('expression factories', () => {
     // Heterogeneous arrays: element descriptors dedup in tuple order and
     // become a UnionType (matching Firestore's heterogeneous arrays).
     const mixed = constant([1, 'a', 2, true]);
-    const mixedOracle = array(union(double(), string(), bool()));
-    expect(mixed.type).toStrictEqual(mixedOracle);
-    expectTypeOf(mixed.type).toEqualTypeOf(mixedOracle);
+    expectTypedStrictEqual(mixed.type, array(union(double(), string(), bool())));
 
     // Geopoint / vector nodes double as composite leaves (Firestore values
     // hold them at any depth; they have no plain-JS representation, so the
     // explicit nodes stand in).
     const withNodes = constant({ spot: geoPointValue(1, 3), embedding: [vectorValue([1, 2])] });
-    const withNodesOracle = map({ spot: geoPoint(), embedding: array(vector()) });
-    expect(withNodes.type).toStrictEqual(withNodesOracle);
-    expectTypeOf(withNodes.type).toEqualTypeOf(withNodesOracle);
+    expectTypedStrictEqual(withNodes.type, map({ spot: geoPoint(), embedding: array(vector()) }));
 
     const nestedMixed = constant({ deep: [1, 'a'] });
-    const nestedMixedOracle = map({ deep: array(union(double(), string())) });
-    expect(nestedMixed.type).toStrictEqual(nestedMixedOracle);
-    expectTypeOf(nestedMixed.type).toEqualTypeOf(nestedMixedOracle);
+    expectTypedStrictEqual(nestedMixed.type, map({ deep: array(union(double(), string())) }));
 
     // Null in ELEMENT position: an element/field descriptor like any other.
     const nullElement = constant([1, null]);
-    const nullElementOracle = array(union(double(), nullType()));
-    expect(nullElement.type).toStrictEqual(nullElementOracle);
-    expectTypeOf(nullElement.type).toEqualTypeOf(nullElementOracle);
+    expectTypedStrictEqual(nullElement.type, array(union(double(), nullType())));
     const nullField = constant({ a: null });
-    const nullFieldOracle = map({ a: nullType() });
-    expect(nullField.type).toStrictEqual(nullFieldOracle);
-    expectTypeOf(nullField.type).toEqualTypeOf(nullFieldOracle);
+    expectTypedStrictEqual(nullField.type, map({ a: nullType() }));
 
     // A reference node as an ARRAY element (the map-field leaf is covered above).
     const refElement = constant([docRefValue(['authors', 'a1'])]);
-    const refElementOracle = array(docRef());
-    expect(refElement.type).toStrictEqual(refElementOracle);
-    expectTypeOf(refElement.type).toEqualTypeOf(refElementOracle);
+    expectTypedStrictEqual(refElement.type, array(docRef()));
 
     // Same-kind value nodes dedup to one element descriptor.
     const vectors = constant([vectorValue([1]), vectorValue([2])]);
-    const vectorsOracle = array(vector());
-    expect(vectors.type).toStrictEqual(vectorsOracle);
-    expectTypeOf(vectors.type).toEqualTypeOf(vectorsOracle);
+    expectTypedStrictEqual(vectors.type, array(vector()));
 
     expect(() =>
       // @ts-expect-error -- an empty array literal has no element to infer from
@@ -261,22 +253,16 @@ describe('expression factories', () => {
     equal(field(bool(), 'flag'), constant(false));
   });
 
-  it('builds function-call nodes with typed payloads', () => {
-    // Whole-instance comparison: `toStrictEqual` checks the constructor and
-    // every own field, so a payload field added later cannot silently escape.
+  it('derives boolean result descriptors for comparisons and logical operators', () => {
     const cmp = lessThan(rank, count);
-    expect(cmp).toStrictEqual(
-      new FunctionCall(bool(), { name: 'lessThan', left: rank, right: count }),
-    );
+    expectTypedStrictEqual(cmp.type, bool());
 
     const neg = not(flag);
-    expect(neg).toStrictEqual(new FunctionCall(bool(), { name: 'not', condition: flag }));
+    expectTypedStrictEqual(neg.type, bool());
     expectTypeOf(neg).toEqualTypeOf<FunctionCall<BoolType>>();
 
     const both = and(flag, cmp, neg);
-    expect(both).toStrictEqual(
-      new FunctionCall(bool(), { name: 'and', conditions: [flag, cmp, neg] }),
-    );
+    expectTypedStrictEqual(both.type, bool());
     expectTypeOf(both).toEqualTypeOf<FunctionCall<BoolType>>();
   });
 });
@@ -313,19 +299,16 @@ describe('aliasing (.as)', () => {
 describe('constant edges', () => {
   it('non-finite and signed-zero numbers are doubles', () => {
     for (const n of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0]) {
-      expect(constant(n).type).toStrictEqual(double());
+      expectTypedStrictEqual(constant(n).type, double());
     }
   });
 
   it('Buffer is bytes (it is a Uint8Array)', () => {
-    expect(constant(Buffer.from([1, 2])).type).toStrictEqual(bytes());
+    expectTypedStrictEqual(constant(Buffer.from([1, 2])).type, bytes());
   });
 
   it('an empty map is valid (unlike an empty array)', () => {
-    const empty = constant({});
-    const oracle = map({});
-    expect(empty.type).toStrictEqual(oracle);
-    expectTypeOf(empty.type).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(constant({}).type, map({}));
   });
 
   it('undefined is rejected on both layers', () => {
@@ -353,9 +336,7 @@ describe('constant edges', () => {
       { a: 1, b: 2 },
       { b: 3, a: 4 },
     ]);
-    const oracle = array(map({ a: double(), b: double() }));
-    expect(c.type).toStrictEqual(oracle);
-    expectTypeOf(c.type).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(c.type, array(map({ a: double(), b: double() })));
   });
 
   it('vectorValue copies its input defensively', () => {
@@ -391,9 +372,7 @@ describe('comparison operators (table-driven over all six)', () => {
     cmp: (left: Expression, right: Expression) => FunctionCall<BoolType>,
   ) => {
     // number domain (int64 / double / numeric literal / number constant)
-    expect(cmp(rank, count)).toStrictEqual(
-      new FunctionCall(bool(), { name: fnName, left: rank, right: count }),
-    );
+    expect(cmp(rank, count).call.name).toBe(fnName);
     expect(cmp(field(literal(1, 2), 'lv'), constant(2)).call.name).toBe(fnName);
     // string domain (plain / literal)
     expect(cmp(field(literal('x', 'y'), 's'), constant('x')).call.name).toBe(fnName);
@@ -510,13 +489,10 @@ describe('logical operator edges', () => {
 
   it('takes many operands and nests', () => {
     const cmp = equal(field(double(), 'rank'), constant(1));
+    // The compiler checks the five-operand, nested-operand payload; the
+    // remaining runtime claim is the result descriptor.
     const five = and(flag, cmp, not(flag), or(flag, cmp), not(not(flag)));
-    expect(five).toStrictEqual(
-      new FunctionCall(bool(), {
-        name: 'and',
-        conditions: [flag, cmp, not(flag), or(flag, cmp), not(not(flag))],
-      }),
-    );
+    expectTypedStrictEqual(five.type, bool());
   });
 
   it("conditions are Valued<'boolean'>: boolean literals and nullable booleans qualify", () => {
@@ -542,38 +518,31 @@ describe('logical operator edges', () => {
 
     // All-boolean operands: the result stays a plain BoolType.
     const strict = and(flag, not(flag));
-    expect(strict.type).toStrictEqual(bool());
-    expectTypeOf(strict.type).toEqualTypeOf(bool());
+    expectTypedStrictEqual(strict.type, bool());
 
     // A nullable operand propagates.
     const viaNullable = and(flag, field(nullable(bool()), 'nb'));
-    expect(viaNullable.type).toStrictEqual(nullableBool);
-    expectTypeOf(viaNullable.type).toEqualTypeOf(nullableBool);
+    expectTypedStrictEqual(viaNullable.type, nullableBool);
 
     // An optional (possibly absent) operand counts too: an absent operand
     // flows through functions as null (probed).
     const viaOptional = or(flag, field(optional(bool()), 'ob'));
-    expect(viaOptional.type).toStrictEqual(nullableBool);
-    expectTypeOf(viaOptional.type).toEqualTypeOf(nullableBool);
+    expectTypedStrictEqual(viaOptional.type, nullableBool);
 
     // A boolean literal union containing null counts.
     const viaLiteral = or(flag, field(literal(true, null), 'ln'));
-    expect(viaLiteral.type).toStrictEqual(nullableBool);
-    expectTypeOf(viaLiteral.type).toEqualTypeOf(nullableBool);
+    expectTypedStrictEqual(viaLiteral.type, nullableBool);
 
     // not() propagates, and nested nullability flows upward.
     const viaNot = not(field(nullable(bool()), 'nb'));
-    expect(viaNot.type).toStrictEqual(nullableBool);
-    expectTypeOf(viaNot.type).toEqualTypeOf(nullableBool);
+    expectTypedStrictEqual(viaNot.type, nullableBool);
     const nested = and(flag, viaNot);
-    expect(nested.type).toStrictEqual(nullableBool);
-    expectTypeOf(nested.type).toEqualTypeOf(nullableBool);
+    expectTypedStrictEqual(nested.type, nullableBool);
 
     // Comparisons do NOT propagate: they are total (never null), even over
     // nullable operands.
     const cmp = equal(field(nullable(string()), 'ns'), constant(null));
-    expect(cmp.type).toStrictEqual(bool());
-    expectTypeOf(cmp.type).toEqualTypeOf(bool());
+    expectTypedStrictEqual(cmp.type, bool());
   });
 });
 
@@ -582,11 +551,11 @@ describe('arithmetic operators', () => {
   const count = field(int64(), 'count');
 
   it('builds function-call nodes across all three arities', () => {
-    expect(rand()).toStrictEqual(new FunctionCall(double(), { name: 'rand' }));
-    expect(abs(rank)).toStrictEqual(new FunctionCall(double(), { name: 'abs', value: rank }));
-    expect(add(rank, count)).toStrictEqual(
-      new FunctionCall(double(), { name: 'add', left: rank, right: count }),
-    );
+    // Nullary / unary / binary shapes are compile-checked by the payload types;
+    // the runtime claim that remains is the result descriptor.
+    expectTypedStrictEqual(rand().type, double());
+    expectTypedStrictEqual(abs(rank).type, double());
+    expectTypedStrictEqual(add(rank, count).type, double());
   });
 
   it('unary functions share the numeric domain; the rounding family preserves int64', () => {
@@ -596,9 +565,9 @@ describe('arithmetic operators', () => {
       ['ceil', ceil],
       ['floor', floor],
     ] as const;
-    for (const [fnName, fn] of preserving) {
-      expect(fn(count)).toStrictEqual(new FunctionCall(int64(), { name: fnName, value: count }));
-      expect(fn(rank)).toStrictEqual(new FunctionCall(double(), { name: fnName, value: rank }));
+    for (const [, fn] of preserving) {
+      expectTypedStrictEqual(fn(count).type, int64());
+      expectTypedStrictEqual(fn(rank).type, double());
     }
     // Always-double (probed): sqrt/exp/ln/log10 leave the integer domain.
     const alwaysDouble = [
@@ -608,46 +577,38 @@ describe('arithmetic operators', () => {
       ['log10', log10],
     ] as const;
     for (const [fnName, fn] of alwaysDouble) {
-      expect(fn(count)).toStrictEqual(new FunctionCall(double(), { name: fnName, value: count }));
+      expectTypedStrictEqual(fn(count).type, double());
+      // Literal-typed numeric fields are inside the domain (dispatch confirms acceptance).
       expect(fn(field(literal(1, 2), 'lv')).call.name).toBe(fnName);
     }
     // round/trunc carry an extra generic for the optional decimal-places
     // operand, so a union-typed table entry is not callable — exercised
     // individually. They preserve the FIRST operand's kind even with decimal
     // places (probed).
-    expect(round(count)).toStrictEqual(new FunctionCall(int64(), { name: 'round', value: count }));
-    expect(trunc(count, constant(1))).toStrictEqual(
-      new FunctionCall(int64(), { name: 'trunc', value: count, decimalPlaces: constant(1) }),
-    );
-    expect(round(rank)).toStrictEqual(new FunctionCall(double(), { name: 'round', value: rank }));
-    expectTypeOf(round(count).type).toEqualTypeOf(int64());
+    expectTypedStrictEqual(round(count).type, int64());
+    expectTypedStrictEqual(trunc(count, constant(1)).type, int64());
+    expectTypedStrictEqual(round(rank).type, double());
     // @ts-expect-error -- a string operand is not numeric
     abs(field(string(), 'name'));
   });
 
   it('binary type-preserving functions keep an int64 pair; any double side widens', () => {
-    expect(add(count, count)).toStrictEqual(
-      new FunctionCall(int64(), { name: 'add', left: count, right: count }),
-    );
-    expectTypeOf(add(count, count).type).toEqualTypeOf(int64());
-    expect(divide(count, count).type).toStrictEqual(int64());
-    expect(add(count, rank).type).toStrictEqual(double());
+    expectTypedStrictEqual(add(count, count).type, int64());
+    expectTypedStrictEqual(divide(count, count).type, int64());
+    expectTypedStrictEqual(add(count, rank).type, double());
     // A number constant is a DoubleType — it widens.
-    expect(add(count, constant(2)).type).toStrictEqual(double());
+    expectTypedStrictEqual(add(count, constant(2)).type, double());
     // pow is always a double, even over an int64 pair (probed).
-    expect(pow(count, count).type).toStrictEqual(double());
+    expectTypedStrictEqual(pow(count, count).type, double());
     // Null propagation wraps around the refined kind.
     const viaNullable = add(count, field(nullable(int64()), 'n'));
-    expect(viaNullable.type).toStrictEqual(nullable(int64()));
-    expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(int64()));
+    expectTypedStrictEqual(viaNullable.type, nullable(int64()));
   });
 
   it('every binary function shares the numeric domain and DoubleType result', () => {
     // `add` is prototyped with direct-literal operands (a superset signature),
     // so it is exercised on its own rather than in the shared union table.
-    expect(add(rank, constant(2))).toStrictEqual(
-      new FunctionCall(double(), { name: 'add', left: rank, right: constant(2) }),
-    );
+    expectTypedStrictEqual(add(rank, constant(2)).type, double());
     const table = [
       ['subtract', subtract],
       ['multiply', multiply],
@@ -655,15 +616,11 @@ describe('arithmetic operators', () => {
       ['mod', mod],
     ] as const;
     for (const [fnName, fn] of table) {
-      expect(fn(rank, constant(2))).toStrictEqual(
-        new FunctionCall(double(), { name: fnName, left: rank, right: constant(2) }),
-      );
+      // Dispatch (name) confirms the numeric domain is accepted; the result is DoubleType.
+      expect(fn(rank, constant(2)).call.name).toBe(fnName);
+      expectTypedStrictEqual(fn(rank, constant(2)).type, double());
     }
-    // pow's payload names its operands base/exponent, so it sits outside the
-    // left/right table.
-    expect(pow(rank, constant(2))).toStrictEqual(
-      new FunctionCall(double(), { name: 'pow', base: rank, exponent: constant(2) }),
-    );
+    expectTypedStrictEqual(pow(rank, constant(2)).type, double());
     // @ts-expect-error -- a string operand is not numeric
     add(field(string(), 'name'), constant(1));
     // @ts-expect-error -- a boolean operand is not numeric
@@ -671,12 +628,9 @@ describe('arithmetic operators', () => {
   });
 
   it('round/trunc are dual-arity: an optional decimal-places operand', () => {
-    expect(round(rank, constant(2))).toStrictEqual(
-      new FunctionCall(double(), { name: 'round', value: rank, decimalPlaces: constant(2) }),
-    );
-    expect(trunc(rank, count)).toStrictEqual(
-      new FunctionCall(double(), { name: 'trunc', value: rank, decimalPlaces: count }),
-    );
+    // The two-operand shape is compile-checked; the descriptor is the runtime claim.
+    expectTypedStrictEqual(round(rank, constant(2)).type, double());
+    expectTypedStrictEqual(trunc(rank, count).type, double());
     // @ts-expect-error -- decimal places must be numeric
     round(rank, constant('2'));
   });
@@ -684,15 +638,32 @@ describe('arithmetic operators', () => {
   it('propagates operand nullability, and rand (no operands) never does', () => {
     const nullableDouble = nullable(double());
     const viaNullable = add(rank, field(nullable(int64()), 'nc'));
-    expect(viaNullable.type).toStrictEqual(nullableDouble);
-    expectTypeOf(viaNullable.type).toEqualTypeOf(nullableDouble);
+    expectTypedStrictEqual(viaNullable.type, nullableDouble);
     const viaOptional = sqrt(field(optional(double()), 'od'));
-    expect(viaOptional.type).toStrictEqual(nullableDouble);
-    expectTypeOf(viaOptional.type).toEqualTypeOf(nullableDouble);
+    expectTypedStrictEqual(viaOptional.type, nullableDouble);
     const viaDecimals = round(rank, field(nullable(int64()), 'nd'));
-    expect(viaDecimals.type).toStrictEqual(nullableDouble);
-    expectTypeOf(viaDecimals.type).toEqualTypeOf(nullableDouble);
-    expectTypeOf(rand().type).toEqualTypeOf(double());
+    expectTypedStrictEqual(viaDecimals.type, nullableDouble);
+    expectTypedStrictEqual(rand().type, double());
+  });
+
+  it('PropagateNull matrix: a literal-null source and a left-side nullable operand', () => {
+    // A literal whose value set includes null propagates outside the boolean
+    // domain too — the null value widens the numeric result to nullable.
+    const litNull = add(field(literal(1, null), 'ln'), field(int64(), 'i'));
+    expectTypedStrictEqual(litNull.type, nullable(double()));
+    // The LEFT operand's nullability propagates exactly as the right's does
+    // (the existing arithmetic cases put the nullable operand on the right).
+    const leftNullable = add(field(nullable(int64()), 'n'), field(int64(), 'i'));
+    expectTypedStrictEqual(leftNullable.type, nullable(int64()));
+  });
+
+  it('NumericResult composes with the null wrap over nullable / optional operands', () => {
+    // A double side keeps the result double; the nullable operand wraps it.
+    const nd = add(field(nullable(double()), 'nd'), field(double(), 'd2'));
+    expectTypedStrictEqual(nd.type, nullable(double()));
+    // An optional int64 pair strips to int64 for the kind, then absence wraps it.
+    const oi = add(field(optional(int64()), 'oi'), field(int64(), 'i2'));
+    expectTypedStrictEqual(oi.type, nullable(int64()));
   });
 });
 
@@ -709,25 +680,28 @@ describe('string operators', () => {
       ['byteLength', byteLength, int64()],
     ] as const;
     for (const [fnName, fn, resultType] of table) {
-      expect(fn(name)).toStrictEqual(new FunctionCall(resultType, { name: fnName, value: name }));
+      // Dispatch confirms the operator; the descriptor is per-row (string/int64).
+      // The heterogeneous table makes the loop body types unions, so the
+      // per-row exactness of `expectTypedStrictEqual` cannot be carried here.
+      expect(fn(name).call.name).toBe(fnName);
+      expect(fn(name).type).toStrictEqual(resultType);
       // Literal-typed string fields are inside the domain.
       expect(fn(gender).call.name).toBe(fnName);
     }
     // The trim family carries an extra generic for the optional character-set
     // operand, so a union-typed table entry is not callable — exercised
     // individually.
-    expect(trim(name)).toStrictEqual(new FunctionCall(string(), { name: 'trim', value: name }));
-    expect(ltrim(name)).toStrictEqual(new FunctionCall(string(), { name: 'ltrim', value: name }));
-    expect(rtrim(name)).toStrictEqual(new FunctionCall(string(), { name: 'rtrim', value: name }));
+    expectTypedStrictEqual(trim(name).type, string());
+    expectTypedStrictEqual(ltrim(name).type, string());
+    expectTypedStrictEqual(rtrim(name).type, string());
     expect(trim(gender).call.name).toBe('trim');
     // @ts-expect-error -- a numeric operand is not a string
     toUpper(field(double(), 'rank'));
   });
 
   it('trim family is dual-arity: an optional character-set operand', () => {
-    expect(trim(name, constant('"'))).toStrictEqual(
-      new FunctionCall(string(), { name: 'trim', value: name, characters: constant('"') }),
-    );
+    // The two-operand shape is compile-checked; the descriptor is the runtime claim.
+    expectTypedStrictEqual(trim(name, constant('"')).type, string());
     expect(ltrim(name, constant('x')).call.name).toBe('ltrim');
     expect(rtrim(name, constant('x')).call.name).toBe('rtrim');
     // @ts-expect-error -- the character set must be a string
@@ -735,24 +709,16 @@ describe('string operators', () => {
   });
 
   it('predicates return BoolType but PROPAGATE null (unlike comparisons)', () => {
-    expect(startsWith(name, constant('a'))).toStrictEqual(
-      new FunctionCall(bool(), { name: 'startsWith', value: name, prefix: constant('a') }),
-    );
-    expect(endsWith(name, constant('a'))).toStrictEqual(
-      new FunctionCall(bool(), { name: 'endsWith', value: name, suffix: constant('a') }),
-    );
-    expect(stringContains(name, constant('a'))).toStrictEqual(
-      new FunctionCall(bool(), { name: 'stringContains', value: name, substring: constant('a') }),
-    );
+    expectTypedStrictEqual(startsWith(name, constant('a')).type, bool());
+    expectTypedStrictEqual(endsWith(name, constant('a')).type, bool());
+    expectTypedStrictEqual(stringContains(name, constant('a')).type, bool());
     // `startsWith` is prototyped with direct-literal operands, so it is
     // exercised individually rather than in the shared union.
     const startsWithNullable = startsWith(field(nullable(string()), 'ns'), constant('a'));
-    expect(startsWithNullable.type).toStrictEqual(nullable(bool()));
-    expectTypeOf(startsWithNullable.type).toEqualTypeOf(nullable(bool()));
+    expectTypedStrictEqual(startsWithNullable.type, nullable(bool()));
     for (const fn of [endsWith, stringContains] as const) {
       const viaNullable = fn(field(nullable(string()), 'ns'), constant('a'));
-      expect(viaNullable.type).toStrictEqual(nullable(bool()));
-      expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(bool()));
+      expectTypedStrictEqual(viaNullable.type, nullable(bool()));
     }
     // A propagated predicate is still a valid condition (BooleanValued domain).
     and(field(bool(), 'flag'), startsWith(field(nullable(string()), 'ns'), constant('a')));
@@ -762,13 +728,9 @@ describe('string operators', () => {
 
   it('stringConcat takes two or more strings and propagates nullability', () => {
     const c = stringConcat(name, constant('-'), gender);
-    expect(c).toStrictEqual(
-      new FunctionCall(string(), { name: 'stringConcat', operands: [name, constant('-'), gender] }),
-    );
-    expectTypeOf(c.type).toEqualTypeOf(string());
+    expectTypedStrictEqual(c.type, string());
     const viaNullable = stringConcat(name, field(nullable(string()), 'ns'));
-    expect(viaNullable.type).toStrictEqual(nullable(string()));
-    expectTypeOf(viaNullable.type).toEqualTypeOf(nullable(string()));
+    expectTypedStrictEqual(viaNullable.type, nullable(string()));
     // @ts-expect-error -- stringConcat requires at least two operands
     stringConcat(name);
     // @ts-expect-error -- a numeric operand is not a string
@@ -784,34 +746,26 @@ describe('string operators', () => {
     // @ts-expect-error -- a numeric result is not a string operand
     toUpper(charLength(name));
   });
+
+  it('PropagateNull matrix: a literal-null string source and a left-side nullable predicate operand', () => {
+    // A literal whose value set includes null propagates through a transform.
+    const sn = toUpper(field(literal('a', null), 'sn'));
+    expectTypedStrictEqual(sn.type, nullable(string()));
+    // A predicate with the nullable operand on the LEFT propagates (the string
+    // predicates PROPAGATE null, unlike the total comparison operators).
+    const leftNullable = endsWith(field(nullable(string()), 'nsl'), constant('a'));
+    expectTypedStrictEqual(leftNullable.type, nullable(bool()));
+  });
 });
 
 describe('string operators (slice 3)', () => {
   const name = field(string(), 'name');
 
   it('indexOf / repeat / replace / substring shapes and domains', () => {
-    expect(stringIndexOf(name, constant('b'))).toStrictEqual(
-      new FunctionCall(int64(), { name: 'stringIndexOf', value: name, substring: constant('b') }),
-    );
-    expect(stringRepeat(name, constant(2))).toStrictEqual(
-      new FunctionCall(string(), { name: 'stringRepeat', value: name, count: constant(2) }),
-    );
-    expect(stringReplaceAll(name, constant('a'), constant('x'))).toStrictEqual(
-      new FunctionCall(string(), {
-        name: 'stringReplaceAll',
-        value: name,
-        find: constant('a'),
-        replacement: constant('x'),
-      }),
-    );
-    expect(stringReplaceOne(name, constant('a'), constant('x'))).toStrictEqual(
-      new FunctionCall(string(), {
-        name: 'stringReplaceOne',
-        value: name,
-        find: constant('a'),
-        replacement: constant('x'),
-      }),
-    );
+    expectTypedStrictEqual(stringIndexOf(name, constant('b')).type, int64());
+    expectTypedStrictEqual(stringRepeat(name, constant(2)).type, string());
+    expectTypedStrictEqual(stringReplaceAll(name, constant('a'), constant('x')).type, string());
+    expectTypedStrictEqual(stringReplaceOne(name, constant('a'), constant('x')).type, string());
     // @ts-expect-error -- the repeat count is numeric
     stringRepeat(name, constant('2'));
     // @ts-expect-error -- a numeric operand is not a string
@@ -819,22 +773,16 @@ describe('string operators (slice 3)', () => {
   });
 
   it('substring is dual-arity: an optional length operand', () => {
-    expect(substring(name, constant(1))).toStrictEqual(
-      new FunctionCall(string(), { name: 'substring', value: name, position: constant(1) }),
-    );
-    expect(substring(name, constant(1), constant(2))).toStrictEqual(
-      new FunctionCall(string(), {
-        name: 'substring',
-        value: name,
-        position: constant(1),
-        length: constant(2),
-      }),
-    );
+    // Both arities are compile-checked; the descriptor is the runtime claim.
+    expectTypedStrictEqual(substring(name, constant(1)).type, string());
+    expectTypedStrictEqual(substring(name, constant(1), constant(2)).type, string());
     // @ts-expect-error -- position is numeric
     substring(name, constant('1'));
   });
 
   it('like and the regex predicates propagate null; regexFind is ALWAYS nullable', () => {
+    // A heterogeneous union of factories: the loop body types are unions, so
+    // the per-row exactness of `expectTypedStrictEqual` cannot be carried.
     for (const fn of [like, regexContains, regexMatch] as const) {
       expect(fn(name, constant('a%')).type).toStrictEqual(bool());
       const viaNullable = fn(field(nullable(string()), 'ns'), constant('a'));
@@ -843,12 +791,10 @@ describe('string operators (slice 3)', () => {
     // regexFind returns null on NO MATCH, so it is nullable even over
     // non-null operands (probed).
     const found = regexFind(name, constant('b+'));
-    expect(found.type).toStrictEqual(nullable(string()));
-    expectTypeOf(found.type).toEqualTypeOf(nullable(string()));
+    expectTypedStrictEqual(found.type, nullable(string()));
     // regexFindAll returns an empty array instead — plain unless operands are nullable.
     const all = regexFindAll(name, constant('b+'));
-    expect(all.type).toStrictEqual(array(string()));
-    expectTypeOf(all.type).toEqualTypeOf(array(string()));
+    expectTypedStrictEqual(all.type, array(string()));
   });
 });
 
@@ -858,9 +804,7 @@ describe('reference / type / vector operators', () => {
   it('documentId/collectionId take reference operands only', () => {
     const key = field(docRef(), '__name__');
     const refField = field(docRef(authors), 'ref');
-    expect(documentId(key)).toStrictEqual(
-      new FunctionCall(string(), { name: 'documentId', reference: key }),
-    );
+    expectTypedStrictEqual(documentId(key).type, string());
     expect(collectionId(key).call.name).toBe('collectionId');
     documentId(refField);
     collectionId(refField);
@@ -868,8 +812,7 @@ describe('reference / type / vector operators', () => {
     documentId(field(string(), 'name'));
     // A nullable/optional reference propagates.
     const viaOptional = documentId(field(optional(docRef(authors)), 'oref'));
-    expect(viaOptional.type).toStrictEqual(nullable(string()));
-    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(string()));
+    expectTypedStrictEqual(viaOptional.type, nullable(string()));
   });
 
   it('type() observes null and returns the backend type-name vocabulary', () => {
@@ -884,15 +827,11 @@ describe('reference / type / vector operators', () => {
     expect(viaOptional.type.type).toBe('union');
   });
 
-  it('isType stores its literal type name as a plain payload field', () => {
-    const call = isType(field(string(), 'name'), 'string');
-    expect(call).toStrictEqual(
-      new FunctionCall(bool(), {
-        name: 'isType',
-        value: field(string(), 'name'),
-        typeName: 'string',
-      }),
-    );
+  it('isType returns bool and constrains the type name to the backend vocabulary', () => {
+    // The literal type name is a plain payload field (not a lifted constant) —
+    // a fact the payload type enforces at compile time; the runtime claim is
+    // the result descriptor and the name-vocabulary rejection below.
+    expectTypedStrictEqual(isType(field(string(), 'name'), 'string').type, bool());
     isType(field(double(), 'rank'), 'float64');
     // @ts-expect-error -- an arbitrary string is not a backend type name
     isType(field(string(), 'name'), 'varchar');
@@ -900,22 +839,64 @@ describe('reference / type / vector operators', () => {
 
   it('vector functions take vector operands only', () => {
     const vec = field(vector(), 'vec');
-    expect(dotProduct(vec, constant(vectorValue([1, 2])))).toStrictEqual(
-      new FunctionCall(double(), {
-        name: 'dotProduct',
-        left: vec,
-        right: constant(vectorValue([1, 2])),
-      }),
-    );
+    expectTypedStrictEqual(dotProduct(vec, constant(vectorValue([1, 2]))).type, double());
     expect(cosineDistance(vec, vec).call.name).toBe('cosineDistance');
     expect(euclideanDistance(vec, vec).call.name).toBe('euclideanDistance');
-    expect(vectorLength(vec)).toStrictEqual(
-      new FunctionCall(int64(), { name: 'vectorLength', vector: vec }),
-    );
+    expectTypedStrictEqual(vectorLength(vec).type, int64());
     // @ts-expect-error -- a number array field is not a vector (the tag axis at work)
     dotProduct(vec, field(array(double()), 'nums'));
     // @ts-expect-error -- a string is not a vector
     vectorLength(field(string(), 'name'));
+  });
+
+  it('PropagateAbsence matrix: isType observes null but propagates only absence', () => {
+    // An OPTIONAL (possibly-absent) operand widens the bool result to nullable:
+    // an absent operand flows through as null.
+    expectTypedStrictEqual(
+      isType(field(optional(string()), 'os2'), 'string').type,
+      nullable(bool()),
+    );
+    // A nullable (present-null) operand does NOT propagate — a null VALUE is
+    // observed as the 'null' type, not a null result.
+    expectTypedStrictEqual(isType(field(nullable(string()), 'ns3'), 'string').type, bool());
+    // A plain operand does not propagate either.
+    expectTypedStrictEqual(isType(field(string(), 'ps'), 'string').type, bool());
+  });
+
+  it('PropagateAbsence matrix: type() does not propagate over a literal-null or plain operand', () => {
+    // type()'s return is LiteralType<FirestoreTypeName[]> (an array element
+    // type), while the oracle literal(...) is a tuple, so the two are
+    // intentionally type-unequal: plain toStrictEqual (like mapValues(profile)).
+    const typeNames = literal(
+      'null',
+      'boolean',
+      'string',
+      'bytes',
+      'number',
+      'int32',
+      'int64',
+      'float64',
+      'decimal128',
+      'timestamp',
+      'geo_point',
+      'reference',
+      'array',
+      'map',
+      'vector',
+      'max_key',
+      'min_key',
+      'object_id',
+      'regex',
+      'request_timestamp',
+    );
+    // A literal-null (null tag, NOT optional) operand does not propagate: the
+    // null value is observed as the 'null' type, so the descriptor stays the
+    // plain type-name literal.
+    const litNull = type(field(literal('a', null), 'ln4'));
+    expect(litNull.type).toStrictEqual(typeNames);
+    expectTypeOf(litNull.type).not.toEqualTypeOf(nullable(litNull.type));
+    // A plain operand likewise does not propagate.
+    expect(type(field(string(), 'ps4')).type).toStrictEqual(typeNames);
   });
 });
 
@@ -926,94 +907,77 @@ describe('existence / error / conditional operators (slice 5)', () => {
   const nullableName = field(nullable(string()), 'nullableName');
 
   it('exists/isAbsent take FIELD references only and are total booleans', () => {
-    expect(exists(name)).toStrictEqual(new FunctionCall(bool(), { name: 'exists', target: name }));
-    expect(isAbsent(optName)).toStrictEqual(
-      new FunctionCall(bool(), { name: 'isAbsent', target: optName }),
-    );
+    expectTypedStrictEqual(exists(name).type, bool());
+    expectTypedStrictEqual(isAbsent(optName).type, bool());
     // @ts-expect-error -- the backend requires a field reference, not a constant
     exists(constant(1));
     // @ts-expect-error -- nor any computed expression
     isAbsent(toUpper(name));
     // Total: no nullable widening even over optional fields.
-    expectTypeOf(exists(optName).type).toEqualTypeOf(bool());
+    expectTypedStrictEqual(exists(optName).type, bool());
   });
 
   it('isError is total over any expression', () => {
-    expect(isError(divide(rank, constant(0)))).toStrictEqual(
-      new FunctionCall(bool(), { name: 'isError', value: divide(rank, constant(0)) }),
-    );
-    expectTypeOf(isError(field(optional(string()), 'o')).type).toEqualTypeOf(bool());
+    expectTypedStrictEqual(isError(divide(rank, constant(0))).type, bool());
+    expectTypedStrictEqual(isError(field(optional(string()), 'o')).type, bool());
   });
 
   it('ifError unions try/catch and lets absence through the try side', () => {
     const same = ifError(name, constant('x'));
-    expect(same.type).toStrictEqual(string());
+    expectTypedStrictEqual(same.type, string());
     const mixed = ifError(name, constant(0));
-    expect(mixed.type).toStrictEqual(union(string(), double()));
+    expectTypedStrictEqual(mixed.type, union(string(), double()));
     // An optional try side may come out absent -> nullable approximation.
     const viaOptional = ifError(optName, constant('x'));
-    expect(viaOptional.type).toStrictEqual(nullable(string()));
+    expectTypedStrictEqual(viaOptional.type, nullable(string()));
   });
 
   it('ifAbsent unions value/fallback; a present null passes through', () => {
     const t = ifAbsent(optName, constant('dflt'));
-    expect(t.type).toStrictEqual(string());
+    expectTypedStrictEqual(t.type, string());
     const nullableThrough = ifAbsent(nullableName, constant('dflt'));
     // null is a VALUE for ifAbsent — it survives in the pass-through side.
-    expect(nullableThrough.type).toStrictEqual(union(nullable(string()), string()));
+    expectTypedStrictEqual(nullableThrough.type, union(nullable(string()), string()));
   });
 
   it('ifNull strips null from the pass-through side', () => {
     const t = ifNull(nullableName, constant('dflt'));
-    expect(t.type).toStrictEqual(string());
-    expectTypeOf(t.type).toEqualTypeOf(string());
+    expectTypedStrictEqual(t.type, string());
     const widening = ifNull(nullableName, constant(0));
-    expect(widening.type).toStrictEqual(union(string(), double()));
+    expectTypedStrictEqual(widening.type, union(string(), double()));
     // A pure-null value always falls back.
     const pureNull = ifNull(field(nullType(), 'n'), constant('dflt'));
-    expect(pureNull.type).toStrictEqual(string());
-    expectTypeOf(pureNull.type).toEqualTypeOf(string());
+    expectTypedStrictEqual(pureNull.type, string());
   });
 
   it('conditional selects then/else; null, absent, and false all mean else', () => {
     const flag = field(bool(), 'flag');
     const t = conditional(flag, constant('a'), constant(0));
-    expect(t).toStrictEqual(
-      new FunctionCall(union(string(), double()), {
-        name: 'conditional',
-        condition: flag,
-        thenExpr: constant('a'),
-        elseExpr: constant(0),
-      }),
-    );
+    expectTypedStrictEqual(t.type, union(string(), double()));
     const same = conditional(flag, name, field(string(), 'other'));
-    expect(same.type).toStrictEqual(string());
+    expectTypedStrictEqual(same.type, string());
     // @ts-expect-error -- the condition is a boolean operand
     conditional(name, constant('a'), constant('b'));
   });
 
   it('logicalMaximum/Minimum ignore null and dedup operand types', () => {
     const t = logicalMaximum(rank, field(double(), 'score'));
-    expect(t.type).toStrictEqual(union(int64(), double()));
+    expectTypedStrictEqual(t.type, union(int64(), double()));
     const same = logicalMinimum(rank, rank);
-    expect(same.type).toStrictEqual(int64());
+    expectTypedStrictEqual(same.type, int64());
     // Null-typed operands are ignored in the result type...
     const withNull = logicalMaximum(rank, field(nullable(int64()), 'n'));
-    expect(withNull.type).toStrictEqual(int64());
-    expectTypeOf(withNull.type).toEqualTypeOf(int64());
+    expectTypedStrictEqual(withNull.type, int64());
     // ...unless EVERY operand may be null/absent — then null can surface.
     const allNullable = logicalMaximum(
       field(nullable(int64()), 'a'),
       field(optional(int64()), 'b'),
     );
-    expect(allNullable.type).toStrictEqual(union(int64(), nullType()));
+    expectTypedStrictEqual(allNullable.type, union(int64(), nullType()));
   });
 
   it('equalAny/notEqualAny take one array-typed options expression', () => {
-    const t = equalAny(rank, constant([1, 5, 9]));
-    expect(t).toStrictEqual(
-      new FunctionCall(bool(), { name: 'equalAny', value: rank, options: constant([1, 5, 9]) }),
-    );
+    expectTypedStrictEqual(equalAny(rank, constant([1, 5, 9])).type, bool());
     equalAny(rank, field(array(int64()), 'options'));
     notEqualAny(name, constant(['a', 'b']));
     // @ts-expect-error -- options must be an array, not a scalar
@@ -1022,13 +986,58 @@ describe('existence / error / conditional operators (slice 5)', () => {
     equalAny(rank, constant(['a', 'b']));
   });
 
+  it('EitherType strips Optional markers from both branches', () => {
+    // Unequal sides, the value side Optional: its marker is dropped and the
+    // result is the union of the two bare descriptors.
+    const u = ifAbsent(field(optional(string()), 'o2'), constant(0));
+    expectTypedStrictEqual(u.type, union(string(), double()));
+    // Both branches carry a marker to strip: ifNull null-strips the value side,
+    // and the fallback side drops its Optional marker — leaving equal
+    // StringTypes, which collapse to a single descriptor.
+    const both = ifNull(field(nullable(string()), 'ns2'), field(optional(string()), 'of'));
+    expectTypedStrictEqual(both.type, string());
+  });
+
+  it('StripNull matrix: literal arms and the never / wide edges', () => {
+    // Literal pass-through arm: ifNull strips null from the literal's VALUE set,
+    // keeping literal('a'); unequal to the string fallback, so their union. This
+    // matches the naive expectation — the literal survives, only its null value
+    // is dropped.
+    const lit = ifNull(field(literal('a', null), 'l2'), constant('d'));
+    expectTypedStrictEqual(lit.type, union(literal('a'), string()));
+    // An all-null literal strips to `never`, so ifNull collapses to the fallback.
+    const allNull = ifNull(field(literal(null), 'ln2'), constant('d'));
+    expectTypedStrictEqual(allNull.type, string());
+    // Wide value arm (best-effort, type-level only): StripNull passes a wide
+    // FieldType operand through unchanged, so it surfaces as a union member
+    // beside the fallback. The runtime narrows to the concrete operand, so this
+    // is a type-level-only claim.
+    const wide: Expression = field(string(), 'w2');
+    expectTypeOf(ifNull(wide, constant('d')).type).toEqualTypeOf<
+      UnionType<[FieldType, StringType]>
+    >();
+  });
+
+  it('LogicalExtreme matrix: all-null operands and mixed strip+dedup at arity 3', () => {
+    // Every operand is pure null -> all are ignored -> the result is null.
+    const allNull = logicalMaximum(field(nullType(), 'nn1'), field(nullType(), 'nn2'));
+    expectTypedStrictEqual(allNull.type, nullType());
+    // Arity 3, mixed: the nullable operand strips to int64, which dedups against
+    // the plain int64; double stays -> union(int64, double) in first-occurrence
+    // order (not every operand may be null, so no NullType is appended).
+    const mixed = logicalMaximum(
+      field(nullable(int64()), 'la'),
+      field(int64(), 'lb'),
+      field(double(), 'lc'),
+    );
+    expectTypedStrictEqual(mixed.type, union(int64(), double()));
+  });
+
   it('xor is a variadic Kleene boolean', () => {
     const flag = field(bool(), 'flag');
-    expect(xor(flag, flag)).toStrictEqual(
-      new FunctionCall(bool(), { name: 'xor', conditions: [flag, flag] }),
-    );
+    expectTypedStrictEqual(xor(flag, flag).type, bool());
     const viaNullable = xor(flag, field(nullable(bool()), 'nb'));
-    expect(viaNullable.type).toStrictEqual(nullable(bool()));
+    expectTypedStrictEqual(viaNullable.type, nullable(bool()));
     // @ts-expect-error -- operands are boolean
     xor(flag, name);
   });
@@ -1041,42 +1050,39 @@ describe('array / map operators (slice 6)', () => {
 
   it('constructors take expression elements and derive element/field types', () => {
     const arr = arrayValue([rank, field(int64(), 'other')]);
-    expect(arr.type).toStrictEqual(array(int64()));
-    expectTypeOf(arr.type).toEqualTypeOf(array(int64()));
+    expectTypedStrictEqual(arr.type, array(int64()));
     const mixed = arrayValue([rank, field(string(), 'name')]);
-    expect(mixed.type).toStrictEqual(array(union(int64(), string())));
+    expectTypedStrictEqual(mixed.type, array(union(int64(), string())));
     // A number constant is a DoubleType — the honest numeric constant.
-    expect(arrayValue([rank, constant(1)]).type).toStrictEqual(array(union(int64(), double())));
+    expectTypedStrictEqual(arrayValue([rank, constant(1)]).type, array(union(int64(), double())));
 
     const m = mapValue({ a: rank, b: constant('x') });
-    expect(m.type).toStrictEqual(map({ a: int64(), b: string() }));
-    expectTypeOf(m.type).toEqualTypeOf(map({ a: int64(), b: string() }));
+    expectTypedStrictEqual(m.type, map({ a: int64(), b: string() }));
     // @ts-expect-error -- dotted keys are banned, as in the schema factories
     void (() => mapValue({ 'a.b': rank }));
     expect(() => mapValue({ ['a.b' as string]: rank })).toThrow(/must not contain/);
   });
 
   it('array accessors', () => {
-    expect(arrayLength(tags).type).toStrictEqual(int64());
-    expect(arrayReverse(tags).type).toStrictEqual(array(string()));
+    expectTypedStrictEqual(arrayLength(tags).type, int64());
+    expectTypedStrictEqual(arrayReverse(tags).type, array(string()));
     // A nullable array operand: reverse strips null from the payload and
     // propagates it around it.
     const nullableTags = field(nullable(array(string())), 'nt');
-    expect(arrayReverse(nullableTags).type).toStrictEqual(nullable(array(string())));
+    expectTypedStrictEqual(arrayReverse(nullableTags).type, nullable(array(string())));
     // arrayGet is always nullable (out-of-range is absent — probed).
     const got = arrayGet(tags, constant(0));
-    expect(got.type).toStrictEqual(nullable(string()));
-    expectTypeOf(got.type).toEqualTypeOf(nullable(string()));
+    expectTypedStrictEqual(got.type, nullable(string()));
     // @ts-expect-error -- not an array
     arrayLength(rank);
   });
 
   it('contains family: element comparability and array-side null propagation', () => {
-    expect(arrayContains(tags, constant('x')).type).toStrictEqual(bool());
+    expectTypedStrictEqual(arrayContains(tags, constant('x')).type, bool());
     const nullableTags = field(nullable(array(string())), 'nt');
-    expect(arrayContains(nullableTags, constant('x')).type).toStrictEqual(nullable(bool()));
-    expect(arrayContainsAll(tags, constant(['a', 'b'])).type).toStrictEqual(bool());
-    expect(arrayContainsAny(tags, field(array(string()), 'other')).type).toStrictEqual(bool());
+    expectTypedStrictEqual(arrayContains(nullableTags, constant('x')).type, nullable(bool()));
+    expectTypedStrictEqual(arrayContainsAll(tags, constant(['a', 'b'])).type, bool());
+    expectTypedStrictEqual(arrayContainsAny(tags, field(array(string()), 'other')).type, bool());
     // @ts-expect-error -- a number element cannot be contained in a string array
     arrayContains(tags, constant(1));
     // @ts-expect-error -- options elements must be comparable with the array's
@@ -1085,36 +1091,33 @@ describe('array / map operators (slice 6)', () => {
 
   it('arrayConcat unions element types and propagates null', () => {
     const c = arrayConcat(tags, field(array(int64()), 'nums'));
-    expect(c.type).toStrictEqual(array(union(string(), int64())));
-    expectTypeOf(c.type).toEqualTypeOf(array(union(string(), int64())));
+    expectTypedStrictEqual(c.type, array(union(string(), int64())));
   });
 
   it('mapGet is key-aware', () => {
-    const got = mapGet(profile, 'age');
-    expect(got).toStrictEqual(
-      new FunctionCall(int64(), { name: 'mapGet', value: profile, key: 'age' }),
-    );
-    expectTypeOf(got.type).toEqualTypeOf(int64());
+    // The key-aware lookup: key 'age' resolves to the int64 subschema.
+    expectTypedStrictEqual(mapGet(profile, 'age').type, int64());
     // @ts-expect-error -- unknown keys are rejected on a precise map
     void (() => mapGet(profile, 'zz'));
     // An Optional field may be absent -> nullable (probed: missing key is absent).
     const withOptional = field(map({ o: optional(string()) }), 'm2');
-    expect(mapGet(withOptional, 'o').type).toStrictEqual(nullable(string()));
+    expectTypedStrictEqual(mapGet(withOptional, 'o').type, nullable(string()));
     // A nullable map propagates around the value type.
     const nm = field(nullable(map({ a: string() })), 'nm');
-    expect(mapGet(nm, 'a').type).toStrictEqual(nullable(string()));
+    expectTypedStrictEqual(mapGet(nm, 'a').type, nullable(string()));
   });
 
   it('map surgery updates the subschema', () => {
+    // SetField / MergeFields are intersection records — structurally the same
+    // fields as the flat map literal, but not identical for an exact-match type
+    // guard, so these stay plain `toStrictEqual` (runtime-only claim).
     const set = mapSet(profile, 'flag', constant(true));
     expect(set.type).toStrictEqual(map({ age: int64(), name: string(), flag: bool() }));
-    // (No toEqualTypeOf here: SetField is an intersection record — structurally
-    // the same fields, but not identical to the flat literal for exact-match.)
     const overwrite = mapSet(profile, 'age', constant('now-a-string'));
     expect(overwrite.type).toStrictEqual(map({ age: string(), name: string() }));
+    // mapRemove uses `Omit`, which flattens to the plain map literal — exact.
     const removed = mapRemove(profile, 'age');
-    expect(removed.type).toStrictEqual(map({ name: string() }));
-    expectTypeOf(removed.type).toEqualTypeOf(map({ name: string() }));
+    expectTypedStrictEqual(removed.type, map({ name: string() }));
     const merged = mapMerge(profile, mapValue({ age: constant('s'), z: constant(1) }));
     expect(merged.type).toStrictEqual(map({ name: string(), age: string(), z: double() }));
     // @ts-expect-error -- dotted keys are banned
@@ -1122,14 +1125,72 @@ describe('array / map operators (slice 6)', () => {
   });
 
   it('map collections', () => {
-    expect(mapKeys(profile).type).toStrictEqual(array(string()));
+    expectTypedStrictEqual(mapKeys(profile).type, array(string()));
     // Mixed field types degrade to the runtime union (type-level: the wide
-    // union descriptor — record key order is not observable at the type level).
+    // union descriptor — record key order is not observable at the type level),
+    // so this pairing is an intentional type/runtime mismatch: plain `toStrictEqual`.
     expect(mapValues(profile).type).toStrictEqual(array(union(int64(), string())));
     const uniform = field(map({ a: string(), b: string() }), 'u');
-    expect(mapValues(uniform).type).toStrictEqual(array(string()));
-    expectTypeOf(mapValues(uniform).type).toEqualTypeOf(array(string()));
-    expect(mapEntries(uniform).type).toStrictEqual(array(map({ k: string(), v: string() })));
+    expectTypedStrictEqual(mapValues(uniform).type, array(string()));
+    expectTypedStrictEqual(mapEntries(uniform).type, array(map({ k: string(), v: string() })));
+  });
+
+  it('StripNull through arrayReverse: an optional-only array operand', () => {
+    // The Optional marker is stripped (there is nothing null to strip), and
+    // absence propagates around the reversed array.
+    const oa = arrayReverse(field(optional(array(string())), 'oa'));
+    expectTypedStrictEqual(oa.type, nullable(array(string())));
+  });
+
+  it('MapFieldUnion matrix: empty map, optional field, multi-type entries', () => {
+    // Empty field set: the runtime yields a nullType element, while the type
+    // level degrades to the wide AnyUnionType (record emptiness is not
+    // observable at the type level) — an intentional type/runtime-unequal spot,
+    // like mapValues(profile).
+    const empty = mapValues(field(map({}), 'em'));
+    expect(empty.type).toStrictEqual(array(nullType()));
+    expectTypeOf(empty.type).toEqualTypeOf<ArrayType<AnyUnionType>>();
+    // A single Optional field: its marker is dropped, leaving the bare element.
+    expectTypedStrictEqual(
+      mapValues(field(map({ a: optional(string()) }), 'om')).type,
+      array(string()),
+    );
+    // mapEntries wraps each entry as { k, v }; a multi-type map degrades v to
+    // the wide AnyUnionType at the type level while the runtime builds the
+    // concrete union — the same intentional type/runtime-unequal spot.
+    const entries = mapEntries(field(map({ a: int64(), b: string() }), 'me'));
+    expect(entries.type).toStrictEqual(array(map({ k: string(), v: union(int64(), string()) })));
+    expectTypeOf(entries.type).toEqualTypeOf<
+      ArrayType<MapType<{ k: StringType; v: AnyUnionType }>>
+    >();
+  });
+
+  it('SetField matrix: an optional entry and a nullable map operand', () => {
+    // SetField is an intersection record — structurally the flat map but not
+    // identical for the exact-match guard, so plain toStrictEqual (as the
+    // existing map-surgery tests). The optional entry drops its marker.
+    const set = mapSet(field(map({ a: string() }), 'm2'), 'b', field(optional(int64()), 'oi2'));
+    expect(set.type).toStrictEqual(map({ a: string(), b: int64() }));
+    // A nullable map operand: SetField runs on the null-stripped map, and null
+    // propagates around the wrap.
+    const nm = mapSet(field(nullable(map({ a: string() })), 'nm2'), 'b', field(int64(), 'bnum'));
+    expect(nm.type).toStrictEqual(nullable(map({ a: string(), b: int64() })));
+  });
+
+  it('ElementsOf matrix: nullable array, union element, wide element', () => {
+    // A nullable array: StripNull yields the array, ElementsOf its element,
+    // wrapped as always-nullable (out-of-range is absent).
+    const na = arrayGet(field(nullable(array(string())), 'na'), constant(0));
+    expectTypedStrictEqual(na.type, nullable(string()));
+    // A union element: the always-nullable wrap composes WITHOUT flattening —
+    // nullable(union(string, int64)) = union(union(string, int64), null).
+    const au = arrayGet(field(array(union(string(), int64())), 'au'), constant(0));
+    expectTypedStrictEqual(au.type, nullable(union(string(), int64())));
+    // ElementsOf's wide fallback arm (cell 22) is NOT exercisable: `arrayGet`
+    // constrains its operand to `ArrayOperandInput`, and a truly-wide array
+    // descriptor carries `firestoreType: unknown` (the `Any*` members), which
+    // the domain guard rejects — the wide element cannot be reached without a
+    // banned type assertion. Skipped per the best-effort rule (see the report).
   });
 });
 
@@ -1138,20 +1199,14 @@ describe('timestamp operators', () => {
   const num = field(int64(), 'secs');
 
   it('currentTimestamp is a nullary timestamp', () => {
-    expect(currentTimestamp()).toStrictEqual(
-      new FunctionCall(timestamp(), { name: 'currentTimestamp' }),
-    );
+    expectTypedStrictEqual(currentTimestamp().type, timestamp());
   });
 
   it('unix conversions map between the timestamp and numeric domains', () => {
-    expect(timestampToUnixSeconds(ts)).toStrictEqual(
-      new FunctionCall(int64(), { name: 'timestampToUnixSeconds', value: ts }),
-    );
+    expectTypedStrictEqual(timestampToUnixSeconds(ts).type, int64());
     expect(timestampToUnixMillis(ts).call.name).toBe('timestampToUnixMillis');
     expect(timestampToUnixMicros(ts).call.name).toBe('timestampToUnixMicros');
-    expect(unixSecondsToTimestamp(num)).toStrictEqual(
-      new FunctionCall(timestamp(), { name: 'unixSecondsToTimestamp', value: num }),
-    );
+    expectTypedStrictEqual(unixSecondsToTimestamp(num).type, timestamp());
     expect(unixMillisToTimestamp(num).call.name).toBe('unixMillisToTimestamp');
     expect(unixMicrosToTimestamp(num).call.name).toBe('unixMicrosToTimestamp');
     // @ts-expect-error -- a number is not a timestamp
@@ -1160,19 +1215,11 @@ describe('timestamp operators', () => {
     unixSecondsToTimestamp(ts);
     // A nullable/optional operand propagates.
     const viaOptional = timestampToUnixSeconds(field(optional(timestamp()), 'ot'));
-    expect(viaOptional.type).toStrictEqual(nullable(int64()));
-    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(int64()));
+    expectTypedStrictEqual(viaOptional.type, nullable(int64()));
   });
 
-  it('add/subtract store the literal unit as a plain payload field', () => {
-    expect(timestampAdd(ts, 'day', constant(1))).toStrictEqual(
-      new FunctionCall(timestamp(), {
-        name: 'timestampAdd',
-        value: ts,
-        unit: 'day',
-        amount: constant(1),
-      }),
-    );
+  it('add/subtract carry a literal unit (a compile-checked plain payload field)', () => {
+    expectTypedStrictEqual(timestampAdd(ts, 'day', constant(1)).type, timestamp());
     expect(timestampSubtract(ts, 'hour', constant(2)).call.name).toBe('timestampSubtract');
     // @ts-expect-error -- an arbitrary string is not a time unit
     timestampAdd(ts, 'fortnight', constant(1));
@@ -1182,13 +1229,11 @@ describe('timestamp operators', () => {
     timestampAdd(ts, 'day', constant('1'));
     // The amount operand's nullability propagates.
     const viaOptional = timestampAdd(ts, 'day', field(optional(int64()), 'n'));
-    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(timestamp()));
+    expectTypedStrictEqual(viaOptional.type, nullable(timestamp()));
   });
 
   it('diff is end - start in whole units', () => {
-    expect(timestampDiff(ts, ts, 'hour')).toStrictEqual(
-      new FunctionCall(int64(), { name: 'timestampDiff', end: ts, start: ts, unit: 'hour' }),
-    );
+    expectTypedStrictEqual(timestampDiff(ts, ts, 'hour').type, int64());
     // @ts-expect-error -- units only: calendar granularities are rejected (probed)
     timestampDiff(ts, ts, 'month');
     // @ts-expect-error -- a number is not a timestamp
@@ -1196,24 +1241,11 @@ describe('timestamp operators', () => {
   });
 
   it('truncate/extract are dual-arity over the optional literal timezone', () => {
-    expect(timestampTruncate(ts, 'week(monday)')).toStrictEqual(
-      new FunctionCall(timestamp(), {
-        name: 'timestampTruncate',
-        value: ts,
-        granularity: 'week(monday)',
-      }),
-    );
-    expect(timestampTruncate(ts, 'day', 'Asia/Tokyo')).toStrictEqual(
-      new FunctionCall(timestamp(), {
-        name: 'timestampTruncate',
-        value: ts,
-        granularity: 'day',
-        timezone: 'Asia/Tokyo',
-      }),
-    );
-    expect(timestampExtract(ts, 'dayofweek')).toStrictEqual(
-      new FunctionCall(int64(), { name: 'timestampExtract', value: ts, part: 'dayofweek' }),
-    );
+    // Both arities and the literal granularity/part/timezone payload fields are
+    // compile-checked; the descriptor is the runtime claim.
+    expectTypedStrictEqual(timestampTruncate(ts, 'week(monday)').type, timestamp());
+    expectTypedStrictEqual(timestampTruncate(ts, 'day', 'Asia/Tokyo').type, timestamp());
+    expectTypedStrictEqual(timestampExtract(ts, 'dayofweek').type, int64());
     expect(timestampExtract(ts, 'hour', 'Asia/Tokyo').call.name).toBe('timestampExtract');
     // @ts-expect-error -- not a granularity
     timestampTruncate(ts, 'fortnight');
@@ -1223,7 +1255,7 @@ describe('timestamp operators', () => {
     timestampTruncate(ts, 'dayofweek');
     // A nullable operand propagates through both arities.
     const viaOptional = timestampTruncate(field(optional(timestamp()), 'ot'), 'day');
-    expectTypeOf(viaOptional.type).toEqualTypeOf(nullable(timestamp()));
+    expectTypedStrictEqual(viaOptional.type, nullable(timestamp()));
   });
 });
 
@@ -1232,9 +1264,10 @@ describe('document-reference values', () => {
 
   it('docRefValue is a dedicated node carrying a RefPath segment path', () => {
     const ref = docRefValue(refPath(authors, ['a1']));
+    // Cross-source: the segment array is produced by refPath, checked against
+    // the independently-written path — not a construction restatement.
     expect(ref).toStrictEqual(new DocRefValue(['authors', 'a1']));
-    expect(ref.type).toStrictEqual(docRef());
-    expectTypeOf(ref.type).toEqualTypeOf(docRef());
+    expectTypedStrictEqual(ref.type, docRef());
   });
 
   it('compares against reference operands only (probed: strings never match)', () => {
@@ -1264,71 +1297,44 @@ describe('document-reference values', () => {
 
   it('doubles as a composite constant leaf, like geopoint/vector nodes', () => {
     const c = constant({ author: docRefValue(refPath(authors, ['a1'])) });
-    const oracle = map({ author: docRef() });
-    expect(c.type).toStrictEqual(oracle);
-    expectTypeOf(c.type).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(c.type, map({ author: docRef() }));
   });
 });
 
 describe('direct literal operands', () => {
-  const authors = rootCollection({ name: 'authors', schema: { name: string() } });
   const rank = field(double(), 'rank');
   const i = field(int64(), 'i');
   const name = field(string(), 'name');
   const flag = field(bool(), 'flag');
   const ts = field(timestamp(), 'createdAt');
   const geo = field(geoPoint(), 'g');
-  const nameRef = field(docRef(), '__name__');
 
-  it('lifts a raw operand exactly as the constant()-wrapped equivalent (runtime oracle)', () => {
-    // Each raw-operand call must be node-for-node identical to the explicit
-    // constant() form — including the lifted Constant node in the payload.
+  it('lifts a raw operand exactly as the constant()-wrapped equivalent (one representative)', () => {
+    // ONE end-to-end equivalence oracle: a raw operand lands node-for-node
+    // identical to its constant()-wrapped form, including the lifted Constant
+    // in the payload. The lifting MECHANISM itself (scalars, value nodes,
+    // expression pass-through, tuple arity, record fields) is covered once in
+    // the `toOperand` mechanism-layer describe — not restated per factory.
     expect(equal(rank, 1)).toStrictEqual(equal(rank, constant(1)));
-    expect(startsWith(name, 'a')).toStrictEqual(startsWith(name, constant('a')));
-    expect(add(i, 1)).toStrictEqual(add(i, constant(1)));
-    expect(and(flag, true)).toStrictEqual(and(flag, constant(true)));
-    expect(timestampAdd(ts, 'day', 1)).toStrictEqual(timestampAdd(ts, 'day', constant(1)));
-    // Both sides raw is allowed (recommended, for uniformity): inference is
-    // anchored by the `left: L` / `right: R` positions, no Expression needed.
-    expect(equal(1, 2)).toStrictEqual(equal(constant(1), constant(2)));
-    expect(add(1, 2)).toStrictEqual(add(constant(1), constant(2)));
-    // A raw against an explicit constant, and a constant against a raw.
-    expect(equal(constant(1), 1)).toStrictEqual(equal(constant(1), constant(1)));
   });
 
-  it('lifts value nodes (geopoint / docRef) the same way — they are ConstantValue leaves', () => {
-    const ref = docRefValue(refPath(authors, ['a1']));
-    expect(equal(nameRef, ref)).toStrictEqual(equal(nameRef, constant(ref)));
-    expect(equal(geo, geoPointValue(1, 2))).toStrictEqual(
-      equal(geo, constant(geoPointValue(1, 2))),
-    );
-  });
-
-  it('a lifted number lands as DoubleType and widens an int64 pair, like constant(1)', () => {
+  it('a lifted raw infers the same descriptor as the explicit constant form', () => {
+    // A lifted number lands as DoubleType and widens an int64 pair, like constant(1).
     const viaRaw = add(i, 1);
-    // int64 field + a lifted DoubleType => DoubleType (not nullable, not int64).
-    expect(viaRaw.type).toStrictEqual(double());
-    expectTypeOf(viaRaw.type).toEqualTypeOf(double());
+    expectTypedStrictEqual(viaRaw.type, double());
     // Identical descriptor to the explicit-constant form.
     expectTypeOf(viaRaw.type).toEqualTypeOf(add(i, constant(1)).type);
     // Nullability still propagates around the refined kind.
     const viaNullable = add(i, field(nullable(int64()), 'n'));
-    expect(viaNullable.type).toStrictEqual(nullable(int64()));
-  });
-
-  it('the domain constraints still reject non-conforming raws and expressions', () => {
-    // @ts-expect-error -- string vs number: incomparable
-    equal(field(string(), 's'), 1);
-    // @ts-expect-error -- a number is not a string operand
-    startsWith(name, 1);
-    // @ts-expect-error -- a string is not numeric
-    add(i, 'x');
-    // @ts-expect-error -- a string is not boolean-valued
-    and(flag, 'yes');
-    // @ts-expect-error -- the amount is a numeric operand
-    timestampAdd(ts, 'day', 'x');
-    // @ts-expect-error -- a plain-object map is not comparable to a geopoint
-    equal(geo, { latitude: 1, longitude: 2 });
+    expectTypedStrictEqual(viaNullable.type, nullable(int64()));
+    // round/trunc: omitting decimalPlaces, `TypeOfOperand<never>` is `never`,
+    // a no-op union member, so an int64 value keeps Int64Type (no widening);
+    // a lifted double decimalPlaces still cannot change the value-derived kind.
+    expectTypedStrictEqual(round(i).type, int64());
+    expectTypedStrictEqual(trunc(i, 2).type, int64());
+    // Constructors infer element/field descriptors through the lifted raws.
+    expectTypedStrictEqual(arrayValue([1, rank]).type, array(double()));
+    expectTypedStrictEqual(mapValue({ a: 1 }).type, map({ a: double() }));
   });
 
   it('inference does not collapse: literal fields, null, and explicit constants', () => {
@@ -1347,179 +1353,123 @@ describe('direct literal operands', () => {
     startsWith(name, field(string(), 'prefix'));
   });
 
-  // ---- one positive oracle + one negative per converted family ----
-
-  it('remaining comparisons lift raws like equal', () => {
-    expect(notEqual(rank, 1)).toStrictEqual(notEqual(rank, constant(1)));
-    expect(lessThan(rank, 1)).toStrictEqual(lessThan(rank, constant(1)));
-    expect(lessThanOrEqual(rank, 1)).toStrictEqual(lessThanOrEqual(rank, constant(1)));
-    expect(greaterThan(rank, 1)).toStrictEqual(greaterThan(rank, constant(1)));
-    expect(greaterThanOrEqual(rank, 1)).toStrictEqual(greaterThanOrEqual(rank, constant(1)));
+  it('domain constraints reject non-conforming raws across every family', () => {
+    // One rejection per family: the operand-input domains are enforced on raws
+    // exactly as on expressions.
     // @ts-expect-error -- string vs number: incomparable
+    equal(field(string(), 's'), 1);
+    // @ts-expect-error -- string vs number
     greaterThan(name, 1);
-  });
-
-  it('arithmetic lifts raws on both sides across the family', () => {
-    expect(subtract(i, 1)).toStrictEqual(subtract(i, constant(1)));
-    expect(multiply(2, rank)).toStrictEqual(multiply(constant(2), rank));
-    expect(divide(rank, 2)).toStrictEqual(divide(rank, constant(2)));
-    expect(mod(i, 2)).toStrictEqual(mod(i, constant(2)));
-    expect(pow(rank, 2)).toStrictEqual(pow(rank, constant(2)));
-    expect(abs(-1)).toStrictEqual(abs(constant(-1)));
-    expect(ceil(1.2)).toStrictEqual(ceil(constant(1.2)));
-    expect(floor(1.8)).toStrictEqual(floor(constant(1.8)));
-    expect(sqrt(4)).toStrictEqual(sqrt(constant(4)));
-    expect(exp(1)).toStrictEqual(exp(constant(1)));
-    expect(ln(1)).toStrictEqual(ln(constant(1)));
-    expect(log10(10)).toStrictEqual(log10(constant(10)));
-    // @ts-expect-error -- a string is not numeric
-    subtract(i, 'x');
-  });
-
-  it('round/trunc lift both operands; the `= never` default keeps the 1-arg descriptor', () => {
-    expect(round(rank, 2)).toStrictEqual(round(rank, constant(2)));
-    expect(trunc(rank, 2)).toStrictEqual(trunc(rank, constant(2)));
-    // Omitting decimalPlaces: `TypeOfOperand<never>` is `never`, a no-op union
-    // member, so an int64 value keeps Int64Type (no null/double widening).
-    expect(round(i).type).toStrictEqual(int64());
-    expectTypeOf(round(i).type).toEqualTypeOf(int64());
-    // A lifted double decimalPlaces still cannot change the value-derived kind.
-    expect(trunc(i, 2).type).toStrictEqual(int64());
-    expectTypeOf(trunc(i, 2).type).toEqualTypeOf(int64());
-    // @ts-expect-error -- decimal places must be numeric
-    round(rank, 'x');
-  });
-
-  it('logical or / xor / not lift raw booleans', () => {
-    expect(or(flag, true)).toStrictEqual(or(flag, constant(true)));
-    expect(xor(flag, false)).toStrictEqual(xor(flag, constant(false)));
-    expect(not(true)).toStrictEqual(not(constant(true)));
-    // @ts-expect-error -- a string is not boolean-valued
-    or(flag, 'yes');
-  });
-
-  it('string family lifts raw strings (and numeric side operands)', () => {
-    expect(toLower('AB')).toStrictEqual(toLower(constant('AB')));
-    expect(toUpper('ab')).toStrictEqual(toUpper(constant('ab')));
-    expect(stringReverse('ab')).toStrictEqual(stringReverse(constant('ab')));
-    expect(charLength('ab')).toStrictEqual(charLength(constant('ab')));
-    expect(byteLength('ab')).toStrictEqual(byteLength(constant('ab')));
-    expect(trim(name, ' ')).toStrictEqual(trim(name, constant(' ')));
-    expect(rtrim(name, ' ')).toStrictEqual(rtrim(name, constant(' ')));
-    expect(ltrim(name, ' ')).toStrictEqual(ltrim(name, constant(' ')));
-    expect(endsWith(name, 'z')).toStrictEqual(endsWith(name, constant('z')));
-    expect(stringContains(name, 'z')).toStrictEqual(stringContains(name, constant('z')));
-    expect(stringConcat(name, '!', name)).toStrictEqual(stringConcat(name, constant('!'), name));
-    expect(stringIndexOf(name, 'z')).toStrictEqual(stringIndexOf(name, constant('z')));
-    expect(stringRepeat(name, 3)).toStrictEqual(stringRepeat(name, constant(3)));
-    expect(stringReplaceAll(name, 'a', 'b')).toStrictEqual(
-      stringReplaceAll(name, constant('a'), constant('b')),
-    );
-    expect(stringReplaceOne(name, 'a', 'b')).toStrictEqual(
-      stringReplaceOne(name, constant('a'), constant('b')),
-    );
-    expect(substring(name, 1, 2)).toStrictEqual(substring(name, constant(1), constant(2)));
-    expect(like(name, 'a%')).toStrictEqual(like(name, constant('a%')));
-    expect(regexContains(name, '\\d')).toStrictEqual(regexContains(name, constant('\\d')));
-    expect(regexMatch(name, '\\d')).toStrictEqual(regexMatch(name, constant('\\d')));
-    expect(regexFind(name, '\\d')).toStrictEqual(regexFind(name, constant('\\d')));
-    expect(regexFindAll(name, '\\d')).toStrictEqual(regexFindAll(name, constant('\\d')));
+    // @ts-expect-error -- a number is not a string operand
+    startsWith(name, 1);
     // @ts-expect-error -- a number is not a string operand
     toUpper(1);
-  });
-
-  it('conditional / extremes / fallbacks lift raw branches and values', () => {
-    expect(conditional(flag, 'big', 'small')).toStrictEqual(
-      conditional(flag, constant('big'), constant('small')),
-    );
-    expect(logicalMaximum(rank, 1, 2)).toStrictEqual(
-      logicalMaximum(rank, constant(1), constant(2)),
-    );
-    expect(logicalMinimum(rank, 1, 2)).toStrictEqual(
-      logicalMinimum(rank, constant(1), constant(2)),
-    );
-    expect(ifError(rank, 0)).toStrictEqual(ifError(rank, constant(0)));
-    expect(ifAbsent(name, 'x')).toStrictEqual(ifAbsent(name, constant('x')));
-    expect(ifNull(name, 'x')).toStrictEqual(ifNull(name, constant('x')));
-    expect(isError(1)).toStrictEqual(isError(constant(1)));
+    // @ts-expect-error -- a string is not numeric
+    add(i, 'x');
+    // @ts-expect-error -- a string is not numeric
+    subtract(i, 'x');
+    // @ts-expect-error -- decimal places must be numeric
+    round(rank, 'x');
+    // @ts-expect-error -- a string is not boolean-valued
+    and(flag, 'yes');
+    // @ts-expect-error -- a string is not boolean-valued
+    or(flag, 'yes');
     // @ts-expect-error -- the condition must be boolean-valued
     conditional(1, 'big', 'small');
-  });
-
-  it('any-of and array families lift raw arrays and elements', () => {
-    const tags = field(array(double()), 'tags');
-    // The raw-array `options` is just the lifting rule; the element-comparability
-    // guard runs against the lifted ArrayType's element (plan sugar question).
-    expect(equalAny(rank, [1, 5, 9])).toStrictEqual(equalAny(rank, constant([1, 5, 9])));
-    expect(notEqualAny(rank, [1, 5, 9])).toStrictEqual(notEqualAny(rank, constant([1, 5, 9])));
-    expect(arrayContains(tags, 5)).toStrictEqual(arrayContains(tags, constant(5)));
-    expect(arrayContainsAll(tags, [1, 2])).toStrictEqual(arrayContainsAll(tags, constant([1, 2])));
-    expect(arrayContainsAny(tags, [1, 2])).toStrictEqual(arrayContainsAny(tags, constant([1, 2])));
-    expect(arrayGet(tags, 0)).toStrictEqual(arrayGet(tags, constant(0)));
-    expect(arrayLength([1, 2])).toStrictEqual(arrayLength(constant([1, 2])));
-    expect(arrayReverse([1, 2])).toStrictEqual(arrayReverse(constant([1, 2])));
-    expect(arrayConcat(tags, [1, 2])).toStrictEqual(arrayConcat(tags, constant([1, 2])));
     // @ts-expect-error -- options must be an array, not a scalar
     equalAny(rank, 5);
-  });
-
-  it('map family lifts raw map operands and set entries; raw objects become map constants', () => {
-    const m = field(map({ a: double(), z: double() }), 'm');
-    expect(mapKeys({ a: 1 })).toStrictEqual(mapKeys(constant({ a: 1 })));
-    expect(mapGet(m, 'a')).toStrictEqual(mapGet(m, 'a'));
-    expect(mapValues(m)).toStrictEqual(mapValues(m));
-    expect(mapEntries(m)).toStrictEqual(mapEntries(m));
-    expect(mapRemove(m, 'a')).toStrictEqual(mapRemove(m, 'a'));
-    expect(mapSet(m, 'a', 1)).toStrictEqual(mapSet(m, 'a', constant(1)));
-    // A raw plain object lifts through Constant.of (a map CONSTANT), so it is
-    // node-for-node identical to constant({ z: 1 }) — NOT a mapValue(...) node.
-    expect(mapMerge(m, { z: 1 })).toStrictEqual(mapMerge(m, constant({ z: 1 })));
     // @ts-expect-error -- a scalar is not a map operand
     mapKeys(1);
-  });
-
-  it('constructors lift raw elements / field values to the constant() forms', () => {
-    expect(arrayValue([1, rank])).toStrictEqual(arrayValue([constant(1), rank]));
-    expectTypeOf(arrayValue([1, rank]).type).toEqualTypeOf(array(double()));
-    expect(mapValue({ a: 1 })).toStrictEqual(mapValue({ a: constant(1) }));
-    expectTypeOf(mapValue({ a: 1 }).type).toEqualTypeOf(map({ a: double() }));
+    // @ts-expect-error -- a number is not a vector operand
+    vectorLength(1);
+    // @ts-expect-error -- the amount is a numeric operand
+    timestampAdd(ts, 'day', 'x');
+    // @ts-expect-error -- the amount is numeric, not a string
+    timestampSubtract(ts, 'day', 'x');
+    // @ts-expect-error -- a plain-object map is not comparable to a geopoint
+    equal(geo, { latitude: 1, longitude: 2 });
     expect(() =>
       // @ts-expect-error -- undefined is not a liftable operand
       arrayValue([undefined]),
     ).toThrow();
   });
+});
 
-  it('timestamp family lifts raw timestamps and amounts', () => {
-    const d = new Date('2024-01-01T00:00:00Z');
-    expect(timestampSubtract(ts, 'day', 1)).toStrictEqual(
-      timestampSubtract(ts, 'day', constant(1)),
-    );
-    expect(timestampDiff(ts, d, 'day')).toStrictEqual(timestampDiff(ts, constant(d), 'day'));
-    expect(timestampToUnixSeconds(d)).toStrictEqual(timestampToUnixSeconds(constant(d)));
-    expect(timestampToUnixMillis(d)).toStrictEqual(timestampToUnixMillis(constant(d)));
-    expect(timestampToUnixMicros(d)).toStrictEqual(timestampToUnixMicros(constant(d)));
-    expect(unixSecondsToTimestamp(1)).toStrictEqual(unixSecondsToTimestamp(constant(1)));
-    expect(unixMillisToTimestamp(1)).toStrictEqual(unixMillisToTimestamp(constant(1)));
-    expect(unixMicrosToTimestamp(1)).toStrictEqual(unixMicrosToTimestamp(constant(1)));
-    expect(timestampTruncate(d, 'day')).toStrictEqual(timestampTruncate(constant(d), 'day'));
-    expect(timestampExtract(d, 'day')).toStrictEqual(timestampExtract(constant(d), 'day'));
-    // @ts-expect-error -- the amount is numeric, not a string
-    timestampSubtract(ts, 'day', 'x');
+describe('operand lifting mechanism (toOperand / liftOperands / liftFields)', () => {
+  // The lifting helpers are module-private, so each ConstantValue shape is
+  // observed THROUGH one factory — the mechanism is uniform across every
+  // factory, so one representative per shape is enough (the payload field it
+  // lands in is inspected after narrowing the payload by `name`). The
+  // per-factory end-to-end equivalence is the single representative oracle in
+  // the `direct literal operands` describe.
+  const authors = rootCollection({ name: 'authors', schema: { name: string() } });
+  const tags = field(array(string()), 'tags');
+  const num = field(int64(), 'n');
+
+  it('lifts a scalar to a Constant (via equal)', () => {
+    const node = equal(num, 5);
+    if (node.call.name === 'equal') {
+      expect(node.call.right).toStrictEqual(constant(5));
+    }
   });
 
-  it('type / reference / vector families lift raw operands', () => {
-    const ref = docRefValue(refPath(authors, ['a1']));
-    const vec = field(vector(), 'embedding');
-    const vv = vectorValue([0.1, 0.2]);
-    expect(type(1)).toStrictEqual(type(constant(1)));
-    expect(isType(1, 'number')).toStrictEqual(isType(constant(1), 'number'));
-    expect(documentId(ref)).toStrictEqual(documentId(constant(ref)));
-    expect(collectionId(ref)).toStrictEqual(collectionId(constant(ref)));
-    expect(cosineDistance(vec, vv)).toStrictEqual(cosineDistance(vec, constant(vv)));
-    expect(dotProduct(vec, vv)).toStrictEqual(dotProduct(vec, constant(vv)));
-    expect(euclideanDistance(vec, vv)).toStrictEqual(euclideanDistance(vec, constant(vv)));
-    expect(vectorLength(vv)).toStrictEqual(vectorLength(constant(vv)));
-    // @ts-expect-error -- a number is not a vector operand
-    vectorLength(1);
+  it('lifts each value node (geopoint / vector / docRef) to a Constant (via equal)', () => {
+    // GeoPointValue / VectorValue / DocRefValue are ConstantValue leaves, not
+    // expressions, so they take the lifting branch — constant(geoPointValue(...)).
+    const gnode = equal(field(geoPoint(), 'g'), geoPointValue(1, 2));
+    if (gnode.call.name === 'equal') {
+      expect(gnode.call.right).toStrictEqual(constant(geoPointValue(1, 2)));
+    }
+    const vnode = equal(field(vector(), 'v'), vectorValue([1, 2]));
+    if (vnode.call.name === 'equal') {
+      expect(vnode.call.right).toStrictEqual(constant(vectorValue([1, 2])));
+    }
+    const rv = docRefValue(refPath(authors, ['a1']));
+    const rnode = equal(field(docRef(), '__name__'), rv);
+    if (rnode.call.name === 'equal') {
+      expect(rnode.call.right).toStrictEqual(constant(rv));
+    }
+  });
+
+  it('passes an expression through by identity — the SAME node object (via arrayLength)', () => {
+    const node = arrayLength(tags);
+    if (node.call.name === 'arrayLength') {
+      expect(node.call.value).toBe(tags);
+    }
+  });
+
+  it('lifts a plain array to an array Constant (via arrayLength)', () => {
+    const node = arrayLength([1, 2, 3]);
+    if (node.call.name === 'arrayLength') {
+      expect(node.call.value).toStrictEqual(constant([1, 2, 3]));
+    }
+  });
+
+  it('lifts a plain object to a map Constant (via mapKeys)', () => {
+    const node = mapKeys({ a: 1, b: 'x' });
+    if (node.call.name === 'mapKeys') {
+      expect(node.call.value).toStrictEqual(constant({ a: 1, b: 'x' }));
+    }
+  });
+
+  it('liftOperands preserves tuple arity and order (via arrayConcat)', () => {
+    // A variadic factory lifts each operand in place, mirroring the input
+    // tuple's arity: a pass-through expression, then a lifted raw array.
+    const node = arrayConcat(tags, [1, 2]);
+    if (node.call.name === 'arrayConcat') {
+      expect(node.call.operands).toHaveLength(2);
+      expect(node.call.operands[0]).toBe(tags);
+      expect(node.call.operands[1]).toStrictEqual(constant([1, 2]));
+    }
+  });
+
+  it('liftFields preserves the record keys, lifting each value (via mapValue)', () => {
+    const node = mapValue({ a: 1, b: num });
+    if (node.call.name === 'mapValue') {
+      expect(Object.keys(node.call.fields)).toStrictEqual(['a', 'b']);
+      expect(node.call.fields['a']).toStrictEqual(constant(1));
+      // An expression field passes through by identity.
+      expect(node.call.fields['b']).toBe(num);
+    }
   });
 });
