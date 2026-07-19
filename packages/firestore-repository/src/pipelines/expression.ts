@@ -1,6 +1,9 @@
+import { refPath } from '../path.js';
+import type { DocRef } from '../repository.js';
 import {
   type AnyUnionType,
   array,
+  type Collection,
   type ArrayType,
   assertNoDottedFieldNames,
   bool,
@@ -174,16 +177,49 @@ export class VectorValue {
  * segment path from a repository-side id with `refPath(collection, id)`
  * (`path.js`).
  */
-export class DocRefValue {
-  readonly type: DocRefType<'unknown'> = docRef();
+export class DocRefValue<T extends Collection | 'unknown' = 'unknown'> {
+  /** Always coherent with `path` — the sealed constructor is the only construction point (the `Constant` precedent). */
+  readonly type: DocRefType<T>;
   readonly path: readonly string[];
-  constructor(path: readonly string[]) {
+
+  private constructor(type: DocRefType<T>, path: readonly string[]) {
+    this.type = type;
     this.path = [...path];
+  }
+
+  /** Context-free form: an untyped segment path — `DocRefType<'unknown'>`. */
+  static of(this: void, path: readonly string[]): DocRefValue;
+  /**
+   * Collection + address form: `DocRefValue.of(authors, ['a1'])`, typed
+   * `DocRefType<Authors>`. Receiving the collection DEFINITION is what makes
+   * the known-collection typing possible (a segment tuple alone cannot
+   * recover the collection type); the address is normalized to the same
+   * segment-path payload, so the wire form is identical to the
+   * context-free flavor.
+   */
+  static of<T extends Collection>(this: void, collection: T, id: DocRef<T>): DocRefValue<T>;
+  static of(
+    this: void,
+    first: readonly string[] | Collection,
+    id?: [...string[], string],
+  ): DocRefValue<Collection | 'unknown'> {
+    if (isSegments(first)) {
+      return new DocRefValue(docRef(), first);
+    }
+    if (id === undefined) {
+      throw new Error('the collection form requires an id tuple');
+    }
+    return new DocRefValue(docRef(first), refPath(first, id));
   }
 }
 
-/** Builds a document-reference value — see {@link DocRefValue}. */
-export const docRefValue = (path: readonly string[]): DocRefValue => new DocRefValue(path);
+/** Builds a document-reference value — sugar for {@link DocRefValue}.of, like `constant` for `Constant.of`. */
+export const docRefValue = DocRefValue.of;
+
+// `Array.isArray`'s built-in `arg is any[]` does not narrow READONLY array
+// unions (the `isConstantArray` precedent) — the annotation deliberately
+// overrides it.
+const isSegments = (v: readonly string[] | Collection): v is readonly string[] => Array.isArray(v);
 
 /**
  * The value domain `constant()` accepts — everything with an unambiguous
@@ -202,7 +238,7 @@ export type ConstantScalar = string | number | boolean | null | Date | Uint8Arra
  * have no plain-JS representation of their own, their explicit nodes stand
  * in — `constant({ spot: geoPointValue(1, 3) })`.
  */
-export type ConstantLeafNode = GeoPointValue | VectorValue | DocRefValue;
+export type ConstantLeafNode = GeoPointValue | VectorValue | DocRefValue<Collection | 'unknown'>;
 /**
  * Non-empty (an empty literal has no element to infer a descriptor from) and
  * non-nested: directly nested arrays (`constant([1, [2, 3]])`) are excluded
@@ -228,8 +264,8 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
       ? TimestampType
       : V extends Uint8Array
         ? BytesType
-        : V extends DocRefValue
-          ? DocRefType<'unknown'>
+        : V extends DocRefValue<infer C>
+          ? DocRefType<C>
           : V extends GeoPointValue
             ? GeoPointType
             : V extends VectorValue
@@ -726,7 +762,7 @@ type TimestampOperandInput = TimestampOperand | Date | null;
 // `vectorValue`) are `ConstantValue` leaves that lift like any other raw.
 type ArrayOperandInput = ArrayOperand | ConstantArray | null;
 type MapOperandInput = MapOperand | ConstantMap | null;
-type ReferenceOperandInput = ReferenceOperand | DocRefValue | null;
+type ReferenceOperandInput = ReferenceOperand | DocRefValue<Collection | 'unknown'> | null;
 type VectorOperandInput = VectorOperand | VectorValue | null;
 
 export const equal = <const L extends OperandInput, const R extends OperandInput>(

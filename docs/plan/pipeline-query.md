@@ -530,14 +530,19 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
 Items agreed in discussion but previously recorded only inline in DONE notes
 (or not at all). Elevated to checklist items:
 
-- [ ] **Shorthand layer — "an address where a static context exists"**
-      (feasibility confirmed; details inline in the segment-path DONE notes
-      above): (a) core query `__name__` operands as bare ids / `DocRef`
-      tuples where the source collection is statically known (the 2n-vs-n
-      length parity disambiguates ids from segments once names are literal);
-      (b) `docRefValue(authors, ['a1'])` — the collection+address form,
-      typed `DocRefType<Authors>` (decided: receiving the collection
-      definition is what makes known-collection typing possible).
+- [~] **Shorthand layer — "an address where a static context exists".**
+  SCOPED DOWN (2026-07): only the collection+address value constructor
+  ships — `docRefValue(authors, ['a1'])`, typed `DocRefType<Authors>`
+  (receiving the collection definition is what makes known-collection
+  typing possible; segments are normalized internally, wire unchanged).
+  REJECTED: core query `__name__` operands as bare ids or `DocRef`
+  tuples. Bare ids are context-dependent (incomplete without the query
+  parent; unexpandable for groups) — the guideline's "don't widen for
+  possibly-invalid input". Address TUPLES would be sound (2n-vs-n length
+  parity disambiguates), but the runtime dual interpretation gives one
+  parameter two meanings a reader cannot tell apart without knowing the
+  collection depth, for the price of one `refPath(...)` call — not worth
+  the conceptual cost.
 - [ ] **Typed cursor constraints.** `Cursor` is an untyped `unknown[]`
       pass-through; typing it per orderBy field would also require encoding
       reference cursor values like the filter operands
