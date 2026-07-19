@@ -30,7 +30,13 @@
 | `arrayAgg` / `arrayAggDistinct`           | **kept as elements**                        | **skipped**                 | (not probed; presumably empty/null)   |
 
 - `first`/`last` follow the pipeline's `sort` order when one precedes the
-  stage; without a sort the order is backend-determined.
+  stage; without a sort the order is backend-determined. The keep-vs-skip
+  claims were verified DISCRIMINATINGLY (`probe-first-last.mjs`): with a
+  non-null neighbor adjacent to the null/absent end (`[null, y1, y2,
+absent]` sorted), `first` returns null (a skip would return `y1`) and
+  `last` returns null (a skip would return `y2`) — an arrangement where the
+  null/absent element neighbors another null cannot tell the hypotheses
+  apart.
 - Note the asymmetry: `arrayAgg` SKIPS absent but KEEPS null, while
   `first`/`last` merge absent into null.
 - **ERROR values inside an accumulator are not absorbed** — the query fails

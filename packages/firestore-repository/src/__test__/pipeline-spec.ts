@@ -1593,7 +1593,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         { id: ['d1'], data: { g: 'x', n: 1, m: 5 } },
         { id: ['d2'], data: { g: 'x', n: 2, m: 7 } },
         { id: ['d3'], data: { g: 'y', n: 4, m: null } }, // m null
-        { id: ['d4'], data: { g: null, n: 10, m: 6 } }, // g null
+        { id: ['d4'], data: { g: null, n: 0, m: 6 } }, // g null; n places it FIRST under sort
         { id: ['d5'], data: { n: 20 } }, // g absent, m absent
       ];
 
@@ -1619,20 +1619,20 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           [
             { data: { g: 'x', s: 3, c: 2 } },
             { data: { g: 'y', s: 4, c: 1 } },
-            { data: { g: null, s: 30, c: 2 } },
+            { data: { g: null, s: 20, c: 2 } },
           ],
           { ordered: false },
         );
       });
 
       it('groups by an aliased expression (the computed key is projected)', async () => {
-        // greaterThan(n, 5): d1/d2/d3 → false, d4/d5 → true.
+        // greaterThan(n, 5): d1/d2/d3/d4 → false, d5 → true.
         await expectPipeline(
           src().aggregate((field) => ({
             accumulators: [countAll().as('c')],
             groups: [greaterThan(field('n'), constant(5)).as('big')],
           })),
-          [{ data: { big: false, c: 3 } }, { data: { big: true, c: 2 } }],
+          [{ data: { big: false, c: 4 } }, { data: { big: true, c: 1 } }],
           { ordered: false },
         );
       });
@@ -1652,7 +1652,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               maximum(field('n')).as('maxN'),
             ],
           })),
-          [{ data: { sumN: 37, countAll: 5, countM: 3, avgM: 6, minN: 1, maxN: 20 } }],
+          [{ data: { sumN: 27, countAll: 5, countM: 3, avgM: 6, minN: 0, maxN: 20 } }],
         );
       });
 
@@ -1683,7 +1683,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
       it('countDistinct / countIf over the whole input', async () => {
         // countDistinct(g): distinct non-null values {x, y} → 2.
-        // countIf(n > 5): d4/d5 → 2.
+        // countIf(n > 5): d5 only → 1.
         await expectPipeline(
           src().aggregate((field) => ({
             accumulators: [
@@ -1691,7 +1691,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
               countIf(greaterThan(field('n'), constant(5))).as('bigN'),
             ],
           })),
-          [{ data: { distinctG: 2, bigN: 2 } }],
+          [{ data: { distinctG: 2, bigN: 1 } }],
         );
       });
 
@@ -1708,17 +1708,19 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         assert.sameDeepMembers(row.data.vals, ['x', 'x', 'y', null]);
       });
 
-      it('first / last follow a preceding sort; last of an absent key is null (merged)', async () => {
-        // Sorted by n asc: d1(g x), d2(g x), d3(g y), d4(g null), d5(g absent).
-        // first(g) is 'x' (positional); last(g) is d5's absent key merged into
-        // null (kept, not skipped).
+      it('first / last are positional: a null value and an absent (merged-to-null) value are KEPT', async () => {
+        // Sorted by n asc: d4(g null), d1(g x), d2(g x), d3(g y), d5(g absent).
+        // DISCRIMINATING at both ends (probed the same way —
+        // .ikenox/probe-first-last.mjs): if first SKIPPED nulls it would
+        // return d1's 'x'; if last skipped absent it would return d3's 'y'.
+        // Both return null instead: null is kept, absent merges into null.
         await expectPipeline(
           src()
             .sort((field) => [asc(field('n'))])
             .aggregate((field) => ({
               accumulators: [first(field('g')).as('first'), last(field('g')).as('last')],
             })),
-          [{ data: { first: 'x', last: null } }],
+          [{ data: { first: null, last: null } }],
         );
       });
 
