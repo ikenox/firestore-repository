@@ -307,14 +307,22 @@ Deferred to a later iteration (still tracked here, not currently in scope):
       translate to `field(path).ascending()/.descending()`. Only **field**
       orderings are supported (a computed-expression ordering throws in the
       executor). Verified live. See the spec `sort` tests.
-- [ ] `aggregate(...)` — needs:
-  - A separate `AggregateFunction` AST node (distinct from `Expression`).
-  - Aggregate function factories: `sum`, `count`, `countAll`,
-    `countDistinct`, `countIf`, `average`, `first`, `last`, `minimum`,
-    `maximum`, `arrayAgg`, `arrayAggDistinct`, `arraySum`.
-  - `aggregate({ accumulators, groups })` stage that:
-    - rebuilds Context from accumulator aliases + group field types,
-    - breaks identity (returns `UnidentifiedPipeline`).
+- [x] `aggregate(...)` — done (2026-07; semantics in
+      `../pipeline-query-aggregate-research.md`): `AggregateFunction` (SDK
+      name; payload-union like `FunctionCall`, NOT an `Expression` member so
+      misplacement is a type error) with all 12 factories (`arraySum` was an
+      expression, not an accumulator — dropped from this list); probed
+      return descriptors (count family plain int64; `sum`
+      nullable+NumericResult; `average` nullable double;
+      `minimum`/`maximum`/`first`/`last` `NullableStripped`; `arrayAgg*`
+      element drops Optional, keeps the null tag). The
+      `aggregate((field) => ({ accumulators, groups? }))` stage synthesizes
+      `AggregateSchema` = groups' BuildSelection output through
+      `AbsentMergesIntoNull` (null and absent group keys merge — probed) +
+      accumulator overlay (accumulator wins on collision), identity breaks
+      (`Id = undefined`). Executors: one `aggregateTranslators` mapped table
+      per adapter; groups translate like select selections. Live catalog
+      pins the probe matrix incl. empty-input and null/absent-merge cases.
 - [ ] `ascending(...)` / `descending(...)` — ordering factories used by
       `sort` (and by cursor lowering in `__PRIVATE_toPipeline`).
 - [ ] Type-level tests for `Ordering` / `AggregateFunction` along the lines
@@ -569,6 +577,42 @@ Items agreed in discussion but previously recorded only inline in DONE notes
       `FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY`; the suite is
       skipIf-gated and has never executed against the real backend — the
       admin adapter covers the shared spec live today).
+- [ ] **Canonical union normalization — `UnionType` valid-by-construction**
+      (agreed 2026-07, NEXT UP after the aggregate stage lands). The
+      always-valid principle applied to descriptors: union normalization is
+      today re-implemented at every construction site (`EitherType` /
+      `LogicalExtreme` / `ElementUnion` / `ConcatElementUnion` /
+      `MapFieldUnion` dedups, `NullableStripped`'s strip-then-reattach,
+      and `arrayGet`'s pinned union-NESTING wrap), because nothing
+      guarantees a `UnionType` is canonical. Introduce ONE `Normalize`
+      (type + runtime twin) owned by the union constructors (`union()`,
+      `nullable()`, `RebuildUnion`, ...): 1. flatten nested unions; 2. dedup members by `DescriptorEquals` (first-occurrence order —
+      deterministic, matching the existing dedup rule); 3. drop `never` members; 4. unwrap a singleton to the bare descriptor.
+      Consequences: `NullableStripped` collapses to
+      `Normalize<[StripNull<T>, NullType]>`-composition; the per-helper
+      dedups become `Normalize` calls (N implementations → 1); `arrayGet`'s
+      nested-union pin flips to flattened (update that test as "fixed");
+      `nullable(nullable(x))` becomes idempotent. Watch TS recursion
+      cost; the runtime twin mirrors branch-for-branch as usual. Scope is
+      a cross-cutting refactor comparable to the payload-union one — its
+      own PR, with the shape-oracle tests updated alongside.
+- [ ] **Refine accumulator nullability by groups presence** (noted 2026-07,
+      explicitly deferred as advanced). `sum`/`average`/`minimum`/`maximum`/
+      `first`/`last` are currently ALWAYS nullable — sound but wider than
+      the true rule, `operandMayBeNull OR noGroups`: with groups, an empty
+      group emits no row at all (probed), so a grouped aggregate over a
+      non-null operand can never be null. Sketch: split the operand-derived
+      nullability into a second type parameter
+      (`AggregateFunction<T, MayBeNull>`, `T` the null-free value kind) and
+      compose in the stage (`MayBeNull ? nullable(T) : HasGroups ? T :
+nullable(T)`); count family unaffected. Also probe the un-probed
+      all-null-group cell (nullable operand, every value null in a group)
+      before relying on it.
+- [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
+      the aggregate node ships as `AggregateFunction` (the SDK's name), which
+      makes the pair with the expression node asymmetric — rename
+      `FunctionCall` to the SDK's `FunctionExpression` in a follow-up so the
+      internal naming rule becomes "SDK vocabulary", consistently.
 - [ ] **`ArrayType` fixed-part / tuple support** — tracked in issue #218
       (includes the arrayRemove/arrayUnion interaction constraint noted
       there).

@@ -951,10 +951,10 @@ const mayBeAbsent = (t: FieldType & { optional?: boolean }): boolean => t.option
  * that flows through a function is expressed by the `PropagateAbsence`
  * family instead.
  */
-type WithoutOptional<T extends FieldType> = T extends Optional ? Omit<T, 'optional'> : T;
+export type WithoutOptional<T extends FieldType> = T extends Optional ? Omit<T, 'optional'> : T;
 
 /** Runtime counterpart of {@link WithoutOptional}. */
-const withoutOptional = (t: FieldType & { optional?: boolean }): FieldType => {
+export const withoutOptional = (t: FieldType & { optional?: boolean }): FieldType => {
   if (t.optional !== true) {
     return t;
   }
@@ -2789,3 +2789,223 @@ export const vectorLength = <const Op extends VectorOperandInput>(
   const v = toOperand(vector);
   return new FunctionCall(propagateNull([v], int64()), { name: 'vectorLength', vector: v });
 };
+
+// ---- aggregates ----
+// Accumulator functions of the `aggregate` stage — the SDK's
+// `AggregateFunction`. Kept a SEPARATE mini-tree, NOT an `Expression` member,
+// so misplacing an accumulator where a value expression is expected
+// (`where(sum(...))`, `select(...)`) is a type error rather than a runtime
+// failure. Return descriptors follow the probed accumulator semantics —
+// docs/pipeline-query-aggregate-research.md.
+
+/**
+ * An accumulator-call AST node — the aggregate counterpart of
+ * {@link FunctionCall} (the SDK's `AggregateFunction`). Deliberately NOT an
+ * {@link Expression}: an accumulator only makes sense inside `aggregate`, so
+ * keeping it off the expression union makes misplacement
+ * (`where(sum(...))` / a `select` selection) a compile error. Named after the
+ * SDK class. Per-accumulator structure lives in the {@link AggregatePayload}
+ * union (discriminated by `name`), so executors translate a call with one
+ * exhaustive `switch (call.name)`, mirroring `FunctionCall`.
+ */
+export class AggregateFunction<T extends FieldType = FieldType> {
+  readonly kind = 'aggregateFunction';
+  readonly type: T;
+  readonly call: AggregatePayload;
+  constructor(type: T, call: AggregatePayload) {
+    this.type = type;
+    this.call = call;
+  }
+
+  /**
+   * Binds this accumulator to an output name, forming the `aggregate` stage's
+   * `{ aggregate, alias }` selectable — the counterpart of
+   * {@link ExpressionBase.as} for expressions (a distinct return type,
+   * {@link AggregateWithAlias}, keeps accumulators and expressions from mixing
+   * in a selection list). Unlike expression aliases, the alias must be
+   * UNDOTTED: the backend rejects dotted assignment targets in `aggregate`
+   * (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed).
+   */
+  as<Alias extends string>(alias: Alias & UndottedKey<Alias>): AggregateWithAlias<this, Alias> {
+    return { aggregate: this, alias };
+  }
+}
+
+/**
+ * The per-accumulator payload union, discriminated by `name`: each member
+ * states the exact named operands its accumulator takes, so an executor
+ * destructures a narrowed payload without arity checks (the
+ * {@link FunctionPayload} precedent). Operand fields are lifted `Expression`s.
+ */
+export type AggregatePayload =
+  | { name: 'countAll' }
+  | { name: 'count'; value: Expression }
+  | { name: 'countDistinct'; value: Expression }
+  | { name: 'countIf'; condition: Expression }
+  | { name: 'sum'; value: Expression }
+  | { name: 'average'; value: Expression }
+  | { name: 'minimum'; value: Expression }
+  | { name: 'maximum'; value: Expression }
+  | { name: 'first'; value: Expression }
+  | { name: 'last'; value: Expression }
+  | { name: 'arrayAgg'; value: Expression }
+  | { name: 'arrayAggDistinct'; value: Expression };
+
+/** The name vocabulary of every supported accumulator — {@link AggregatePayload}'s discriminant. */
+export type AggregateFunctionName = AggregatePayload['name'];
+
+/**
+ * An accumulator bound to an output name — the `aggregate` stage's selectable,
+ * built with {@link AggregateFunction.as}. The counterpart of
+ * {@link ExpressionWithAlias}, deliberately a DIFFERENT shape (`aggregate` vs
+ * `expression`) so the two cannot be interchanged in a selection list.
+ */
+export type AggregateWithAlias<
+  F extends AggregateFunction = AggregateFunction,
+  Alias extends string = string,
+> = { aggregate: F; alias: Alias };
+
+/**
+ * An accumulator's RESULT descriptor over the group: the operand's
+ * null-stripped payload plus `NullType`, or `NullType` alone for a pure-null
+ * operand. One helper covers every "may be empty / ignores nulls / keeps
+ * nulls" accumulator uniformly:
+ *
+ * - `minimum` / `maximum` ignore null and absent inputs, `first` / `last`
+ *   keep them, and every one of them is `null` over an empty group (probed) —
+ *   all three shapes collapse to "the value's kind, or null", so stripping the
+ *   operand's own null before re-adding one avoids double-nesting
+ *   (`minimum(nullable(string))` is `nullable(string)`, not
+ *   `nullable(nullable(string))`).
+ * - `sum` / `average` reuse it too: their payload
+ *   (`NumericResult` / `DoubleType`) is never itself nullable, so
+ *   null-stripping is a no-op and this yields exactly `nullable(payload)` —
+ *   the one empty-group null the no-groups row can carry (probed).
+ */
+type NullableStripped<T extends FieldType> = [StripNull<T>] extends [never]
+  ? NullType
+  : UnionType<[StripNull<T>, NullType]>;
+
+/** Runtime counterpart of {@link NullableStripped} (same bridge shape as `propagateNull`; `never` is `undefined`). */
+function nullableStripped<T extends FieldType>(t: T): NullableStripped<T>;
+function nullableStripped(t: FieldType): FieldType {
+  const stripped = stripNull(t);
+  return stripped === undefined ? nullType() : nullable(stripped);
+}
+
+/**
+ * Row count of the group — 0 over an empty group, never null (probed). No
+ * operand: it counts rows, not values.
+ */
+export const countAll = (): AggregateFunction<Int64Type> =>
+  new AggregateFunction(int64(), { name: 'countAll' });
+
+/** Counts the group's non-null values of `value` (null and absent are not counted — probed); int64, 0 on empty. */
+export const count = <const V extends OperandInput>(value: V): AggregateFunction<Int64Type> =>
+  new AggregateFunction(int64(), { name: 'count', value: toOperand(value) });
+
+/** Counts the group's DISTINCT non-null values of `value` (probed); int64, 0 on empty. */
+export const countDistinct = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<Int64Type> =>
+  new AggregateFunction(int64(), { name: 'countDistinct', value: toOperand(value) });
+
+/** Counts the rows where `condition` is exactly `true` (a null/absent/false condition is not counted — probed); int64, 0 on empty. */
+export const countIf = <const C extends BooleanOperandInput>(
+  condition: C,
+): AggregateFunction<Int64Type> =>
+  new AggregateFunction(int64(), { name: 'countIf', condition: toOperand(condition) });
+
+/**
+ * Sums the group's non-null values (nulls and absent ignored — probed).
+ * `null` (NOT 0, unlike SQL) over an empty or all-null group, so the
+ * descriptor is nullable; int64 is preserved when every value is a declared
+ * int64, double otherwise (the `NumericResult` rule — probed).
+ */
+export const sum = <const V extends NumericOperandInput>(
+  value: V,
+): AggregateFunction<NullableStripped<NumericResult<TypeOfOperand<V>>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(nullableStripped(numericResultType([v])), { name: 'sum', value: v });
+};
+
+/**
+ * The mean of the group's non-null values (divides by the non-null count —
+ * probed). ALWAYS float64 (probed), and `null` over an empty or all-null
+ * group, so the descriptor is `nullable(double())`.
+ */
+export const average = <const V extends NumericOperandInput>(
+  value: V,
+): AggregateFunction<NullableStripped<DoubleType>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(nullableStripped(double()), { name: 'average', value: v });
+};
+
+/**
+ * The smallest non-null value under the backend's value ordering (nulls and
+ * absent ignored — probed); `null` over an empty or all-null group. The
+ * operand's own kind, made nullable (see {@link NullableStripped}).
+ */
+export const minimum = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<NullableStripped<TypeOfOperand<V>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(nullableStripped(v.type), { name: 'minimum', value: v });
+};
+
+/** The largest non-null value — see {@link minimum}. */
+export const maximum = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<NullableStripped<TypeOfOperand<V>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(nullableStripped(v.type), { name: 'maximum', value: v });
+};
+
+/**
+ * The first value in the group (following a preceding `sort`, else
+ * backend-determined — probed). Null values are KEPT positionally (not
+ * skipped like `minimum`), absent merges into null, and an empty group is
+ * null — the operand's kind made nullable (see {@link NullableStripped}).
+ */
+export const first = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<NullableStripped<TypeOfOperand<V>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(nullableStripped(v.type), { name: 'first', value: v });
+};
+
+/** The last value in the group — see {@link first}. */
+export const last = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<NullableStripped<TypeOfOperand<V>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(nullableStripped(v.type), { name: 'last', value: v });
+};
+
+/**
+ * Collects the group's values into an array. Absent values are SKIPPED but
+ * null values are KEPT as elements (probed — note the asymmetry with
+ * `first`/`last`, which merge absent into null), so the element keeps the
+ * operand's null tag while dropping its `Optional` presence marker
+ * ({@link WithoutOptional}).
+ */
+export const arrayAgg = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<ArrayType<WithoutOptional<TypeOfOperand<V>>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(arrayAggType(v), { name: 'arrayAgg', value: v });
+};
+
+/** Collects the group's DISTINCT values into an array — see {@link arrayAgg}. */
+export const arrayAggDistinct = <const V extends OperandInput>(
+  value: V,
+): AggregateFunction<ArrayType<WithoutOptional<TypeOfOperand<V>>>> => {
+  const v = toOperand(value);
+  return new AggregateFunction(arrayAggType(v), { name: 'arrayAggDistinct', value: v });
+};
+
+/** Runtime counterpart of `ArrayType<WithoutOptional<V['type']>>` (same bridge shape as `propagateNull`). */
+function arrayAggType<V extends Expression>(value: V): ArrayType<WithoutOptional<V['type']>>;
+function arrayAggType(value: Expression): FieldType {
+  return array(withoutOptional(value.type));
+}

@@ -8,6 +8,8 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
+  type AggregateFunctionName,
+  type AggregatePayload,
   type FunctionName,
   type FunctionPayload,
 } from 'firestore-repository/pipelines/expression';
@@ -108,6 +110,17 @@ const applyStage = (
       }
       return sdk.addFields(first, ...rest);
     }
+    case 'aggregate': {
+      // Always the options-object form (uniform; the variadic accumulator form
+      // is client sugar). `accumulators` are the aliased accumulator calls;
+      // `groups` translate like `select` selections — a bare path becomes a
+      // `Field`, an aliased expression becomes the translated expression `.as`.
+      const accumulators = stage.accumulators.map(({ aggregate, alias }) =>
+        dispatchAggregate(aggregate.call, (e) => toSdkExpression(db, e)).as(alias),
+      );
+      const groups = stage.groups.map((selection) => toSdkSelectable(db, selection));
+      return sdk.aggregate({ accumulators, groups });
+    }
     case 'where':
       // `asBoolean()` is a type-tag wrap for the SDK's `BooleanExpression`
       // parameter — it does not change the wire proto.
@@ -117,7 +130,6 @@ const applyStage = (
     case 'offset':
       return sdk.offset(stage.offset);
     case 'unnest':
-    case 'aggregate':
     case 'distinct':
     case 'replaceWith':
     case 'union':
@@ -440,6 +452,48 @@ const functionTranslators: FunctionTranslators = {
   dotProduct: (c, t) => Pipelines.dotProduct(t(c.left), t(c.right)),
   euclideanDistance: (c, t) => Pipelines.euclideanDistance(t(c.left), t(c.right)),
   vectorLength: (c, t) => Pipelines.vectorLength(t(c.vector)),
+};
+
+/**
+ * Dispatches an accumulator payload to its {@link aggregateTranslators} entry —
+ * the aggregate counterpart of {@link dispatchFunctionCall}. Generic over the
+ * concrete accumulator name `K` so the indexed table lookup and the narrowed
+ * payload stay correlated against the SAME `Extract<AggregatePayload,
+ * { name: K }>` (no type assertion).
+ */
+const dispatchAggregate = <K extends AggregateFunctionName>(
+  call: Extract<AggregatePayload, { name: K }>,
+  translate: Translate,
+): Pipelines.AggregateFunction => aggregateTranslators[call.name](call, translate);
+
+/**
+ * Per-accumulator translation into the SDK, keyed by accumulator name — the
+ * single source a newly added {@link AggregateFunctionName} must extend (a
+ * missing key fails to compile), mirroring {@link functionTranslators}. Every
+ * accumulator has a standalone SDK factory taking an `Expression`; `countIf`
+ * takes a `BooleanExpression`, so its operand is wrapped with `asBoolean()` (a
+ * type-tag only, no wire change).
+ */
+type AggregateTranslators = {
+  [K in AggregateFunctionName]: (
+    call: Extract<AggregatePayload, { name: K }>,
+    t: Translate,
+  ) => Pipelines.AggregateFunction;
+};
+
+const aggregateTranslators: AggregateTranslators = {
+  countAll: () => Pipelines.countAll(),
+  count: (c, t) => Pipelines.count(t(c.value)),
+  countDistinct: (c, t) => Pipelines.countDistinct(t(c.value)),
+  countIf: (c, t) => Pipelines.countIf(t(c.condition).asBoolean()),
+  sum: (c, t) => Pipelines.sum(t(c.value)),
+  average: (c, t) => Pipelines.average(t(c.value)),
+  minimum: (c, t) => Pipelines.minimum(t(c.value)),
+  maximum: (c, t) => Pipelines.maximum(t(c.value)),
+  first: (c, t) => Pipelines.first(t(c.value)),
+  last: (c, t) => Pipelines.last(t(c.value)),
+  arrayAgg: (c, t) => Pipelines.arrayAgg(t(c.value)),
+  arrayAggDistinct: (c, t) => Pipelines.arrayAggDistinct(t(c.value)),
 };
 
 /** `Array.isArray` narrows poorly over readonly-array unions — a dedicated guard does. */

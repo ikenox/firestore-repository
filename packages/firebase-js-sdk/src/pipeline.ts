@@ -97,6 +97,19 @@ import {
   trunc as sdkTrunc,
   type as sdkType,
   vectorLength as sdkVectorLength,
+  countAll as sdkCountAll,
+  count as sdkCount,
+  countDistinct as sdkCountDistinct,
+  countIf as sdkCountIf,
+  sum as sdkSum,
+  average as sdkAverage,
+  minimum as sdkMinimum,
+  maximum as sdkMaximum,
+  first as sdkFirst,
+  last as sdkLast,
+  arrayAgg as sdkArrayAgg,
+  arrayAggDistinct as sdkArrayAggDistinct,
+  type AggregateFunction as SdkAggregateFunction,
   type Expression as SdkExpression,
   type Pipeline as SdkPipeline,
   type Selectable as SdkSelectable,
@@ -110,6 +123,8 @@ import {
   GeoPointValue,
   VectorValue,
   ExpressionWithAlias,
+  type AggregateFunctionName,
+  type AggregatePayload,
   type FunctionName,
   type FunctionPayload,
 } from 'firestore-repository/pipelines/expression';
@@ -206,6 +221,17 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
       }
       return sdk.addFields(first, ...rest);
     }
+    case 'aggregate': {
+      // Always the options-object form (uniform; the variadic accumulator form
+      // is client sugar). `accumulators` are the aliased accumulator calls;
+      // `groups` translate like `select` selections — a bare path becomes a
+      // `Field`, an aliased expression becomes the translated expression `.as`.
+      const accumulators = stage.accumulators.map(({ aggregate, alias }) =>
+        dispatchAggregate(aggregate.call, (e) => toSdkExpression(db, e)).as(alias),
+      );
+      const groups = stage.groups.map((selection) => toSdkSelectable(db, selection));
+      return sdk.aggregate({ accumulators, groups });
+    }
     case 'where':
       // `asBoolean()` is a type-tag wrap for the SDK's `BooleanExpression`
       // parameter — it does not change the wire proto.
@@ -215,7 +241,6 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
     case 'offset':
       return sdk.offset(stage.offset);
     case 'unnest':
-    case 'aggregate':
     case 'distinct':
     case 'replaceWith':
     case 'union':
@@ -502,6 +527,47 @@ const functionTranslators: FunctionTranslators = {
   dotProduct: (c, t) => sdkDotProduct(t(c.left), t(c.right)),
   euclideanDistance: (c, t) => sdkEuclideanDistance(t(c.left), t(c.right)),
   vectorLength: (c, t) => sdkVectorLength(t(c.vector)),
+};
+
+/**
+ * Dispatches an accumulator payload to its {@link aggregateTranslators} entry —
+ * the aggregate counterpart of {@link dispatch}. The generic `K` ties the
+ * payload's `name` to the matching translator entry (the same single-type-
+ * variable trick that avoids a whole-union assertion).
+ */
+const dispatchAggregate = <K extends AggregateFunctionName>(
+  call: Extract<AggregatePayload, { name: K }>,
+  t: (e: Expression) => SdkExpression,
+): SdkAggregateFunction => aggregateTranslators[call.name](call, t);
+
+/**
+ * One translator per accumulator name — a mapped type over the name union
+ * requires every key, so a newly added accumulator fails to compile until
+ * translated (mirrors {@link functionTranslators}). Every accumulator has a
+ * standalone SDK factory taking an `Expression`; `countIf` takes a
+ * `BooleanExpression`, so its operand is wrapped with `asBoolean()` (a type-tag
+ * only, no wire change).
+ */
+type AggregateTranslators = {
+  [K in AggregateFunctionName]: (
+    call: Extract<AggregatePayload, { name: K }>,
+    t: (e: Expression) => SdkExpression,
+  ) => SdkAggregateFunction;
+};
+
+const aggregateTranslators: AggregateTranslators = {
+  countAll: () => sdkCountAll(),
+  count: (c, t) => sdkCount(t(c.value)),
+  countDistinct: (c, t) => sdkCountDistinct(t(c.value)),
+  countIf: (c, t) => sdkCountIf(t(c.condition).asBoolean()),
+  sum: (c, t) => sdkSum(t(c.value)),
+  average: (c, t) => sdkAverage(t(c.value)),
+  minimum: (c, t) => sdkMinimum(t(c.value)),
+  maximum: (c, t) => sdkMaximum(t(c.value)),
+  first: (c, t) => sdkFirst(t(c.value)),
+  last: (c, t) => sdkLast(t(c.value)),
+  arrayAgg: (c, t) => sdkArrayAgg(t(c.value)),
+  arrayAggDistinct: (c, t) => sdkArrayAggDistinct(t(c.value)),
 };
 
 const toSdkOrdering = (ordering: Ordering) => {

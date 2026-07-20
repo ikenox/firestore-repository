@@ -1,5 +1,5 @@
 import type { Collection } from '../schema.js';
-import type { Expression, ExpressionWithAlias, Valued } from './expression.js';
+import type { AggregateWithAlias, Expression, ExpressionWithAlias, Valued } from './expression.js';
 import type { Ordering } from './ordering.js';
 
 /**
@@ -44,7 +44,16 @@ export type TransformStage =
   | { kind: 'limit'; limit: number }
   | { kind: 'offset'; offset: number }
   | { kind: 'unnest' }
-  | { kind: 'aggregate' }
+  // `accumulators` are the aliased accumulator calls; `groups` are the group
+  // keys post-conflict-resolution (last-wins applied by `Pipeline.aggregate`,
+  // mirroring `select`), so an executor translates both 1:1. Empty `groups`
+  // means the whole-input group (one row; empty input yields exactly one row —
+  // probed).
+  | {
+      kind: 'aggregate';
+      accumulators: readonly AggregateWithAlias[];
+      groups: readonly (string | ExpressionWithAlias)[];
+    }
   | { kind: 'distinct' }
   | { kind: 'replaceWith' }
   | { kind: 'union' }
