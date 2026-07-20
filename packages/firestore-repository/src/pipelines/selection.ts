@@ -200,11 +200,7 @@ type DropOverriddenSelections<Args extends readonly unknown[]> = Args extends re
 export type BuildAddFieldsSchema<
   Context extends Fields,
   Args extends readonly ExpressionWithAlias[],
-  // The `Args extends ...` guard is always true; it defers evaluation so the
-  // result is accepted as a `DocumentSchema` (same trick as BuildSelectionSchema).
-> = Args extends readonly ExpressionWithAlias[]
-  ? MergeSchemas<BuildSelectionSchema<Context, Args>, Context>
-  : never;
+> = MergeSchemas<BuildSelectionSchema<Context, Args>, Context>;
 
 /**
  * Output schema of the `aggregate` stage: the group keys' schema, transformed
@@ -224,18 +220,7 @@ export type AggregateSchema<
   Context extends Fields,
   Accs extends readonly AggregateWithAlias[],
   Groups extends readonly AggregateGroup<Context>[],
-  // The `Accs extends ...` guard is always true; it defers evaluation so the
-  // result is accepted as a `DocumentSchema` (same trick as BuildAddFieldsSchema).
-> = Accs extends readonly AggregateWithAlias[]
-  ? MergeSchemas<AccumulatorSchema<Accs>, GroupSchema<Context, Groups>> extends infer R extends
-      Fields
-    ? // The `infer R extends Fields` re-binding discharges the `MapFields`
-      // constraint lazily: the merged mapped type's value positions are not
-      // PROVABLY `FieldType` while `Accs`/`Groups` are unresolved generics,
-      // so a direct use fails `Pipeline`'s schema bound.
-      R
-    : never
-  : never;
+> = MergeSchemas<AccumulatorSchema<Accs>, GroupSchema<Context, Groups>>;
 
 /**
  * The group-key half of the aggregate/distinct output schema: the groups'
@@ -266,11 +251,7 @@ type GroupSchema<
 export type DistinctSchema<
   Context extends Fields,
   Groups extends readonly AggregateGroup<Context>[],
-  // The `infer R extends Fields` re-binding discharges the `MapFields`
-  // constraint lazily (same trick as AggregateSchema): the mapped type's value
-  // positions are not PROVABLY `FieldType` while `Groups` is an unresolved
-  // generic, so a direct use fails `Pipeline`'s schema bound.
-> = GroupSchema<Context, Groups> extends infer R extends Fields ? R : never;
+> = GroupSchema<Context, Groups>;
 
 /**
  * Folds the accumulators into a flat `alias -> result descriptor` record. A
@@ -306,7 +287,15 @@ type OverwriteMerge<A, B> = {
  */
 export type AbsentMergesIntoNull<S extends Fields> = {
   [K in keyof S]: RewriteAbsentField<S[K]>;
-};
+  // The `infer R extends Fields` re-binding discharges the schema constraint
+  // lazily: over an unresolved `S` the mapped type's value positions are not
+  // PROVABLY `FieldType`, so without it the result is rejected wherever a
+  // schema is required. Identity on every instantiation (`S extends Fields`
+  // and `RewriteAbsentField` returns a `FieldType`), so the operator is a
+  // `Fields` by construction and its callers need no re-binding of their own.
+} extends infer R extends Fields
+  ? R
+  : never;
 
 type RewriteAbsentField<T extends FieldType> = T extends Optional
   ? UnionType<[WithoutOptional<T>, NullType]>
@@ -399,22 +388,31 @@ type MergeSchemas<A, B> = {
     : K extends keyof B
       ? B[K]
       : never;
-};
+  // Re-bound to `Fields` for the same reason as {@link AbsentMergesIntoNull}:
+  // over unresolved operands the mapped type's value positions are not
+  // PROVABLY `FieldType`. Every operand in this file is a schema, so the
+  // re-binding is an identity and the result is a `Fields` by construction.
+} extends infer R extends Fields
+  ? R
+  : never;
 
 // ---------------------------------------------------------------------------
-// Runtime counterparts. Each helper mirrors the type-level operator of the same
-// name above; `buildSelectionSchema` is the entry point used by
-// `Pipeline.select` to compute the projected runtime schema.
+// Runtime counterparts. Each helper is DECLARED AS the type-level operator of
+// the same name applied to its own arguments, so the assertion inside it claims
+// exactly one step and the COMPOSITION of the steps is checked by the compiler:
+// a helper whose runtime result stops matching its twin's shape breaks the
+// callers that feed it, instead of being absorbed by one assertion at the top.
+// The `build*` functions are the entry points the `Pipeline` stages call.
 // ---------------------------------------------------------------------------
 
 /**
  * Runtime counterpart of {@link BuildSelectionSchema}: computed with the same
  * decomposition as the type — `foldSelections(schema, dropOverriddenSelections(args))`
- * mirrors `FoldSelections<Context, DropOverriddenSelections<Args>>`, so each
- * step can be checked against its type-level twin. The result feeds the next
+ * IS `FoldSelections<Context, DropOverriddenSelections<Args>>`, which is why
+ * this composition needs no assertion of its own. The result feeds the next
  * stage's field resolution and the executors' row decoding, so it must mirror
  * the type-level result exactly — the type tests in `selection.test.ts` plus
- * the pipeline spec are the safety net for the bridging assertion.
+ * the pipeline spec pin both halves.
  */
 export const buildSelectionSchema = <
   Context extends Fields,
@@ -423,11 +421,7 @@ export const buildSelectionSchema = <
   schema: Context,
   selections: Selections,
 ): BuildSelectionSchema<Context, Selections> =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `BuildSelectionSchema`, but the compiler cannot connect a runtime schema value to the type-level result
-  foldSelections(schema, dropOverriddenSelections(selections)) as BuildSelectionSchema<
-    Context,
-    Selections
-  >;
+  foldSelections(schema, dropOverriddenSelections(selections));
 
 /**
  * Runtime counterpart of {@link BuildAddFieldsSchema}: the same
@@ -442,20 +436,15 @@ export const buildAddFieldsSchema = <
   schema: Context,
   selections: Selections,
 ): BuildAddFieldsSchema<Context, Selections> =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `BuildAddFieldsSchema`, but the compiler cannot connect a runtime schema value to the type-level result
-  mergeSchemas(
-    foldSelections(schema, dropOverriddenSelections(selections)),
-    schema,
-  ) as BuildAddFieldsSchema<Context, Selections>;
+  mergeSchemas(foldSelections(schema, dropOverriddenSelections(selections)), schema);
 
 /**
  * Runtime counterpart of {@link AggregateSchema}: computed with the same
- * decomposition as the type —
- * `mergeSchemas(accumulatorSchema(...), absentMergesIntoNull(buildSelectionSchema(...)))`
- * mirrors `MergeSchemas<AccumulatorSchema<...>, AbsentMergesIntoNull<BuildSelectionSchema<...>>>`,
- * so each step can be checked against its type-level twin. The result feeds
- * the executors' row decoding, so it must mirror the type exactly — the tests
- * in `selection.test.ts` are the safety net for the bridging assertion.
+ * decomposition as the type — `mergeSchemas(accumulatorSchema(...), groupSchema(...))`
+ * IS `MergeSchemas<AccumulatorSchema<Accs>, GroupSchema<Context, Groups>>`, so
+ * the composition itself carries no assertion. The result feeds the executors'
+ * row decoding, so it must mirror the type exactly — the tests in
+ * `selection.test.ts` pin both halves.
  */
 export const buildAggregateSchema = <
   Context extends Fields,
@@ -465,19 +454,19 @@ export const buildAggregateSchema = <
   schema: Context,
   accumulators: Accs,
   groups?: Groups,
-): AggregateSchema<Context, Accs, Groups> =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `AggregateSchema`, but the compiler cannot connect a runtime schema value to the type-level result
-  mergeSchemas(
-    accumulatorSchema(accumulators),
-    groupSchema(schema, groups ?? []),
-  ) as AggregateSchema<Context, Accs, Groups>;
+): AggregateSchema<Context, Accs, Groups> => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: an omitted `groups` argument means the empty group list and leaves `Groups` at its `readonly []` default, but the compiler does not tie a parameter's runtime default to a type parameter's default.
+  const groupList = (groups ?? []) as Groups;
+  return mergeSchemas(accumulatorSchema(accumulators), groupSchema(schema, groupList));
+};
 
 /**
  * Runtime counterpart of {@link DistinctSchema}: the group-key schema and
  * nothing else — `distinct` is a grouped aggregate with zero accumulators, so
- * this is just {@link groupSchema}. The result feeds the executors' row
- * decoding, so it must mirror the type exactly — the tests in
- * `selection.test.ts` are the safety net for the bridging assertion.
+ * this is just {@link groupSchema}, whose declared return type IS
+ * {@link GroupSchema} — so no assertion is needed here at all. The result feeds
+ * the executors' row decoding, so it must mirror the type exactly — the tests
+ * in `selection.test.ts` pin both halves.
  */
 export const buildDistinctSchema = <
   Context extends Fields,
@@ -485,9 +474,7 @@ export const buildDistinctSchema = <
 >(
   schema: Context,
   groups: Groups,
-): DistinctSchema<Context, Groups> =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `DistinctSchema`, but the compiler cannot connect a runtime schema value to the type-level result
-  groupSchema(schema, groups) as DistinctSchema<Context, Groups>;
+): DistinctSchema<Context, Groups> => groupSchema(schema, groups);
 
 /**
  * Runtime counterpart of {@link GroupSchema}, shared by `buildAggregateSchema`
@@ -495,21 +482,14 @@ export const buildDistinctSchema = <
  * as `buildSelectionSchema` does) with each key passed through
  * `absentMergesIntoNull`.
  *
- * "Counterpart" here means the COMPUTATION mirrors the type step for step, not
- * that the signature does — like every other runtime twin in this file, the
- * return is the widened `Fields`, and the two public wrappers are where the
- * bridging assertion to the computed type lives. Typing this one
- * `GroupSchema<Context, Groups>` instead does not remove an assertion — the
- * tighter return poisons BOTH callers (tried, so no one has to try again):
- * in `buildAggregateSchema` the value stops satisfying `mergeSchemas`'s
- * `MapFields` parameter over an unresolved `Groups` (the same
- * non-provable-`FieldType` mapped-type problem `AggregateSchema` discharges
- * with `infer R extends Fields`), needing a NEW assertion there, and in
- * `buildDistinctSchema` the existing assertion degrades to a double
- * `as unknown as` because `DistinctSchema`'s deferred conditional no longer
- * sufficiently overlaps. Widening here keeps that one bridge per wrapper.
+ * Typed as `GroupSchema<Context, Groups>` and computed from helpers that are
+ * each typed as their own type-level twin, so the compiler — not a comment —
+ * checks that the composition matches the type's decomposition.
  */
-const groupSchema = (schema: Fields, groups: readonly SelectionNode[]): Fields =>
+const groupSchema = <Context extends Fields, Groups extends readonly AggregateGroup<Context>[]>(
+  schema: Context,
+  groups: Groups,
+): GroupSchema<Context, Groups> =>
   absentMergesIntoNull(foldSelections(schema, dropOverriddenSelections(groups)));
 
 /**
@@ -517,43 +497,67 @@ const groupSchema = (schema: Fields, groups: readonly SelectionNode[]): Fields =
  * record built by iterating in order, so a repeated alias's later entry wins
  * (mirrors the type's `OverwriteMerge` fold).
  */
-const accumulatorSchema = (accumulators: readonly AggregateWithAlias[]): Fields => {
+const accumulatorSchema = <const Accs extends readonly AggregateWithAlias[]>(
+  accumulators: Accs,
+): AccumulatorSchema<Accs> => {
   const result: Record<string, FieldType> = {};
   for (const { aggregate, alias } of accumulators) {
     result[alias] = aggregate.type;
   }
-  return result;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `AccumulatorSchema` folds the TUPLE `Accs` with `OverwriteMerge`, which the compiler cannot match against the in-order loop that overwrites repeated aliases.
+  return result as AccumulatorSchema<Accs>;
 };
 
-/** Runtime counterpart of {@link AbsentMergesIntoNull}. */
-const absentMergesIntoNull = (schema: Fields): Fields =>
-  Object.fromEntries(Object.entries(schema).map(([k, v]) => [k, rewriteAbsentField(v)]));
+/** Runtime counterpart of {@link AbsentMergesIntoNull}, typed as that operator applied to its input. */
+const absentMergesIntoNull = <S extends Fields>(schema: S): AbsentMergesIntoNull<S> => {
+  const result = Object.fromEntries(
+    Object.entries(schema).map(([k, v]) => [k, rewriteAbsentField(v)]),
+  );
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `AbsentMergesIntoNull` is a mapped type over `keyof S`, which the compiler cannot match against an `Object.entries`/`fromEntries` rebuild.
+  return result as AbsentMergesIntoNull<S>;
+};
 
-/** Runtime counterpart of {@link RewriteAbsentField}. */
-const rewriteAbsentField = (t: FieldType & { optional?: boolean }): FieldType =>
-  t.optional === true ? nullable(withoutOptional(t)) : t;
+/** Runtime counterpart of {@link RewriteAbsentField}, typed as that operator applied to its input. */
+const rewriteAbsentField = <T extends FieldType>(
+  t: T & { optional?: boolean },
+): RewriteAbsentField<T> => {
+  const result = t.optional === true ? nullable(withoutOptional(t)) : t;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `RewriteAbsentField` branches on `T extends Optional`, a type-level test the runtime performs by reading the `optional` marker; the compiler does not relate the two.
+  return result as RewriteAbsentField<T>;
+};
 
 /**
  * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection
  * only if no later selection conflicts with it (last-wins).
  */
-export const dropOverriddenSelections = <S extends SelectionNode>(selections: readonly S[]): S[] =>
-  selections.filter(
+export const dropOverriddenSelections = <const Args extends readonly SelectionNode[]>(
+  selections: Args,
+): DropOverriddenSelections<Args> => {
+  const result = selections.filter(
     (s, i) =>
       !selections
         .slice(i + 1)
         .some((later) => pathsConflict(selectionPath(s), selectionPath(later))),
   );
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `DropOverriddenSelections` builds a FILTERED TUPLE by recursing on `Args`, while the runtime filters an array; the compiler cannot see that the kept elements are exactly the tuple's members.
+  return result as DropOverriddenSelections<Args>;
+};
 
 /**
  * Runtime counterpart of {@link FoldSelections}: the same
  * `MergeSchemas<SelectionToSchema<First>, FoldSelections<Rest>>` recursion.
  */
-const foldSelections = (schema: Fields, selections: readonly SelectionNode[]): Fields => {
+const foldSelections = <Context extends Fields, Args extends readonly SelectionNode[]>(
+  schema: Context,
+  selections: Args,
+): FoldSelections<Context, Args> => {
   const [first, ...rest] = selections;
-  return first === undefined
-    ? {}
-    : mergeSchemas(selectionToSchema(schema, first), foldSelections(schema, rest));
+  const result =
+    first === undefined
+      ? {}
+      : mergeSchemas(selectionToSchema(schema, first), foldSelections(schema, rest));
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `FoldSelections` recurses by destructuring the TUPLE `Args`, while the runtime destructures an array value; the compiler cannot see that `rest` is the type-level `Rest`.
+  return result as FoldSelections<Context, Args>;
 };
 
 /**
@@ -563,33 +567,50 @@ const foldSelections = (schema: Fields, selections: readonly SelectionNode[]): F
  * strings is unreachable through the typed API, so a throw is the defensive
  * equivalent).
  */
-const selectionToSchema = (schema: Fields, s: SelectionNode): Fields => {
-  if (typeof s === 'string') {
-    return pathToSchema(
-      s,
-      withConditionality(schema, s, fieldTypeOfPath<Fields, string>(schema, s)),
-    );
-  }
-  if (!('alias' in s)) {
-    // A bare `Field`: its `path` is its output name, and its own `type` is the
-    // descriptor — the exact fold the aliased `field(p).as(p)` arm below runs.
-    return pathToSchema(s.path, withConditionality(schema, s.path, s.type));
-  }
-  const { expression, alias } = s;
-  switch (expression.kind) {
-    case 'field':
-      return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
-    case 'constant':
-    case 'functionCall':
-      return pathToSchema(alias, expression.type);
-    default:
-      return assertNever(expression);
-  }
+const selectionToSchema = <Context extends Fields, S extends SelectionNode>(
+  schema: Context,
+  s: S,
+): SelectionToSchema<Context, S> => {
+  // Widened to the union first: narrowing a generic `S` in place leaves it an
+  // object-or-string type parameter that `typeof` / `in` cannot discriminate.
+  const node: SelectionNode = s;
+  const result = ((): Fields => {
+    if (typeof node === 'string') {
+      return pathToSchema(
+        node,
+        withConditionality(schema, node, fieldTypeOfPath<Fields, string>(schema, node)),
+      );
+    }
+    if (!('alias' in node)) {
+      // A bare `Field`: its `path` is its output name, and its own `type` is the
+      // descriptor — the exact fold the aliased `field(p).as(p)` arm below runs.
+      return pathToSchema(node.path, withConditionality(schema, node.path, node.type));
+    }
+    const { expression, alias } = node;
+    switch (expression.kind) {
+      case 'field':
+        return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
+      case 'constant':
+      case 'functionCall':
+        return pathToSchema(alias, expression.type);
+      default:
+        return assertNever(expression);
+    }
+  })();
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `SelectionToSchema` dispatches on the shape of `S` with a conditional type, the runtime on the shape of the VALUE; narrowing the value does not narrow `S`, so the arms cannot be matched up by the compiler.
+  return result as SelectionToSchema<Context, S>;
 };
 
-/** Runtime counterpart of {@link WithConditionality}. */
-const withConditionality = (schema: Fields, path: string, type: FieldType): FieldType =>
-  isConditionalPath(schema, path) ? optional(type) : type;
+/** Runtime counterpart of {@link WithConditionality}, typed as that operator applied to its inputs. */
+const withConditionality = <Context extends Fields, P extends string, T extends FieldType>(
+  schema: Context,
+  path: P,
+  type: T,
+): WithConditionality<Context, P, T> => {
+  const result = isConditionalPath(schema, path) ? optional(type) : type;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `WithConditionality` branches on the type-level `IsConditionalPath`, which the runtime decides by walking the schema value; the compiler cannot connect the boolean to the conditional type.
+  return result as WithConditionality<Context, P, T>;
+};
 
 /** Runtime counterpart of {@link IsConditionalPath}. */
 const isConditionalPath = (schema: Fields, path: string): boolean => {
@@ -609,24 +630,39 @@ const isConditionalPath = (schema: Fields, path: string): boolean => {
   return isMapType(head) ? isConditionalPath(head.fields, path.slice(dot + 1)) : false;
 };
 
-/** Runtime counterpart of {@link SelectionPath}. */
-const selectionPath = (s: SelectionNode): string =>
-  typeof s === 'string' ? s : 'alias' in s ? s.alias : s.path;
+/** Runtime counterpart of {@link SelectionPath}, typed as that operator applied to its input. */
+const selectionPath = <S extends SelectionNode>(s: S): SelectionPath<S> => {
+  // Widened to the union first: narrowing a generic `S` in place leaves it an
+  // object-or-string type parameter that `in` rejects.
+  const node: SelectionNode = s;
+  const result = typeof node === 'string' ? node : 'alias' in node ? node.alias : node.path;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: narrowing the VALUE `s` does not narrow the type parameter `S`, so the compiler cannot see that each branch produces the corresponding arm of `SelectionPath<S>`.
+  return result as SelectionPath<S>;
+};
 
 /** Runtime counterpart of {@link PathsConflict}. */
 const pathsConflict = (a: string, b: string): boolean =>
   a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
 
-/** Runtime counterpart of {@link PathToSchema}. */
-const pathToSchema = (path: string, type: FieldType): Fields => {
+/** Runtime counterpart of {@link PathToSchema}, typed as that operator applied to its inputs. */
+const pathToSchema = <Path extends string, T extends FieldType>(
+  path: Path,
+  type: T,
+): PathToSchema<Path, T> => {
   const dot = path.indexOf('.');
-  return dot < 0
-    ? { [path]: type }
-    : { [path.slice(0, dot)]: map(pathToSchema(path.slice(dot + 1), type)) };
+  const result =
+    dot < 0
+      ? { [path]: type }
+      : { [path.slice(0, dot)]: map(pathToSchema(path.slice(dot + 1), type)) };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `PathToSchema` splits `Path` with a template-literal match while the runtime splits with `indexOf`, and a computed key built from a generic `Path` is not seen to inhabit the resulting mapped type.
+  return result as PathToSchema<Path, T>;
 };
 
-/** Runtime counterpart of {@link MergeSchemas} (`a` wins on non-map conflicts). */
-const mergeSchemas = (a: Fields, b: Fields): Fields => {
+/**
+ * Runtime counterpart of {@link MergeSchemas} (`a` wins on non-map conflicts),
+ * typed as that operator applied to its inputs.
+ */
+const mergeSchemas = <A extends Fields, B extends Fields>(a: A, b: B): MergeSchemas<A, B> => {
   const result: Record<string, FieldType> = { ...b, ...a };
   for (const key of Object.keys(a)) {
     const va = a[key];
@@ -635,5 +671,6 @@ const mergeSchemas = (a: Fields, b: Fields): Fields => {
       result[key] = map(mergeSchemas(va.fields, vb.fields));
     }
   }
-  return result;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `MergeSchemas` is a mapped type over `keyof A | keyof B` whose per-key branch the compiler cannot connect to the spread-and-patch loop below it.
+  return result as MergeSchemas<A, B>;
 };

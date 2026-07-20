@@ -142,7 +142,7 @@ export class Pipeline<
   ): Pipeline<BuildSelectionSchema<Schema, Selections>, undefined> {
     const resolved = selections(fieldProvider(this.node.schema));
     return new Pipeline<BuildSelectionSchema<Schema, Selections>, undefined>({
-      schema: buildSelectionSchema(this.node.schema, resolved),
+      schema: buildSelectionSchema<Schema, Selections>(this.node.schema, resolved),
       // Resolve last-wins here so the stage carries a conflict-free list that
       // matches the schema (and executors translate it 1:1).
       stage: { kind: 'select', selections: dropOverriddenSelections(resolved) },
@@ -163,7 +163,7 @@ export class Pipeline<
   ): Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id> {
     const resolved = fields(fieldProvider(this.node.schema));
     return new Pipeline<BuildAddFieldsSchema<Schema, Selections>, Id>({
-      schema: buildAddFieldsSchema(this.node.schema, resolved),
+      schema: buildAddFieldsSchema<Schema, Selections>(this.node.schema, resolved),
       // Resolve last-wins here so the stage carries a conflict-free list that
       // matches the schema (and executors translate it 1:1).
       stage: { kind: 'addFields', selections: dropOverriddenSelections(resolved) },
@@ -231,11 +231,15 @@ export class Pipeline<
     },
   ): Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined> {
     const { accumulators, groups } = spec(fieldProvider(this.node.schema));
+    // Dropped to the plain `Groups` (the `UndottedGroupAliases` guard has done
+    // its work at the call site): the intersection blocks the element-type
+    // constraint of `DropOverriddenSelections` from being inferred.
+    const groupList: Groups | readonly [] = groups ?? [];
     return new Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined>({
       schema: buildAggregateSchema<Schema, Accs, Groups>(this.node.schema, accumulators, groups),
       // Resolve last-wins on the groups here so the stage carries a
       // conflict-free list that matches the schema (executors translate 1:1).
-      stage: { kind: 'aggregate', accumulators, groups: dropOverriddenSelections(groups ?? []) },
+      stage: { kind: 'aggregate', accumulators, groups: dropOverriddenSelections(groupList) },
       parent: this.node,
     });
   }
@@ -258,11 +262,15 @@ export class Pipeline<
     spec: (field: FieldProvider<Schema>) => Groups & UndottedGroupAliases<Groups>,
   ): Pipeline<DistinctSchema<Schema, Groups>, undefined> {
     const groups = spec(fieldProvider(this.node.schema));
+    // Dropped to the plain `Groups` (the `UndottedGroupAliases` guard has done
+    // its work at the call site): the intersection blocks the element-type
+    // constraint of `DropOverriddenSelections` from being inferred.
+    const groupList: Groups = groups;
     return new Pipeline<DistinctSchema<Schema, Groups>, undefined>({
       schema: buildDistinctSchema<Schema, Groups>(this.node.schema, groups),
       // Resolve last-wins on the groups here so the stage carries a
       // conflict-free list that matches the schema (executors translate 1:1).
-      stage: { kind: 'distinct', groups: dropOverriddenSelections(groups) },
+      stage: { kind: 'distinct', groups: dropOverriddenSelections(groupList) },
       parent: this.node,
     });
   }
