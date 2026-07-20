@@ -613,6 +613,33 @@ Items agreed in discussion but previously recorded only inline in DONE notes
 nullable(T)`); count family unaffected. Also probe the un-probed
       all-null-group cell (nullable operand, every value null in a group)
       before relying on it.
+- [ ] **Make "a selectable" a first-class concept** (agreed 2026-07, after the
+      bare-`Field` selection landed). A `Field` is NOT a kind of
+      `ExpressionWithAlias`: the latter is a BINDING (`{ expression, alias }`),
+      the former is a NODE — different layers, so neither contains the other.
+      What they share is "something that names ONE output", which the official
+      SDK models as the `Selectable` interface that `Field` and
+      `AliasedExpression` implement INDEPENDENTLY. This library has the same
+      concept, but it is currently spelled as a type-erased implementation
+      detail (`SelectionNode = string | Field | ExpressionWithAlias`; the string
+      path is our third form, which the SDK lacks) — so the same "which output
+      name, which schema contribution" judgment is re-derived at SIX sites: the
+      types `SelectionPath` / `SelectionToSchema` / `UndottedGroupAliases`, the
+      runtime `selectionPath` / `selectionToSchema`, and both executors'
+      `toSdkSelectable`. Fix: promote the concept (name it for what it is, not
+      for its erasure) and define its two operations — output path, and schema
+      contribution — ONCE, with every call site delegating to them; the
+      per-form arms then live inside those operations instead of being
+      rewritten per site. NOT the alternative considered and rejected:
+      normalizing `Field` into `{ expression: f, alias: f.path }` at the stage
+      boundary — it collapses the node/binding layers to save arms, and it also
+      loses what the user wrote in the stage payload. Also rejected: giving
+      `Field` `expression`/`alias` members so it structurally satisfies
+      `ExpressionWithAlias` — that would silently let a bare `Field` into
+      `addFields`, whose bare-form exclusion is deliberate (see
+      `BuildAddFieldsSchema`). Note one arm is irreducible: `UndottedGroupAliases`
+      is a parameter intersection over the user's un-normalized tuple, so it
+      must keep matching the input forms directly.
 - [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
       the aggregate node ships as `AggregateFunction` (the SDK's name), which
       makes the pair with the expression node asymmetric — rename
