@@ -19,7 +19,7 @@ import {
   string,
   type StringType,
 } from '../schema.js';
-import { constant, countAll, equal, field, greaterThan, sum } from './expression.js';
+import { constant, countAll, equal, field, type Field, greaterThan, sum } from './expression.js';
 import {
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
@@ -137,6 +137,43 @@ describe('BuildSelectionSchema', () => {
       type AgeAlias = ExpressionWithAlias<DoubleType, 'stats.age'>;
       expectTypeOf<BuildSelectionSchema<Schema, [DeepAlias, AgeAlias]>>().toEqualTypeOf<{
         stats: MapType<{ score: DoubleType; age: DoubleType }>;
+      }>();
+    });
+  });
+
+  // A bare `Field` is the third selection form: it carries its own alias (its
+  // `path`), so every case here states the SAME schema the equivalent string
+  // path produces above — that equivalence IS the feature.
+  describe('bare Field', () => {
+    type NameField = Field<StringType, 'name'>;
+    type AgeField = Field<DoubleType, 'profile.age'>;
+
+    it('picks a top-level field, like the string form', () => {
+      expectTypeOf<BuildSelectionSchema<Schema, [NameField]>>().toEqualTypeOf<
+        BuildSelectionSchema<Schema, ['name']>
+      >();
+      expectTypeOf<BuildSelectionSchema<Schema, [NameField]>>().toEqualTypeOf<{
+        name: StringType;
+      }>();
+    });
+
+    it('builds a nested MapType from a dotted path (allowed in select)', () => {
+      expectTypeOf<BuildSelectionSchema<Schema, [AgeField]>>().toEqualTypeOf<
+        BuildSelectionSchema<Schema, ['profile.age']>
+      >();
+      expectTypeOf<BuildSelectionSchema<Schema, [AgeField]>>().toEqualTypeOf<{
+        profile: MapType<{ age: DoubleType }>;
+      }>();
+    });
+
+    it('conflict-resolves against the string form as the same output path', () => {
+      // Both orders collapse to one entry: a bare `Field` at path P and the
+      // string P name the same output.
+      expectTypeOf<BuildSelectionSchema<Schema, ['name', NameField]>>().toEqualTypeOf<{
+        name: StringType;
+      }>();
+      expectTypeOf<BuildSelectionSchema<Schema, [NameField, 'name']>>().toEqualTypeOf<{
+        name: StringType;
       }>();
     });
   });
@@ -479,6 +516,53 @@ describe('buildSelectionSchema (runtime)', () => {
     expectTypedStrictEqual(actual, oracle);
   });
 
+  it('a bare Field equals the string form at a top-level path', () => {
+    const oracle = { name: schema.name };
+    const actual = buildSelectionSchema(schema, [field(schema.name, 'name')]);
+    expectTypedStrictEqual(actual, oracle);
+    expectTypedStrictEqual(actual, buildSelectionSchema(schema, ['name']));
+  });
+
+  it('a bare Field at a DOTTED path builds the nested schema (allowed in select)', () => {
+    const oracle = { profile: map({ age: profile.fields.age }) };
+    const actual = buildSelectionSchema(schema, [field(profile.fields.age, 'profile.age')]);
+    expectTypedStrictEqual(actual, oracle);
+    expectTypedStrictEqual(actual, buildSelectionSchema(schema, ['profile.age']));
+  });
+
+  it('a bare Field crossing an optional ancestor marks the leaf optional', () => {
+    // Same `WithConditionality` treatment as the string form and the aliased
+    // `Field` form: the ancestor's optionality lands on the projected leaf.
+    const s = { name: string(), meta: optional(map({ x: double() })) } satisfies DocumentSchema;
+    const oracle = { meta: map({ x: optional(double()) }) };
+    const actual = buildSelectionSchema(s, [field(s.meta.fields.x, 'meta.x')]);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('last-wins treats a bare Field and the string path as the same output (both orders)', () => {
+    const rankField = field(schema.rank, 'rank');
+    // String first, Field later: the Field wins — but both name `rank`, so the
+    // observable claim is the single collapsed entry.
+    const stringFirst = buildSelectionSchema(schema, ['rank', rankField]);
+    expectTypedStrictEqual(stringFirst, { rank: schema.rank });
+    const fieldFirst = buildSelectionSchema(schema, [rankField, 'rank']);
+    expectTypedStrictEqual(fieldFirst, { rank: schema.rank });
+
+    // Discriminating variant: a parent/child conflict, where the winner and
+    // the loser produce DIFFERENT schemas — so the assertions above cannot
+    // pass by accident.
+    const childThenParent = buildSelectionSchema(schema, [
+      field(profile.fields.age, 'profile.age'),
+      'profile',
+    ]);
+    expectTypedStrictEqual(childThenParent, { profile });
+    const parentThenChild = buildSelectionSchema(schema, [
+      'profile',
+      field(profile.fields.age, 'profile.age'),
+    ]);
+    expectTypedStrictEqual(parentThenChild, { profile: map({ age: profile.fields.age }) });
+  });
+
   it("treats '__name__' in an alias like any other key (no special-casing)", () => {
     // The reserved-name rule is deliberately not modelled client-side:
     // aliasing to top-level `'__name__'` is rejected by the backend itself
@@ -591,6 +675,20 @@ describe('buildAggregateSchema (runtime)', () => {
     });
   });
 
+  it('a bare Field group key equals the bare-path form', () => {
+    // Probed: an unaliased top-level `field('g')` groups under the row key `g`.
+    const oracle = { n: int64(), g: string() };
+    const actual = buildAggregateSchema(schema, [n], [field(schema.g, 'g')]);
+    expectTypedStrictEqual(actual, oracle);
+    expectTypedStrictEqual(actual, buildAggregateSchema(schema, [n], ['g']));
+  });
+
+  it('an OPTIONAL field grouped as a bare Field reads back nullable', () => {
+    const oracle = { n: int64(), opt: nullable(string()) };
+    const actual = buildAggregateSchema(schema, [n], [field(schema.opt, 'opt')]);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
   it('an accumulator alias colliding with a group name wins', () => {
     // `MergeSchemas` puts the accumulator record first, so its `g` overlays the
     // group key `g` — the accumulator is the more specific intent.
@@ -659,6 +757,23 @@ describe('buildDistinctSchema (runtime)', () => {
     } satisfies DocumentSchema;
     const oracle = { a: nullable(map({ b: map({ c: optional(string()) }) })) };
     const actual = buildDistinctSchema(deep, ['a']);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a bare Field group key equals the bare-path form; last-wins collapses the two', () => {
+    const gField = field(schema.g, 'g');
+    const oracle = { g: string() };
+    const actual = buildDistinctSchema(schema, [gField]);
+    expectTypedStrictEqual(actual, oracle);
+    expectTypedStrictEqual(actual, buildDistinctSchema(schema, ['g']));
+    // The two forms name the same output, so a list holding both collapses.
+    expectTypedStrictEqual(buildDistinctSchema(schema, ['g', gField]), oracle);
+    expectTypedStrictEqual(buildDistinctSchema(schema, [gField, 'g']), oracle);
+  });
+
+  it('an OPTIONAL field grouped as a bare Field reads back nullable', () => {
+    const oracle = { opt: nullable(string()) };
+    const actual = buildDistinctSchema(schema, [field(schema.opt, 'opt')]);
     expectTypedStrictEqual(actual, oracle);
   });
 

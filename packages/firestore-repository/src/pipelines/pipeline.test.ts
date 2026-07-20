@@ -140,6 +140,36 @@ describe('pipeline', () => {
     void _rejections;
   });
 
+  it('an unaliased Field is a selection: accepted by select, top-level-only in groups', () => {
+    // A `Field<T, Path>` is inherently aliased — its `path` IS its alias (the
+    // SDK's `Selectable` model) — so no `.as(...)` is needed to select it.
+    // `select` allows any data path (dotted output nests); `aggregate` /
+    // `distinct` groups are TOP-LEVEL outputs only, so a dotted bare `Field`
+    // collapses through the same guard a dotted alias does
+    // (TOP_LEVEL_PROPERTY_PATH_ONLY — probed).
+    const selected = base.select((field) => [field('profile.age')]);
+    // Identical to the string form, schema and stage node alike.
+    expectTypeOf(selected).toEqualTypeOf(base.select(() => ['profile.age']));
+
+    base.distinct((field) => [field('name')]); // top-level bare Field: ok
+    base.aggregate((field) => ({ accumulators: [countAll().as('n')], groups: [field('name')] })); // top-level bare Field: ok
+
+    const _rejections = () => {
+      // @ts-expect-error -- a dotted bare Field is not a top-level group key
+      base.distinct((field) => [field('profile.age')]);
+      base.aggregate((field) => ({
+        accumulators: [countAll().as('n')],
+        // @ts-expect-error -- a dotted bare Field is not a top-level group key
+        groups: [field('profile.age')],
+      }));
+      // `addFields` deliberately keeps excluding BOTH bare forms — re-adding an
+      // existing field under its own name is meaningless. See BuildAddFieldsSchema.
+      // @ts-expect-error -- addFields takes aliased expressions only
+      base.addFields((field) => [field('rank')]);
+    };
+    void _rejections;
+  });
+
   it('accumulators and expressions do not interchange across stages (misplacement is a type error)', () => {
     // An accumulator is deliberately NOT an Expression: it only makes sense
     // inside `aggregate`, so misplacing one where a value expression / a

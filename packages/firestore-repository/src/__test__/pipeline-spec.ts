@@ -1186,6 +1186,22 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('projects an UNALIASED field expression exactly like the bare path', async () => {
+        // A `Field` is its own alias (its path IS the output name — the SDK's
+        // `Selectable` model), so `field('profile.age')` needs no `.as(...)`
+        // and lands at the same nested position the string `'profile.age'`
+        // does. The rows below are byte-identical to the dotted-path case above.
+        await expectPipeline(
+          source().select((field) => [field('name'), field('profile.age')]),
+          [
+            { data: { name: 'alice', profile: { age: 20 } } },
+            { data: { name: 'bob', profile: { age: 30 } } },
+            { data: { name: 'carol', profile: { age: 40 } } },
+          ],
+          { ordered: false },
+        );
+      });
+
       it('projects a computed expression bound to an alias', async () => {
         await expectPipeline(
           source().select((field) => ['name', equal(field('rank'), constant(2)).as('isSecond')]),
@@ -1807,6 +1823,18 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         await expectPipeline(
           src().distinct((field) => [field('p.q').as('q')]),
           [{ data: { q: 'a' } }, { data: { q: 'b' } }, { data: { q: null } }],
+          { ordered: false },
+        );
+      });
+
+      it('groups by an UNALIASED top-level field expression, like the bare path', async () => {
+        // Probed: an unaliased top-level `field('cat')` is accepted and its row
+        // key is `cat` — the same rows the bare-path form produces above. (A
+        // dotted bare `Field` would be TOP_LEVEL_PROPERTY_PATH_ONLY, which is
+        // why it is rejected at the type level instead.)
+        await expectPipeline(
+          src().distinct((field) => [field('cat')]),
+          [{ data: { cat: 'x' } }, { data: { cat: 'y' } }, { data: { cat: 'z' } }],
           { ordered: false },
         );
       });

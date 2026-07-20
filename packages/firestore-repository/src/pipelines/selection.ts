@@ -29,41 +29,91 @@ export type { ExpressionWithAlias } from './expression.js';
 type Fields = DocumentSchema;
 
 /**
- * A single select argument: either a data field path or an aliased expression.
+ * A single select argument: a data field path, a bare {@link Field}, or an
+ * aliased expression.
  *
- * Uses {@link MapFieldPath} (data fields only), **not** the document-level
- * `DocFieldPath` — the reserved key `"__name__"` is intentionally not
- * projectable here. Projecting `"__name__"` un-aliased would preserve the row's
+ * A bare `Field` needs no `.as(...)`: a `Field<T, Path>` is inherently aliased —
+ * its `path` IS its output name — which is why the official SDK's `Field`
+ * implements `Selectable`. So `select((f) => [f('profile.age')])` and
+ * `select(() => ['profile.age'])` produce the same schema, and the two forms
+ * conflict-resolve against each other as one and the same output path.
+ *
+ * Uses {@link MapFieldPath} (data fields only) for BOTH bare forms, **not** the
+ * document-level `DocFieldPath` — the reserved key `"__name__"` is
+ * intentionally not projectable here, whether written as a string or as
+ * `f('__name__')`. Projecting `"__name__"` un-aliased would preserve the row's
  * read-identity at runtime, but `select` is typed to always drop it
  * (`Id = undefined`), so allowing it would make the type lie. Keep identity
  * while reshaping via `addFields` / `removeFields`; `"__name__"` stays usable in
  * `where` / `sort` (they go through `FieldProvider`, not `Selection`). See
  * `docs/pipeline-query-identity-research.md`.
  */
-export type Selection<Context extends Fields> = MapFieldPath<Context> | ExpressionWithAlias;
+export type Selection<Context extends Fields> =
+  | MapFieldPath<Context>
+  | BareField<Context>
+  | ExpressionWithAlias;
 
 /**
- * A group selection of the `aggregate` stage: a TOP-LEVEL bare field path, or
- * an aliased expression whose alias is undotted. The backend rejects dotted
- * assignment targets in `aggregate` (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed:
- * both a dotted bare path AND a dotted alias are INVALID_ARGUMENT), so unlike
+ * A group selection of the `aggregate` stage: a TOP-LEVEL bare field path, a
+ * bare {@link Field} whose path is top-level, or an aliased expression whose
+ * alias is undotted. The backend rejects dotted assignment targets in
+ * `aggregate` (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed: a dotted bare path, a
+ * dotted bare `Field` and a dotted alias are all INVALID_ARGUMENT), so unlike
  * `select`'s {@link Selection} there is no nested output form — group a
  * NESTED field via an expression with a top-level alias:
  * `field('a.b.c').as('c')`.
+ *
+ * A bare `Field` is accepted here for the same reason as in {@link Selection}
+ * (its `path` is its alias — probed: an unaliased top-level `field('g')` groups
+ * under the row key `g`). Its top-level restriction is NOT expressed in this
+ * union but in the {@link UndottedGroupAliases} tuple guard, so a dotted bare
+ * `Field` and a dotted alias fail the same way.
  */
-export type AggregateGroup<Context extends Fields> = (keyof Context & string) | ExpressionWithAlias;
+export type AggregateGroup<Context extends Fields> =
+  | (keyof Context & string)
+  | BareField<Context>
+  | ExpressionWithAlias;
 
 /**
- * The undotted-alias guard for a groups tuple (applied as a parameter
- * intersection, the `WithoutDottedKeys` precedent): an aliased group whose
- * alias contains the path separator collapses to `never`.
+ * A `Field` usable as an un-aliased selection: any of the context's **data**
+ * field paths. `'__name__'` is excluded so the bare `Field` form allows exactly
+ * what the bare string form allows (see {@link Selection}) — `FieldProvider`
+ * itself resolves the reserved key, so the exclusion has to happen here.
+ */
+type BareField<Context extends Fields> = Field<FieldType, MapFieldPath<Context>>;
+
+/**
+ * The context-free shape of a single selection, as the stage payloads and the
+ * runtime folds see it: a bare field path, a bare `Field`, or an aliased
+ * expression. The type-erased counterpart of {@link Selection} /
+ * {@link AggregateGroup} — the context-dependent narrowing (which paths are
+ * legal, which output names are top-level) has already been discharged by the
+ * typed `Pipeline` methods, so nothing downstream needs to re-check it.
+ */
+export type SelectionNode = string | Field | ExpressionWithAlias;
+
+/**
+ * The top-level-output guard for a groups tuple (applied as a parameter
+ * intersection, the `WithoutDottedKeys` precedent): a group whose output name
+ * contains the path separator collapses to `never` — an aliased group by its
+ * `alias`, a bare {@link Field} by its `path` (which is its alias). Both
+ * collapse through this one guard so the two dotted forms produce the same
+ * error at the same place.
+ *
+ * The bare STRING form needs no guard: {@link AggregateGroup} already narrows it
+ * to `keyof Context`, which is dot-free by construction
+ * (`WithoutDottedFieldNames`).
  */
 export type UndottedGroupAliases<G> = {
   [I in keyof G]: G[I] extends { alias: infer A extends string }
     ? A extends `${string}.${string}`
       ? never
       : G[I]
-    : G[I];
+    : G[I] extends Field<FieldType, infer P>
+      ? P extends `${string}.${string}`
+        ? never
+        : G[I]
+      : G[I];
 };
 
 /**
@@ -87,9 +137,18 @@ type FoldSelections<
   ? MergeSchemas<SelectionToSchema<Context, First>, FoldSelections<Context, Rest>>
   : {};
 
-/** The output path a selection contributes to (a field path, or an alias's path). */
+/**
+ * The output path a selection contributes to: an alias's path, a bare `Field`'s
+ * own path (a `Field` is its own alias), or a bare path string.
+ */
 type SelectionPath<S> =
-  S extends ExpressionWithAlias<infer _T, infer P> ? P : S extends string ? S : never;
+  S extends ExpressionWithAlias<infer _T, infer P>
+    ? P
+    : S extends Field<infer _T, infer P>
+      ? P
+      : S extends string
+        ? S
+        : never;
 
 /** Whether two paths collide: equal, or one is a dotted prefix of the other. */
 type PathsConflict<A extends string, B extends string> = A extends B
@@ -128,12 +187,15 @@ type DropOverriddenSelections<Args extends readonly unknown[]> = Args extends re
  * all existing fields; on name overlap the added field wins, matching the
  * official SDK's "overwrite existing ones" behavior.
  *
- * Accepts **aliased expressions only** — no bare field paths (unlike
- * `select`). A bare path would be a schema no-op at best, and for a path
- * through an optional map it would silently mutate rows (the backend
- * materializes the missing intermediate layers as empty maps — verified
- * live), so the schema would lie. The official SDK's `addFields` accepts only
- * `Selectable`s too.
+ * Accepts **aliased expressions only** — neither bare form of `select`'s
+ * {@link Selection} (a path string, or a bare `Field`) is allowed here, and
+ * that exclusion is deliberate: both name an EXISTING field, so re-adding it
+ * under its own name is a schema no-op at best, and for a path through an
+ * optional map it would silently mutate rows (the backend materializes the
+ * missing intermediate layers as empty maps — verified live), so the schema
+ * would lie. Write the intent explicitly with an alias instead. (The official
+ * SDK does accept a bare `Field` here, since its `Field` is a `Selectable`; we
+ * narrow it away for the reason above.)
  */
 export type BuildAddFieldsSchema<
   Context extends Fields,
@@ -252,10 +314,16 @@ type RewriteAbsentField<T extends FieldType> = T extends Optional
 
 /**
  * Resolves one selection into the partial schema it contributes to the output.
- * Selections that read a source **field path** (bare paths, and aliases whose
- * expression is a `Field`) mark the projected leaf `Optional` when the path
- * crosses an optional ancestor ({@link WithConditionality}); computed
- * expressions always produce a value and stay as-is.
+ * Selections that read a source **field path** (bare paths, bare `Field`s, and
+ * aliases whose expression is a `Field`) mark the projected leaf `Optional`
+ * when the path crosses an optional ancestor ({@link WithConditionality});
+ * computed expressions always produce a value and stay as-is.
+ *
+ * A bare `Field` folds exactly as `field(p).as(p)` would: output path = its
+ * `path`, descriptor = its own `type`. The descriptor comes from the node, not
+ * from a fresh `FieldTypeOfPath` lookup, so the bare and aliased `Field` forms
+ * cannot drift apart — and `FieldProvider` resolves the node's `type` from the
+ * very same schema, which is what makes a bare `Field` equal the bare string.
  */
 type SelectionToSchema<Context extends Fields, S> = S extends {
   expression: Field<infer T, infer P>;
@@ -264,11 +332,13 @@ type SelectionToSchema<Context extends Fields, S> = S extends {
   ? PathToSchema<A, WithConditionality<Context, P, T>>
   : S extends ExpressionWithAlias<infer T, infer P>
     ? PathToSchema<P, T>
-    : S extends string
-      ? S extends MapFieldPath<Context>
-        ? PathToSchema<S, WithConditionality<Context, S, FieldTypeOfPath<Context, S>>>
-        : {}
-      : {};
+    : S extends Field<infer T, infer P>
+      ? PathToSchema<P, WithConditionality<Context, P, T>>
+      : S extends string
+        ? S extends MapFieldPath<Context>
+          ? PathToSchema<S, WithConditionality<Context, S, FieldTypeOfPath<Context, S>>>
+          : {}
+        : {};
 
 /**
  * Marks the resolved leaf type `Optional` when its source path is conditional
@@ -426,7 +496,7 @@ export const buildDistinctSchema = <
  * `absentMergesIntoNull`. Kept loosely typed so both callers reuse it without
  * re-threading their `Groups` constraint.
  */
-const groupSchema = (schema: Fields, groups: readonly (string | ExpressionWithAlias)[]): Fields =>
+const groupSchema = (schema: Fields, groups: readonly SelectionNode[]): Fields =>
   absentMergesIntoNull(foldSelections(schema, dropOverriddenSelections(groups)));
 
 /**
@@ -454,9 +524,7 @@ const rewriteAbsentField = (t: FieldType & { optional?: boolean }): FieldType =>
  * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection
  * only if no later selection conflicts with it (last-wins).
  */
-export const dropOverriddenSelections = <S extends string | ExpressionWithAlias>(
-  selections: readonly S[],
-): S[] =>
+export const dropOverriddenSelections = <S extends SelectionNode>(selections: readonly S[]): S[] =>
   selections.filter(
     (s, i) =>
       !selections
@@ -468,10 +536,7 @@ export const dropOverriddenSelections = <S extends string | ExpressionWithAlias>
  * Runtime counterpart of {@link FoldSelections}: the same
  * `MergeSchemas<SelectionToSchema<First>, FoldSelections<Rest>>` recursion.
  */
-const foldSelections = (
-  schema: Fields,
-  selections: readonly (string | ExpressionWithAlias)[],
-): Fields => {
+const foldSelections = (schema: Fields, selections: readonly SelectionNode[]): Fields => {
   const [first, ...rest] = selections;
   return first === undefined
     ? {}
@@ -485,12 +550,17 @@ const foldSelections = (
  * strings is unreachable through the typed API, so a throw is the defensive
  * equivalent).
  */
-const selectionToSchema = (schema: Fields, s: string | ExpressionWithAlias): Fields => {
+const selectionToSchema = (schema: Fields, s: SelectionNode): Fields => {
   if (typeof s === 'string') {
     return pathToSchema(
       s,
       withConditionality(schema, s, fieldTypeOfPath<Fields, string>(schema, s)),
     );
+  }
+  if (!('alias' in s)) {
+    // A bare `Field`: its `path` is its output name, and its own `type` is the
+    // descriptor — the exact fold the aliased `field(p).as(p)` arm below runs.
+    return pathToSchema(s.path, withConditionality(schema, s.path, s.type));
   }
   const { expression, alias } = s;
   switch (expression.kind) {
@@ -527,8 +597,8 @@ const isConditionalPath = (schema: Fields, path: string): boolean => {
 };
 
 /** Runtime counterpart of {@link SelectionPath}. */
-const selectionPath = (s: string | ExpressionWithAlias): string =>
-  typeof s === 'string' ? s : s.alias;
+const selectionPath = (s: SelectionNode): string =>
+  typeof s === 'string' ? s : 'alias' in s ? s.alias : s.path;
 
 /** Runtime counterpart of {@link PathsConflict}. */
 const pathsConflict = (a: string, b: string): boolean =>
