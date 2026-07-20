@@ -421,19 +421,193 @@ export const map = <T extends MapFields & WithoutDottedFieldNames<T>>(fields: T)
 };
 export const array = <T extends FieldType>(elementType: T): ArrayType<T> =>
   buildType({ type: 'array', dynamicPart: elementType });
-export const union = <T extends FieldType[]>(...elements: T): UnionType<T> =>
-  buildType({ type: 'union', elements });
+/**
+ * A union of the given member descriptors, in {@link Normalize}d (canonical)
+ * form — so the result is NOT always a `UnionType`: members that are
+ * themselves unions are flattened in, duplicates collapse, and a list that
+ * reduces to a single member yields that member BARE. Every `UnionType` in
+ * the system is produced here (or by {@link nullable}), which is what makes
+ * "a `UnionType` is canonical" true by construction: no caller has to
+ * re-normalize, and no two spellings of the same union coexist.
+ *
+ * A member list that reduces to nothing has no descriptor to return (its
+ * type is `never`), so it throws.
+ */
+export function union<T extends FieldType[]>(...elements: T): Normalize<T>;
+export function union(...elements: FieldType[]): FieldType {
+  return normalize(elements);
+}
 export const nullType = (): NullType => buildType({ type: 'null' });
 
 export const literal = <const T extends (string | number | boolean | null)[]>(
   ...values: T
 ): LiteralType<T> => buildType({ type: 'const', values });
 
-export const nullable = <T extends FieldType>(t: T): UnionType<[T, NullType]> =>
-  union(t, nullType());
+/**
+ * The descriptor widened to also admit `null`, in canonical form (see
+ * {@link union}) — hence idempotent: `nullable(nullable(t))` is
+ * `nullable(t)`, and `nullable(nullType())` is just `nullType()`.
+ */
+export function nullable<T extends FieldType>(t: T): Normalize<[T, NullType]>;
+export function nullable(t: FieldType): FieldType {
+  return normalize([t, nullType()]);
+}
 
 export const optional = <T extends FieldType>(type: T): T & Optional =>
   buildType({ ...type, optional: true });
+
+/**
+ * The canonical form of a union's member list — the ONE normalization the
+ * union constructors ({@link union} / {@link nullable}) own, so that a
+ * `UnionType` is valid by construction and never has to be re-normalized
+ * downstream. Four steps, in order:
+ *
+ * 1. {@link FlattenUnions} — a member that is itself a union contributes its
+ *    own members, so unions never nest.
+ * 2. {@link DedupDescriptors} — structurally equal members collapse, keeping
+ *    the FIRST occurrence, so the result is deterministic and order-stable.
+ * 3. {@link DropNever} — a `never` member (an empty possibility, e.g. a fully
+ *    null-stripped descriptor) contributes nothing.
+ * 4. {@link UnwrapSingleton} — a one-member list IS that member, so a union
+ *    of one is never spelled as a `UnionType`; an empty list is `never`.
+ */
+export type Normalize<T extends readonly FieldType[]> = UnwrapSingleton<
+  DropNever<DedupDescriptors<FlattenUnions<T>>>
+>;
+
+/**
+ * Runtime counterpart of {@link Normalize}, composed of the same four steps
+ * applied in the same order, each typed as its own type-level twin so the
+ * compiler checks that the steps compose.
+ *
+ * The second overload accepts `undefined` members: that is this codebase's
+ * standing runtime encoding of a type-level `never` descriptor (see
+ * `stripNull` in `pipelines/expression.ts`), which step 3 drops.
+ */
+export function normalize<T extends readonly FieldType[]>(elements: T): Normalize<T>;
+export function normalize(elements: readonly (FieldType | undefined)[]): FieldType;
+export function normalize(elements: readonly (FieldType | undefined)[]): FieldType {
+  return unwrapSingleton(dropNever(dedupDescriptors(flattenUnions(elements))));
+}
+
+/** Step 1: a member that is itself a union contributes its own members instead. */
+type FlattenUnions<T extends readonly FieldType[]> = T extends readonly [
+  infer H extends FieldType,
+  ...infer R extends readonly FieldType[],
+]
+  ? [...MembersOf<H>, ...FlattenUnions<R>]
+  : [];
+
+/**
+ * The members a single descriptor contributes to a flattened list: its own
+ * elements when it is a union (recursively — nesting can be arbitrarily
+ * deep), otherwise just itself. The wide `UnionType` (unresolved element
+ * tuple) has no member list to spread, so it stays whole — a recursion
+ * breaker in the same spirit as `StripNull`'s.
+ */
+type MembersOf<T extends FieldType> = [T] extends [never]
+  ? [never]
+  : [T] extends [{ type: 'union'; elements: infer E extends readonly FieldType[] }]
+    ? FieldType[] extends E
+      ? [T]
+      : FlattenUnions<E>
+    : [T];
+
+/** Runtime counterpart of {@link FlattenUnions}. */
+function flattenUnions<T extends readonly FieldType[]>(elements: T): FlattenUnions<T>;
+function flattenUnions(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[];
+function flattenUnions(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[] {
+  return elements.flatMap((element) =>
+    element !== undefined && element.type === 'union' ? flattenUnions(element.elements) : [element],
+  );
+}
+
+/** Step 2: first-occurrence dedup over a tuple of descriptors (mutual-`extends` equality). */
+type DedupDescriptors<
+  T extends readonly FieldType[],
+  Acc extends readonly FieldType[] = [],
+> = T extends readonly [infer H extends FieldType, ...infer R extends readonly FieldType[]]
+  ? IncludesDescriptor<Acc, H> extends true
+    ? DedupDescriptors<R, Acc>
+    : DedupDescriptors<R, [...Acc, H]>
+  : Acc;
+
+type IncludesDescriptor<T extends readonly FieldType[], X extends FieldType> = T extends readonly [
+  infer H extends FieldType,
+  ...infer R extends readonly FieldType[],
+]
+  ? DescriptorEquals<H, X> extends true
+    ? true
+    : IncludesDescriptor<R, X>
+  : false;
+
+/** Type-level descriptor equality: mutual assignability. */
+type DescriptorEquals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+/** Runtime counterpart of {@link DedupDescriptors}. */
+function dedupDescriptors<T extends readonly FieldType[]>(elements: T): DedupDescriptors<T>;
+function dedupDescriptors(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[];
+function dedupDescriptors(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[] {
+  return elements.filter((e, i) => elements.findIndex((o) => descriptorEquals(o, e)) === i);
+}
+
+/**
+ * Structural descriptor equality (key-order insensitive; descriptors are
+ * plain data) — the runtime counterpart of {@link DescriptorEquals}.
+ */
+const descriptorEquals = (a: unknown, b: unknown): boolean => {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+    return false;
+  }
+  const entriesA = Object.entries(a);
+  const bRecord = new Map(Object.entries(b));
+  return (
+    entriesA.length === bRecord.size &&
+    entriesA.every(([k, v]) => bRecord.has(k) && descriptorEquals(v, bRecord.get(k)))
+  );
+};
+
+/** Step 3: a `never` member is an empty possibility and contributes nothing. */
+type DropNever<T extends readonly FieldType[]> = T extends readonly [
+  infer H extends FieldType,
+  ...infer R extends readonly FieldType[],
+]
+  ? [H] extends [never]
+    ? DropNever<R>
+    : [H, ...DropNever<R>]
+  : [];
+
+/** Runtime counterpart of {@link DropNever} (`undefined` is the runtime `never`). */
+function dropNever<T extends readonly FieldType[]>(elements: T): DropNever<T>;
+function dropNever(elements: readonly (FieldType | undefined)[]): FieldType[];
+function dropNever(elements: readonly (FieldType | undefined)[]): FieldType[] {
+  return elements.filter((e) => e !== undefined);
+}
+
+/** Step 4: a one-member list IS that member; an empty list is `never`. */
+type UnwrapSingleton<T extends readonly FieldType[]> = T extends readonly [
+  infer One extends FieldType,
+]
+  ? One
+  : T extends readonly []
+    ? never
+    : UnionType<[...T]>;
+
+/** Runtime counterpart of {@link UnwrapSingleton} (`never` has no value, so it throws). */
+function unwrapSingleton<T extends readonly FieldType[]>(elements: T): UnwrapSingleton<T>;
+function unwrapSingleton(elements: readonly FieldType[]): FieldType;
+function unwrapSingleton(elements: readonly FieldType[]): FieldType {
+  const [first, ...rest] = elements;
+  if (first === undefined) {
+    throw new Error('a union must have at least one member');
+  }
+  return rest.length === 0
+    ? first
+    : buildType<UnionType>({ type: 'union', elements: [...elements] });
+}
 
 /**
  * A type-safe path to anything addressable on a **document**: either one of its

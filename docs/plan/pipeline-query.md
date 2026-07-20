@@ -586,25 +586,26 @@ Items agreed in discussion but previously recorded only inline in DONE notes
       `FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY`; the suite is
       skipIf-gated and has never executed against the real backend — the
       admin adapter covers the shared spec live today).
-- [ ] **Canonical union normalization — `UnionType` valid-by-construction**
-      (agreed 2026-07, NEXT UP after the aggregate stage lands). The
-      always-valid principle applied to descriptors: union normalization is
-      today re-implemented at every construction site (`EitherType` /
-      `LogicalExtreme` / `ElementUnion` / `ConcatElementUnion` /
-      `MapFieldUnion` dedups, `NullableStripped`'s strip-then-reattach,
-      and `arrayGet`'s pinned union-NESTING wrap), because nothing
-      guarantees a `UnionType` is canonical. Introduce ONE `Normalize`
-      (type + runtime twin) owned by the union constructors (`union()`,
-      `nullable()`, `RebuildUnion`, ...): 1. flatten nested unions; 2. dedup members by `DescriptorEquals` (first-occurrence order —
-      deterministic, matching the existing dedup rule); 3. drop `never` members; 4. unwrap a singleton to the bare descriptor.
-      Consequences: `NullableStripped` collapses to
-      `Normalize<[StripNull<T>, NullType]>`-composition; the per-helper
-      dedups become `Normalize` calls (N implementations → 1); `arrayGet`'s
-      nested-union pin flips to flattened (update that test as "fixed");
-      `nullable(nullable(x))` becomes idempotent. Watch TS recursion
-      cost; the runtime twin mirrors branch-for-branch as usual. Scope is
-      a cross-cutting refactor comparable to the payload-union one — its
-      own PR, with the shape-oracle tests updated alongside.
+- [x] **Canonical union normalization — `UnionType` valid-by-construction**
+      (done 2026-07). `Normalize` (type) / `normalize` (runtime twin) in
+      `schema.ts`, composed of four steps each declared as its own type-level
+      twin: `FlattenUnions` → `DedupDescriptors` → `DropNever` →
+      `UnwrapSingleton`. Owned by `union()` / `nullable()`, which therefore
+      return `Normalize<...>` and not necessarily a `UnionType` at all — so
+      every `UnionType` in the system is canonical by construction and no
+      caller re-normalizes. `descriptorEquals` / `DescriptorEquals` /
+      `DedupDescriptors` moved down from `expression.ts` alongside them.
+      The ad-hoc normalizers collapsed to `Normalize` compositions:
+      `EitherType`, `LogicalExtreme`, `ElementUnion`, `ConcatElementUnion`,
+      `ArrayConstantTypeOf`, `NullableStripped`, `StripNull`'s union arm,
+      `PropagateNull` / `PropagateAbsence` / `MapValueType` /
+      `RewriteAbsentField`; `RebuildUnion` deleted outright. Only
+      `MapFieldUnion`'s TYPE stays bespoke — a record has no ordered key
+      tuple, so it degrades to `AnyUnionType` by nature; its runtime now
+      delegates. `arrayGet`'s nested-union pin flipped to flattened, and
+      `nullable(nullable(x))` is idempotent. Recursion cost went DOWN
+      (1.07M → 684K instantiations, 6.9s → 4.2s), since N conditional chains
+      became one shared alias; no recursion bound was needed.
 - [ ] **Refine accumulator nullability by groups presence** (noted 2026-07,
       explicitly deferred as advanced). `sum`/`average`/`minimum`/`maximum`/
       `first`/`last` are currently ALWAYS nullable — sound but wider than
