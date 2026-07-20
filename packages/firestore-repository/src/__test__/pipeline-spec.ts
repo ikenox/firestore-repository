@@ -1735,5 +1735,95 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
     });
+
+    // The `distinct` stage, seeded to reproduce the probe rules in
+    // docs/pipeline-query-aggregate-research.md's `distinct` section. `distinct`
+    // is a grouped aggregate with zero accumulators, so it breaks read-identity
+    // (rows carry no `id`) and every group rule carries over. Oracles are
+    // hand-written FROM that doc; multi-row outputs are order-independent
+    // (`{ ordered: false }`).
+    describe('distinct', () => {
+      // `cat` is always present (no null) — the clean duplicate-collapse key.
+      // `g` holds a value, `null`, OR is absent — so the null-key and
+      // absent-key docs demonstrate merging into one `null` row. `p.q` (an
+      // optional leaf under a required map) is grouped via the EXPRESSION form
+      // (dotted bare paths are rejected — TOP_LEVEL_PROPERTY_PATH_ONLY).
+      const distinctCollection = rootCollection({
+        name: 'Distinct',
+        schema: {
+          cat: string(),
+          g: optional(nullable(string())),
+          n: int64(),
+          p: map({ q: optional(string()) }),
+        },
+      });
+      type DistinctDoc = Doc<typeof distinctCollection>;
+      const distinctItems: DistinctDoc[] = [
+        { id: ['d1'], data: { cat: 'x', g: 'k', n: 1, p: { q: 'a' } } },
+        { id: ['d2'], data: { cat: 'x', g: 'k', n: 2, p: { q: 'a' } } }, // dup of d1 on cat/g/q
+        { id: ['d3'], data: { cat: 'y', g: 'm', n: 8, p: { q: 'b' } } },
+        { id: ['d4'], data: { cat: 'y', g: null, n: 3, p: {} } }, // g null; q absent
+        { id: ['d5'], data: { cat: 'z', n: 9, p: { q: 'a' } } }, // g absent
+      ];
+
+      let coll: typeof distinctCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(distinctCollection);
+        await createRepository(coll).batchSet(distinctItems);
+      });
+      const src = () => collectionInput(coll);
+
+      it('collapses duplicate group values to one row per distinct value', async () => {
+        // cat: x (d1, d2), y (d3, d4), z (d5) → three distinct rows.
+        await expectPipeline(
+          src().distinct(() => ['cat']),
+          [{ data: { cat: 'x' } }, { data: { cat: 'y' } }, { data: { cat: 'z' } }],
+          { ordered: false },
+        );
+      });
+
+      it('null and absent keys merge into ONE null row', async () => {
+        // g: k (d1, d2), m (d3), null (d4), absent (d5). The null-value and the
+        // absent-key doc collapse into a single row whose key reads back `null`.
+        await expectPipeline(
+          src().distinct(() => ['g']),
+          [{ data: { g: 'k' } }, { data: { g: 'm' } }, { data: { g: null } }],
+          { ordered: false },
+        );
+      });
+
+      it('groups by an aliased expression (the computed key is projected)', async () => {
+        // greaterThan(n, 5): d1/d2/d4 → false, d3/d5 → true.
+        await expectPipeline(
+          src().distinct((field) => [greaterThan(field('n'), constant(5)).as('big')]),
+          [{ data: { big: false } }, { data: { big: true } }],
+          { ordered: false },
+        );
+      });
+
+      it('groups a nested field via the expression form; absent leaf merges into null', async () => {
+        // p.q: a (d1, d2, d5), b (d3), absent (d4 → null). A dotted bare path is
+        // rejected, so the nested field is grouped through `field('p.q').as('q')`.
+        await expectPipeline(
+          src().distinct((field) => [field('p.q').as('q')]),
+          [{ data: { q: 'a' } }, { data: { q: 'b' } }, { data: { q: null } }],
+          { ordered: false },
+        );
+      });
+
+      it('groups by multiple keys (distinct combinations)', async () => {
+        // (cat, p.q): (x,a) d1/d2, (y,b) d3, (y,null) d4, (z,a) d5 → four combos.
+        await expectPipeline(
+          src().distinct((field) => ['cat', field('p.q').as('q')]),
+          [
+            { data: { cat: 'x', q: 'a' } },
+            { data: { cat: 'y', q: 'b' } },
+            { data: { cat: 'y', q: null } },
+            { data: { cat: 'z', q: 'a' } },
+          ],
+          { ordered: false },
+        );
+      });
+    });
   });
 };

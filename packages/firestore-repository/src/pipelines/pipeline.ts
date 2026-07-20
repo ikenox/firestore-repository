@@ -21,8 +21,10 @@ import {
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
   buildAggregateSchema,
+  buildDistinctSchema,
   buildSelectionSchema,
   type BuildSelectionSchema,
+  type DistinctSchema,
   dropOverriddenSelections,
   type ExpressionWithAlias,
   type Selection,
@@ -237,10 +239,32 @@ export class Pipeline<
       parent: this.node,
     });
   }
-  distinct<const Selections extends readonly Selection<Schema>[]>(
-    _groups: (field: FieldProvider<Schema>) => Selections,
-  ): Pipeline<Fields, undefined> {
-    return unimplemented();
+  /**
+   * Collapses the rows to the distinct combinations of the `groups` keys —
+   * semantically an `aggregate` with ZERO accumulators, so it shares the group
+   * model entirely. Identity-breaking (`Id = undefined`): a distinct row is not
+   * a source document.
+   *
+   * The result schema is exactly the group keys, each made nullable (null and
+   * absent keys merge into one `null` row, probed — never absent). Groups are
+   * TOP-LEVEL outputs only: a dotted bare path AND a dotted alias are rejected
+   * at the type level (the backend's `TOP_LEVEL_PROPERTY_PATH_ONLY`), so a
+   * nested field is grouped via an expression with a top-level alias
+   * (`field('a.b.c').as('c')`). Empty input yields ZERO rows. See
+   * {@link DistinctSchema}.
+   */
+  // At least one group is required (a distinct with no keys is meaningless).
+  distinct<const Groups extends readonly [AggregateGroup<Schema>, ...AggregateGroup<Schema>[]]>(
+    spec: (field: FieldProvider<Schema>) => Groups & UndottedGroupAliases<Groups>,
+  ): Pipeline<DistinctSchema<Schema, Groups>, undefined> {
+    const groups = spec(fieldProvider(this.node.schema));
+    return new Pipeline<DistinctSchema<Schema, Groups>, undefined>({
+      schema: buildDistinctSchema<Schema, Groups>(this.node.schema, groups),
+      // Resolve last-wins on the groups here so the stage carries a
+      // conflict-free list that matches the schema (executors translate 1:1).
+      stage: { kind: 'distinct', groups: dropOverriddenSelections(groups) },
+      parent: this.node,
+    });
   }
   /** `full_replace`: the document becomes the given map value. */
   fullReplaceWith<M extends MapFields>(

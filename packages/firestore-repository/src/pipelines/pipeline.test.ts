@@ -111,6 +111,35 @@ describe('pipeline', () => {
     const _lie: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = grouped;
   });
 
+  it('distinct is identity-breaking (Id = undefined) and carries a distinct stage node', () => {
+    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
+    type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
+
+    const distinct = base.distinct(() => ['name']);
+    // No `id` on the result rows — a distinct row is not a source document.
+    expectTypeOf<RowOf<typeof distinct>>().not.toHaveProperty('id');
+    // The schema is EXACTLY the group key (distinct is an aggregate with zero
+    // accumulators — nothing is overlaid).
+    expectTypeOf<SchemaOf<typeof distinct>>().toEqualTypeOf<{ name: StringType }>();
+
+    // The stage node an executor walks: kind + the conflict-resolved groups.
+    expect(distinct.stages().transforms).toEqual([{ kind: 'distinct', groups: ['name'] }]);
+
+    // @ts-expect-error -- a distinct pipeline cannot pose as identity-preserving
+    const _lie: Pipeline<{ name: StringType }, DocRef<AuthorsCollection>> = distinct;
+    void _lie;
+  });
+
+  it('distinct requires at least one group and rejects dotted group aliases', () => {
+    const _rejections = () => {
+      // @ts-expect-error -- at least one group is required (an empty distinct is meaningless)
+      base.distinct(() => []);
+      // @ts-expect-error -- a dotted group alias is rejected (TOP_LEVEL_PROPERTY_PATH_ONLY)
+      base.distinct((field) => [field('profile.age').as('deep.alias')]);
+    };
+    void _rejections;
+  });
+
   it('accumulators and expressions do not interchange across stages (misplacement is a type error)', () => {
     // An accumulator is deliberately NOT an Expression: it only makes sense
     // inside `aggregate`, so misplacing one where a value expression / a

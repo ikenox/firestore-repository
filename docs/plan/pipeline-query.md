@@ -283,7 +283,12 @@ Transformation stages already stubbed:
       mirror of `OmitPaths`, incl. the Optional marker and the empty-map cascade),
       stage carries the field paths, executors translate to `sdk.removeFields(...)`,
       identity preserved (`Id` threads through). Verified live.
-- [ ] `distinct(...)` — Context shrinkage + identity break.
+- [x] `distinct(...)` — a grouped aggregate with ZERO accumulators, sharing the
+      group machinery (probed: every group rule carries over —
+      TOP_LEVEL_PROPERTY_PATH_ONLY, null/absent merge, shallow map rewrite,
+      empty input → zero rows). `DistinctSchema` = the shared `GroupSchema`
+      operator; nonempty `AggregateGroup` tuple + `UndottedGroupAliases`;
+      identity break. Both executors via `sdk.distinct({ groups })`. Verified live.
 - [x] `limit(N)` / `offset(N)` — stages carry the count, executors translate
       to `sdk.limit/offset`, schema unchanged, identity preserved. Verified live
       incl. offset+limit paging and an over-sized limit.

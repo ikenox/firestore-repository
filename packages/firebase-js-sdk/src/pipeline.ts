@@ -232,6 +232,12 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
       const groups = stage.groups.map((selection) => toSdkSelectable(db, selection));
       return sdk.aggregate({ accumulators, groups });
     }
+    case 'distinct': {
+      // A grouped aggregate with zero accumulators — the options-object form
+      // takes `groups`, translated exactly like the aggregate arm's groups.
+      const groups = stage.groups.map((selection) => toSdkSelectable(db, selection));
+      return sdk.distinct({ groups });
+    }
     case 'where':
       // `asBoolean()` is a type-tag wrap for the SDK's `BooleanExpression`
       // parameter — it does not change the wire proto.
@@ -241,7 +247,6 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
     case 'offset':
       return sdk.offset(stage.offset);
     case 'unnest':
-    case 'distinct':
     case 'replaceWith':
     case 'union':
     case 'findNearest':

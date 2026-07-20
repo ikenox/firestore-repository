@@ -54,7 +54,11 @@ export type TransformStage =
       accumulators: readonly AggregateWithAlias[];
       groups: readonly (string | ExpressionWithAlias)[];
     }
-  | { kind: 'distinct' }
+  // `distinct` is a grouped aggregate with ZERO accumulators, so it shares the
+  // group model: `groups` are the group keys post-conflict-resolution (last-wins
+  // applied by `Pipeline.distinct`, mirroring `aggregate`), and an executor
+  // translates them 1:1. Always nonempty (a distinct with no keys is meaningless).
+  | { kind: 'distinct'; groups: readonly (string | ExpressionWithAlias)[] }
   | { kind: 'replaceWith' }
   | { kind: 'union' }
   | { kind: 'findNearest' }

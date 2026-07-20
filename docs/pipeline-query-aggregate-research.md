@@ -66,11 +66,20 @@ absent]` sorted), `first` returns null (a skip would return `y1`) and
   Library consequence: the `AbsentMergesIntoNull` rewrite is SHALLOW —
   nullable at the top of each group key, inner optionality untouched.
 
-## `distinct` stage
+## `distinct` stage (probed: `.ikenox/probe-distinct.mjs`)
 
-- Same projection and null/absent-merge rules as grouping; expression
-  aliases work. Semantically a grouped aggregate with zero accumulators —
-  the library can share the groups machinery.
+- Semantically a grouped aggregate with zero accumulators — EVERY probed
+  group rule carries over verbatim, so the library shares the groups
+  machinery:
+  - dotted bare-path groups AND dotted aliases → INVALID_ARGUMENT
+    (TOP_LEVEL_PROPERTY_PATH_ONLY); nested fields go through an expression
+    with a top-level alias (`field('a.b.c').as('c')`).
+  - null and absent keys merge into ONE null row (including
+    absent-ancestor docs under the expression form).
+  - a MAP-typed key is compared as a value — inner absences preserved
+    (`{b:{}}` vs `{b:{c:'v1'}}` are distinct rows); only the wholly-absent
+    map merges into the null row.
+  - empty input → zero rows.
 
 ## Library consequences (design)
 

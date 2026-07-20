@@ -24,6 +24,7 @@ import {
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
   buildAggregateSchema,
+  buildDistinctSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   type ExpressionWithAlias,
@@ -596,5 +597,80 @@ describe('buildAggregateSchema (runtime)', () => {
     const oracle = { g: int64() };
     const actual = buildAggregateSchema(schema, [countAll().as('g')], ['g']);
     expectTypedStrictEqual(actual, oracle);
+  });
+});
+
+// Stage-schema synthesis of the `distinct` stage. `distinct` is a grouped
+// aggregate with ZERO accumulators, so its schema IS the group half —
+// `DistinctSchema` reuses the very `GroupSchema` operator that
+// `AggregateSchema` merges its accumulators onto. The per-cell group-projection
+// matrix (bare key, aliased expression, nested-via-expression, optional leaf,
+// required-leaf-under-optional-ancestor, map-typed shallow rewrite) is already
+// exercised exhaustively by `buildAggregateSchema (runtime)` above, so here we
+// cover the distinct-SPECIFIC surface — the schema is EXACTLY the group keys
+// (no accumulator record overlaid) and multiple groups compose — plus one
+// representative shared-path case (optional -> nullable) that proves
+// `absentMergesIntoNull` runs, and the type-level dotted-group rejections.
+// Each case pins one oracle on BOTH sides via `expectTypedStrictEqual` (the
+// return type IS `DistinctSchema<...>`), the safety net for the bridging
+// assertion inside `buildDistinctSchema`.
+describe('buildDistinctSchema (runtime)', () => {
+  const gender = optional(literal('male', 'female'));
+  const profile = map({ age: double(), gender });
+  const schema = {
+    name: string(),
+    g: string(),
+    opt: optional(string()),
+    profile,
+    rank: double(),
+  } satisfies DocumentSchema;
+
+  it('a single bare-path group is the whole schema (no accumulator record)', () => {
+    // The distinct-specific shape: unlike aggregate, nothing is overlaid — the
+    // result is exactly the group key.
+    const oracle = { g: string() };
+    const actual = buildDistinctSchema(schema, ['g']);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a top-level optional group key merges absent into null (representative shared path)', () => {
+    // null and absent keys merge into ONE null row (probed) — the `& Optional`
+    // field is rewritten to nullable. This exercises the `GroupSchema` path
+    // shared with aggregate.
+    const oracle = { opt: nullable(string()) };
+    const actual = buildDistinctSchema(schema, ['opt']);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('multiple groups compose (bare key + aliased expression)', () => {
+    const oracle = { g: string(), big: bool() };
+    const actual = buildDistinctSchema(schema, [
+      'g',
+      greaterThan(field(schema.rank, 'rank'), constant(4)).as('big'),
+    ]);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a MAP-typed group key keeps its INNER absences; only the whole-map absence merges', () => {
+    // Probed: the map is compared and projected as a VALUE, so the rewrite is
+    // SHALLOW — nullable at the top, inner optionality preserved.
+    const deep = {
+      a: optional(map({ b: map({ c: optional(string()) }) })),
+    } satisfies DocumentSchema;
+    const oracle = { a: nullable(map({ b: map({ c: optional(string()) }) })) };
+    const actual = buildDistinctSchema(deep, ['a']);
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a dotted bare-path group is rejected at the type level', () => {
+    // A dotted bare path is not a top-level group key (TOP_LEVEL_PROPERTY_PATH_ONLY).
+    // The complementary dotted-ALIAS rejection is enforced one level up, at the
+    // `Pipeline.distinct` parameter via `UndottedGroupAliases` (expression `.as`
+    // itself allows dotted aliases, for `select`/`addFields` nesting) — asserted
+    // in `pipeline.test.ts`.
+    void (() => {
+      // @ts-expect-error -- a dotted BARE path is not a top-level group key
+      void buildDistinctSchema(schema, ['profile.gender']);
+    });
   });
 });

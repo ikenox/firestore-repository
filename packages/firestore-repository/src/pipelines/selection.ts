@@ -165,10 +165,8 @@ export type AggregateSchema<
   // The `Accs extends ...` guard is always true; it defers evaluation so the
   // result is accepted as a `DocumentSchema` (same trick as BuildAddFieldsSchema).
 > = Accs extends readonly AggregateWithAlias[]
-  ? MergeSchemas<
-      AccumulatorSchema<Accs>,
-      AbsentMergesIntoNull<BuildSelectionSchema<Context, Groups>>
-    > extends infer R extends Fields
+  ? MergeSchemas<AccumulatorSchema<Accs>, GroupSchema<Context, Groups>> extends infer R extends
+      Fields
     ? // The `infer R extends Fields` re-binding discharges the `MapFields`
       // constraint lazily: the merged mapped type's value positions are not
       // PROVABLY `FieldType` while `Accs`/`Groups` are unresolved generics,
@@ -176,6 +174,41 @@ export type AggregateSchema<
       R
     : never
   : never;
+
+/**
+ * The group-key half of the aggregate/distinct output schema: the groups'
+ * {@link BuildSelectionSchema} projection with every `X & Optional` key
+ * rewritten to `nullable(X)` ({@link AbsentMergesIntoNull} — null and absent
+ * group keys merge into one `null` group, probed). Shared by
+ * {@link AggregateSchema} (as its group half, under the accumulator record) and
+ * {@link DistinctSchema} (as the whole schema — `distinct` is a grouped
+ * aggregate with zero accumulators), so both stages compute group keys
+ * identically.
+ */
+type GroupSchema<
+  Context extends Fields,
+  Groups extends readonly AggregateGroup<Context>[],
+> = AbsentMergesIntoNull<BuildSelectionSchema<Context, Groups>>;
+
+/**
+ * Output schema of the `distinct` stage: the {@link GroupSchema} of its group
+ * keys, and nothing else — `distinct` is semantically a grouped aggregate with
+ * ZERO accumulators, so EVERY group rule carries over (probed): null and absent
+ * keys merge into one `null` group (each `X & Optional` key reads back nullable,
+ * never absent), a nested field groups only via an expression with a TOP-LEVEL
+ * alias (the backend rejects dotted assignment targets —
+ * `TOP_LEVEL_PROPERTY_PATH_ONLY`), and a MAP-typed key is compared as a value
+ * (inner absences preserved — the rewrite is shallow). The rows are not source
+ * documents, so the pipeline's `Id` becomes `undefined`.
+ */
+export type DistinctSchema<
+  Context extends Fields,
+  Groups extends readonly AggregateGroup<Context>[],
+  // The `infer R extends Fields` re-binding discharges the `MapFields`
+  // constraint lazily (same trick as AggregateSchema): the mapped type's value
+  // positions are not PROVABLY `FieldType` while `Groups` is an unresolved
+  // generic, so a direct use fails `Pipeline`'s schema bound.
+> = GroupSchema<Context, Groups> extends infer R extends Fields ? R : never;
 
 /**
  * Folds the accumulators into a flat `alias -> result descriptor` record. A
@@ -366,8 +399,35 @@ export const buildAggregateSchema = <
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `AggregateSchema`, but the compiler cannot connect a runtime schema value to the type-level result
   mergeSchemas(
     accumulatorSchema(accumulators),
-    absentMergesIntoNull(buildSelectionSchema(schema, groups ?? [])),
+    groupSchema(schema, groups ?? []),
   ) as AggregateSchema<Context, Accs, Groups>;
+
+/**
+ * Runtime counterpart of {@link DistinctSchema}: the group-key schema and
+ * nothing else — `distinct` is a grouped aggregate with zero accumulators, so
+ * this is just {@link groupSchema}. The result feeds the executors' row
+ * decoding, so it must mirror the type exactly — the tests in
+ * `selection.test.ts` are the safety net for the bridging assertion.
+ */
+export const buildDistinctSchema = <
+  Context extends Fields,
+  const Groups extends readonly AggregateGroup<Context>[],
+>(
+  schema: Context,
+  groups: Groups,
+): DistinctSchema<Context, Groups> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runtime fold mirrors the type-level `DistinctSchema`, but the compiler cannot connect a runtime schema value to the type-level result
+  groupSchema(schema, groups) as DistinctSchema<Context, Groups>;
+
+/**
+ * Runtime counterpart of {@link GroupSchema}, shared by `buildAggregateSchema`
+ * and `buildDistinctSchema`: the groups' selection schema (last-wins resolved,
+ * as `buildSelectionSchema` does) with each key passed through
+ * `absentMergesIntoNull`. Kept loosely typed so both callers reuse it without
+ * re-threading their `Groups` constraint.
+ */
+const groupSchema = (schema: Fields, groups: readonly (string | ExpressionWithAlias)[]): Fields =>
+  absentMergesIntoNull(foldSelections(schema, dropOverriddenSelections(groups)));
 
 /**
  * Runtime counterpart of {@link AccumulatorSchema}: a flat `alias -> descriptor`
