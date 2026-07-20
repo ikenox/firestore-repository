@@ -32,49 +32,53 @@ Related research / decisions:
 
 ## Current status (snapshot — read this first)
 
-**What actually runs today (verified against a real Enterprise DB):**
+**Stages that run end-to-end today** (each verified live against
+`ikenox-sunrise` / `enterprise-native-playground` through the google-cloud
+adapter, and wired identically in the firebase adapter):
 
-- `collection(def)` → `execute` returns all documents with their ids
-  (a bare collection input, no transformation stages).
-- `collection(def).sort((field) => [asc(field('rank')), desc(...)])`
-  → sorted results.
+| stage                                    | schema effect                | identity   |
+| ---------------------------------------- | ---------------------------- | ---------- |
+| `collection` / `collectionGroup` (input) | the collection's schema      | preserved  |
+| `where`                                  | unchanged                    | preserved  |
+| `sort`                                   | unchanged                    | preserved  |
+| `limit` / `offset`                       | unchanged                    | preserved  |
+| `addFields`                              | context + added fields       | preserved  |
+| `removeFields`                           | context − removed paths      | preserved  |
+| `select`                                 | only the selections          | **broken** |
+| `aggregate`                              | accumulators over group keys | **broken** |
+| `distinct`                               | the group keys               | **broken** |
 
-Both work end-to-end through **both** adapters' executors; the spec suite
-(`fetch all` + `sort` asc/desc) passes against
-`ikenox-sunrise` / `enterprise-native-playground` via the google-cloud (admin,
-ADC) adapter. The firebase (client) adapter is wired identically but has **not**
-been run live — the client SDK needs real firebase credentials (apiKey / rules)
-to reach a non-emulator DB.
+"Identity broken" means the rows are no longer source documents, so the
+pipeline's second type parameter becomes `undefined` and the results carry no
+`id` — see "Identity ratchet" below.
 
-**How the runtime AST works now** (the key shift this session):
+**Still stubs** (`unimplemented()`, and the executors throw on them): `unnest`,
+`replaceWith` (`fullReplaceWith` / `mergeWith`), `union`, `findNearest`, `let`,
+`search`, `sample`; the `database()` / `documents()` / `literals()` input
+sources; and the DML output stages (`update` / `delete`).
 
-- `Pipeline` methods used to all return `unimplemented()` (no runtime value).
-  Now `collection`/`collectionGroup` build an input stage carrying the
-  source (`{ kind: 'collection', collection }` — see `stage.ts` `InputSource`),
-  and **`sort` builds a real `{ kind: 'sort', orderings }` stage** linked to its
-  parent. **All other stages are still stubs** (`unimplemented()`), so a chain
-  like `.where(...).sort(...)` does NOT build a runtime AST yet — only
-  `input` and `sort` do.
+**How the runtime AST works:**
+
+- Every implemented method builds a stage node linked to its parent
+  (`{ kind, ...payload }` — see `stage.ts`), and an executor walks the `parent`
+  chain to replay them into `db.pipeline()...`.
 - The `parent` link is typed as `PipelineNode` (a methods-free structural view
   of `Pipeline`) so `Pipeline<Schema, Id>` — which is invariant in `Schema` —
-  is assignable without a cast. An executor walks `parent` to collect stages.
-- `Field` gained `kind: 'field'` → `Expression` is now a discriminated union
-  (`field` / `constant` / `functionCall`). New `field(type, path)` factory in
-  `expression.ts`. The `sort` field provider resolves each field's real runtime
-  `type` via the new **`fieldTypeOfPath(schema, path)`** in `schema.ts` (the
-  runtime counterpart of the `FieldTypeOfPath` type), covered by
-  `schema.field-type-of-path.test.ts`.
-- `select` / `addFields` / `distinct` use `const` type params, so callback
-  selections infer as tuples without `as const`. `select` is fully implemented
-  (bare paths, nested dotted paths, `.as(...)` aliased expressions, last-wins
-  conflicts) and verified live; every expression node now carries an SDK-style
-  `.as(alias)` producing an `ExpressionWithAlias`.
+  is assignable without a cast.
+- `Expression` is a discriminated union (`field` / `constant` / `functionCall`).
+  Field providers resolve each path's real runtime descriptor via
+  `fieldTypeOfPath(schema, path)` in `schema.ts`.
+- Stage payloads carry ALREADY conflict-resolved selections (last-wins applied
+  by the `Pipeline` method), so an executor translates them 1:1.
+- Each type-level schema operator has a runtime twin **declared as that
+  operator applied to its own arguments**, so the compiler checks that the
+  steps compose — see `selection.ts` and the guideline's §Type-level / runtime
+  mirroring.
 
 **Executors** (`packages/{firebase-js-sdk,google-cloud-firestore}/src/pipeline.ts`):
-`executor(db)` walks the stage chain into `db.pipeline()...`, translates `sort`
-to `field(path).ascending()/.descending()`, runs it, and converts each result
-via the existing per-adapter `fromFirestore.docRef` / `decode` (both now
-exported through `buildFirestoreUtilities`, with an added `decode` method).
+`executor(db)` walks the stage chain, translates each stage to its SDK call,
+runs it, and converts each result via the per-adapter `fromFirestore.docRef` /
+`decode` (exported through `buildFirestoreUtilities`).
 
 **Running the pipeline spec tests** (Enterprise-only; the emulator can't run
 pipelines):
@@ -98,15 +102,15 @@ Without those two env vars the pipeline `describe` is `skipIf`-skipped. See the
 test-infra note under "Per-SDK adapters" for why the admin SDK can target the
 real backend while the repository tests still use the emulator in the same run.
 
-**Type assertions used** (all the `decode` class — runtime value → schema-derived
-type; policy in `docs/coding-guideline.md`): `fieldTypeOfPath` (2: `MapType`
-narrowing + the `FieldTypeOfPath` bridge) and each executor's result map
-(1 each: `... as PipelineResult<Schema, Id>`). The parent-invariance and the
-field-provider casts were **eliminated** (via `PipelineNode` and the resolver).
+**Type assertions** (policy in `docs/coding-guideline.md`): the `decode` class
+(runtime value → schema-derived type) — `fieldTypeOfPath` and each executor's
+result map — plus the step-local bridges in `selection.ts`, where each runtime
+twin asserts exactly ONE step of its type-level operator and the composition is
+compiler-checked.
 
-**Repo state:** core `firestore-repository` is green (lint 0, fmt clean, 210
-tests pass). Adapter repository tests still need the emulator (not run in this
-snapshot). Ad-hoc probe scripts live in `./.ikenox/` (gitignored).
+**Repo state:** `pnpm check` clean (lint 0, fmt clean); the full suite including
+the live Enterprise DB passes. Adapter repository (non-pipeline) tests need the
+emulator. Ad-hoc probe scripts live in `./.ikenox/` (gitignored).
 
 ## Conventions
 
