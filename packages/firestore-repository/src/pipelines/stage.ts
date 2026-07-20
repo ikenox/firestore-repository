@@ -1,6 +1,7 @@
 import type { Collection } from '../schema.js';
 import type { AggregateWithAlias, Expression, ExpressionWithAlias, Valued } from './expression.js';
 import type { Ordering } from './ordering.js';
+import type { SelectionNode } from './selection.js';
 
 /**
  * A pipeline stage. Firestore's official taxonomy groups every stage into one of
@@ -34,7 +35,7 @@ export type TransformStage =
   | { kind: 'where'; condition: Expression<Valued<'boolean'>> }
   // `selections` is already conflict-resolved (last-wins applied by
   // `Pipeline.select`), so an executor can translate it 1:1.
-  | { kind: 'select'; selections: readonly (string | ExpressionWithAlias)[] }
+  | { kind: 'select'; selections: readonly SelectionNode[] }
   // `selections` is already conflict-resolved (last-wins applied by
   // `Pipeline.addFields`), so an executor can translate it 1:1. Aliased
   // expressions only — see `BuildAddFieldsSchema`.
@@ -52,9 +53,13 @@ export type TransformStage =
   | {
       kind: 'aggregate';
       accumulators: readonly AggregateWithAlias[];
-      groups: readonly (string | ExpressionWithAlias)[];
+      groups: readonly SelectionNode[];
     }
-  | { kind: 'distinct' }
+  // `distinct` is a grouped aggregate with ZERO accumulators, so it shares the
+  // group model: `groups` are the group keys post-conflict-resolution (last-wins
+  // applied by `Pipeline.distinct`, mirroring `aggregate`), and an executor
+  // translates them 1:1. Always nonempty (a distinct with no keys is meaningless).
+  | { kind: 'distinct'; groups: readonly SelectionNode[] }
   | { kind: 'replaceWith' }
   | { kind: 'union' }
   | { kind: 'findNearest' }

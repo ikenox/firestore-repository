@@ -189,15 +189,30 @@ the types lie about runtime values. To keep them checkable:
   step can be reviewed against its twin, including branch-for-branch behavior
   (e.g. a per-recursion-level guard in the type must sit at the same level in
   the runtime helper).
-- **Confine the bridging assertion to the entry point** (the one function that
-  returns the type-level result), never inside the helpers.
+- **Keep the correspondence element by element: type each runtime helper as its
+  own type-level twin.** `dropOverriddenSelections` returns
+  `DropOverriddenSelections<Args>`, `foldSelections` returns
+  `FoldSelections<...>`, and so on — so each helper's assertion claims exactly
+  ONE step, and the compiler verifies that the steps COMPOSE. Do not type the
+  helpers loosely (`Fields`, `S[]`) and bridge only at the entry point: one
+  assertion spanning a whole chain swallows a divergence anywhere inside it,
+  and the loose signatures hide the mismatches that matter most (a type-level
+  operator that drops tuple elements paired with a runtime whose value type
+  drops nothing). This is the "isolate the assertion to the narrowest spot"
+  rule of §Type assertions, applied to mirrored computations.
+- **More assertions is the right trade here.** Optimize for WHERE the
+  type↔value correspondence is checked, not for how few assertions there are:
+  a step-local assertion fails at the step that broke, while a single top-level
+  one is bug-prone precisely because it cannot. Expect the constraint-discharge
+  idiom (`... extends infer R extends Fields ? R : never`) at several steps —
+  over unresolved generics a mapped type's value positions are not provably
+  `FieldType`.
 - **Test both sides against one oracle.** For each case, write a single
-  hand-written expected value and assert it twice: `toStrictEqual(oracle)`
-  checks the runtime value, `expectTypeOf(actual).toEqualTypeOf(oracle)`
-  checks the type-level computation (the function's return type IS the
-  type-level operator applied to the inputs). If either side drifts, one of
-  the two assertions fails. See `buildSelectionSchema (runtime)` in
-  `pipelines/selection.test.ts`.
+  hand-written expected value and pin it with `expectTypedStrictEqual(actual,
+oracle)` — the runtime value and the type-level computation together (the
+  function's return type IS the type-level operator applied to the inputs). If
+  either side drifts, the assertion fails. See §Test assertions and
+  `buildSelectionSchema (runtime)` in `pipelines/selection.test.ts`.
 
 ## Declaration order
 

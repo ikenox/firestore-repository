@@ -54,23 +54,42 @@ absent]` sorted), `first` returns null (a skip would return `y1`) and
 ## Output shape restrictions (probed: `TOP_LEVEL_PROPERTY_PATH_ONLY`)
 
 - **`aggregate` assigns TOP-LEVEL fields only**: a dotted bare-path group
-  (`groups: ['a.b.c']`) AND a dotted alias (on a group or an accumulator)
-  are both INVALID_ARGUMENT. A nested field groups via an expression with a
-  top-level alias: `field('a.b.c').as('c')` — its rows carry `c: 'v1'` /
-  `c: null`, with absent-ancestor docs merging into the null group like any
-  other absent key. (The backend's backtick escape hatch — a literal dotted
-  KEY — conflicts with the library's dotted-key ban and is not supported.)
+  (`groups: ['a.b.c']`), a dotted UNALIASED `field('a.b.c')` group, AND a
+  dotted alias (on a group or an accumulator) are all INVALID_ARGUMENT. A
+  nested field groups via an expression with a top-level alias:
+  `field('a.b.c').as('c')` — its rows carry `c: 'v1'` / `c: null`, with
+  absent-ancestor docs merging into the null group like any other absent key.
+  (The backend's backtick escape hatch — a literal dotted KEY — conflicts with
+  the library's dotted-key ban and is not supported.)
+- **An UNALIASED `Field` IS a valid group** when its path is top-level
+  (probed: `.ikenox/probe-distinct-barefield.mjs` — a bare `field('g')` is
+  accepted in both `aggregate` and `distinct`, and its row key is `g`). A
+  `Field` is inherently aliased: its path is its output name (the SDK models
+  it as a `Selectable`). The restriction is purely the top-level one above, so
+  the library accepts a bare `Field` wherever a selection is accepted and
+  rejects a dotted one through the same guard that rejects a dotted alias.
 - **A MAP-typed group key is compared and projected AS A VALUE**: inner
   absences are preserved (`{ b: {} }` and `{ b: { c: 'v1' } }` form
   DISTINCT groups); only the wholly-absent map merges into the null group.
   Library consequence: the `AbsentMergesIntoNull` rewrite is SHALLOW —
   nullable at the top of each group key, inner optionality untouched.
 
-## `distinct` stage
+## `distinct` stage (probed: `.ikenox/probe-distinct.mjs`)
 
-- Same projection and null/absent-merge rules as grouping; expression
-  aliases work. Semantically a grouped aggregate with zero accumulators —
-  the library can share the groups machinery.
+- Semantically a grouped aggregate with zero accumulators — EVERY probed
+  group rule carries over verbatim, so the library shares the groups
+  machinery:
+  - dotted bare-path groups, dotted UNALIASED `field(...)` groups AND dotted
+    aliases → INVALID_ARGUMENT (TOP_LEVEL_PROPERTY_PATH_ONLY); nested fields
+    go through an expression with a top-level alias (`field('a.b.c').as('c')`).
+  - an unaliased TOP-LEVEL `field('g')` group is accepted, keyed by its own
+    path (`.ikenox/probe-distinct-barefield.mjs`).
+  - null and absent keys merge into ONE null row (including
+    absent-ancestor docs under the expression form).
+  - a MAP-typed key is compared as a value — inner absences preserved
+    (`{b:{}}` vs `{b:{c:'v1'}}` are distinct rows); only the wholly-absent
+    map merges into the null row.
+  - empty input → zero rows.
 
 ## Library consequences (design)
 
