@@ -493,8 +493,18 @@ export const buildDistinctSchema = <
  * Runtime counterpart of {@link GroupSchema}, shared by `buildAggregateSchema`
  * and `buildDistinctSchema`: the groups' selection schema (last-wins resolved,
  * as `buildSelectionSchema` does) with each key passed through
- * `absentMergesIntoNull`. Kept loosely typed so both callers reuse it without
- * re-threading their `Groups` constraint.
+ * `absentMergesIntoNull`.
+ *
+ * "Counterpart" here means the COMPUTATION mirrors the type step for step, not
+ * that the signature does — like every other runtime twin in this file, the
+ * return is the widened `Fields`, and the two public wrappers are where the
+ * bridging assertion to the computed type lives. Typing this one
+ * `GroupSchema<Context, Groups>` instead does not remove an assertion, it adds
+ * one (tried): over an unresolved `Groups`, `absentMergesIntoNull`'s argument
+ * stops satisfying `MapFields` (the same non-provable-`FieldType` mapped-type
+ * problem `AggregateSchema` discharges with `infer R extends Fields`), and the
+ * result still is not assignable to `DistinctSchema`, whose deferred
+ * conditional the compiler will not resolve.
  */
 const groupSchema = (schema: Fields, groups: readonly SelectionNode[]): Fields =>
   absentMergesIntoNull(foldSelections(schema, dropOverriddenSelections(groups)));
