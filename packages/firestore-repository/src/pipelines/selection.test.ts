@@ -563,11 +563,54 @@ describe('buildAggregateSchema (runtime)', () => {
     expectTypeOf(actual).toEqualTypeOf(oracle);
   });
 
-  it('a nested (dotted) optional group key is rewritten to nullable in place', () => {
-    const oracle = { n: int64(), profile: map({ gender: nullable(literal('male', 'female')) }) };
-    const actual = buildAggregateSchema(schema, [n], ['profile.gender']);
+  it('a nested field groups via an EXPRESSION with a top-level alias; dotted forms are rejected', () => {
+    // The backend rejects dotted assignment targets in aggregate
+    // (TOP_LEVEL_PROPERTY_PATH_ONLY — probed): no dotted bare-path groups, no
+    // dotted aliases. A nested field groups through an expression whose alias
+    // is top-level; the optional LEAF still reads back nullable.
+    const genderField = field(gender, 'profile.gender');
+    const oracle = { n: int64(), gender: nullable(literal('male', 'female')) };
+    const actual = buildAggregateSchema(schema, [n], [genderField.as('gender')]);
     expect(actual).toStrictEqual(oracle);
     expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('a REQUIRED leaf under an optional ancestor reads back nullable (via the expression form)', () => {
+    // The a?.b.c shape: the leaf's nullability comes from the path CROSSING an
+    // optional ancestor (`WithConditionality`), not from the leaf's own
+    // marker — a distinct matrix cell from the leaf-optional case above.
+    // Probed live: field('a.b.c').as('c') groups the nested value and the
+    // absent-ancestor rows land in the null group.
+    const deep = { a: optional(map({ b: map({ c: string() }) })), n: int64() };
+    const nAcc = countAll().as('n');
+    const cField = field(string(), 'a.b.c');
+    const oracle = { n: int64(), c: nullable(string()) };
+    const actual = buildAggregateSchema(deep, [nAcc], [cField.as('c')]);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('a MAP-typed group key keeps its INNER absences; only the whole-map absence merges', () => {
+    // Probed: { b: {} } and { b: { c: 'v1' } } form DISTINCT groups (the map
+    // is compared and projected as a value), while a wholly-absent map merges
+    // into the null group — so the rewrite is SHALLOW: nullable at the top,
+    // inner optionality preserved.
+    const deep = { a: optional(map({ b: map({ c: optional(string()) }) })), n: int64() };
+    const nAcc = countAll().as('n');
+    const oracle = { n: int64(), a: nullable(map({ b: map({ c: optional(string()) }) })) };
+    const actual = buildAggregateSchema(deep, [nAcc], ['a']);
+    expect(actual).toStrictEqual(oracle);
+    expectTypeOf(actual).toEqualTypeOf(oracle);
+  });
+
+  it('dotted group forms are rejected at the type level', () => {
+    void (() => {
+      const nAcc = countAll().as('n');
+      // @ts-expect-error -- a dotted BARE path is not a top-level group key
+      void buildAggregateSchema(schema, [nAcc], ['profile.gender']);
+      // @ts-expect-error -- a dotted accumulator alias is rejected (TOP_LEVEL_PROPERTY_PATH_ONLY)
+      void countAll().as('agg.cnt');
+    });
   });
 
   it('an accumulator alias colliding with a group name wins', () => {

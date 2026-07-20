@@ -16,15 +16,17 @@ import type { AggregateWithAlias } from './expression.js';
 import { field, type Expression, type Field, type Valued } from './expression.js';
 import { Ordering } from './ordering.js';
 import {
+  type AggregateGroup,
   type AggregateSchema,
-  buildAggregateSchema,
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
-  type BuildSelectionSchema,
+  buildAggregateSchema,
   buildSelectionSchema,
+  type BuildSelectionSchema,
   dropOverriddenSelections,
   type ExpressionWithAlias,
   type Selection,
+  type UndottedGroupAliases,
 } from './selection.js';
 import type { InputStage, TransformStage } from './stage.js';
 
@@ -219,9 +221,12 @@ export class Pipeline<
   // At least one accumulator is required (an aggregate with none is `distinct`).
   aggregate<
     const Accs extends readonly [AggregateWithAlias, ...AggregateWithAlias[]],
-    const Groups extends readonly Selection<Schema>[] = readonly [],
+    const Groups extends readonly AggregateGroup<Schema>[] = readonly [],
   >(
-    spec: (field: FieldProvider<Schema>) => { accumulators: Accs; groups?: Groups },
+    spec: (field: FieldProvider<Schema>) => {
+      accumulators: Accs;
+      groups?: Groups & UndottedGroupAliases<Groups>;
+    },
   ): Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined> {
     const { accumulators, groups } = spec(fieldProvider(this.node.schema));
     return new Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined>({

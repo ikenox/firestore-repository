@@ -605,7 +605,7 @@ Items agreed in discussion but previously recorded only inline in DONE notes
       nullability into a second type parameter
       (`AggregateFunction<T, MayBeNull>`, `T` the null-free value kind) and
       compose in the stage (`MayBeNull ? nullable(T) : HasGroups ? T :
-    nullable(T)`); count family unaffected. Also probe the un-probed
+nullable(T)`); count family unaffected. Also probe the un-probed
       all-null-group cell (nullable operand, every value null in a group)
       before relying on it.
 - [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):

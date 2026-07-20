@@ -2822,9 +2822,11 @@ export class AggregateFunction<T extends FieldType = FieldType> {
    * `{ aggregate, alias }` selectable — the counterpart of
    * {@link ExpressionBase.as} for expressions (a distinct return type,
    * {@link AggregateWithAlias}, keeps accumulators and expressions from mixing
-   * in a selection list).
+   * in a selection list). Unlike expression aliases, the alias must be
+   * UNDOTTED: the backend rejects dotted assignment targets in `aggregate`
+   * (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed).
    */
-  as<Alias extends string>(alias: Alias): AggregateWithAlias<this, Alias> {
+  as<Alias extends string>(alias: Alias & UndottedKey<Alias>): AggregateWithAlias<this, Alias> {
     return { aggregate: this, alias };
   }
 }

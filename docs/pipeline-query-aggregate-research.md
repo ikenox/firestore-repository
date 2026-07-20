@@ -51,6 +51,21 @@ absent]` sorted), `first` returns null (a skip would return `y1`) and
 - `count` / `countAll` / `countDistinct` / `countIf`: int64.
 - `minimum` / `maximum` / `first` / `last`: the operand's own kind.
 
+## Output shape restrictions (probed: `TOP_LEVEL_PROPERTY_PATH_ONLY`)
+
+- **`aggregate` assigns TOP-LEVEL fields only**: a dotted bare-path group
+  (`groups: ['a.b.c']`) AND a dotted alias (on a group or an accumulator)
+  are both INVALID_ARGUMENT. A nested field groups via an expression with a
+  top-level alias: `field('a.b.c').as('c')` — its rows carry `c: 'v1'` /
+  `c: null`, with absent-ancestor docs merging into the null group like any
+  other absent key. (The backend's backtick escape hatch — a literal dotted
+  KEY — conflicts with the library's dotted-key ban and is not supported.)
+- **A MAP-typed group key is compared and projected AS A VALUE**: inner
+  absences are preserved (`{ b: {} }` and `{ b: { c: 'v1' } }` form
+  DISTINCT groups); only the wholly-absent map merges into the null group.
+  Library consequence: the `AbsentMergesIntoNull` rewrite is SHALLOW —
+  nullable at the top of each group key, inner optionality untouched.
+
 ## `distinct` stage
 
 - Same projection and null/absent-merge rules as grouping; expression

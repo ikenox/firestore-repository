@@ -43,6 +43,30 @@ type Fields = DocumentSchema;
 export type Selection<Context extends Fields> = MapFieldPath<Context> | ExpressionWithAlias;
 
 /**
+ * A group selection of the `aggregate` stage: a TOP-LEVEL bare field path, or
+ * an aliased expression whose alias is undotted. The backend rejects dotted
+ * assignment targets in `aggregate` (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed:
+ * both a dotted bare path AND a dotted alias are INVALID_ARGUMENT), so unlike
+ * `select`'s {@link Selection} there is no nested output form — group a
+ * NESTED field via an expression with a top-level alias:
+ * `field('a.b.c').as('c')`.
+ */
+export type AggregateGroup<Context extends Fields> = (keyof Context & string) | ExpressionWithAlias;
+
+/**
+ * The undotted-alias guard for a groups tuple (applied as a parameter
+ * intersection, the `WithoutDottedKeys` precedent): an aliased group whose
+ * alias contains the path separator collapses to `never`.
+ */
+export type UndottedGroupAliases<G> = {
+  [I in keyof G]: G[I] extends { alias: infer A extends string }
+    ? A extends `${string}.${string}`
+      ? never
+      : G[I]
+    : G[I];
+};
+
+/**
  * Folds a tuple of selections into a single nested output schema.
  *
  * Conflicting paths follow **last-wins**: when one path equals or is a dotted
@@ -137,7 +161,7 @@ export type BuildAddFieldsSchema<
 export type AggregateSchema<
   Context extends Fields,
   Accs extends readonly AggregateWithAlias[],
-  Groups extends readonly Selection<Context>[],
+  Groups extends readonly AggregateGroup<Context>[],
   // The `Accs extends ...` guard is always true; it defers evaluation so the
   // result is accepted as a `DocumentSchema` (same trick as BuildAddFieldsSchema).
 > = Accs extends readonly AggregateWithAlias[]
@@ -178,22 +202,20 @@ type OverwriteMerge<A, B> = {
  * Rewrites every `X & Optional` field — at ANY map depth — to
  * `UnionType<[WithoutOptional<X>, NullType]>`: null and absent group keys
  * merge into one `null` group (probed), so a group key is never absent in the
- * result schema. Recurses through nested maps (a required map may hold an
- * optional descendant, e.g. a `profile.gender` group key), and an optional map
- * itself is made nullable in addition to its descendants being rewritten.
+ * result schema. SHALLOW by design: group outputs are always TOP-LEVEL keys
+ * (the backend rejects dotted assignment targets in `aggregate` —
+ * `TOP_LEVEL_PROPERTY_PATH_ONLY`, probed), and a MAP-typed group key keeps
+ * its inner absences intact — the map is compared and projected AS A VALUE
+ * (probed: `{ b: {} }` and `{ b: { c: 'v1' } }` form distinct groups; only
+ * the wholly-absent map merges into the null group).
  */
 export type AbsentMergesIntoNull<S extends Fields> = {
   [K in keyof S]: RewriteAbsentField<S[K]>;
 };
 
-type RewriteAbsentField<T extends FieldType> =
-  T extends MapType<infer F>
-    ? T extends Optional
-      ? UnionType<[MapType<AbsentMergesIntoNull<F>>, NullType]>
-      : MapType<AbsentMergesIntoNull<F>>
-    : T extends Optional
-      ? UnionType<[WithoutOptional<T>, NullType]>
-      : T;
+type RewriteAbsentField<T extends FieldType> = T extends Optional
+  ? UnionType<[WithoutOptional<T>, NullType]>
+  : T;
 
 /**
  * Resolves one selection into the partial schema it contributes to the output.
@@ -335,7 +357,7 @@ export const buildAddFieldsSchema = <
 export const buildAggregateSchema = <
   Context extends Fields,
   const Accs extends readonly AggregateWithAlias[],
-  const Groups extends readonly Selection<Context>[] = readonly [],
+  const Groups extends readonly AggregateGroup<Context>[] = readonly [],
 >(
   schema: Context,
   accumulators: Accs,
@@ -365,17 +387,8 @@ const absentMergesIntoNull = (schema: Fields): Fields =>
   Object.fromEntries(Object.entries(schema).map(([k, v]) => [k, rewriteAbsentField(v)]));
 
 /** Runtime counterpart of {@link RewriteAbsentField}. */
-const rewriteAbsentField = (t: FieldType & { optional?: boolean }): FieldType => {
-  // Read the marker before `isMapType` narrows the descriptor to `AnyMapType`
-  // (narrowing drops the `optional?` part of the intersection) — the
-  // `isConditionalPath` precedent.
-  const isOptional = t.optional === true;
-  if (isMapType(t)) {
-    const inner = map(absentMergesIntoNull(t.fields));
-    return isOptional ? nullable(inner) : inner;
-  }
-  return isOptional ? nullable(withoutOptional(t)) : t;
-};
+const rewriteAbsentField = (t: FieldType & { optional?: boolean }): FieldType =>
+  t.optional === true ? nullable(withoutOptional(t)) : t;
 
 /**
  * Runtime counterpart of {@link DropOverriddenSelections}: keeps each selection
