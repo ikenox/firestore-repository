@@ -499,12 +499,15 @@ export const buildDistinctSchema = <
  * that the signature does — like every other runtime twin in this file, the
  * return is the widened `Fields`, and the two public wrappers are where the
  * bridging assertion to the computed type lives. Typing this one
- * `GroupSchema<Context, Groups>` instead does not remove an assertion, it adds
- * one (tried): over an unresolved `Groups`, `absentMergesIntoNull`'s argument
- * stops satisfying `MapFields` (the same non-provable-`FieldType` mapped-type
- * problem `AggregateSchema` discharges with `infer R extends Fields`), and the
- * result still is not assignable to `DistinctSchema`, whose deferred
- * conditional the compiler will not resolve.
+ * `GroupSchema<Context, Groups>` instead does not remove an assertion — the
+ * tighter return poisons BOTH callers (tried, so no one has to try again):
+ * in `buildAggregateSchema` the value stops satisfying `mergeSchemas`'s
+ * `MapFields` parameter over an unresolved `Groups` (the same
+ * non-provable-`FieldType` mapped-type problem `AggregateSchema` discharges
+ * with `infer R extends Fields`), needing a NEW assertion there, and in
+ * `buildDistinctSchema` the existing assertion degrades to a double
+ * `as unknown as` because `DistinctSchema`'s deferred conditional no longer
+ * sufficiently overlaps. Widening here keeps that one bridge per wrapper.
  */
 const groupSchema = (schema: Fields, groups: readonly SelectionNode[]): Fields =>
   absentMergesIntoNull(foldSelections(schema, dropOverriddenSelections(groups)));
