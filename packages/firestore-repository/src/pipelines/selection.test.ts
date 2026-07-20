@@ -1,5 +1,6 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expectTypeOf, it } from 'vitest';
 
+import { expectTypedStrictEqual } from '../__test__/assertion.js';
 import {
   array,
   type ArrayType,
@@ -342,12 +343,12 @@ describe('BuildAddFieldsSchema', () => {
 });
 
 // Runtime mirror of the `BuildSelectionSchema` type tests above. Each case
-// asserts the SAME hand-written oracle on both sides — `toStrictEqual` checks
-// the runtime value and `expectTypeOf(...).toEqualTypeOf(oracle)` checks the
-// type-level computation (the function's return type IS
-// `BuildSelectionSchema<...>`) — so a divergence between the type operators
-// and their runtime counterparts fails one of the two assertions. This is the
-// safety net for the bridging assertion inside `buildSelectionSchema`.
+// pins the SAME hand-written oracle on both sides via
+// `expectTypedStrictEqual` — the runtime value and the type-level computation
+// (the function's return type IS `BuildSelectionSchema<...>`) — so a
+// divergence between the type operators and their runtime counterparts fails
+// the assertion. This is the safety net for the bridging assertion inside
+// `buildSelectionSchema`.
 describe('buildSelectionSchema (runtime)', () => {
   const gender = optional(literal('male', 'female'));
   const profile = map({ age: double(), gender });
@@ -361,57 +362,49 @@ describe('buildSelectionSchema (runtime)', () => {
   it('returns {} for an empty selection list', () => {
     const oracle = {};
     const actual = buildSelectionSchema(schema, []);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('picks top-level fields (the exact descriptors)', () => {
     const oracle = { name: schema.name, rank: schema.rank };
     const actual = buildSelectionSchema(schema, ['name', 'rank']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('builds a nested map from a dotted path', () => {
     const oracle = { profile: map({ age: profile.fields.age }) };
     const actual = buildSelectionSchema(schema, ['profile.age']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('merges sibling dotted paths into one map', () => {
     const oracle = { profile: map({ age: profile.fields.age, gender }) };
     const actual = buildSelectionSchema(schema, ['profile.age', 'profile.gender']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('resolves an aliased expression to its expression type at the alias', () => {
     const oracle = { name: schema.name, points: schema.rank };
     const actual = buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('points')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('last-wins: the same output name selected twice', () => {
     const oracle = { name: schema.rank };
     const actual = buildSelectionSchema(schema, ['name', field(schema.rank, 'rank').as('name')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('last-wins: a child path after its parent replaces the parent subtree', () => {
     const oracle = { profile: map({ age: profile.fields.age }) };
     const actual = buildSelectionSchema(schema, ['profile', 'profile.age']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('last-wins: a parent path after its child replaces with the full subtree', () => {
     const oracle = { profile };
     const actual = buildSelectionSchema(schema, ['profile.age', 'profile']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('addFields: keeps the context and adds the selection schema on top', () => {
@@ -423,15 +416,13 @@ describe('buildSelectionSchema (runtime)', () => {
       points: schema.rank,
     };
     const actual = buildAddFieldsSchema(schema, [field(schema.rank, 'rank').as('points')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('addFields: an added field wins over an existing one on name overlap', () => {
     const oracle = { name: schema.name, profile, rank: schema.name, tag: schema.tag };
     const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('rank')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('addFields: a dotted alias deep-merges into the existing map', () => {
@@ -442,8 +433,7 @@ describe('buildSelectionSchema (runtime)', () => {
       tag: schema.tag,
     };
     const actual = buildAddFieldsSchema(schema, [field(schema.name, 'name').as('profile.author')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('propagates an ancestor Optional marker to the selected leaf', () => {
@@ -452,8 +442,7 @@ describe('buildSelectionSchema (runtime)', () => {
     // the projected `meta` is required while `x` becomes optional.
     const oracle = { meta: map({ x: optional(double()) }) };
     const actual = buildSelectionSchema(s, ['meta.x']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('propagates a mid-path Optional marker from deeper nesting', () => {
@@ -462,8 +451,7 @@ describe('buildSelectionSchema (runtime)', () => {
     // only the leaf carries the conditionality.
     const oracle = { a: map({ b: map({ c: optional(double()) }) }) };
     const actual = buildSelectionSchema(s, ['a.b.c']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('marks an aliased Field of a conditional path optional; computed expressions stay required', () => {
@@ -471,16 +459,14 @@ describe('buildSelectionSchema (runtime)', () => {
 
     const aliased = buildSelectionSchema(s, [field(s.meta.fields.x, 'meta.x').as('mx')]);
     const aliasedOracle = { mx: optional(double()) };
-    expect(aliased).toStrictEqual(aliasedOracle);
-    expectTypeOf(aliased).toEqualTypeOf(aliasedOracle);
+    expectTypedStrictEqual(aliased, aliasedOracle);
 
     // A computed expression always produces a value — no conditionality.
     const computed = buildSelectionSchema(s, [
       equal(field(s.meta.fields.x, 'meta.x'), constant(1)).as('isOne'),
     ]);
     const computedOracle = { isOne: bool() };
-    expect(computed).toStrictEqual(computedOracle);
-    expectTypeOf(computed).toEqualTypeOf(computedOracle);
+    expectTypedStrictEqual(computed, computedOracle);
   });
 
   it('selecting a whole optional map keeps the key itself optional', () => {
@@ -489,8 +475,7 @@ describe('buildSelectionSchema (runtime)', () => {
     // not on the leaves inside.
     const oracle = { meta: s.meta };
     const actual = buildSelectionSchema(s, ['meta']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it("treats '__name__' in an alias like any other key (no special-casing)", () => {
@@ -501,16 +486,15 @@ describe('buildSelectionSchema (runtime)', () => {
     // keys. See `ExpressionBase.as`.
     const oracle = { a: map({ __name__: schema.name }) };
     const actual = buildSelectionSchema(schema, [field(schema.name, 'name').as('a.__name__')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 });
 
-// Stage-schema synthesis of the `aggregate` stage. Each case asserts one
-// hand-written oracle on BOTH sides — `toStrictEqual` for the runtime value and
-// `expectTypeOf(...).toEqualTypeOf(oracle)` for the type-level computation (the
-// return type IS `AggregateSchema<...>`) — the safety net for the bridging
-// assertion inside `buildAggregateSchema`. Oracles derive from the
+// Stage-schema synthesis of the `aggregate` stage. Each case pins one
+// hand-written oracle on BOTH sides via `expectTypedStrictEqual` — the runtime
+// value and the type-level computation (the return type IS
+// `AggregateSchema<...>`) — the safety net for the bridging assertion inside
+// `buildAggregateSchema`. Oracles derive from the
 // `AggregateSchema` operators: `AccumulatorSchema` merged (A-wins) on top of
 // `AbsentMergesIntoNull<BuildSelectionSchema<groups>>`.
 describe('buildAggregateSchema (runtime)', () => {
@@ -532,15 +516,13 @@ describe('buildAggregateSchema (runtime)', () => {
     // is a plain int64 (0, never null).
     const oracle = { total: nullable(double()), n: int64() };
     const actual = buildAggregateSchema(schema, [total, n]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('a bare-path group key passes through unchanged (non-optional stays as-is)', () => {
     const oracle = { n: int64(), g: string() };
     const actual = buildAggregateSchema(schema, [n], ['g']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('an aliased-expression group projects the expression at its alias', () => {
@@ -550,8 +532,7 @@ describe('buildAggregateSchema (runtime)', () => {
       [n],
       [greaterThan(field(schema.rank, 'rank'), constant(4)).as('big')],
     );
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('a top-level optional group key merges absent into null (nullable, never absent)', () => {
@@ -559,8 +540,7 @@ describe('buildAggregateSchema (runtime)', () => {
     // `& Optional` field is rewritten to nullable.
     const oracle = { n: int64(), opt: nullable(string()) };
     const actual = buildAggregateSchema(schema, [n], ['opt']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('a nested field groups via an EXPRESSION with a top-level alias; dotted forms are rejected', () => {
@@ -571,8 +551,7 @@ describe('buildAggregateSchema (runtime)', () => {
     const genderField = field(gender, 'profile.gender');
     const oracle = { n: int64(), gender: nullable(literal('male', 'female')) };
     const actual = buildAggregateSchema(schema, [n], [genderField.as('gender')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('a REQUIRED leaf under an optional ancestor reads back nullable (via the expression form)', () => {
@@ -586,8 +565,7 @@ describe('buildAggregateSchema (runtime)', () => {
     const cField = field(string(), 'a.b.c');
     const oracle = { n: int64(), c: nullable(string()) };
     const actual = buildAggregateSchema(deep, [nAcc], [cField.as('c')]);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('a MAP-typed group key keeps its INNER absences; only the whole-map absence merges', () => {
@@ -599,8 +577,7 @@ describe('buildAggregateSchema (runtime)', () => {
     const nAcc = countAll().as('n');
     const oracle = { n: int64(), a: nullable(map({ b: map({ c: optional(string()) }) })) };
     const actual = buildAggregateSchema(deep, [nAcc], ['a']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 
   it('dotted group forms are rejected at the type level', () => {
@@ -618,7 +595,6 @@ describe('buildAggregateSchema (runtime)', () => {
     // group key `g` — the accumulator is the more specific intent.
     const oracle = { g: int64() };
     const actual = buildAggregateSchema(schema, [countAll().as('g')], ['g']);
-    expect(actual).toStrictEqual(oracle);
-    expectTypeOf(actual).toEqualTypeOf(oracle);
+    expectTypedStrictEqual(actual, oracle);
   });
 });
