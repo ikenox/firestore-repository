@@ -596,6 +596,18 @@ Items agreed in discussion but previously recorded only inline in DONE notes
       cost; the runtime twin mirrors branch-for-branch as usual. Scope is
       a cross-cutting refactor comparable to the payload-union one — its
       own PR, with the shape-oracle tests updated alongside.
+- [ ] **Refine accumulator nullability by groups presence** (noted 2026-07,
+      explicitly deferred as advanced). `sum`/`average`/`minimum`/`maximum`/
+      `first`/`last` are currently ALWAYS nullable — sound but wider than
+      the true rule, `operandMayBeNull OR noGroups`: with groups, an empty
+      group emits no row at all (probed), so a grouped aggregate over a
+      non-null operand can never be null. Sketch: split the operand-derived
+      nullability into a second type parameter
+      (`AggregateFunction<T, MayBeNull>`, `T` the null-free value kind) and
+      compose in the stage (`MayBeNull ? nullable(T) : HasGroups ? T :
+    nullable(T)`); count family unaffected. Also probe the un-probed
+      all-null-group cell (nullable operand, every value null in a group)
+      before relying on it.
 - [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
       the aggregate node ships as `AggregateFunction` (the SDK's name), which
       makes the pair with the expression node asymmetric — rename
