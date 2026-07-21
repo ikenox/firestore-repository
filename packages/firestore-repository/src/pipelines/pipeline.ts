@@ -24,11 +24,16 @@ import {
   buildDistinctSchema,
   buildSelectionSchema,
   type BuildSelectionSchema,
+  buildUnnestSchema,
   type DistinctSchema,
   dropOverriddenSelections,
   type ExpressionWithAlias,
   type Selection,
   type UndottedGroupAliases,
+  type UndottedIndexField,
+  type UndottedSelectionAlias,
+  type UnnestSchema,
+  type UnnestSelectable,
 } from './selection.js';
 import type { InputStage, TransformStage } from './stage.js';
 
@@ -205,9 +210,51 @@ export class Pipeline<
       parent: this.node,
     });
   }
-  // TODO
-  unnest(..._args: unknown[]): Pipeline<Fields, Id> {
-    return unimplemented();
+  /**
+   * Emits one row per element of the array `selectable` evaluates to, adding the
+   * element under the selectable's output name — and the element's zero-based
+   * offset under `indexField` when one is requested. Identity-PRESERVING (`Id`
+   * threads through unchanged): an emitted row still came from its source
+   * document, so it keeps that document's ref.
+   *
+   * **⚠️ ids are no longer unique across rows.** A document with an n-element
+   * array yields n rows that ALL carry the SAME id — identity here means "this
+   * row came from that document", not "one row per document". (An empty array
+   * emits NO row, so a row from a real array always carries a real element and a
+   * real int64 index; probed.)
+   *
+   * The schema effect is `addFields`-shaped: the input context with the alias
+   * (and the index field) overlaid, added-field-wins — so aliasing onto the
+   * SOURCE's own name (`field('t').as('t')`) replaces the array with the
+   * element, and the source field otherwise survives alongside the alias.
+   *
+   * `selectable` accepts a bare {@link Field} (its path is its output name) or
+   * an aliased expression, and must be ARRAY-valued. Its output name — and
+   * `indexField` — are TOP-LEVEL only (a dotted alias and a dotted index field
+   * are both rejected: the backend's `TOP_LEVEL_PROPERTY_PATH_ONLY`, probed).
+   * The SOURCE path MAY be dotted: `field('m.k').as('e')` unnests a nested array.
+   *
+   * The alias and the index do not travel together over a non-array source
+   * (probed): a null source emits one row whose alias is `null` and whose index
+   * is `null`; an ABSENT source emits one row whose alias is ABSENT but whose
+   * index is still `null`. So absence reaches the alias only, while the index
+   * picks up null from both the null and absent cases — see {@link UnnestSchema}.
+   */
+  unnest<
+    const Sel extends UnnestSelectable<Schema>,
+    const Index extends string | undefined = undefined,
+  >(
+    spec: (field: FieldProvider<Schema>) => {
+      selectable: Sel & UndottedSelectionAlias<Sel>;
+      indexField?: Index & UndottedIndexField<Index>;
+    },
+  ): Pipeline<UnnestSchema<Schema, Sel, Index>, Id> {
+    const { selectable, indexField } = spec(fieldProvider(this.node.schema));
+    return new Pipeline<UnnestSchema<Schema, Sel, Index>, Id>({
+      schema: buildUnnestSchema<Schema, Sel, Index>(this.node.schema, selectable, indexField),
+      stage: { kind: 'unnest', selectable, ...(indexField !== undefined ? { indexField } : {}) },
+      parent: this.node,
+    });
   }
   /**
    * Groups the rows by the `groups` keys (the whole input when omitted) and

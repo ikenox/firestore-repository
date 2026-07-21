@@ -128,6 +128,7 @@ import {
 } from '../pipelines/source.js';
 import type { Doc, DocRef, FirestoreEnvironment, PlainRepository } from '../repository.js';
 import {
+  array,
   double,
   int64,
   map,
@@ -1848,6 +1849,135 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             { data: { cat: 'y', q: 'b' } },
             { data: { cat: 'y', q: null } },
             { data: { cat: 'z', q: 'a' } },
+          ],
+          { ordered: false },
+        );
+      });
+    });
+
+    // The `unnest` stage, seeded to reproduce EVERY cell of the probe matrix in
+    // docs/pipeline-query-unnest-research.md. Unlike select/distinct/aggregate,
+    // `unnest` PRESERVES read-identity: rows still carry `id` — but ids are no
+    // longer unique across rows (an n-element array yields n rows with the SAME
+    // id). The source field survives alongside the alias (addFields-shaped
+    // overlay). Multi-row outputs are order-independent (`{ ordered: false }`).
+    describe('unnest', () => {
+      // `t` is optional + nullable + array-of-nullable-string, so ONE field
+      // exercises every non-happy cell: a real array (u1), an empty array (u2 —
+      // emits nothing), a null source (u3), an absent source (u4), and a null
+      // ELEMENT (u6). The element type stays nullable so the null element is
+      // representable.
+      const unnestCollection = rootCollection({
+        name: 'Unnest',
+        schema: { t: optional(nullable(array(nullable(string())))) },
+      });
+      type UnnestDoc = Doc<typeof unnestCollection>;
+      const unnestItems: UnnestDoc[] = [
+        { id: ['u1'], data: { t: ['a', 'b'] } }, //   2-element array
+        { id: ['u2'], data: { t: [] } }, //           empty array → 0 rows
+        { id: ['u3'], data: { t: null } }, //         null source → 1 no-op row
+        { id: ['u4'], data: {} }, //                  absent source → 1 no-op row
+        { id: ['u6'], data: { t: ['p', null] } }, //  a null ELEMENT is kept
+      ];
+
+      let coll: typeof unnestCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(unnestCollection);
+        await createRepository(coll).batchSet(unnestItems);
+      });
+      const src = () => collectionInput(coll);
+
+      it('emits one row per element, passing null/empty/absent through per the probed matrix', async () => {
+        // u1 ['a','b'] → 2 rows; u2 [] → 0 rows; u3 null → one row alias null;
+        // u4 absent → one row alias ABSENT (omitted); u6 ['p',null] → 2 rows,
+        // the null element kept. The source field `t` survives alongside `e`.
+        // Every row keeps its source `id` (identity preserved).
+        await expectPipeline(
+          src().unnest((field) => ({ selectable: field('t').as('e') })),
+          [
+            { id: ['u1'], data: { t: ['a', 'b'], e: 'a' } },
+            { id: ['u1'], data: { t: ['a', 'b'], e: 'b' } },
+            { id: ['u3'], data: { t: null, e: null } },
+            { id: ['u4'], data: {} },
+            { id: ['u6'], data: { t: ['p', null], e: 'p' } },
+            { id: ['u6'], data: { t: ['p', null], e: null } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('the index field is always present, null on every no-op row (even the absent-alias one)', async () => {
+        // The alias/index asymmetry: on the ABSENT-source row (u4) the alias `e`
+        // is ABSENT (omitted) but the index `i` is null (present). null source
+        // (u3) nulls both; a real array carries a real int64 offset.
+        await expectPipeline(
+          src().unnest((field) => ({ selectable: field('t').as('e'), indexField: 'i' })),
+          [
+            { id: ['u1'], data: { t: ['a', 'b'], e: 'a', i: 0 } },
+            { id: ['u1'], data: { t: ['a', 'b'], e: 'b', i: 1 } },
+            { id: ['u3'], data: { t: null, e: null, i: null } },
+            { id: ['u4'], data: { i: null } },
+            { id: ['u6'], data: { t: ['p', null], e: 'p', i: 0 } },
+            { id: ['u6'], data: { t: ['p', null], e: null, i: 1 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('an alias onto the source own name replaces the array with the element', async () => {
+        // `field('t').as('t')`: rows whose `t` is the ELEMENT, no trace of the
+        // array (probed). The no-op rows keep the pass-through value under `t`.
+        await expectPipeline(
+          src().unnest((field) => ({ selectable: field('t').as('t') })),
+          [
+            { id: ['u1'], data: { t: 'a' } },
+            { id: ['u1'], data: { t: 'b' } },
+            { id: ['u3'], data: { t: null } },
+            { id: ['u4'], data: {} },
+            { id: ['u6'], data: { t: 'p' } },
+            { id: ['u6'], data: { t: null } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('rows from the SAME document carry the SAME id (identity preserved, not unique)', async () => {
+        // The decided semantics: unnest does not break identity, but a 2-element
+        // array yields two rows that BOTH carry the source document's id.
+        const results = await executor.execute(
+          src().unnest((field) => ({ selectable: field('t').as('e') })),
+        );
+        const u1Rows = results.filter((r) => r.id[0] === 'u1');
+        expect(u1Rows).toHaveLength(2);
+        // Both rows are the SAME document ref, differing only in the element.
+        expect(u1Rows.map((r) => r.id)).toStrictEqual([['u1'], ['u1']]);
+        assert.sameDeepMembers(
+          u1Rows.map((r) => r.data.e),
+          ['a', 'b'],
+        );
+      });
+    });
+
+    // `unnest` of a NESTED array via a dotted SOURCE path — the source path may
+    // be dotted (only the OUTPUT name is top-level-restricted, probed). Its own
+    // collection keeps the surviving-fields noise out of the matrix above.
+    describe('unnest (nested source path)', () => {
+      const nestedCollection = rootCollection({
+        name: 'UnnestNested',
+        schema: { m: map({ k: array(string()) }) },
+      });
+      let coll: typeof nestedCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(nestedCollection);
+        await createRepository(coll).batchSet([{ id: ['mk1'], data: { m: { k: ['x', 'y'] } } }]);
+      });
+
+      it('unnests a non-empty nested array addressed by a dotted source path', async () => {
+        await expectPipeline(
+          collectionInput(coll).unnest((field) => ({ selectable: field('m.k').as('e') })),
+          [
+            { id: ['mk1'], data: { m: { k: ['x', 'y'] }, e: 'x' } },
+            { id: ['mk1'], data: { m: { k: ['x', 'y'] }, e: 'y' } },
           ],
           { ordered: false },
         );

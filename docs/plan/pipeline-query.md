@@ -38,6 +38,13 @@ Related research / decisions:
   (a bare collection input, no transformation stages).
 - `collection(def).sort((field) => [asc(field('rank')), desc(...)])`
   → sorted results.
+- `collection(def).unnest((field) => ({ selectable: field('t').as('e'), indexField? }))`
+  → one row per array element. **Schema effect:** `addFields`-shaped
+  augmentation (the alias — and the index field — overlaid on the input
+  context, added-field-wins; the source array survives unless the alias reuses
+  its name). **Identity:** PRESERVED (`Id` threads through), with the caveat
+  that ids are no longer unique across rows — an n-element array yields n rows
+  carrying the SAME source id.
 
 Both work end-to-end through **both** adapters' executors; the spec suite
 (`fetch all` + `sort` asc/desc) passes against
@@ -292,7 +299,34 @@ Transformation stages already stubbed:
 - [x] `limit(N)` / `offset(N)` — stages carry the count, executors translate
       to `sdk.limit/offset`, schema unchanged, identity preserved. Verified live
       incl. offset+limit paging and an over-sized limit.
-- [ ] `unnest(...)` — Context augmentation + identity preserve.
+- [x] `unnest(...)` — done (2026-07; semantics in
+      `../pipeline-query-unnest-research.md`). The
+      `unnest((field) => ({ selectable, indexField? }))` stage emits one row per
+      array element, augmenting the row with
+      the element under the selectable's output name (and its int64 offset under
+      `indexField`). Identity is PRESERVED (`Id` threads through) — but ids are
+      no longer unique across rows: an n-element array yields n rows carrying the
+      SAME source id (probed, and pinned by a live same-id test). `selectable`
+      takes the two selection forms (a bare array-valued `Field`, or an aliased
+      array-valued expression) — array-valued by construction (`ArrayValued` /
+      `ArrayElementType`), which makes the non-array no-op cell unreachable
+      through the library. Output names are TOP-LEVEL only: a dotted alias AND a
+      dotted `indexField` are both rejected (`UndottedSelectionAlias` /
+      `UndottedIndexField` at the `Pipeline.unnest` parameter — probed
+      INVALID_ARGUMENT), while the SOURCE path may be dotted. Schema effect is
+      `addFields`-shaped (`UnnestSchema` = `MergeSchemas<overlay, Context>`,
+      added-field-wins — so aliasing onto the source's own name replaces the
+      array with the element; the source field otherwise survives). The alias
+      and index descriptors are derived from the source array by DIFFERENT rules
+      (they do not travel together — probed): `array(E)` → alias `E`, index
+      `int64()`; `nullable(array(E))` → `nullable(E)` / `nullable(int64())`;
+      `optional(array(E))` → `E & Optional` / `nullable(int64())`. Absence
+      reaches the ALIAS only (an absent source emits a no-op row whose alias is
+      itself absent — `PreserveOptional`), while the index picks up null from
+      BOTH the null and absent cases (`PropagateNull`). Both executors via
+      `sdk.unnest({ selectable, indexField })`. Verified live (google-cloud) —
+      the spec reproduces every probed cell incl. empty-array (0 rows),
+      null-element, and the index-null-on-absent-alias asymmetry.
 - [ ] `replaceWith(...)` — Context replacement + identity break.
 - [ ] `union(other)` — combine sources; identity break (conservative).
 - [ ] `findNearest(...)` — vector search; behavior TBD.

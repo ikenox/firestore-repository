@@ -7,7 +7,7 @@ import {
 } from '../__test__/specification.js';
 import type { DocRef } from '../repository.js';
 import type { StringType } from '../schema.js';
-import { countAll, documentId, equal, sum } from './expression.js';
+import { countAll, documentId, equal, field, sum } from './expression.js';
 import { collection, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
 
@@ -166,6 +166,54 @@ describe('pipeline', () => {
       // existing field under its own name is meaningless. See BuildAddFieldsSchema.
       // @ts-expect-error -- addFields takes aliased expressions only
       base.addFields((field) => [field('rank')]);
+    };
+    void _rejections;
+  });
+
+  it('unnest PRESERVES identity: rows keep `id`, and the pipeline stays identity-preserving', () => {
+    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
+
+    // `tag` is an array field; unnesting it keeps read-identity — an emitted row
+    // still came from its source document (though ids are no longer unique
+    // across rows). Contrast the identity-BREAKING stages above.
+    const unnested = base.unnest((field) => ({ selectable: field('tag').as('t') }));
+    expectTypeOf<RowOf<typeof unnested>>().toHaveProperty('id');
+
+    // Assignable where an identity-preserving pipeline is expected (the schema is
+    // the input context with the alias `t` overlaid). Threads the SAME `Id`.
+    const _preserving: Pipeline<
+      AuthorsCollection['schema'] & { t: StringType },
+      DocRef<AuthorsCollection>
+    > = unnested;
+    void _preserving;
+
+    // A downstream preserving stage keeps it, and the stage node carries the
+    // selectable (plus the index field when requested).
+    const withIndex = base.unnest((field) => ({
+      selectable: field('tag').as('t'),
+      indexField: 'i',
+    }));
+    expectTypeOf<RowOf<typeof withIndex>>().toHaveProperty('id');
+    expect(withIndex.stages().transforms).toEqual([
+      {
+        kind: 'unnest',
+        selectable: { expression: field(base.node.schema.tag, 'tag'), alias: 't' },
+        indexField: 'i',
+      },
+    ]);
+  });
+
+  it('unnest rejects dotted output names and a non-array selectable at the type level', () => {
+    const _rejections = () => {
+      // A dotted ALIAS is not a top-level output (TOP_LEVEL_PROPERTY_PATH_ONLY).
+      // @ts-expect-error -- a dotted unnest alias is rejected
+      base.unnest((field) => ({ selectable: field('tag').as('out.t') }));
+      // A dotted INDEX field is likewise top-level only.
+      // @ts-expect-error -- a dotted unnest indexField is rejected
+      base.unnest((field) => ({ selectable: field('tag').as('t'), indexField: 'ix.j' }));
+      // The selectable must be ARRAY-valued — a scalar field is not unnestable.
+      // @ts-expect-error -- a non-array selectable is rejected
+      base.unnest((field) => ({ selectable: field('name').as('n') }));
     };
     void _rejections;
   });

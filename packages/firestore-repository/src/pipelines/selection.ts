@@ -3,6 +3,8 @@ import {
   type FieldType,
   type FieldTypeOfPath,
   fieldTypeOfPath,
+  int64,
+  type Int64Type,
   isMapType,
   map,
   type MapFieldPath,
@@ -16,8 +18,16 @@ import {
 import { assertNever } from '../util.js';
 import {
   type AggregateWithAlias,
+  type ArrayElementType,
+  arrayElementType,
+  type ArrayValued,
   type ExpressionWithAlias,
   type Field,
+  type PreserveOptional,
+  preserveOptional,
+  type PropagateNull,
+  propagateNullType,
+  type UndottedKey,
   type WithoutOptional,
   withoutOptional,
 } from './expression.js';
@@ -105,16 +115,41 @@ export type SelectionNode = string | Field | ExpressionWithAlias;
  * (`WithoutDottedFieldNames`).
  */
 export type UndottedGroupAliases<G> = {
-  [I in keyof G]: G[I] extends { alias: infer A extends string }
-    ? A extends `${string}.${string}`
-      ? never
-      : G[I]
-    : G[I] extends Field<FieldType, infer P>
-      ? P extends `${string}.${string}`
-        ? never
-        : G[I]
-      : G[I];
+  [I in keyof G]: UndottedSelectionAlias<G[I]>;
 };
+
+/**
+ * The top-level-output guard for a SINGLE selection — the scalar core
+ * {@link UndottedGroupAliases} maps over a tuple, and the guard
+ * `Pipeline.unnest` applies to its lone `selectable` (whose alias and whose
+ * `indexField` are both restricted to top level — probed, both INVALID_ARGUMENT
+ * when dotted).
+ *
+ * A selection whose output name contains the path separator collapses to
+ * `never`: an aliased selection by its `alias`, a bare {@link Field} by its
+ * `path` (which is its alias). Sharing this one operator is what makes the two
+ * dotted forms produce the same error at the same place, in every stage whose
+ * outputs are top-level-only.
+ */
+export type UndottedSelectionAlias<S> = S extends { alias: infer A extends string }
+  ? A extends `${string}.${string}`
+    ? never
+    : S
+  : S extends Field<FieldType, infer P>
+    ? P extends `${string}.${string}`
+      ? never
+      : S
+    : S;
+
+/**
+ * The top-level-output guard for an `unnest` index field: `undefined` (no index
+ * field) passes through, a name passes through {@link UndottedKey}. A separate
+ * operator from {@link UndottedSelectionAlias} only because the value is a bare
+ * key rather than a selection — the restriction is the same one.
+ */
+export type UndottedIndexField<Index extends string | undefined> = Index extends string
+  ? UndottedKey<Index>
+  : Index;
 
 /**
  * Folds a tuple of selections into a single nested output schema.
@@ -252,6 +287,135 @@ export type DistinctSchema<
   Context extends Fields,
   Groups extends readonly AggregateGroup<Context>[],
 > = GroupSchema<Context, Groups>;
+
+/**
+ * Output schema of the `unnest` stage: the input context with the array's
+ * ELEMENT overlaid under the selectable's output name — plus the element's
+ * offset under `indexField` when one is requested.
+ *
+ * The overlay is `addFields`-shaped: the exact
+ * `MergeSchemas<additions, Context>` composition of {@link BuildAddFieldsSchema}
+ * (added-field-wins), which is why aliasing onto the SOURCE's own name replaces
+ * the array with the element — what the backend does (probed). The source field
+ * otherwise survives alongside the alias.
+ *
+ * The alias and the index descriptors are derived from the source array's
+ * descriptor by DIFFERENT rules (they do not travel together — see
+ * {@link UnnestAliasType} / {@link UnnestIndexType}):
+ *
+ * | source               | alias           | index               |
+ * | -------------------- | --------------- | ------------------- |
+ * | `array(E)`           | `E`             | `int64()`           |
+ * | `nullable(array(E))` | `nullable(E)`   | `nullable(int64())` |
+ * | `optional(array(E))` | `E & Optional`  | `nullable(int64())` |
+ *
+ * (An empty array emits NO row at all, so a row produced from a real array
+ * always carries a real element and a real int64 index.)
+ */
+export type UnnestSchema<
+  Context extends Fields,
+  Sel extends UnnestSelectable<Context>,
+  Index extends string | undefined,
+> = MergeSchemas<UnnestOverlay<Context, Sel, Index>, Context>;
+
+/**
+ * A selectable of the `unnest` stage: a bare ARRAY-valued {@link Field} of the
+ * context, or an aliased ARRAY-valued expression. Array-valued by construction
+ * ({@link ArrayValued}), which is what makes the non-array no-op row of the
+ * backend (an alias carrying the source VALUE — probed, contradicting the SDK's
+ * doc comment) unreachable through this library.
+ *
+ * A bare `Field` is accepted for the same reason as in {@link Selection}: its
+ * `path` IS its output name. A bare path STRING is deliberately NOT offered —
+ * the SDK takes a `Selectable`, and the bare-`Field` form already covers it.
+ *
+ * The SOURCE path may be dotted (`field('m.k').as('e')` unnests a nested array
+ * — probed); only the OUTPUT name is restricted to top level, which is enforced
+ * one level up by {@link UndottedSelectionAlias} at the `Pipeline.unnest`
+ * parameter, so a dotted bare `Field` and a dotted alias fail the same way.
+ */
+export type UnnestSelectable<Context extends Fields> =
+  | Field<ArrayValued, MapFieldPath<Context>>
+  | ExpressionWithAlias<ArrayValued>;
+
+/**
+ * The fields `unnest` overlays on its input context: the element at the
+ * selectable's output name, merged with the index field's contribution (`{}`
+ * when no index field was requested).
+ *
+ * The alias comes FIRST so it wins a name collision with the index field —
+ * a merge order that is never actually exercised: the backend rejects an
+ * `indexField` equal to the alias outright (INVALID_ARGUMENT, "Index field `e`
+ * cannot be the same name as the alias `e`" — probed). Left unguarded at the
+ * type level on purpose, per the rule stated on `ExpressionBase.as`: ban what
+ * would silently succeed against the type model, leave what fails loudly to the
+ * backend.
+ */
+type UnnestOverlay<
+  Context extends Fields,
+  Sel extends UnnestSelectable<Context>,
+  Index extends string | undefined,
+> = MergeSchemas<
+  PathToSchema<SelectionPath<Sel>, UnnestAliasType<UnnestSourceType<Context, Sel>>>,
+  UnnestIndexSchema<Index, UnnestIndexType<UnnestSourceType<Context, Sel>>>
+>;
+
+/**
+ * The descriptor of the ARRAY `unnest` reads, as the ROW sees it — the
+ * selectable's own descriptor with ancestor optionality moved onto it
+ * ({@link WithConditionality}) when it reads a field path. Mirrors
+ * {@link SelectionToSchema}'s dispatch arm for arm (a path-reading selection is
+ * conditional, a computed expression always produces a value), minus the bare
+ * string arm that {@link UnnestSelectable} does not offer.
+ */
+type UnnestSourceType<Context extends Fields, Sel> = Sel extends {
+  expression: Field<infer T, infer P>;
+  alias: string;
+}
+  ? WithConditionality<Context, P, T>
+  : Sel extends ExpressionWithAlias<infer T, string>
+    ? T
+    : Sel extends Field<infer T, infer P>
+      ? WithConditionality<Context, P, T>
+      : never;
+
+/**
+ * The descriptor bound to the ALIAS, derived from the source array's
+ * descriptor: the element type, carrying the source's null-ness but NOT
+ * observing its absence as null.
+ *
+ * Both halves of that asymmetry are deliberate, and both are visible in the
+ * composition: `PropagateNull` is fed `WithoutOptional<Source>` so the ABSENCE
+ * arm of its condition cannot fire (a null source emits a no-op row whose alias
+ * is `null`, but an ABSENT source emits a no-op row whose alias is likewise
+ * ABSENT — probed), and {@link PreserveOptional} then carries that absence over
+ * as the `Optional` marker instead. Contrast {@link UnnestIndexType}, which
+ * takes the source unstripped and so nulls on BOTH.
+ */
+type UnnestAliasType<Source extends FieldType> = PreserveOptional<
+  Source,
+  PropagateNull<WithoutOptional<Source>, ArrayElementType<Source>>
+>;
+
+/**
+ * The descriptor bound to the INDEX field: the element's int64 offset, nullable
+ * when the source can be null OR absent.
+ *
+ * Plain {@link PropagateNull} — its condition (`'null'` tag OR the `Optional`
+ * marker) is exactly the probed rule: the index field is ALWAYS PRESENT on an
+ * emitted row and is `null` on every no-op row, including the absent-source row
+ * where the alias itself is absent. So it is `int64()` only for a source that
+ * is neither nullable nor optional, whose rows all come from a real array.
+ */
+type UnnestIndexType<Source extends FieldType> = PropagateNull<Source, Int64Type>;
+
+/**
+ * The index field's contribution to the overlay: its descriptor at its (always
+ * top-level) name, or `{}` when no index field was requested.
+ */
+type UnnestIndexSchema<Index extends string | undefined, T extends FieldType> = Index extends string
+  ? PathToSchema<Index, T>
+  : {};
 
 /**
  * Folds the accumulators into a flat `alias -> result descriptor` record. A
@@ -475,6 +639,113 @@ export const buildDistinctSchema = <
   schema: Context,
   groups: Groups,
 ): DistinctSchema<Context, Groups> => groupSchema(schema, groups);
+
+/**
+ * Runtime counterpart of {@link UnnestSchema}: the same
+ * `MergeSchemas<UnnestOverlay<...>, Context>` composition (the overlay wins on
+ * overlap — the `addFields` rule, which is what lets an alias onto the source's
+ * own name replace the array with the element). The result feeds the executors'
+ * row decoding, so it must mirror the type exactly — the tests in
+ * `selection.test.ts` pin both halves.
+ */
+export const buildUnnestSchema = <
+  Context extends Fields,
+  const Sel extends UnnestSelectable<Context>,
+  const Index extends string | undefined = undefined,
+>(
+  schema: Context,
+  selectable: Sel,
+  indexField: Index | undefined = undefined,
+): UnnestSchema<Context, Sel, Index> => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: an omitted `indexField` argument means "no index field" and leaves `Index` at its `undefined` default, but the compiler does not tie a parameter's absence to a type parameter's default.
+  const index = indexField as Index;
+  return mergeSchemas(unnestOverlay(schema, selectable, index), schema);
+};
+
+/**
+ * Runtime counterpart of {@link UnnestOverlay}: the alias's single-entry schema
+ * merged over the index field's contribution.
+ *
+ * The source descriptor is resolved ONCE and fed to both derivations, which is
+ * where their asymmetry is visible side by side — `unnestAliasType` strips the
+ * absence marker before propagating null and re-applies it, `unnestIndexType`
+ * propagates from the same descriptor unstripped.
+ *
+ * Typed as `UnnestOverlay<...>` and computed from helpers that are each typed
+ * as their own type-level twin, so the compiler — not a comment — checks that
+ * the composition matches the type's decomposition; no assertion of its own.
+ */
+const unnestOverlay = <
+  Context extends Fields,
+  Sel extends UnnestSelectable<Context>,
+  Index extends string | undefined,
+>(
+  schema: Context,
+  selectable: Sel,
+  indexField: Index,
+): UnnestOverlay<Context, Sel, Index> => {
+  const source = unnestSourceType(schema, selectable);
+  return mergeSchemas(
+    pathToSchema(selectionPath(selectable), unnestAliasType(source)),
+    unnestIndexSchema(indexField, unnestIndexType(source)),
+  );
+};
+
+/**
+ * Runtime counterpart of {@link UnnestSourceType}, mirroring
+ * {@link selectionToSchema}'s dispatch arm for arm (minus the bare string arm,
+ * which {@link UnnestSelectable} does not offer).
+ */
+const unnestSourceType = <Context extends Fields, Sel extends UnnestSelectable<Context>>(
+  schema: Context,
+  selectable: Sel,
+): UnnestSourceType<Context, Sel> => {
+  // Widened to the union first: narrowing a generic `Sel` in place leaves it a
+  // type parameter that `in` cannot discriminate.
+  const node: UnnestSelectable<Fields> = selectable;
+  const result = ((): FieldType => {
+    if (!('alias' in node)) {
+      // A bare `Field`: its own `type` is the source descriptor, conditional on
+      // its path — the exact resolution the aliased `field(p).as(a)` arm runs.
+      return withConditionality(schema, node.path, node.type);
+    }
+    const { expression } = node;
+    switch (expression.kind) {
+      case 'field':
+        return withConditionality(schema, expression.path, expression.type);
+      case 'constant':
+      case 'functionCall':
+        return expression.type;
+      default:
+        return assertNever(expression);
+    }
+  })();
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `UnnestSourceType` dispatches on the shape of `Sel` with a conditional type, the runtime on the shape of the VALUE; narrowing the value does not narrow `Sel`, so the arms cannot be matched up by the compiler.
+  return result as UnnestSourceType<Context, Sel>;
+};
+
+/**
+ * Runtime counterpart of {@link UnnestAliasType}, typed as that operator applied
+ * to its input — the same `preserveOptional(source, propagateNullType(withoutOptional(source), ...))`
+ * composition, so the absence/null asymmetry is checked step for step and needs
+ * no assertion here.
+ */
+const unnestAliasType = <Source extends FieldType>(source: Source): UnnestAliasType<Source> =>
+  preserveOptional(source, propagateNullType(withoutOptional(source), arrayElementType(source)));
+
+/** Runtime counterpart of {@link UnnestIndexType}, typed as that operator applied to its input. */
+const unnestIndexType = <Source extends FieldType>(source: Source): UnnestIndexType<Source> =>
+  propagateNullType(source, int64());
+
+/** Runtime counterpart of {@link UnnestIndexSchema}, typed as that operator applied to its inputs. */
+const unnestIndexSchema = <Index extends string | undefined, T extends FieldType>(
+  indexField: Index,
+  type: T,
+): UnnestIndexSchema<Index, T> => {
+  const result = indexField === undefined ? {} : pathToSchema(indexField, type);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `UnnestIndexSchema` branches on `Index extends string`, a type-level test the runtime performs with an `undefined` check; the compiler does not relate the two.
+  return result as UnnestIndexSchema<Index, T>;
+};
 
 /**
  * Runtime counterpart of {@link GroupSchema}, shared by `buildAggregateSchema`

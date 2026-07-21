@@ -136,6 +136,13 @@ const applyStage = (
     case 'offset':
       return sdk.offset(stage.offset);
     case 'unnest':
+      // The options-object form: `selectable` translates exactly like a `select`
+      // selection (a bare `Field` or an aliased expression), and `indexField` is
+      // passed through only when set (spread, for `exactOptionalPropertyTypes`).
+      return sdk.unnest({
+        selectable: toSdkSelectable(db, stage.selectable),
+        ...(stage.indexField !== undefined ? { indexField: stage.indexField } : {}),
+      });
     case 'replaceWith':
     case 'union':
     case 'findNearest':
