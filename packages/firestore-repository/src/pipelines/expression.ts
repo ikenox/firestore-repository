@@ -24,6 +24,8 @@ import {
   type LiteralType,
   map,
   type MapType,
+  normalize,
+  type Normalize,
   nullable,
   nullType,
   type NullType,
@@ -285,39 +287,17 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
 /**
  * The element descriptor is derived by walking the TUPLE (not the union of
  * the element types): tuple order is stable, so the runtime can mirror the
- * exact same first-occurrence dedup. A single distinct element type stays
- * bare; several become a `UnionType` in tuple order — matching the runtime's
- * `union(...deduped)`.
+ * exact same canonicalization. `Normalize` then decides the shape — a single
+ * distinct element type stays bare, several become a `UnionType` in
+ * first-occurrence order — matching the runtime's `union(...elements)`.
  */
-type ArrayConstantTypeOf<V extends ConstantArray> =
-  DedupDescriptors<{ readonly [K in keyof V]: ConstantTypeOf<V[K]> }> extends infer D
-    ? D extends readonly [infer Only extends FieldType]
-      ? ArrayType<Only>
-      : D extends readonly FieldType[]
-        ? ArrayType<UnionType<[...D]>>
-        : never
-    : never;
-
-/** First-occurrence dedup over a tuple of descriptors (mutual-`extends` equality). */
-type DedupDescriptors<
-  T extends readonly FieldType[],
-  Acc extends readonly FieldType[] = [],
-> = T extends readonly [infer H extends FieldType, ...infer R extends readonly FieldType[]]
-  ? IncludesDescriptor<Acc, H> extends true
-    ? DedupDescriptors<R, Acc>
-    : DedupDescriptors<R, [...Acc, H]>
-  : Acc;
-
-type IncludesDescriptor<T extends readonly FieldType[], X extends FieldType> = T extends readonly [
-  infer H extends FieldType,
-  ...infer R extends readonly FieldType[],
-]
-  ? DescriptorEquals<H, X> extends true
-    ? true
-    : IncludesDescriptor<R, X>
-  : false;
-
-type DescriptorEquals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type ArrayConstantTypeOf<V extends ConstantArray> = {
+  readonly [K in keyof V]: ConstantTypeOf<V[K]>;
+} extends infer D extends readonly FieldType[]
+  ? Normalize<D> extends infer N extends FieldType
+    ? ArrayType<N>
+    : never
+  : never;
 
 /**
  * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
@@ -349,14 +329,9 @@ function constantTypeOf(value: ConstantValue): FieldType {
       // Runtime twin of ConstantArray's non-empty tuple constraint.
       throw new Error('constant arrays must not be empty (no element to infer a type from)');
     }
-    // Mirrors ArrayConstantTypeOf: first-occurrence dedup in tuple order, a
-    // single distinct descriptor stays bare, several become a union.
-    const elements = value.map((element) => constantTypeOf(element));
-    const deduped = elements.filter(
-      (d, i) => elements.findIndex((e) => descriptorEquals(e, d)) === i,
-    );
-    const [only] = deduped;
-    return only !== undefined && deduped.length === 1 ? array(only) : array(union(...deduped));
+    // Mirrors ArrayConstantTypeOf: the element descriptors in tuple order,
+    // canonicalized by the union constructor.
+    return array(union(...value.map((element) => constantTypeOf(element))));
   }
   switch (typeof value) {
     case 'string':
@@ -381,22 +356,6 @@ function constantTypeOf(value: ConstantValue): FieldType {
 
 /** `Array.isArray` does not narrow `readonly` array unions — a dedicated guard does. */
 const isConstantArray = (value: ConstantValue): value is ConstantArray => Array.isArray(value);
-
-/** Structural descriptor equality (key-order insensitive; descriptors are plain data). */
-const descriptorEquals = (a: unknown, b: unknown): boolean => {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
-    return false;
-  }
-  const entriesA = Object.entries(a);
-  const bRecord = new Map(Object.entries(b));
-  return (
-    entriesA.length === bRecord.size &&
-    entriesA.every(([k, v]) => bRecord.has(k) && descriptorEquals(v, bRecord.get(k)))
-  );
-};
 
 export const constant = <const V extends ConstantValue>(value: V): Constant<ConstantTypeOf<V>> =>
   Constant.of(value);
@@ -865,7 +824,7 @@ type PropagateNull<Operands extends FieldType, T extends FieldType> = [
   Extract<Operands['firestoreType'], 'null'> | Extract<Operands, Optional>,
 ] extends [never]
   ? T
-  : UnionType<[T, NullType]>;
+  : Normalize<[T, NullType]>;
 
 /**
  * Runtime counterpart of {@link PropagateNull} (the overload signature
@@ -930,7 +889,7 @@ type PropagateAbsence<Operands extends FieldType, T extends FieldType> = [
   Extract<Operands, Optional>,
 ] extends [never]
   ? T
-  : UnionType<[T, NullType]>;
+  : Normalize<[T, NullType]>;
 
 /** Runtime counterpart of {@link PropagateAbsence} (same bridge shape as `propagateNull`). */
 function propagateAbsence<Ops extends readonly Expression[], T extends FieldType>(
@@ -964,16 +923,16 @@ export const withoutOptional = (t: FieldType & { optional?: boolean }): FieldTyp
 
 /**
  * The type of "one of these two expressions' values" — the return descriptor
- * of the branching functions (`conditional`, the `if*` fallbacks): the single
- * descriptor when both sides agree, their union otherwise. A `never` side
- * (e.g. a fully null-stripped `StripNull`) collapses to the other. Operands'
- * `Optional` markers are dropped (see {@link WithoutOptional}).
+ * of the branching functions (`conditional`, the `if*` fallbacks): the
+ * canonical union of the two sides, so agreeing sides collapse to the single
+ * descriptor, a union side merges its own members in, and a `never` side
+ * (e.g. a fully null-stripped `StripNull`) drops out — all of it from
+ * {@link Normalize}. Operands' `Optional` markers are dropped first (see
+ * {@link WithoutOptional}).
  */
-type EitherType<A extends FieldType, B extends FieldType> = [A] extends [never]
-  ? WithoutOptional<B>
-  : DescriptorEquals<WithoutOptional<A>, WithoutOptional<B>> extends true
-    ? WithoutOptional<A>
-    : UnionType<[WithoutOptional<A>, WithoutOptional<B>]>;
+type EitherType<A extends FieldType, B extends FieldType> = Normalize<
+  [WithoutOptional<A>, WithoutOptional<B>]
+>;
 
 /** Runtime counterpart of {@link EitherType} (same bridge shape as `propagateNull`). */
 function eitherType<A extends Expression, B extends Expression>(
@@ -985,13 +944,8 @@ function eitherType(a: Expression, b: Expression): FieldType {
 }
 
 /** `EitherType` over already-resolved descriptors, with the `never` side as `undefined`. */
-const fallbackType = (a: FieldType | undefined, b: FieldType): FieldType => {
-  const bare = withoutOptional(b);
-  if (a === undefined) {
-    return bare;
-  }
-  return descriptorEquals(a, bare) ? a : union(a, bare);
-};
+const fallbackType = (a: FieldType | undefined, b: FieldType): FieldType =>
+  normalize([a, withoutOptional(b)]);
 
 /**
  * The descriptor with its null-ness removed — what remains of a value that
@@ -1012,7 +966,7 @@ type StripNullBare<T extends FieldType> = T extends NullType
   : T extends { type: 'union'; elements: infer E extends readonly FieldType[] }
     ? FieldType[] extends E
       ? T
-      : RebuildUnion<NonNullElements<E>>
+      : Normalize<NonNullElements<E>>
     : T extends {
           type: 'const';
           values: infer V extends readonly (string | number | boolean | null)[];
@@ -1043,14 +997,6 @@ type NonNullLiteralValues<V extends readonly (string | number | boolean | null)[
       : [H, ...NonNullLiteralValues<R>]
     : [];
 
-type RebuildUnion<E extends readonly FieldType[]> = E extends readonly [infer One extends FieldType]
-  ? One
-  : E extends readonly []
-    ? never
-    : E extends [FieldType, FieldType, ...FieldType[]]
-      ? UnionType<E>
-      : never;
-
 /** Runtime counterpart of {@link StripNull} (`never` is `undefined`). */
 const stripNull = (raw: FieldType): FieldType | undefined => {
   const t = withoutOptional(raw);
@@ -1058,11 +1004,8 @@ const stripNull = (raw: FieldType): FieldType | undefined => {
     case 'null':
       return undefined;
     case 'union': {
-      const [first, ...rest] = t.elements.filter((e) => e.type !== 'null');
-      if (first === undefined) {
-        return undefined;
-      }
-      return rest.length === 0 ? first : union(first, ...rest);
+      const nonNull = t.elements.filter((e) => e.type !== 'null');
+      return nonNull.length === 0 ? undefined : union(...nonNull);
     }
     case 'const': {
       const [first, ...rest] = t.values.filter((v) => v !== null);
@@ -1092,17 +1035,19 @@ const stripNull = (raw: FieldType): FieldType | undefined => {
  * only when EVERY operand may be null or absent (the all-ignored case
  * returns null — probed).
  */
-type LogicalExtreme<Ops extends readonly Expression[]> = RebuildUnion<
-  DedupDescriptors<[...StrippedTypes<Ops>, ...(AllMayBeNull<Ops> extends true ? [NullType] : [])]>
+type LogicalExtreme<Ops extends readonly Expression[]> = Normalize<
+  [...StrippedTypes<Ops>, ...(AllMayBeNull<Ops> extends true ? [NullType] : [])]
 >;
 
+/**
+ * The operands' null-stripped types in operand order. A pure-null operand
+ * contributes `never`, which {@link Normalize} drops.
+ */
 type StrippedTypes<Ops extends readonly Expression[]> = Ops extends readonly [
   infer H extends Expression,
   ...infer R extends readonly Expression[],
 ]
-  ? [StripNull<H['type']>] extends [never]
-    ? StrippedTypes<R>
-    : [StripNull<H['type']>, ...StrippedTypes<R>]
+  ? [StripNull<H['type']>, ...StrippedTypes<R>]
   : [];
 
 type AllMayBeNull<Ops extends readonly Expression[]> = Ops extends readonly [
@@ -1123,18 +1068,11 @@ type MayBeNullOrAbsent<T extends FieldType> = [
 /** Runtime counterpart of {@link LogicalExtreme} (same bridge shape as `propagateNull`). */
 function logicalExtremeType<Ops extends readonly Expression[]>(operands: Ops): LogicalExtreme<Ops>;
 function logicalExtremeType(operands: readonly Expression[]): FieldType {
-  const stripped = operands
-    .map((operand) => stripNull(operand.type))
-    .filter((t): t is FieldType => t !== undefined)
-    .filter((t, i, all) => all.findIndex((o) => descriptorEquals(o, t)) === i);
+  const stripped: (FieldType | undefined)[] = operands.map((operand) => stripNull(operand.type));
   if (operands.every((operand) => mayBeNull(operand.type) || mayBeAbsent(operand.type))) {
     stripped.push(nullType());
   }
-  const [first, ...rest] = stripped;
-  if (first === undefined) {
-    return nullType();
-  }
-  return rest.length === 0 ? first : union(first, ...rest);
+  return normalize(stripped);
 }
 
 /** Logical conjunction of two or more boolean expressions (Kleene: null operands propagate). */
@@ -1954,10 +1892,8 @@ const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
 /** An array-domain operand. */
 type ArrayOperand = Expression<Valued<readonly FirestoreType[]>>;
 
-/** The deduped element-type union of a tuple of element expressions. */
-type ElementUnion<Els extends readonly Expression[]> = RebuildUnion<
-  DedupDescriptors<ElementTypes<Els>>
->;
+/** The canonical element-type union of a tuple of element expressions. */
+type ElementUnion<Els extends readonly Expression[]> = Normalize<ElementTypes<Els>>;
 type ElementTypes<Els extends readonly Expression[]> = Els extends readonly [
   infer H extends Expression,
   ...infer R extends readonly Expression[],
@@ -1968,13 +1904,7 @@ type ElementTypes<Els extends readonly Expression[]> = Els extends readonly [
 /** Runtime counterpart of {@link ElementUnion} (same bridge shape as `propagateNull`). */
 function elementUnionType<Els extends readonly Expression[]>(elements: Els): ElementUnion<Els>;
 function elementUnionType(elements: readonly Expression[]): FieldType {
-  const [first, ...rest] = elements
-    .map((e) => withoutOptional(e.type))
-    .filter((t, i, all) => all.findIndex((o) => descriptorEquals(o, t)) === i);
-  if (first === undefined) {
-    throw new Error('an element list must not be empty');
-  }
-  return rest.length === 0 ? first : union(first, ...rest);
+  return union(...elements.map((e) => withoutOptional(e.type)));
 }
 
 /**
@@ -2028,7 +1958,7 @@ export const arrayGet = <
 >(
   value: Arr,
   index: Idx,
-): FunctionCall<UnionType<[ElementsOf<StripNull<TypeOfOperand<Arr>>>, NullType]>> => {
+): FunctionCall<Normalize<[ElementsOf<StripNull<TypeOfOperand<Arr>>>, NullType]>> => {
   const v = toOperand(value);
   const i = toOperand(index);
   return new FunctionCall(nullable(elementTypeOf(v)), { name: 'arrayGet', value: v, index: i });
@@ -2120,9 +2050,7 @@ export const arrayConcat = <
   });
 };
 
-type ConcatElementUnion<Ops extends readonly Expression[]> = RebuildUnion<
-  DedupDescriptors<ConcatElementTypes<Ops>>
->;
+type ConcatElementUnion<Ops extends readonly Expression[]> = Normalize<ConcatElementTypes<Ops>>;
 type ConcatElementTypes<Ops extends readonly Expression[]> = Ops extends readonly [
   infer H extends Expression,
   ...infer R extends readonly Expression[],
@@ -2135,13 +2063,7 @@ function concatElementUnionType<Ops extends readonly Expression[]>(
   operands: Ops,
 ): ConcatElementUnion<Ops>;
 function concatElementUnionType(operands: readonly Expression[]): FieldType {
-  const [first, ...rest] = operands
-    .map((operand) => elementTypeOf(operand))
-    .filter((t, i, all) => all.findIndex((o) => descriptorEquals(o, t)) === i);
-  if (first === undefined) {
-    throw new Error('arrayConcat needs at least one operand');
-  }
-  return rest.length === 0 ? first : union(first, ...rest);
+  return union(...operands.map((operand) => elementTypeOf(operand)));
 }
 
 // ---- map ----
@@ -2186,7 +2108,7 @@ export const mapGet = <const M extends MapOperandInput, K extends MapKeysOf<Type
 
 type MapValueType<V extends FieldType> = [Extract<V, Optional>] extends [never]
   ? V
-  : UnionType<[WithoutOptional<V>, NullType]>;
+  : Normalize<[WithoutOptional<V>, NullType]>;
 
 /** Runtime counterpart of `MapValueType<FieldsOf<...>[K]>` (same bridge shape as `propagateNull`). */
 function mapValueTypeOf<M extends Expression, K extends string>(
@@ -2312,13 +2234,9 @@ function mapFieldUnionType(value: Expression): FieldType {
   if (t === undefined || t.type !== 'map') {
     throw new Error('operand is not a map');
   }
-  const [first, ...rest] = Object.values(t.fields)
-    .map((v) => withoutOptional(v))
-    .filter((v, i, all) => all.findIndex((o) => descriptorEquals(o, v)) === i);
-  if (first === undefined) {
-    return nullType();
-  }
-  return rest.length === 0 ? first : union(first, ...rest);
+  const values = Object.values(t.fields).map((v) => withoutOptional(v));
+  // An empty map has no values at all, so there is no union to build.
+  return values.length === 0 ? nullType() : union(...values);
 }
 
 /**
@@ -2873,24 +2791,22 @@ export type AggregateWithAlias<
  *
  * - `minimum` / `maximum` ignore null and absent inputs, `first` / `last`
  *   keep them, and every one of them is `null` over an empty group (probed) —
- *   all three shapes collapse to "the value's kind, or null", so stripping the
- *   operand's own null before re-adding one avoids double-nesting
- *   (`minimum(nullable(string))` is `nullable(string)`, not
- *   `nullable(nullable(string))`).
+ *   all three shapes collapse to "the value's kind, or null". Stripping the
+ *   operand's own null first is what makes that precise even where the null
+ *   lives INSIDE the descriptor rather than beside it — a literal set's
+ *   `null` value moves out to the union member
+ *   (`minimum(literal('a', null))` is `union(literal('a'), null)`).
  * - `sum` / `average` reuse it too: their payload
  *   (`NumericResult` / `DoubleType`) is never itself nullable, so
  *   null-stripping is a no-op and this yields exactly `nullable(payload)` —
  *   the one empty-group null the no-groups row can carry (probed).
  */
-type NullableStripped<T extends FieldType> = [StripNull<T>] extends [never]
-  ? NullType
-  : UnionType<[StripNull<T>, NullType]>;
+type NullableStripped<T extends FieldType> = Normalize<[StripNull<T>, NullType]>;
 
 /** Runtime counterpart of {@link NullableStripped} (same bridge shape as `propagateNull`; `never` is `undefined`). */
 function nullableStripped<T extends FieldType>(t: T): NullableStripped<T>;
 function nullableStripped(t: FieldType): FieldType {
-  const stripped = stripNull(t);
-  return stripped === undefined ? nullType() : nullable(stripped);
+  return normalize([stripNull(t), nullType()]);
 }
 
 /**

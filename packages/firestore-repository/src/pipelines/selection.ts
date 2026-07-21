@@ -11,7 +11,7 @@ import {
   type NullType,
   type Optional,
   optional,
-  type UnionType,
+  type Normalize,
 } from '../schema.js';
 import { assertNever } from '../util.js';
 import {
@@ -276,7 +276,7 @@ type OverwriteMerge<A, B> = {
 
 /**
  * Rewrites every `X & Optional` field — at ANY map depth — to
- * `UnionType<[WithoutOptional<X>, NullType]>`: null and absent group keys
+ * `Normalize<[WithoutOptional<X>, NullType]>`: null and absent group keys
  * merge into one `null` group (probed), so a group key is never absent in the
  * result schema. SHALLOW by design: group outputs are always TOP-LEVEL keys
  * (the backend rejects dotted assignment targets in `aggregate` —
@@ -298,7 +298,7 @@ export type AbsentMergesIntoNull<S extends Fields> = {
   : never;
 
 type RewriteAbsentField<T extends FieldType> = T extends Optional
-  ? UnionType<[WithoutOptional<T>, NullType]>
+  ? Normalize<[WithoutOptional<T>, NullType]>
   : T;
 
 /**
