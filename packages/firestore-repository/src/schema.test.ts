@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import { expectTypedStrictEqual } from './__test__/assertion.js';
 import {
   type AnyMapType,
   array,
@@ -49,6 +50,10 @@ import {
   ArrayUnion,
   nullType,
   nullable,
+  normalize,
+  type Normalize,
+  type NullType,
+  type UnionType,
 } from './schema.js';
 
 describe('schema', () => {
@@ -743,6 +748,154 @@ describe('document', () => {
         expect(actual).toStrictEqual(oracle);
         expectTypeOf(actual).toEqualTypeOf(oracle);
       });
+    });
+  });
+});
+
+/**
+ * Cases enumerated from the four steps of `Normalize` (flatten / dedup /
+ * drop-`never` / unwrap-singleton) and their interactions, not from any
+ * particular caller. Every case but the shape anchor is stated as "this
+ * spelling IS that canonical spelling": `expectTypedStrictEqual` pins the
+ * runtime value and the static type of both sides together, and the anchor
+ * below fixes what the canonical spelling itself denotes.
+ */
+describe('union normalization', () => {
+  it('a multi-member list is a UnionType holding the members in order', () => {
+    const t = union(string(), int64());
+    expect(t).toStrictEqual({ type: 'union', elements: [{ type: 'string' }, { type: 'int64' }] });
+    expectTypeOf(t).toEqualTypeOf<UnionType<[StringType, Int64Type]>>();
+  });
+
+  describe('1. flatten nested unions', () => {
+    it('flattens a nested union in the first position', () => {
+      expectTypedStrictEqual(
+        union(union(string(), int64()), bool()),
+        union(string(), int64(), bool()),
+      );
+    });
+
+    it('flattens a nested union in a later position', () => {
+      expectTypedStrictEqual(
+        union(bool(), union(string(), int64())),
+        union(bool(), string(), int64()),
+      );
+    });
+
+    it('flattens every nested union of a list', () => {
+      expectTypedStrictEqual(
+        union(union(bool(), string()), union(int64(), timestamp())),
+        union(bool(), string(), int64(), timestamp()),
+      );
+    });
+
+    it('flattens through multiple levels of nesting', () => {
+      expectTypedStrictEqual(
+        union(union(union(string(), int64()), bool()), timestamp()),
+        union(string(), int64(), bool(), timestamp()),
+      );
+    });
+
+    it('keeps a union whose members are not statically known whole', () => {
+      // The recursion breaker: the wide `UnionType` has no known member
+      // tuple to spread, so it stays a member of the outer union.
+      expectTypeOf<Normalize<[UnionType, NullType]>>().toEqualTypeOf<
+        UnionType<[UnionType, NullType]>
+      >();
+    });
+  });
+
+  describe('2. dedup members, keeping the first occurrence', () => {
+    it('collapses adjacent duplicates', () => {
+      expectTypedStrictEqual(union(string(), string(), int64()), union(string(), int64()));
+    });
+
+    it('collapses separated duplicates at the FIRST occurrence, preserving order', () => {
+      expectTypedStrictEqual(union(string(), int64(), string()), union(string(), int64()));
+    });
+
+    it('compares members structurally, not by identity', () => {
+      expectTypedStrictEqual(
+        union(map({ a: string() }), map({ a: string() }), int64()),
+        union(map({ a: string() }), int64()),
+      );
+    });
+
+    it('distinguishes members differing only in a nested descriptor', () => {
+      expectTypedStrictEqual(
+        union(map({ a: string() }), map({ a: int64() })),
+        union(map({ a: string() }), map({ a: int64() })),
+      );
+    });
+  });
+
+  describe('3. drop `never` members', () => {
+    // A `never` member has no runtime value; `undefined` is its runtime
+    // encoding (see `stripNull`), which the typed overload cannot express —
+    // so the two claims are made side by side here.
+    it('drops some-but-not-all `never` members', () => {
+      expect(normalize([undefined, string(), undefined, nullType()])).toStrictEqual(
+        union(string(), nullType()),
+      );
+      expectTypeOf<Normalize<[never, StringType, never, NullType]>>().toEqualTypeOf<
+        UnionType<[StringType, NullType]>
+      >();
+    });
+
+    it('leaves a single member bare once the `never`s are dropped', () => {
+      expect(normalize([undefined, string()])).toStrictEqual(string());
+      expectTypeOf<Normalize<[never, StringType]>>().toEqualTypeOf<StringType>();
+    });
+
+    it('has nothing left when every member is `never`', () => {
+      expect(() => normalize([undefined, undefined])).toThrow();
+      expectTypeOf<Normalize<[never, never]>>().toEqualTypeOf<never>();
+    });
+  });
+
+  describe('4. unwrap a singleton', () => {
+    it('a one-member list IS that member, not a union of one', () => {
+      expectTypedStrictEqual(union(string()), string());
+    });
+
+    it('an empty list has no descriptor', () => {
+      expect(() => union()).toThrow();
+      expectTypeOf<Normalize<[]>>().toEqualTypeOf<never>();
+    });
+  });
+
+  describe('the steps compose', () => {
+    it('dedups a duplicate that only flattening brings together', () => {
+      expectTypedStrictEqual(union(union(string(), int64()), string()), union(string(), int64()));
+    });
+
+    it('unwraps when dedup leaves exactly one member', () => {
+      expectTypedStrictEqual(union(string(), string()), string());
+    });
+
+    it('unwraps when flattening and dedup together leave one member', () => {
+      expectTypedStrictEqual(union(union(string(), string()), string()), string());
+    });
+  });
+
+  describe('nullable', () => {
+    it('adds NullType as the last member', () => {
+      expectTypedStrictEqual(nullable(string()), union(string(), nullType()));
+    });
+
+    it('is idempotent', () => {
+      expectTypedStrictEqual(nullable(nullable(string())), nullable(string()));
+    });
+
+    it('collapses to NullType alone when the payload is already null', () => {
+      expectTypedStrictEqual(nullable(nullType()), nullType());
+    });
+
+    it('flattens the payload union rather than nesting it', () => {
+      expectTypedStrictEqual(
+        nullable(union(string(), int64())),
+        union(string(), int64(), nullType()),
+      );
     });
   });
 });

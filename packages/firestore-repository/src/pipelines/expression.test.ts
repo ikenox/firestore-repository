@@ -951,7 +951,9 @@ describe('existence / error / conditional operators (slice 5)', () => {
     expectTypedStrictEqual(t.type, string());
     const nullableThrough = ifAbsent(nullableName, constant('dflt'));
     // null is a VALUE for ifAbsent — it survives in the pass-through side.
-    expectTypedStrictEqual(nullableThrough.type, union(nullable(string()), string()));
+    // The fallback's `string` is already a member of that side, so the
+    // canonical union of the two sides is just the pass-through side.
+    expectTypedStrictEqual(nullableThrough.type, union(string(), nullType()));
   });
 
   it('ifNull strips null from the pass-through side', () => {
@@ -1196,10 +1198,11 @@ describe('array / map operators (slice 6)', () => {
     // wrapped as always-nullable (out-of-range is absent).
     const na = arrayGet(field(nullable(array(string())), 'na'), constant(0));
     expectTypedStrictEqual(na.type, nullable(string()));
-    // A union element: the always-nullable wrap composes WITHOUT flattening —
-    // nullable(union(string, int64)) = union(union(string, int64), null).
+    // A union element: the always-nullable wrap merges into the element's own
+    // union rather than wrapping it, so the result is the flat
+    // union(string, int64, null) — unions are canonical (see `Normalize`).
     const au = arrayGet(field(array(union(string(), int64())), 'au'), constant(0));
-    expectTypedStrictEqual(au.type, nullable(union(string(), int64())));
+    expectTypedStrictEqual(au.type, union(string(), int64(), nullType()));
     // ElementsOf's wide fallback arm (cell 22) is NOT exercisable: `arrayGet`
     // constrains its operand to `ArrayOperandInput`, and a truly-wide array
     // descriptor carries `firestoreType: unknown` (the `Any*` members), which
