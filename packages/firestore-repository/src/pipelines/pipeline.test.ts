@@ -6,7 +6,17 @@ import {
   postsCollection,
 } from '../__test__/specification.js';
 import type { DocRef } from '../repository.js';
-import type { StringType } from '../schema.js';
+import {
+  array,
+  type DoubleType,
+  type LiteralType,
+  map,
+  type MapType,
+  type Optional,
+  rootCollection,
+  string,
+  type StringType,
+} from '../schema.js';
 import { countAll, documentId, equal, field, sum } from './expression.js';
 import { collection, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
@@ -170,6 +180,34 @@ describe('pipeline', () => {
     void _rejections;
   });
 
+  // A nested array — the shape that distinguishes `unnest`'s output-name rule
+  // from `select`'s: the SOURCE path may be dotted, the OUTPUT name may not.
+  const nestedArrayCollection = rootCollection({
+    name: 'NestedArray',
+    schema: { m: map({ k: array(string()) }) },
+  });
+
+  it('unnest takes a bare Field: its path IS its output name, so it replaces the source', () => {
+    type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
+
+    // No `.as(...)` needed — a `Field` is inherently aliased (the SDK's
+    // `Selectable` model), so `field('tag')` names its own output. Because that
+    // output name IS the source's name, the array is replaced by the element.
+    const bare = base.unnest((field) => ({ selectable: field('tag') }));
+    expectTypeOf<SchemaOf<typeof bare>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: DoubleType;
+      tag: StringType;
+    }>();
+    // Identical to spelling the alias out, exactly as in `select`.
+    const aliased = base.unnest((field) => ({ selectable: field('tag').as('tag') }));
+    expectTypeOf<SchemaOf<typeof bare>>().toEqualTypeOf<SchemaOf<typeof aliased>>();
+    expect(bare.stages().transforms).toEqual([
+      { kind: 'unnest', selectable: field(base.node.schema.tag, 'tag') },
+    ]);
+  });
+
   it('unnest PRESERVES identity: rows keep `id`, and the pipeline stays identity-preserving', () => {
     type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
 
@@ -214,6 +252,13 @@ describe('pipeline', () => {
       // The selectable must be ARRAY-valued — a scalar field is not unnestable.
       // @ts-expect-error -- a non-array selectable is rejected
       base.unnest((field) => ({ selectable: field('name').as('n') }));
+      // A BARE `Field` at a dotted path is rejected too: its path IS its output
+      // name, so it would be a dotted output. This is where `unnest` parts ways
+      // with `select`, which accepts the same selectable and nests it instead —
+      // reach a nested array with an explicit top-level alias.
+      // @ts-expect-error -- a dotted bare Field is not a top-level output
+      collection(nestedArrayCollection).unnest((field) => ({ selectable: field('m.k') }));
+      collection(nestedArrayCollection).unnest((field) => ({ selectable: field('m.k').as('e') }));
     };
     void _rejections;
   });

@@ -1941,6 +1941,24 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('a bare Field selectable needs no alias: its path is its output name', async () => {
+        // A `Field` is inherently aliased, so `field('t')` is the `.as('t')` form
+        // above — same rows, and the executor translates it through the bare-Field
+        // arm of the selectable conversion.
+        await expectPipeline(
+          src().unnest((field) => ({ selectable: field('t') })),
+          [
+            { id: ['u1'], data: { t: 'a' } },
+            { id: ['u1'], data: { t: 'b' } },
+            { id: ['u3'], data: { t: null } },
+            { id: ['u4'], data: {} },
+            { id: ['u6'], data: { t: 'p' } },
+            { id: ['u6'], data: { t: null } },
+          ],
+          { ordered: false },
+        );
+      });
+
       it('rows from the SAME document carry the SAME id (identity preserved, not unique)', async () => {
         // The decided semantics: unnest does not break identity, but a 2-element
         // array yields two rows that BOTH carry the source document's id.
