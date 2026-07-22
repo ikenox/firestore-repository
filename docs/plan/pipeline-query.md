@@ -676,6 +676,34 @@ nullable(T)`); count family unaffected. Also probe the un-probed
       `BuildAddFieldsSchema`). Note one arm is irreducible: `UndottedGroupAliases`
       is a parameter intersection over the user's un-normalized tuple, so it
       must keep matching the input forms directly.
+
+      **The invariant that makes this a concept and not a coincidence** (noted
+      2026-07 while reviewing `unnest`): a bare `Field` and an
+      `ExpressionWithAlias` are accepted TOGETHER at every site — `Selection`,
+      `AggregateGroup`, `UnnestSelectable` — with `addFields` the lone
+      exception, and it is not a counterexample: it excludes BARENESS as a
+      category (the bare string form too), because a bare form names an
+      EXISTING field, so re-adding it under its own name is a no-op at best and,
+      through an optional map, silently materializes empty maps. So the real
+      axis is not "`Field` vs aliased" but "bare (names an existing field) vs
+      aliased (names a new output)". Under that framing the target shape falls
+      out — one parameterized concept plus each site's own bare-string form and
+      value constraint:
+
+      ```ts
+      type Selectable<Context, V extends FieldType = FieldType> =
+        | Field<V, MapFieldPath<Context>>
+        | ExpressionWithAlias<V>;
+
+      type Selection<Context> = MapFieldPath<Context> | Selectable<Context>;
+      type AggregateGroup<Context> = (keyof Context & string) | Selectable<Context>;
+      type UnnestSelectable<Context> = Selectable<Context, ArrayValued>;
+      // addFields stays ExpressionWithAlias[] — the documented bareness exclusion
+      ```
+
+      `unnest` made this a THIRD site spelling the same union by hand, so the
+      duplication now costs more than when it was first noted.
+
 - [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
       the aggregate node ships as `AggregateFunction` (the SDK's name), which
       makes the pair with the expression node asymmetric — rename
