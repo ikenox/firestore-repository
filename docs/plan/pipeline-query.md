@@ -561,35 +561,33 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       at runtime (type side is covered by `pipeline.test.ts`).
 - [ ] DML stage tests (`update` / `delete`).
 - [ ] Sub-pipeline / join behavior tests once that's implemented.
-- [ ] **Method-level output-contract coverage in `pipeline.test.ts`** (audit
+- [x] **Method-level output-contract coverage in `pipeline.test.ts`** (audit
       2026-07). The `build*` schema operators are pinned exhaustively in
       `selection.test.ts`, but `pipeline.test.ts` is what proves each STAGE
       METHOD threads them through to `Pipeline<Schema, Id>` correctly — the
       output SCHEMA type, the IDENTITY (`Id`) behavior, and the stage-node
-      payload. The `unnest` index-field schema was missing exactly this and
-      surfaced the gap; the audit below is the same lens applied to every
-      implemented method. `distinct` and `unnest` are the reference shape
-      (schema + identity + node all pinned). Scope: `pipeline.test.ts` only —
+      payload. Every implemented method now has that three-way pin, to the
+      reference shape `distinct` / `unnest` set (schema type via `SchemaOf`,
+      identity via `RowOf` `toHaveProperty('id')` plus an assignability check,
+      and the exact stage node via `stages()`). Scope: `pipeline.test.ts` only —
       the runtime/live behavior is covered elsewhere.
 
-      | method                    | schema type | identity | stage node | gap |
-      | ------------------------- | ----------- | -------- | ---------- | --- |
-      | `collection`/`collectionGroup` | ✗      | ✗ (only parent-arity) | ✗ | schema=collection schema, `Id = DocRef`, input node |
-      | `where`                   | ✗           | ✗        | ✗          | schema UNCHANGED, identity preserved, condition node |
-      | `sort`                    | ✗ (only used as a step) | ✗ | ✗    | schema unchanged, identity preserved, orderings node |
-      | `limit` / `offset`        | ✗ (no test at all) | ✗ | ✗       | schema unchanged, identity preserved, count node |
-      | `select`                  | ✗ (only id-drop) | ✓ drop | ✗       | output-schema type; select stage node |
-      | `addFields`               | ✗ (incidental) | ✓ preserve (via `toHaveProperty`) | ✗ | output-schema type; addFields node |
-      | `removeFields`            | ✗ (incidental) | ~        | ✗          | output-schema type; removeFields node |
-      | `aggregate`               | ✗           | ✓ break  | ✗          | accumulator+group output-schema type; aggregate node |
-      | `distinct`                | ✓           | ✓ break  | ✓          | — (reference) |
-      | `unnest`                  | ✓           | ✓ preserve | ✓        | — (reference) |
+      | method                    | schema type | identity | stage node |
+      | ------------------------- | ----------- | -------- | ---------- |
+      | `collection`/`collectionGroup` | ✓      | ✓ preserve | ✓ (input node) |
+      | `where`                   | ✓ unchanged | ✓ preserve | ✓        |
+      | `sort`                    | ✓ unchanged | ✓ preserve | ✓        |
+      | `limit` / `offset`        | ✓ unchanged | ✓ preserve | ✓        |
+      | `select`                  | ✓           | ✓ drop   | ✓          |
+      | `addFields`               | ✓           | ✓ preserve | ✓        |
+      | `removeFields`            | ✓           | ✓ preserve | ✓        |
+      | `aggregate`               | ✓           | ✓ break  | ✓          |
+      | `distinct`                | ✓           | ✓ break  | ✓          |
+      | `unnest`                  | ✓           | ✓ preserve | ✓        |
 
-      Each `✗` in "schema type" is a place a method could silently return the
-      wrong `Schema` and no `pipeline.test.ts` test would catch it (the
-      selection.test.ts unit only proves the OPERATOR, not that the method
-      applies it). Fill them to the reference shape; `limit`/`offset` need a
-      first test at all.
+      One representative-but-real case per method proves the wiring (the full
+      operator matrix stays in `selection.test.ts`); the shared `SchemaOf` /
+      `RowOf` helpers are hoisted to the top of the `describe`.
 
 ## Docs
 
