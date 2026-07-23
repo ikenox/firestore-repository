@@ -6,6 +6,7 @@ import {
   add,
   and,
   arrayAgg,
+  arrayAggDistinct,
   arrayConcat,
   arrayContains,
   arrayContainsAll,
@@ -333,6 +334,48 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           await expectPipeline(
             collectionInput(composite).sort((field) => [asc(field('group')), desc(field('n'))]),
             [x2, x1, y3],
+          );
+        });
+      });
+
+      describe('null vs absent are distinct positions', () => {
+        // A genuine `null` value AND an absent field distinguish the two
+        // positions (the authors seed has only present/absent). Probed live
+        // (.ikenox/probe-spec-coverage2.mjs): `null` and absent are DISTINCT
+        // positions, both ordering BELOW every present value, with `absent` <
+        // `null`. Descending reverses only the PRESENT values — the absent/null
+        // pair keeps its `absent` < `null` sub-order (it does NOT mirror). See
+        // docs/pipeline-query-ordering-research.md.
+        const nullSortCollection = rootCollection({
+          name: 'SortNull',
+          schema: { v: optional(nullable(double())) },
+        });
+        type NullSortDoc = Doc<typeof nullSortCollection>;
+        const nullSortItems: [NullSortDoc, NullSortDoc, NullSortDoc, NullSortDoc] = [
+          { id: ['s1'], data: { v: 1 } },
+          { id: ['s2'], data: { v: 3 } },
+          { id: ['s3'], data: { v: null } }, // a genuine null value
+          { id: ['s4'], data: {} }, //          absent
+        ];
+
+        let nullSort: typeof nullSortCollection;
+        beforeEach(async () => {
+          nullSort = uniqueCollection(nullSortCollection);
+          await createRepository(nullSort).batchSet(nullSortItems);
+        });
+
+        it('orders absent before null, both before present values; descending mirrors only the values', async () => {
+          const [s1, s2, s3, s4] = nullSortItems;
+          // ascending: absent (s4) < null (s3) < 1 (s1) < 3 (s2)
+          await expectPipeline(
+            collectionInput(nullSort).sort((field) => [asc(field('v'))]),
+            [s4, s3, s1, s2],
+          );
+          // descending: present values reverse (3, 1); the absent/null pair stays
+          // BELOW them and keeps its absent-before-null sub-order — NOT a mirror.
+          await expectPipeline(
+            collectionInput(nullSort).sort((field) => [desc(field('v'))]),
+            [s2, s1, s4, s3],
           );
         });
       });
@@ -838,6 +881,27 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      it('arrayGet with an out-of-range index is absent (behaving as null when consumed)', async () => {
+        // In-range and negative-from-end indices are pinned above. An
+        // out-of-range index (past the end, or a negative index before the
+        // start) yields an ABSENT result (probed: .ikenox/probe-spec-coverage3):
+        // a directly-projected out-of-range arrayGet omits the leaf, so it is
+        // observed here through `ifAbsent` (catches the absence) and `ifNull`
+        // (absence merges into null when consumed as an operand).
+        await expectPipeline(
+          one().select(() => [
+            ifAbsent(arrayGet(constant(['a', 'b', 'c']), constant(5)), constant('gone')).as('past'),
+            ifNull(arrayGet(constant(['a', 'b', 'c']), constant(5)), constant('gone')).as(
+              'pastAsNull',
+            ),
+            ifAbsent(arrayGet(constant(['a', 'b', 'c']), constant(-5)), constant('gone')).as(
+              'beforeStart',
+            ),
+          ]),
+          [{ data: { past: 'gone', pastAsNull: 'gone', beforeStart: 'gone' } }],
+        );
+      });
+
       it('direct literal operands evaluate like their constant() forms', async () => {
         // Raw operands lift internally via constant() — so these evaluate
         // exactly as the explicit-constant catalog cases above.
@@ -1079,6 +1143,43 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           expect(row.data.r).toBeLessThan(1);
         }
       });
+
+      it('Kleene: a null boolean propagates through and / or / not / xor as null', async () => {
+        // bob (rank 2) has no `profile.gender`; a boolean predicate over the
+        // absent field is `null` (absence behaves as null, and string predicates
+        // propagate it). The non-null truth table is pinned elsewhere — here we
+        // observe the Kleene `null` VALUE itself, projected via `select`
+        // (indistinguishable inside `where`, which drops non-true rows).
+        await expectPipeline(
+          source()
+            .where((field) => equal(field('rank'), constant(2)))
+            .select((field) => {
+              const g = startsWith(field('profile.gender'), constant('m'));
+              return [
+                and(constant(true), g).as('andTrueNull'),
+                or(constant(false), g).as('orFalseNull'),
+                not(g).as('notNull'),
+                xor(constant(true), g).as('xorTrueNull'),
+              ];
+            }),
+          [{ data: { andTrueNull: null, orFalseNull: null, notNull: null, xorTrueNull: null } }],
+        );
+      });
+
+      it('type / isType propagate absence: an absent operand yields null', async () => {
+        // bob's `profile.gender` is absent. `type()` / `isType()` observe `null`
+        // as a first-class type (`type(null)='null'`, pinned in the catalog),
+        // but an ABSENT operand still nulls their result (PropagateAbsence).
+        await expectPipeline(
+          source()
+            .where((field) => equal(field('rank'), constant(2)))
+            .select((field) => [
+              type(field('profile.gender')).as('typeAbsent'),
+              isType(field('profile.gender'), 'string').as('isTypeAbsent'),
+            ]),
+          [{ data: { typeAbsent: null, isTypeAbsent: null } }],
+        );
+      });
     });
 
     describe('limit / offset', () => {
@@ -1262,6 +1363,24 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             { data: { name: 'bob', rank: 2 } },
             { data: { name: 'alice', rank: 1 } },
           ],
+        );
+      });
+
+      it('identity does not recover: a preserving stage after an identity break stays dropped', async () => {
+        // `select` breaks read-identity (Id = undefined); a subsequent
+        // identity-PRESERVING `addFields` threads that `undefined` through — it
+        // cannot resurrect the key. The rows stay data-only (no `id`), which
+        // `toStrictEqual` against data-only expectations pins.
+        await expectPipeline(
+          source()
+            .select(() => ['name', 'rank'])
+            .addFields((field) => [multiply(field('rank'), constant(10)).as('score')]),
+          [
+            { data: { name: 'alice', rank: 1, score: 10 } },
+            { data: { name: 'bob', rank: 2, score: 20 } },
+            { data: { name: 'carol', rank: 3, score: 30 } },
+          ],
+          { ordered: false },
         );
       });
     });
@@ -1591,6 +1710,39 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           ],
         );
       });
+
+      // Conditionality: an aliased expression reading a field under an OPTIONAL
+      // ancestor yields an optional leaf — the added key is ABSENT (omitted) on
+      // rows whose ancestor is absent, mirroring the `select through an optional
+      // map` case for the addFields entry point (shared `WithConditionality`).
+      describe('through an optional map', () => {
+        const optionalMetaCollection = rootCollection({
+          name: 'AddFieldsOptionalMeta',
+          schema: { name: string(), meta: optional(map({ x: double() })) },
+        });
+
+        let coll: typeof optionalMetaCollection;
+        beforeEach(async () => {
+          coll = uniqueCollection(optionalMetaCollection);
+          await createRepository(coll).batchSet([
+            { id: ['m1'], data: { name: 'with-meta', meta: { x: 1 } } },
+            { id: ['m2'], data: { name: 'without-meta' } },
+          ]);
+        });
+
+        it('an added field derived from a path under an optional map is optional', async () => {
+          // m2 lacks `meta`, so the added `mx` is absent (omitted) on its row —
+          // identity is preserved, so both rows still carry their `id`.
+          await expectPipeline(
+            collectionInput(coll).addFields((field) => [field('meta.x').as('mx')]),
+            [
+              { id: ['m1'], data: { name: 'with-meta', meta: { x: 1 }, mx: 1 } },
+              { id: ['m2'], data: { name: 'without-meta' } },
+            ],
+            { ordered: false },
+          );
+        });
+      });
     });
 
     // The `aggregate` stage, seeded to reproduce the probe matrix in
@@ -1751,6 +1903,261 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           { ordered: false },
         );
       });
+
+      it('groups by an UNALIASED top-level field expression, like the bare path', async () => {
+        // A bare `field('g')` group (no `.as`) is keyed by its own path — the
+        // same rows the bare string `'g'` produces (parity of the three accepted
+        // group forms, matching distinct's bare-Field group case).
+        await expectPipeline(
+          src().aggregate((field) => ({
+            accumulators: [countAll().as('c')],
+            groups: [field('g')],
+          })),
+          [{ data: { g: 'x', c: 2 } }, { data: { g: 'y', c: 1 } }, { data: { g: null, c: 2 } }],
+          { ordered: false },
+        );
+      });
+
+      it('arrayAggDistinct collects distinct values, keeping null but skipping absent', async () => {
+        // g over the five docs: 'x','x','y', null (d4), absent (d5).
+        // arrayAggDistinct KEEPS the null and SKIPS the absent (like arrayAgg),
+        // then de-duplicates → {x, y, null}. Its order is backend-determined
+        // without a sort, so compare as a multiset.
+        const results = await executor.execute(
+          src().aggregate((field) => ({ accumulators: [arrayAggDistinct(field('g')).as('vals')] })),
+        );
+        expect(results).toHaveLength(1);
+        const [row] = results;
+        assert(row !== undefined);
+        assert.sameDeepMembers(row.data.vals, ['x', 'y', null]);
+      });
+
+      it('an ERROR inside an accumulator fails the whole query', async () => {
+        // divide(n, 0) is a backend ERROR value; an unhandled error inside an
+        // accumulator is not absorbed — the whole query is rejected
+        // (INVALID_ARGUMENT), consistent with the expression error channel.
+        await expect(
+          executor.execute(
+            src().aggregate((field) => ({
+              accumulators: [sum(divide(field('n'), constant(0))).as('s')],
+            })),
+          ),
+        ).rejects.toThrow();
+      });
+
+      // A nested field grouped DIRECTLY in `aggregate` (accumulators + a
+      // top-level-aliased nested group), not merely transitively via `distinct`.
+      // A dotted bare path is TOP_LEVEL_PROPERTY_PATH_ONLY, so the nested field
+      // groups through `field('p.q').as('q')`; absent-ancestor docs merge into
+      // the null group like any other absent key.
+      describe('nested field grouped via a top-level-aliased expression', () => {
+        const nestedGroupCollection = rootCollection({
+          name: 'AggregateNestedGroup',
+          schema: { p: map({ q: optional(string()) }), n: int64() },
+        });
+        type NestedGroupDoc = Doc<typeof nestedGroupCollection>;
+        const nestedGroupItems: NestedGroupDoc[] = [
+          { id: ['d1'], data: { p: { q: 'a' }, n: 1 } },
+          { id: ['d2'], data: { p: { q: 'a' }, n: 2 } },
+          { id: ['d3'], data: { p: { q: 'b' }, n: 5 } },
+          { id: ['d4'], data: { p: {}, n: 3 } }, // q absent → null group
+        ];
+
+        let nested: typeof nestedGroupCollection;
+        beforeEach(async () => {
+          nested = uniqueCollection(nestedGroupCollection);
+          await createRepository(nested).batchSet(nestedGroupItems);
+        });
+
+        it('sums per nested group; the absent-leaf group reads back null', async () => {
+          await expectPipeline(
+            collectionInput(nested).aggregate((field) => ({
+              accumulators: [sum(field('n')).as('s'), countAll().as('c')],
+              groups: [field('p.q').as('q')],
+            })),
+            [
+              { data: { q: 'a', s: 3, c: 2 } },
+              { data: { q: 'b', s: 5, c: 1 } },
+              { data: { q: null, s: 3, c: 1 } },
+            ],
+            { ordered: false },
+          );
+        });
+      });
+    });
+
+    // Accumulator descriptor KINDS pinned live via a following `type()` oracle
+    // (aggregate → addFields type() → select), the pattern the aggregate
+    // research used. `d` holds a FRACTIONAL value so the float64 side is
+    // exercised at the wire (a whole double wire-encodes as an integer).
+    describe('accumulator result kinds', () => {
+      const accumulatorKindsCollection = rootCollection({
+        name: 'AccumulatorKinds',
+        schema: { i: int64(), d: double() },
+      });
+      let kinds: typeof accumulatorKindsCollection;
+      beforeEach(async () => {
+        kinds = uniqueCollection(accumulatorKindsCollection);
+        await createRepository(kinds).batchSet([
+          { id: ['k1'], data: { i: 1, d: 1.5 } },
+          { id: ['k2'], data: { i: 2, d: 2.25 } },
+        ]);
+      });
+
+      it('sum is int64 over all-int operands, float64 when a double participates', async () => {
+        await expectPipeline(
+          collectionInput(kinds)
+            .aggregate((field) => ({
+              accumulators: [sum(field('i')).as('si'), sum(field('d')).as('sd')],
+            }))
+            .addFields((field) => [type(field('si')).as('siType'), type(field('sd')).as('sdType')])
+            .select(() => ['siType', 'sdType']),
+          [{ data: { siType: 'int64', sdType: 'float64' } }],
+        );
+      });
+
+      it('average is always float64, even over int operands', async () => {
+        await expectPipeline(
+          collectionInput(kinds)
+            .aggregate((field) => ({
+              accumulators: [average(field('i')).as('ai'), average(field('d')).as('ad')],
+            }))
+            .addFields((field) => [type(field('ai')).as('aiType'), type(field('ad')).as('adType')])
+            .select(() => ['aiType', 'adType']),
+          [{ data: { aiType: 'float64', adType: 'float64' } }],
+        );
+      });
+
+      it('count / countAll / countDistinct / countIf are int64', async () => {
+        await expectPipeline(
+          collectionInput(kinds)
+            .aggregate((field) => ({
+              accumulators: [
+                count(field('i')).as('cnt'),
+                countAll().as('cntAll'),
+                countDistinct(field('i')).as('cntDist'),
+                countIf(greaterThan(field('i'), constant(0))).as('cntIf'),
+              ],
+            }))
+            .addFields((field) => [
+              type(field('cnt')).as('cntType'),
+              type(field('cntAll')).as('cntAllType'),
+              type(field('cntDist')).as('cntDistType'),
+              type(field('cntIf')).as('cntIfType'),
+            ])
+            .select(() => ['cntType', 'cntAllType', 'cntDistType', 'cntIfType']),
+          [
+            {
+              data: {
+                cntType: 'int64',
+                cntAllType: 'int64',
+                cntDistType: 'int64',
+                cntIfType: 'int64',
+              },
+            },
+          ],
+        );
+      });
+
+      it('minimum / maximum / first / last take the operand kind', async () => {
+        await expectPipeline(
+          collectionInput(kinds)
+            .aggregate((field) => ({
+              accumulators: [
+                minimum(field('i')).as('minI'),
+                minimum(field('d')).as('minD'),
+                maximum(field('i')).as('maxI'),
+                maximum(field('d')).as('maxD'),
+                first(field('i')).as('firstI'),
+                first(field('d')).as('firstD'),
+                last(field('i')).as('lastI'),
+                last(field('d')).as('lastD'),
+              ],
+            }))
+            .addFields((field) => [
+              type(field('minI')).as('minIType'),
+              type(field('minD')).as('minDType'),
+              type(field('maxI')).as('maxIType'),
+              type(field('maxD')).as('maxDType'),
+              type(field('firstI')).as('firstIType'),
+              type(field('firstD')).as('firstDType'),
+              type(field('lastI')).as('lastIType'),
+              type(field('lastD')).as('lastDType'),
+            ])
+            .select(() => [
+              'minIType',
+              'minDType',
+              'maxIType',
+              'maxDType',
+              'firstIType',
+              'firstDType',
+              'lastIType',
+              'lastDType',
+            ]),
+          [
+            {
+              data: {
+                minIType: 'int64',
+                minDType: 'float64',
+                maxIType: 'int64',
+                maxDType: 'float64',
+                firstIType: 'int64',
+                firstDType: 'float64',
+                lastIType: 'int64',
+                lastDType: 'float64',
+              },
+            },
+          ],
+        );
+      });
+    });
+
+    // A MAP-typed group key is compared and projected AS A VALUE: inner absences
+    // are preserved (`{}` and `{ c: 'v' }` are DISTINCT groups), and only a
+    // wholly-absent map merges into the null group — the `AbsentMergesIntoNull`
+    // rewrite is SHALLOW (nullable at the top of the key, inner optionality
+    // untouched). Pinned for both `aggregate` and `distinct`.
+    describe('map-typed group key', () => {
+      const mapKeyCollection = rootCollection({
+        name: 'MapGroupKey',
+        schema: { mp: optional(map({ c: optional(string()) })) },
+      });
+      type MapKeyDoc = Doc<typeof mapKeyCollection>;
+      const mapKeyItems: MapKeyDoc[] = [
+        { id: ['d1'], data: { mp: {} } }, //          c absent
+        { id: ['d2'], data: { mp: { c: 'v' } } },
+        { id: ['d3'], data: { mp: {} } }, //          dup of d1
+        { id: ['d4'], data: {} }, //                  mp absent → null group
+      ];
+
+      let coll: typeof mapKeyCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(mapKeyCollection);
+        await createRepository(coll).batchSet(mapKeyItems);
+      });
+
+      it('aggregate: distinct groups by whole-map value, wholly-absent map merges to null', async () => {
+        await expectPipeline(
+          collectionInput(coll).aggregate(() => ({
+            accumulators: [countAll().as('c')],
+            groups: ['mp'],
+          })),
+          [
+            { data: { mp: {}, c: 2 } },
+            { data: { mp: { c: 'v' }, c: 1 } },
+            { data: { mp: null, c: 1 } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('distinct: one row per distinct whole-map value, wholly-absent map merges to null', async () => {
+        await expectPipeline(
+          collectionInput(coll).distinct(() => ['mp']),
+          [{ data: { mp: {} } }, { data: { mp: { c: 'v' } } }, { data: { mp: null } }],
+          { ordered: false },
+        );
+      });
     });
 
     // The `distinct` stage, seeded to reproduce the probe rules in
@@ -1784,9 +2191,12 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       ];
 
       let coll: typeof distinctCollection;
+      let emptyColl: typeof distinctCollection;
       beforeEach(async () => {
         coll = uniqueCollection(distinctCollection);
         await createRepository(coll).batchSet(distinctItems);
+        // A separate collection left unseeded — the empty-input case.
+        emptyColl = uniqueCollection(distinctCollection);
       });
       const src = () => collectionInput(coll);
 
@@ -1851,6 +2261,15 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             { data: { cat: 'z', q: 'a' } },
           ],
           { ordered: false },
+        );
+      });
+
+      it('empty input yields zero rows', async () => {
+        // `distinct` is a grouped aggregate with zero accumulators, so like the
+        // grouped-aggregate empty case it emits NO rows over an empty input.
+        await expectPipeline(
+          collectionInput(emptyColl).distinct(() => ['cat']),
+          [],
         );
       });
     });
@@ -1996,6 +2415,83 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           [
             { id: ['mk1'], data: { m: { k: ['x', 'y'] }, e: 'x' } },
             { id: ['mk1'], data: { m: { k: ['x', 'y'] }, e: 'y' } },
+          ],
+          { ordered: false },
+        );
+      });
+    });
+
+    // The alias and index field are overlaid on the input context added-field-
+    // wins (`addFields`-shaped): each OVERWRITES a colliding existing field —
+    // beyond the alias-onto-its-own-source-name case in the main matrix. The
+    // source field `t` (never a collision target here) survives.
+    describe('unnest (overwriting existing fields)', () => {
+      const overwriteCollection = rootCollection({
+        name: 'UnnestOverwrite',
+        schema: { t: array(string()), n: int64(), w: string() },
+      });
+      let coll: typeof overwriteCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(overwriteCollection);
+        await createRepository(coll).batchSet([
+          { id: ['x1'], data: { t: ['a', 'b'], n: 99, w: 'orig' } },
+        ]);
+      });
+
+      it('the index field overwrites a colliding existing field with the int64 offset', async () => {
+        // `indexField: 'n'` targets the existing scalar `n`, which becomes the
+        // element offset (0, 1). `t` and `w` survive.
+        await expectPipeline(
+          collectionInput(coll).unnest((field) => ({
+            selectable: field('t').as('e'),
+            indexField: 'n',
+          })),
+          [
+            { id: ['x1'], data: { t: ['a', 'b'], e: 'a', n: 0, w: 'orig' } },
+            { id: ['x1'], data: { t: ['a', 'b'], e: 'b', n: 1, w: 'orig' } },
+          ],
+          { ordered: false },
+        );
+      });
+
+      it('the alias overwrites an unrelated existing field', async () => {
+        // `.as('w')` aliases onto `w` (NOT the source): `w` becomes the element,
+        // while the untouched `t` and `n` survive.
+        await expectPipeline(
+          collectionInput(coll).unnest((field) => ({ selectable: field('t').as('w') })),
+          [
+            { id: ['x1'], data: { t: ['a', 'b'], n: 99, w: 'a' } },
+            { id: ['x1'], data: { t: ['a', 'b'], n: 99, w: 'b' } },
+          ],
+          { ordered: false },
+        );
+      });
+    });
+
+    // `unnest` of a nested array whose ancestor map is OPTIONAL: `WithConditionality`
+    // in `UnnestSourceType` marks the alias leaf optional, so a row whose ancestor
+    // is absent emits ONE no-op row with the alias absent (omitted).
+    describe('unnest (optional ancestor source)', () => {
+      const optionalNestedCollection = rootCollection({
+        name: 'UnnestOptionalNested',
+        schema: { m: optional(map({ k: array(string()) })) },
+      });
+      let coll: typeof optionalNestedCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(optionalNestedCollection);
+        await createRepository(coll).batchSet([
+          { id: ['n1'], data: { m: { k: ['x', 'y'] } } },
+          { id: ['n2'], data: {} }, // m absent
+        ]);
+      });
+
+      it('an absent ancestor emits one no-op row with the alias absent', async () => {
+        await expectPipeline(
+          collectionInput(coll).unnest((field) => ({ selectable: field('m.k').as('e') })),
+          [
+            { id: ['n1'], data: { m: { k: ['x', 'y'] }, e: 'x' } },
+            { id: ['n1'], data: { m: { k: ['x', 'y'] }, e: 'y' } },
+            { id: ['n2'], data: {} },
           ],
           { ordered: false },
         );

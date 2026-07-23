@@ -144,6 +144,32 @@ typescript/no-unsafe-type-assertion` comment stating the specific compiler
   executor-table trick) so adding a member fails to compile until it has a
   test row; a visible literal matrix is the fallback when the compiler
   cannot carry the enumeration.
+- **Every special consideration the types or runtime encode about a
+  backend-facing API must ALSO be pinned by a behavioural test against the
+  real backend — not only at the type level.** A type model is a CLAIM about
+  how the backend behaves; a green type test proves the model is
+  self-consistent, never that it is TRUE. So each deliberate rule a stage
+  encodes — a restriction (top-level-only outputs), a schema transform
+  (absent-merges-to-null, added-field-wins overlap resolution), an identity
+  effect (preserve vs break), a null/absent asymmetry, a descriptor KIND
+  (int64 vs float64), an empty-input behaviour, a positional semantic — needs
+  a live spec test asserting that the backend actually does it. Derive the
+  checklist the same way as any other coverage: enumerate the considerations
+  FROM the type/impl definitions (and the probed research docs), then diff the
+  live spec against that enumeration. The failure this prevents is the whole
+  class we keep hitting: a model that type-checks a query the backend REJECTS,
+  or resolves a collision the backend forbids — caught only when the encoded
+  behaviour is exercised live. The `docs/pipeline-query-spec-coverage-gap.md`
+  audit is the worked example.
+- **A compile-time guard is proven by a type test, a runtime behaviour by a
+  live test — do not substitute one for the other.** Some considerations are
+  TYPE-ONLY: the offending call does not compile (a dotted output collapses a
+  parameter to `never`, a non-boolean `where` condition, a phantom-`Id`
+  mismatch), so no live test can exist — those belong in `selection.test.ts` /
+  `expression.test.ts` as `@ts-expect-error` / `expectTypeOf` cases. The
+  converse trap is the dangerous one: a RUNTIME rule pinned only by a type
+  test (because the return type looks right) is unverified against the
+  backend — that is exactly the gap the previous rule closes.
 
 ## Test assertions
 
