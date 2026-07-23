@@ -8,7 +8,9 @@ import {
 import type { DocRef } from '../repository.js';
 import {
   array,
+  type ArrayType,
   type DoubleType,
+  type Int64Type,
   type LiteralType,
   map,
   type MapType,
@@ -239,6 +241,42 @@ describe('pipeline', () => {
         indexField: 'i',
       },
     ]);
+  });
+
+  it('unnest overlays the index field on the output schema (the requested index name → int64)', () => {
+    type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
+
+    // `tag` is a REQUIRED array, so the index is a plain `int64()` (a row from a
+    // real array always has a real offset; only a nullable/optional source makes
+    // it nullable — covered exhaustively at the `buildUnnestSchema` level). Here
+    // we pin that the `Index` type param threads through the METHOD onto the
+    // output schema, at its own top-level name alongside the alias.
+    const withIndex = base.unnest((field) => ({
+      selectable: field('tag').as('t'),
+      indexField: 'i',
+    }));
+    expectTypeOf<SchemaOf<typeof withIndex>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: DoubleType;
+      tag: ArrayType<StringType>;
+      t: StringType;
+      i: Int64Type;
+    }>();
+
+    // An index field colliding with an EXISTING field overwrites it, added-field-
+    // wins (probed): `rank` (a double) becomes the int64 offset.
+    const overIndex = base.unnest((field) => ({
+      selectable: field('tag').as('t'),
+      indexField: 'rank',
+    }));
+    expectTypeOf<SchemaOf<typeof overIndex>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: Int64Type;
+      tag: ArrayType<StringType>;
+      t: StringType;
+    }>();
   });
 
   it('unnest rejects dotted output names and a non-array selectable at the type level', () => {
