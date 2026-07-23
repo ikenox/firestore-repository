@@ -17,6 +17,7 @@ import { field, type Expression, type Field, type Valued } from './expression.js
 import { Ordering } from './ordering.js';
 import {
   type AggregateGroup,
+  type AggregateOutputNames,
   type AggregateSchema,
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
@@ -32,6 +33,7 @@ import {
   type UndottedGroupAliases,
   type UndottedIndexField,
   type UndottedSelectionAlias,
+  type UniqueAggregateOutputs,
   type UnnestSchema,
   type UnnestSelectable,
 } from './selection.js';
@@ -271,8 +273,12 @@ export class Pipeline<
    * (`Id = undefined`): a grouped row is not a source document.
    *
    * The result schema is the group keys (each made nullable — null and absent
-   * keys merge into one `null` group, probed) overlaid with the accumulator
-   * results (an accumulator alias colliding with a group name wins). With
+   * keys merge into one `null` group, probed) joined with the accumulator
+   * results. Every OUTPUT NAME must be unique: the backend rejects any two
+   * output fields sharing a name — an accumulator alias equal to a group name,
+   * two accumulators with the same alias, or two group keys with the same output
+   * name are all INVALID_ARGUMENT (probed), so each collision is rejected at the
+   * type level rather than resolved ({@link UniqueAggregateOutputs}). With
    * groups, an empty input yields ZERO rows; without groups, exactly ONE row
    * carrying each accumulator's empty value (probed). See {@link AggregateSchema}.
    */
@@ -281,21 +287,32 @@ export class Pipeline<
     const Accs extends readonly [AggregateWithAlias, ...AggregateWithAlias[]],
     const Groups extends readonly AggregateGroup<Schema>[] = readonly [],
   >(
+    // The output-name uniqueness guards are applied as PARAMETER intersections
+    // (the `UndottedGroupAliases` precedent), collapsing an offending element to
+    // `never` at the call site. Each accumulator alias is checked against the
+    // COMBINED groups-∪-accumulators set (so it rejects an alias duplicating
+    // another alias OR a group name); each group name is checked against the
+    // groups alone. Together they reject every collision kind, and a
+    // cross-collision (alias == group name) surfaces once, on the accumulator
+    // side. `Accs` / `Groups` still infer from the bare positions untouched.
     spec: (field: FieldProvider<Schema>) => {
-      accumulators: Accs;
-      groups?: Groups & UndottedGroupAliases<Groups>;
+      accumulators: Accs & UniqueAggregateOutputs<Accs, AggregateOutputNames<[...Groups, ...Accs]>>;
+      groups?: Groups &
+        UndottedGroupAliases<Groups> &
+        UniqueAggregateOutputs<Groups, AggregateOutputNames<Groups>>;
     },
   ): Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined> {
     const { accumulators, groups } = spec(fieldProvider(this.node.schema));
-    // Dropped to the plain `Groups` (the `UndottedGroupAliases` guard has done
-    // its work at the call site): the intersection blocks the element-type
-    // constraint of `DropOverriddenSelections` from being inferred.
+    // Dropped to the plain `Groups` (the parameter guards have done their work
+    // at the call site): the intersections block the element-type constraint of
+    // the downstream helpers from being inferred.
     const groupList: Groups | readonly [] = groups ?? [];
     return new Pipeline<AggregateSchema<Schema, Accs, Groups>, undefined>({
       schema: buildAggregateSchema<Schema, Accs, Groups>(this.node.schema, accumulators, groups),
-      // Resolve last-wins on the groups here so the stage carries a
-      // conflict-free list that matches the schema (executors translate 1:1).
-      stage: { kind: 'aggregate', accumulators, groups: dropOverriddenSelections(groupList) },
+      // The group output names are guaranteed pairwise distinct, so the stage
+      // carries the group list as-is — the runtime does not resolve overlaps the
+      // type forbids (unlike `select`/`addFields`, whose overlaps do resolve).
+      stage: { kind: 'aggregate', accumulators, groups: groupList },
       parent: this.node,
     });
   }
@@ -310,23 +327,35 @@ export class Pipeline<
    * TOP-LEVEL outputs only: a dotted bare path AND a dotted alias are rejected
    * at the type level (the backend's `TOP_LEVEL_PROPERTY_PATH_ONLY`), so a
    * nested field is grouped via an expression with a top-level alias
-   * (`field('a.b.c').as('c')`). Empty input yields ZERO rows. See
-   * {@link DistinctSchema}.
+   * (`field('a.b.c').as('c')`). Group output names must be pairwise UNIQUE — two
+   * group keys with the same output name are INVALID_ARGUMENT (probed), rejected
+   * at the type level rather than resolved ({@link UniqueAggregateOutputs}).
+   * Empty input yields ZERO rows. See {@link DistinctSchema}.
    */
   // At least one group is required (a distinct with no keys is meaningless).
   distinct<const Groups extends readonly [AggregateGroup<Schema>, ...AggregateGroup<Schema>[]]>(
-    spec: (field: FieldProvider<Schema>) => Groups & UndottedGroupAliases<Groups>,
+    // The top-level-output and output-name-uniqueness guards are applied as
+    // PARAMETER intersections (the `UndottedGroupAliases` precedent): a dotted
+    // group, or a group whose output name duplicates another's, collapses to
+    // `never` at the call site. `distinct` has no accumulators, so the combined
+    // set is the group names alone. `Groups` still infers from the bare position.
+    spec: (
+      field: FieldProvider<Schema>,
+    ) => Groups &
+      UndottedGroupAliases<Groups> &
+      UniqueAggregateOutputs<Groups, AggregateOutputNames<Groups>>,
   ): Pipeline<DistinctSchema<Schema, Groups>, undefined> {
     const groups = spec(fieldProvider(this.node.schema));
-    // Dropped to the plain `Groups` (the `UndottedGroupAliases` guard has done
-    // its work at the call site): the intersection blocks the element-type
-    // constraint of `DropOverriddenSelections` from being inferred.
+    // Dropped to the plain `Groups` (the parameter guards have done their work
+    // at the call site): the intersections block the element-type constraint of
+    // the downstream helpers from being inferred.
     const groupList: Groups = groups;
     return new Pipeline<DistinctSchema<Schema, Groups>, undefined>({
       schema: buildDistinctSchema<Schema, Groups>(this.node.schema, groups),
-      // Resolve last-wins on the groups here so the stage carries a
-      // conflict-free list that matches the schema (executors translate 1:1).
-      stage: { kind: 'distinct', groups: dropOverriddenSelections(groupList) },
+      // The group output names are guaranteed pairwise distinct, so the stage
+      // carries the group list as-is — the runtime does not resolve overlaps the
+      // type forbids (unlike `select`/`addFields`, whose overlaps do resolve).
+      stage: { kind: 'distinct', groups: groupList },
       parent: this.node,
     });
   }

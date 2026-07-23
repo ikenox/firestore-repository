@@ -699,13 +699,12 @@ describe('buildAggregateSchema (runtime)', () => {
     expectTypedStrictEqual(actual, oracle);
   });
 
-  it('an accumulator alias colliding with a group name wins', () => {
-    // `MergeSchemas` puts the accumulator record first, so its `g` overlays the
-    // group key `g` — the accumulator is the more specific intent.
-    const oracle = { g: int64() };
-    const actual = buildAggregateSchema(schema, [countAll().as('g')], ['g']);
-    expectTypedStrictEqual(actual, oracle);
-  });
+  // Accumulator aliases and group names are guaranteed pairwise DISTINCT — the
+  // `Pipeline.aggregate` parameter rejects any output-name collision at the type
+  // level (`UniqueAggregateOutputs`), so `buildAggregateSchema` only ever sees a
+  // disjoint set and `AccumulatorSchema`/`GroupSchema` join without a winner.
+  // The rejection itself is a compile-time guard on the METHOD, pinned by the
+  // `@ts-expect-error` cases in `pipeline.test.ts`.
 });
 
 // Stage-schema synthesis of the `distinct` stage. `distinct` is a grouped
@@ -770,15 +769,17 @@ describe('buildDistinctSchema (runtime)', () => {
     expectTypedStrictEqual(actual, oracle);
   });
 
-  it('a bare Field group key equals the bare-path form; last-wins collapses the two', () => {
+  it('a bare Field group key equals the bare-path form (its path is its output name)', () => {
+    // A `Field` is inherently aliased — its `path` IS its output name — so a bare
+    // `field('g')` group projects identically to the bare string `'g'`. Holding
+    // BOTH in one group list is an output-name collision, rejected at the
+    // `Pipeline.distinct` parameter (`UniqueAggregateOutputs`) rather than
+    // collapsed — see the rejection cases in `pipeline.test.ts`.
     const gField = field(schema.g, 'g');
     const oracle = { g: string() };
     const actual = buildDistinctSchema(schema, [gField]);
     expectTypedStrictEqual(actual, oracle);
     expectTypedStrictEqual(actual, buildDistinctSchema(schema, ['g']));
-    // The two forms name the same output, so a list holding both collapses.
-    expectTypedStrictEqual(buildDistinctSchema(schema, ['g', gField]), oracle);
-    expectTypedStrictEqual(buildDistinctSchema(schema, [gField, 'g']), oracle);
   });
 
   it('an OPTIONAL field grouped as a bare Field reads back nullable', () => {

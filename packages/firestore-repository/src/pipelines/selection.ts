@@ -152,6 +152,72 @@ export type UndottedIndexField<Index extends string | undefined> = Index extends
   : Index;
 
 /**
+ * The output-name uniqueness guard for the aggregate/distinct family, applied
+ * as a parameter intersection (the {@link UndottedGroupAliases} precedent).
+ *
+ * The `aggregate` (and `distinct`) stage rejects ANY two output fields sharing a
+ * name — an accumulator alias equal to a group-key name, two accumulators with
+ * the same alias, and two group keys with the same output name are all
+ * INVALID_ARGUMENT (probed — aggregate-research §"OUTPUT NAMES MUST BE UNIQUE").
+ * There is NO winner to pick, so the whole output-name SET (every group's output
+ * name UNION every accumulator alias) must be pairwise DISTINCT. By the
+ * ban-what-silently-succeeds rule (see `ExpressionBase.as`), each collision is a
+ * COMPILE error rather than a resolved overlap.
+ *
+ * Maps over the guarded tuple `T` (the groups, or the accumulators); an element
+ * whose output name occurs a SECOND time anywhere in the combined name list
+ * `All` collapses to `never`, so the offending call is unassignable at the
+ * parameter and does not type-check. `All` carries multiplicity (it is built
+ * from the tuples, not a deduped union), so a duplicate is detected by removing
+ * this element's single occurrence and asking whether the name still remains.
+ *
+ * Contrast `select` / `addFields` / `unnest`, whose output overlaps DO resolve
+ * (last-wins / added-field-wins) — the backend accepts them there, so
+ * {@link DropOverriddenSelections} and the merge operators stay correct for
+ * those stages. Overlap resolution is stage-specific; only this family rejects.
+ */
+export type UniqueAggregateOutputs<T extends readonly unknown[], All extends readonly string[]> = {
+  [I in keyof T]: AggregateOutputName<T[I]> extends infer Name extends string
+    ? Name extends RemoveFirstName<Name, All>[number]
+      ? never
+      : T[I]
+    : T[I];
+};
+
+/**
+ * The combined output-name list of a groups/accumulators tuple, order and
+ * MULTIPLICITY preserved (a tuple, not a deduped union) so
+ * {@link UniqueAggregateOutputs} can tell one occurrence from two.
+ */
+export type AggregateOutputNames<T extends readonly unknown[]> = {
+  [I in keyof T]: AggregateOutputName<T[I]>;
+};
+
+/**
+ * The output name a group selection or accumulator contributes: an aliased
+ * group or an accumulator by its `alias`, a bare {@link Field} by its `path`, a
+ * bare key string by itself ({@link SelectionPath}). The one place the three
+ * group forms and the accumulator alias collapse to a comparable name.
+ */
+type AggregateOutputName<S> = S extends { alias: infer A extends string } ? A : SelectionPath<S>;
+
+/**
+ * Drops the FIRST element of `Names` equal to `N`, leaving any later duplicates.
+ * Removing exactly one occurrence turns "is this name duplicated" into "does the
+ * name still remain afterwards" for {@link UniqueAggregateOutputs}.
+ */
+type RemoveFirstName<N extends string, Names extends readonly string[]> = Names extends readonly [
+  infer H extends string,
+  ...infer R extends readonly string[],
+]
+  ? [H] extends [N]
+    ? [N] extends [H]
+      ? R
+      : [H, ...RemoveFirstName<N, R>]
+    : [H, ...RemoveFirstName<N, R>]
+  : [];
+
+/**
  * Folds a tuple of selections into a single nested output schema.
  *
  * Conflicting paths follow **last-wins**: when one path equals or is a dotted
@@ -240,16 +306,18 @@ export type BuildAddFieldsSchema<
 /**
  * Output schema of the `aggregate` stage: the group keys' schema, transformed
  * so no key can be absent ({@link AbsentMergesIntoNull}), with the accumulator
- * results overlaid on top.
+ * results joined on top.
  *
  * The groups' {@link BuildSelectionSchema} output (identical projection rules
  * to `distinct` — probed) is passed through {@link AbsentMergesIntoNull}
  * because null and absent group keys merge into one `null` group (probed), so
  * a group key reads back as nullable, never absent. The accumulator record is
- * then merged ON TOP: an accumulator alias colliding with a group name **wins**
- * (the accumulator is the more specific intent, and `MergeSchemas`'s
- * first-argument-wins rule expresses it). Empty groups yield an
- * accumulators-only schema (the whole-input group).
+ * then joined by {@link MergeSchemas}: accumulator aliases and group names are
+ * guaranteed pairwise DISTINCT ({@link UniqueAggregateOutputs} rejects any
+ * collision at the `Pipeline.aggregate` parameter), so the two records share no
+ * key and the merge is a plain DISJOINT UNION — the first-argument-wins arm is
+ * never reached. Empty groups yield an accumulators-only schema (the whole-input
+ * group).
  */
 export type AggregateSchema<
   Context extends Fields,
@@ -418,10 +486,12 @@ type UnnestIndexSchema<Index extends string | undefined, T extends FieldType> = 
   : {};
 
 /**
- * Folds the accumulators into a flat `alias -> result descriptor` record. A
- * later accumulator with a repeated alias wins (plain overwrite — accumulator
- * aliases are always top-level names, so there is nothing to deep-merge,
- * unlike the group schema).
+ * Folds the accumulators into a flat `alias -> result descriptor` record.
+ * Accumulator aliases are guaranteed pairwise DISTINCT
+ * ({@link UniqueAggregateOutputs} rejects a duplicate alias at the
+ * `Pipeline.aggregate` parameter), so {@link OverwriteMerge} only ever joins a
+ * fresh key: the fold is a disjoint record build. Aliases are always top-level
+ * names, so there is nothing to deep-merge, unlike the group schema.
  */
 type AccumulatorSchema<Accs extends readonly AggregateWithAlias[]> = Accs extends readonly [
   infer H extends AggregateWithAlias,
@@ -433,7 +503,12 @@ type AccumulatorSchema<Accs extends readonly AggregateWithAlias[]> = Accs extend
 /** The single-entry schema an accumulator contributes: its alias mapped to its result descriptor. */
 type AccumulatorEntry<A extends AggregateWithAlias> = { [K in A['alias']]: A['aggregate']['type'] };
 
-/** Shallow overwrite merge (`B` wins per key; no deep map merge) — the accumulator fold's combiner. */
+/**
+ * Shallow key-wise merge (`B`'s value wins a shared key; no deep map merge) —
+ * the accumulator fold's combiner. Its operands are always disjoint here
+ * (accumulator aliases are guaranteed distinct), so it acts as a flat union;
+ * the `B`-wins arm exists only to keep the operator total.
+ */
 type OverwriteMerge<A, B> = {
   [K in keyof A | keyof B]: K extends keyof B ? B[K] : K extends keyof A ? A[K] : never;
 };
@@ -749,9 +824,12 @@ const unnestIndexSchema = <Index extends string | undefined, T extends FieldType
 
 /**
  * Runtime counterpart of {@link GroupSchema}, shared by `buildAggregateSchema`
- * and `buildDistinctSchema`: the groups' selection schema (last-wins resolved,
- * as `buildSelectionSchema` does) with each key passed through
- * `absentMergesIntoNull`.
+ * and `buildDistinctSchema`: the groups' selection schema with each key passed
+ * through `absentMergesIntoNull`. Group output names are guaranteed pairwise
+ * distinct ({@link UniqueAggregateOutputs} at the `Pipeline` parameter) and are
+ * top-level (dot-free), so `dropOverriddenSelections` never has a conflict to
+ * resolve — it is present only to reuse `buildSelectionSchema`'s composition and
+ * is an identity on this guaranteed-distinct group set.
  *
  * Typed as `GroupSchema<Context, Groups>` and computed from helpers that are
  * each typed as their own type-level twin, so the compiler — not a comment —
@@ -765,8 +843,10 @@ const groupSchema = <Context extends Fields, Groups extends readonly AggregateGr
 
 /**
  * Runtime counterpart of {@link AccumulatorSchema}: a flat `alias -> descriptor`
- * record built by iterating in order, so a repeated alias's later entry wins
- * (mirrors the type's `OverwriteMerge` fold).
+ * record built by iterating the accumulators. Aliases are guaranteed distinct
+ * ({@link UniqueAggregateOutputs} at the `Pipeline.aggregate` parameter), so each
+ * assignment writes a fresh key (mirrors the type's disjoint `OverwriteMerge`
+ * fold).
  */
 const accumulatorSchema = <const Accs extends readonly AggregateWithAlias[]>(
   accumulators: Accs,

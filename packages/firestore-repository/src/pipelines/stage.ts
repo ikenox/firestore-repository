@@ -51,19 +51,21 @@ export type TransformStage =
   // translates it 1:1 like a `select` selection.
   | { kind: 'unnest'; selectable: SelectionNode; indexField?: string }
   // `accumulators` are the aliased accumulator calls; `groups` are the group
-  // keys post-conflict-resolution (last-wins applied by `Pipeline.aggregate`,
-  // mirroring `select`), so an executor translates both 1:1. Empty `groups`
-  // means the whole-input group (one row; empty input yields exactly one row —
-  // probed).
+  // keys. Their output names (accumulator aliases ∪ group names) are pairwise
+  // unique — `Pipeline.aggregate` rejects any collision at the type level rather
+  // than resolving it — so the list is carried as-is and an executor translates
+  // both 1:1. Empty `groups` means the whole-input group (one row; empty input
+  // yields exactly one row — probed).
   | {
       kind: 'aggregate';
       accumulators: readonly AggregateWithAlias[];
       groups: readonly SelectionNode[];
     }
   // `distinct` is a grouped aggregate with ZERO accumulators, so it shares the
-  // group model: `groups` are the group keys post-conflict-resolution (last-wins
-  // applied by `Pipeline.distinct`, mirroring `aggregate`), and an executor
-  // translates them 1:1. Always nonempty (a distinct with no keys is meaningless).
+  // group model: `groups` are the group keys, their output names pairwise unique
+  // (`Pipeline.distinct` rejects a collision at the type level), carried as-is
+  // for an executor to translate 1:1. Always nonempty (a distinct with no keys
+  // is meaningless).
   | { kind: 'distinct'; groups: readonly SelectionNode[] }
   | { kind: 'replaceWith' }
   | { kind: 'union' }
