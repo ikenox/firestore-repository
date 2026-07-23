@@ -341,6 +341,47 @@ describe('pipeline', () => {
     void _rejections;
   });
 
+  it('aggregate/distinct output names must be pairwise unique: every collision is rejected', () => {
+    // The backend rejects ANY two output fields sharing a name in the aggregate
+    // family (INVALID_ARGUMENT — probed), so the combined output-name SET (every
+    // group output name ∪ every accumulator alias) must be pairwise distinct.
+    // There is no winner to pick — each collision is a COMPILE error
+    // (`UniqueAggregateOutputs`), unlike `select`/`addFields`/`unnest` whose
+    // overlaps legitimately resolve.
+
+    // Positive controls: distinct output names compile fine.
+    base.aggregate((field) => ({
+      accumulators: [countAll().as('n'), sum(field('rank')).as('total')],
+      groups: ['name', 'rank'], // two group keys with different names: ok
+    }));
+    base.distinct(() => ['name', 'rank']); // two groups with different names: ok
+
+    const _rejections = () => {
+      // aggregate — an accumulator alias equal to a group name.
+      base.aggregate(() => ({
+        // @ts-expect-error -- accumulator alias `name` collides with the group name `name`
+        accumulators: [countAll().as('name')],
+        groups: ['name'],
+      }));
+      // aggregate — two accumulators with the same alias.
+      base.aggregate((field) => ({
+        // @ts-expect-error -- two accumulators share the alias `c`
+        accumulators: [countAll().as('c'), sum(field('rank')).as('c')],
+      }));
+      // aggregate — two group keys with the same output name (bare string vs
+      // aliased expression naming the same output).
+      base.aggregate((field) => ({
+        accumulators: [countAll().as('c')],
+        // @ts-expect-error -- two group keys share the output name `name`
+        groups: ['name', field('rank').as('name')],
+      }));
+      // distinct — two group keys with the same output name.
+      // @ts-expect-error -- two group keys share the output name `name`
+      base.distinct((field) => ['name', field('rank').as('name')]);
+    };
+    void _rejections;
+  });
+
   // A nested array — the shape that distinguishes `unnest`'s output-name rule
   // from `select`'s: the SOURCE path may be dotted, the OUTPUT name may not.
   const nestedArrayCollection = rootCollection({
