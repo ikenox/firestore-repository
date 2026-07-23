@@ -6,19 +6,14 @@ import {
   Timestamp as FirestoreTimestamp,
   VectorValue as FirestoreVectorValue,
 } from '@google-cloud/firestore';
-import { documentPath } from 'firestore-repository/path';
-import type { DocRef } from 'firestore-repository/repository';
-import type {
-  ArrayType,
-  Collection,
-  DocRefType,
-  DocumentSchema,
-  FieldType,
-  LiteralType,
-  MapType,
-  UnionType,
+import { filterOperand, type WhereFilterOp } from 'firestore-repository/query';
+import {
+  type Collection,
+  type DocFieldPath,
+  type DocumentSchema,
+  type FieldType,
+  fieldTypeOfPath,
 } from 'firestore-repository/schema';
-import { _optional } from 'firestore-repository/schema';
 import {
   isArrayRemove,
   isArrayUnion,
@@ -31,17 +26,15 @@ import * as z from 'zod';
 // oxlint-disable-next-line typescript/no-explicit-any
 type ZodAny = z.ZodType<any, any>;
 
-export const isVectorValue = (v: unknown): v is FirestoreVectorValue =>
-  v instanceof FirestoreVectorValue;
-export const isDocumentReference = (v: unknown): v is FirestoreDocumentReference =>
-  v instanceof FirestoreDocumentReference;
+export const isVectorValue = (v: unknown) => v instanceof FirestoreVectorValue;
+export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumentReference;
 
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
   return z.object(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildDecodeField(v);
-        return [k, v[_optional] ? s.optional() : s];
+        return [k, v.optional ? s.optional() : s];
       }),
     ),
   );
@@ -72,49 +65,33 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
         .refine(isVectorValue)
         .transform((vv) => vv.toArray());
     case 'docRef':
+      // Both flavors decode to the RefPath segment path — known/unknown is a
+      // gradient of tuple precision, not a change of shape.
       return z
         .unknown()
         .refine(isDocumentReference)
-        .transform((ref) => {
-          const ids: string[] = [];
-          let current: firestore.DocumentReference | null = ref;
-          while (current != null) {
-            ids.push(current.id);
-            current = current.parent.parent;
-          }
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-          return ids.reverse() as DocRef<Collection>;
-        });
+        .transform((ref) => ref.path.split('/'));
     case 'map': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as MapType;
       return z.object(
         Object.fromEntries(
-          Object.entries(ft.fields).map(([k, v]) => {
+          Object.entries(fieldType.fields).map(([k, v]) => {
             const s = buildDecodeField(v);
-            return [k, v[_optional] ? s.optional() : s];
+            return [k, v.optional ? s.optional() : s];
           }),
         ),
       );
     }
     case 'array': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as ArrayType;
-      return z.array(buildDecodeField(ft.dynamicPart));
+      return z.array(buildDecodeField(fieldType.dynamicPart));
     }
     case 'union': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as UnionType;
-      return zodUnion(ft.elements.map(buildDecodeField));
+      return zodUnion(fieldType.elements.map(buildDecodeField));
     }
     case 'const': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as LiteralType<(string | number | boolean | null)[]>;
-      return zodUnion(ft.values.map((v) => z.literal(v)));
+      return zodUnion(fieldType.values.map((v) => z.literal(v)));
     }
     default:
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return assertNever(fieldType as never);
+      return assertNever(fieldType);
   }
 }
 
@@ -126,7 +103,7 @@ export function buildEncodeSchema(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildEncodeField(v, db);
-        return [k, v[_optional] ? s.optional() : s];
+        return [k, v.optional ? s.optional() : s];
       }),
     ),
   );
@@ -166,30 +143,23 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
           .transform(() => FieldValue.serverTimestamp()),
       ]);
     case 'docRef': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as DocRefType<Collection>;
-      return z.array(z.string()).transform((ref) =>
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        db.doc(documentPath(ft.collection, ref as DocRef<Collection>)),
+      return refPathSchema(fieldType.collection).transform((segments) =>
+        db.doc(segments.join('/')),
       );
     }
     case 'map': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as MapType;
       return z.object(
         Object.fromEntries(
-          Object.entries(ft.fields).map(([k, v]) => {
+          Object.entries(fieldType.fields).map(([k, v]) => {
             const s = buildEncodeField(v, db);
-            return [k, v[_optional] ? s.optional() : s];
+            return [k, v.optional ? s.optional() : s];
           }),
         ),
       );
     }
     case 'array': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as ArrayType;
       return zodUnion([
-        z.array(buildEncodeField(ft.dynamicPart, db)),
+        z.array(buildEncodeField(fieldType.dynamicPart, db)),
         z
           .unknown()
           .refine(isArrayRemove)
@@ -201,19 +171,70 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
       ]);
     }
     case 'union': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as UnionType;
-      return zodUnion(ft.elements.map((e) => buildEncodeField(e, db)));
+      return zodUnion(fieldType.elements.map((e) => buildEncodeField(e, db)));
     }
     case 'const': {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const ft = fieldType as LiteralType<(string | number | boolean | null)[]>;
-      return zodUnion(ft.values.map((v) => z.literal(v)));
+      return zodUnion(fieldType.values.map((v) => z.literal(v)));
     }
     default:
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return assertNever(fieldType as never);
+      return assertNever(fieldType);
   }
+}
+
+/**
+ * Builds the encoder for filter-condition operands, memoizing the operand
+ * schema per (field path, operator) like `buildEncodeSchema` builds the
+ * write schema once per collection. The operand schema reuses the write
+ * codec (`buildEncodeField`): a field's READ representation is a subset of
+ * its write `input` for every descriptor, and the write conversions
+ * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`,
+ * geopoint/bytes/vector to their SDK classes) are exactly the operand forms
+ * `where()` compares correctly. Sending references as `DocumentReference`
+ * values also keeps `__name__` filters free of the SDK's scope-dependent
+ * string conventions (see docs/querying-by-document-id.md): a reference
+ * works in every scope. The operand's shape per operator (`in` takes a list
+ * of field values, `array-contains` an element, ...) comes from
+ * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
+ */
+export function buildEncodeFilterValue(
+  schema: DocumentSchema,
+  db: firestore.Firestore,
+): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
+  const operandSchemas = new Map<string, ZodAny>();
+  return (fieldPath, opStr, value) => {
+    const key = `${opStr}:${fieldPath}`;
+    let operandSchema = operandSchemas.get(key);
+    if (operandSchema === undefined) {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
+      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
+      operandSchemas.set(key, operandSchema);
+    }
+    return operandSchema.parse(value);
+  };
+}
+
+/**
+ * A zod schema for a `RefPath` segment path. A known collection's tuple shape
+ * is exact — literal collection names at the even positions — while the
+ * context-free flavor accepts any even-length segment path.
+ */
+function refPathSchema(collection: Collection | 'unknown'): z.ZodType<string[]> {
+  if (collection === 'unknown') {
+    return z
+      .array(z.string())
+      .refine((segments) => segments.length >= 2 && segments.length % 2 === 0, {
+        message: 'a reference path must have an even number of segments',
+      });
+  }
+  const names = [...collection.parent, collection.name];
+  return z
+    .array(z.string())
+    .refine(
+      (segments) =>
+        segments.length === names.length * 2 && names.every((name, i) => segments[i * 2] === name),
+      { message: `not a reference path of collection '${collection.name}'` },
+    );
 }
 
 function zodUnion(schemas: ZodAny[]): ZodAny {
