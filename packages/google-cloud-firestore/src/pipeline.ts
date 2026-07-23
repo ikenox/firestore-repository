@@ -180,8 +180,8 @@ const toSdkExpression = (db: Firestore, expression: Expression): Pipelines.Expre
       return Pipelines.field(expression.path);
     case 'constant':
       return toSdkConstant(db, expression.value);
-    case 'functionCall':
-      return dispatchFunctionCall(expression.call, (e) => toSdkExpression(db, e));
+    case 'functionExpression':
+      return dispatchFunctionExpression(expression.call, (e) => toSdkExpression(db, e));
     default:
       return assertNever(expression);
   }
@@ -246,7 +246,7 @@ const toSdkConstant = (db: Firestore, value: Constant['value']): Pipelines.Expre
  * { name: K }>`, which is what lets a single table dispatch the whole union
  * without a type assertion.
  */
-const dispatchFunctionCall = <K extends FunctionName>(
+const dispatchFunctionExpression = <K extends FunctionName>(
   call: Extract<FunctionPayload, { name: K }>,
   translate: Translate,
 ): Pipelines.Expression => functionTranslators[call.name](call, translate);
@@ -472,7 +472,7 @@ const functionTranslators: FunctionTranslators = {
 
 /**
  * Dispatches an accumulator payload to its {@link aggregateTranslators} entry —
- * the aggregate counterpart of {@link dispatchFunctionCall}. Generic over the
+ * the aggregate counterpart of {@link dispatchFunctionExpression}. Generic over the
  * concrete accumulator name `K` so the indexed table lookup and the narrowed
  * payload stay correlated against the SAME `Extract<AggregatePayload,
  * { name: K }>` (no type assertion).
@@ -522,7 +522,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'functionCall':
+    case 'functionExpression':
       throw new Error(
         'google-cloud pipeline executor: only field orderings are supported in sort yet',
       );

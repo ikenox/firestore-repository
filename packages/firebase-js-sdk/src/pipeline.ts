@@ -291,7 +291,7 @@ const toSdkExpression = (db: Firestore, expression: Expression): SdkExpression =
       return field(expression.path);
     case 'constant':
       return toSdkConstant(db, expression.value);
-    case 'functionCall':
+    case 'functionExpression':
       return dispatch(expression.call, (e) => toSdkExpression(db, e));
     default:
       return assertNever(expression);
@@ -592,7 +592,7 @@ const toSdkOrdering = (ordering: Ordering) => {
     case 'field':
       break;
     case 'constant':
-    case 'functionCall':
+    case 'functionExpression':
       throw new Error('firebase pipeline executor: only field orderings are supported in sort yet');
     default:
       return assertNever(expression);

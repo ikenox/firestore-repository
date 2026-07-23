@@ -727,11 +727,13 @@ nullable(T)`); count family unaffected. Also probe the un-probed
       `unnest` made this a THIRD site spelling the same union by hand, so the
       duplication now costs more than when it was first noted.
 
-- [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
-      the aggregate node ships as `AggregateFunction` (the SDK's name), which
-      makes the pair with the expression node asymmetric — rename
-      `FunctionCall` to the SDK's `FunctionExpression` in a follow-up so the
-      internal naming rule becomes "SDK vocabulary", consistently.
+- [x] **Align AST node names with the SDK's vocabulary** (done 2026-07):
+      renamed the expression node `FunctionCall` → `FunctionExpression` (the
+      SDK's name), so it pairs symmetrically with the `AggregateFunction` node;
+      the discriminant `kind` follows (`'functionCall'` → `'functionExpression'`,
+      mirroring `'aggregateFunction'`), as does the executor helper
+      `dispatchFunctionCall` → `dispatchFunctionExpression`. The internal naming
+      rule is now "SDK vocabulary", consistently.
 - [ ] **`ArrayType` fixed-part / tuple support** — tracked in issue #218
       (includes the arrayRemove/arrayUnion interaction constraint noted
       there).

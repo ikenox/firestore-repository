@@ -937,7 +937,7 @@ describe('buildUnnestSchema (runtime)', () => {
   });
 
   it('a COMPUTED array-valued expression selectable projects the expression at its alias', () => {
-    // The `functionCall` arm of the source dispatch: a computed array (never a
+    // The `functionExpression` arm of the source dispatch: a computed array (never a
     // field path, so never conditional) — its own descriptor is the source, the
     // element is the alias. `arrayReverse` of a plain array stays non-null.
     const one = { tag: array(string()) } satisfies DocumentSchema;
