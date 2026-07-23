@@ -74,7 +74,7 @@ import {
   field,
   first,
   floor,
-  FunctionCall,
+  FunctionExpression,
   geoPointValue,
   greaterThan,
   greaterThanOrEqual,
@@ -162,7 +162,7 @@ describe('expression factories', () => {
     notEqual(rank, count); // Int64 and Double mix
     lessThan(count, rank);
     greaterThanOrEqual(rank, rank);
-    expectTypeOf(greaterThan(rank, count)).toEqualTypeOf<FunctionCall<BoolType>>();
+    expectTypeOf(greaterThan(rank, count)).toEqualTypeOf<FunctionExpression<BoolType>>();
   });
 
   it('comparisons reject cross-group operands', () => {
@@ -273,11 +273,11 @@ describe('expression factories', () => {
 
     const neg = not(flag);
     expectTypedStrictEqual(neg.type, bool());
-    expectTypeOf(neg).toEqualTypeOf<FunctionCall<BoolType>>();
+    expectTypeOf(neg).toEqualTypeOf<FunctionExpression<BoolType>>();
 
     const both = and(flag, cmp, neg);
     expectTypedStrictEqual(both.type, bool());
-    expectTypeOf(both).toEqualTypeOf<FunctionCall<BoolType>>();
+    expectTypeOf(both).toEqualTypeOf<FunctionExpression<BoolType>>();
   });
 });
 
@@ -383,7 +383,7 @@ describe('comparison operators (table-driven over all six)', () => {
   // every operator remains assignable to it).
   const checkSharedDomains = (
     fnName: (typeof table)[number][0],
-    cmp: (left: Expression, right: Expression) => FunctionCall<BoolType>,
+    cmp: (left: Expression, right: Expression) => FunctionExpression<BoolType>,
   ) => {
     // number domain (int64 / double / numeric literal / number constant)
     expect(cmp(rank, count).call.name).toBe(fnName);

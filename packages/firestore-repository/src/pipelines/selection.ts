@@ -789,7 +789,7 @@ const unnestSourceType = <Context extends Fields, Sel extends UnnestSelectable<C
       case 'field':
         return withConditionality(schema, expression.path, expression.type);
       case 'constant':
-      case 'functionCall':
+      case 'functionExpression':
         return expression.type;
       default:
         return assertNever(expression);
@@ -942,7 +942,7 @@ const selectionToSchema = <Context extends Fields, S extends SelectionNode>(
       case 'field':
         return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
       case 'constant':
-      case 'functionCall':
+      case 'functionExpression':
         return pathToSchema(alias, expression.type);
       default:
         return assertNever(expression);
