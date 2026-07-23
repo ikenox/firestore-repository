@@ -244,6 +244,15 @@ export class Pipeline<
     const Sel extends UnnestSelectable<Schema>,
     const Index extends string | undefined = undefined,
   >(
+    // The undotted-output guards are applied as PARAMETER intersections, not as
+    // `Sel` / `Index` constraints: `UnnestSelectable` does not itself ban a
+    // dotted alias (it only requires array-valued), so the top-level-output rule
+    // has to bite here. `Sel` still infers from the value untouched; the
+    // intersection then collapses the parameter to `never` when the alias — or
+    // the index field — is dotted, so a dotted output is unassignable at the call
+    // site. A `Sel extends ... & UndottedSelectionAlias<Sel>` constraint would be
+    // self-referential; the intersection is the `WithoutDottedKeys` precedent,
+    // shared with `aggregate` / `distinct`'s `UndottedGroupAliases`.
     spec: (field: FieldProvider<Schema>) => {
       selectable: Sel & UndottedSelectionAlias<Sel>;
       indexField?: Index & UndottedIndexField<Index>;
