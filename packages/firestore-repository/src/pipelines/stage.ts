@@ -44,7 +44,12 @@ export type TransformStage =
   | { kind: 'sort'; orderings: Ordering[] }
   | { kind: 'limit'; limit: number }
   | { kind: 'offset'; offset: number }
-  | { kind: 'unnest' }
+  // Emits one row per element of the array `selectable` evaluates to, adding the
+  // element under the selectable's output name and (when set) its offset under
+  // `indexField`. `selectable` is already the context-free {@link SelectionNode}
+  // (its output name top-level, guarded by `Pipeline.unnest`), so an executor
+  // translates it 1:1 like a `select` selection.
+  | { kind: 'unnest'; selectable: SelectionNode; indexField?: string }
   // `accumulators` are the aliased accumulator calls; `groups` are the group
   // keys post-conflict-resolution (last-wins applied by `Pipeline.aggregate`,
   // mirroring `select`), so an executor translates both 1:1. Empty `groups`

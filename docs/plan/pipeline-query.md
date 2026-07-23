@@ -36,23 +36,27 @@ Related research / decisions:
 `ikenox-sunrise` / `enterprise-native-playground` through the google-cloud
 adapter, and wired identically in the firebase adapter):
 
-| stage                                    | schema effect                | identity   |
-| ---------------------------------------- | ---------------------------- | ---------- |
-| `collection` / `collectionGroup` (input) | the collection's schema      | preserved  |
-| `where`                                  | unchanged                    | preserved  |
-| `sort`                                   | unchanged                    | preserved  |
-| `limit` / `offset`                       | unchanged                    | preserved  |
-| `addFields`                              | context + added fields       | preserved  |
-| `removeFields`                           | context − removed paths      | preserved  |
-| `select`                                 | only the selections          | **broken** |
-| `aggregate`                              | accumulators over group keys | **broken** |
-| `distinct`                               | the group keys               | **broken** |
+| stage                                    | schema effect                            | identity   |
+| ---------------------------------------- | ---------------------------------------- | ---------- |
+| `collection` / `collectionGroup` (input) | the collection's schema                  | preserved  |
+| `where`                                  | unchanged                                | preserved  |
+| `sort`                                   | unchanged                                | preserved  |
+| `limit` / `offset`                       | unchanged                                | preserved  |
+| `addFields`                              | context + added fields                   | preserved  |
+| `removeFields`                           | context − removed paths                  | preserved  |
+| `unnest`                                 | context + alias/index (addFields-shaped) | preserved† |
+| `select`                                 | only the selections                      | **broken** |
+| `aggregate`                              | accumulators over group keys             | **broken** |
+| `distinct`                               | the group keys                           | **broken** |
+
+† `unnest` preserves identity but ids are no longer unique across rows — an
+n-element array yields n rows carrying the SAME source id.
 
 "Identity broken" means the rows are no longer source documents, so the
 pipeline's second type parameter becomes `undefined` and the results carry no
 `id` — see "Identity ratchet" below.
 
-**Still stubs** (`unimplemented()`, and the executors throw on them): `unnest`,
+**Still stubs** (`unimplemented()`, and the executors throw on them):
 `replaceWith` (`fullReplaceWith` / `mergeWith`), `union`, `findNearest`, `let`,
 `search`, `sample`; the `database()` / `documents()` / `literals()` input
 sources; and the DML output stages (`update` / `delete`).
@@ -296,7 +300,34 @@ Transformation stages already stubbed:
 - [x] `limit(N)` / `offset(N)` — stages carry the count, executors translate
       to `sdk.limit/offset`, schema unchanged, identity preserved. Verified live
       incl. offset+limit paging and an over-sized limit.
-- [ ] `unnest(...)` — Context augmentation + identity preserve.
+- [x] `unnest(...)` — done (2026-07; semantics in
+      `../pipeline-query-unnest-research.md`). The
+      `unnest((field) => ({ selectable, indexField? }))` stage emits one row per
+      array element, augmenting the row with
+      the element under the selectable's output name (and its int64 offset under
+      `indexField`). Identity is PRESERVED (`Id` threads through) — but ids are
+      no longer unique across rows: an n-element array yields n rows carrying the
+      SAME source id (probed, and pinned by a live same-id test). `selectable`
+      takes the two selection forms (a bare array-valued `Field`, or an aliased
+      array-valued expression) — array-valued by construction (`ArrayValued` /
+      `ArrayElementType`), which makes the non-array no-op cell unreachable
+      through the library. Output names are TOP-LEVEL only: a dotted alias AND a
+      dotted `indexField` are both rejected (`UndottedSelectionAlias` /
+      `UndottedIndexField` at the `Pipeline.unnest` parameter — probed
+      INVALID_ARGUMENT), while the SOURCE path may be dotted. Schema effect is
+      `addFields`-shaped (`UnnestSchema` = `MergeSchemas<overlay, Context>`,
+      added-field-wins — so aliasing onto the source's own name replaces the
+      array with the element; the source field otherwise survives). The alias
+      and index descriptors are derived from the source array by DIFFERENT rules
+      (they do not travel together — probed): `array(E)` → alias `E`, index
+      `int64()`; `nullable(array(E))` → `nullable(E)` / `nullable(int64())`;
+      `optional(array(E))` → `E & Optional` / `nullable(int64())`. Absence
+      reaches the ALIAS only (an absent source emits a no-op row whose alias is
+      itself absent — `PreserveOptional`), while the index picks up null from
+      BOTH the null and absent cases (`PropagateNull`). Both executors via
+      `sdk.unnest({ selectable, indexField })`. Verified live (google-cloud) —
+      the spec reproduces every probed cell incl. empty-array (0 rows),
+      null-element, and the index-null-on-absent-alias asymmetry.
 - [ ] `replaceWith(...)` — Context replacement + identity break.
 - [ ] `union(other)` — combine sources; identity break (conservative).
 - [ ] `findNearest(...)` — vector search; behavior TBD.
@@ -530,10 +561,35 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       at runtime (type side is covered by `pipeline.test.ts`).
 - [ ] DML stage tests (`update` / `delete`).
 - [ ] Sub-pipeline / join behavior tests once that's implemented.
-- Note: `pipeline.test.ts` (type-level) tests only the identity ratchet on
-  `base` / `select` / `removeFields`; the `select` output-schema transforms live
-  in `selection.test.ts`. Only bare string-path selections compile today (no
-  `.as(...)`).
+- [ ] **Method-level output-contract coverage in `pipeline.test.ts`** (audit
+      2026-07). The `build*` schema operators are pinned exhaustively in
+      `selection.test.ts`, but `pipeline.test.ts` is what proves each STAGE
+      METHOD threads them through to `Pipeline<Schema, Id>` correctly — the
+      output SCHEMA type, the IDENTITY (`Id`) behavior, and the stage-node
+      payload. The `unnest` index-field schema was missing exactly this and
+      surfaced the gap; the audit below is the same lens applied to every
+      implemented method. `distinct` and `unnest` are the reference shape
+      (schema + identity + node all pinned). Scope: `pipeline.test.ts` only —
+      the runtime/live behavior is covered elsewhere.
+
+      | method                    | schema type | identity | stage node | gap |
+      | ------------------------- | ----------- | -------- | ---------- | --- |
+      | `collection`/`collectionGroup` | ✗      | ✗ (only parent-arity) | ✗ | schema=collection schema, `Id = DocRef`, input node |
+      | `where`                   | ✗           | ✗        | ✗          | schema UNCHANGED, identity preserved, condition node |
+      | `sort`                    | ✗ (only used as a step) | ✗ | ✗    | schema unchanged, identity preserved, orderings node |
+      | `limit` / `offset`        | ✗ (no test at all) | ✗ | ✗       | schema unchanged, identity preserved, count node |
+      | `select`                  | ✗ (only id-drop) | ✓ drop | ✗       | output-schema type; select stage node |
+      | `addFields`               | ✗ (incidental) | ✓ preserve (via `toHaveProperty`) | ✗ | output-schema type; addFields node |
+      | `removeFields`            | ✗ (incidental) | ~        | ✗          | output-schema type; removeFields node |
+      | `aggregate`               | ✗           | ✓ break  | ✗          | accumulator+group output-schema type; aggregate node |
+      | `distinct`                | ✓           | ✓ break  | ✓          | — (reference) |
+      | `unnest`                  | ✓           | ✓ preserve | ✓        | — (reference) |
+
+      Each `✗` in "schema type" is a place a method could silently return the
+      wrong `Schema` and no `pipeline.test.ts` test would catch it (the
+      selection.test.ts unit only proves the OPERATOR, not that the method
+      applies it). Fill them to the reference shape; `limit`/`offset` need a
+      first test at all.
 
 ## Docs
 
@@ -645,6 +701,34 @@ nullable(T)`); count family unaffected. Also probe the un-probed
       `BuildAddFieldsSchema`). Note one arm is irreducible: `UndottedGroupAliases`
       is a parameter intersection over the user's un-normalized tuple, so it
       must keep matching the input forms directly.
+
+      **The invariant that makes this a concept and not a coincidence** (noted
+      2026-07 while reviewing `unnest`): a bare `Field` and an
+      `ExpressionWithAlias` are accepted TOGETHER at every site — `Selection`,
+      `AggregateGroup`, `UnnestSelectable` — with `addFields` the lone
+      exception, and it is not a counterexample: it excludes BARENESS as a
+      category (the bare string form too), because a bare form names an
+      EXISTING field, so re-adding it under its own name is a no-op at best and,
+      through an optional map, silently materializes empty maps. So the real
+      axis is not "`Field` vs aliased" but "bare (names an existing field) vs
+      aliased (names a new output)". Under that framing the target shape falls
+      out — one parameterized concept plus each site's own bare-string form and
+      value constraint:
+
+      ```ts
+      type Selectable<Context, V extends FieldType = FieldType> =
+        | Field<V, MapFieldPath<Context>>
+        | ExpressionWithAlias<V>;
+
+      type Selection<Context> = MapFieldPath<Context> | Selectable<Context>;
+      type AggregateGroup<Context> = (keyof Context & string) | Selectable<Context>;
+      type UnnestSelectable<Context> = Selectable<Context, ArrayValued>;
+      // addFields stays ExpressionWithAlias[] — the documented bareness exclusion
+      ```
+
+      `unnest` made this a THIRD site spelling the same union by hand, so the
+      duplication now costs more than when it was first noted.
+
 - [ ] **Align AST node names with the SDK's vocabulary** (decided 2026-07):
       the aggregate node ships as `AggregateFunction` (the SDK's name), which
       makes the pair with the expression node asymmetric — rename

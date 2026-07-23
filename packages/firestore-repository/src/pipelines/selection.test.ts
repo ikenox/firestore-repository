@@ -19,7 +19,16 @@ import {
   string,
   type StringType,
 } from '../schema.js';
-import { constant, countAll, equal, field, type Field, greaterThan, sum } from './expression.js';
+import {
+  arrayReverse,
+  constant,
+  countAll,
+  equal,
+  field,
+  type Field,
+  greaterThan,
+  sum,
+} from './expression.js';
 import {
   type BuildAddFieldsSchema,
   buildAddFieldsSchema,
@@ -27,6 +36,7 @@ import {
   buildDistinctSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
+  buildUnnestSchema,
   type ExpressionWithAlias,
 } from './selection.js';
 
@@ -787,5 +797,166 @@ describe('buildDistinctSchema (runtime)', () => {
       // @ts-expect-error -- a dotted BARE path is not a top-level group key
       void buildDistinctSchema(schema, ['profile.gender']);
     });
+  });
+});
+
+// Stage-schema synthesis of the `unnest` stage. The overlay is `addFields`-shaped
+// (the alias — and index field — merged over the input context, added-field-wins,
+// so the whole context survives), and the alias/index descriptors are derived
+// from the source array's descriptor by two DIFFERENT rules. The matrix here is
+// derived from that domain structure: the three source-descriptor rows of
+// `docs/pipeline-query-unnest-research.md` (`array(E)` / `nullable(array(E))` /
+// `optional(array(E))`, E = the element descriptor) × (with / without an index
+// field), plus the placement cases (nested source path, alias-replaces-source,
+// alias-collides-unrelated, index-collides-existing, bare `Field` vs aliased,
+// optional ANCESTOR on the source path). Each pins ONE oracle on BOTH sides via
+// `expectTypedStrictEqual` (the return type IS `UnnestSchema<...>`), the safety
+// net for the bridging assertions inside `buildUnnestSchema`.
+describe('buildUnnestSchema (runtime)', () => {
+  // The three source-descriptor rows share one context, so every case also shows
+  // the surviving input fields (the `addFields`-shaped overlay).
+  const schema = {
+    tag: array(string()), //           array(E)
+    ntag: nullable(array(string())), // nullable(array(E))
+    otag: optional(array(string())), // optional(array(E))
+  } satisfies DocumentSchema;
+  const tag = field(schema.tag, 'tag');
+  const ntag = field(schema.ntag, 'ntag');
+  const otag = field(schema.otag, 'otag');
+
+  describe('source descriptor → alias / index descriptor', () => {
+    it('array(E): alias E, index int64 (both never null — every row is from a real array)', () => {
+      const oracle = {
+        tag: array(string()),
+        ntag: nullable(array(string())),
+        otag: optional(array(string())),
+        e: string(),
+      };
+      expectTypedStrictEqual(buildUnnestSchema(schema, tag.as('e')), oracle);
+    });
+
+    it('array(E) with an index field: index is a plain int64', () => {
+      const oracle = {
+        tag: array(string()),
+        ntag: nullable(array(string())),
+        otag: optional(array(string())),
+        e: string(),
+        i: int64(),
+      };
+      expectTypedStrictEqual(buildUnnestSchema(schema, tag.as('e'), 'i'), oracle);
+    });
+
+    it('nullable(array(E)): alias nullable(E) (a null source emits a null-alias no-op row)', () => {
+      const oracle = {
+        tag: array(string()),
+        ntag: nullable(array(string())),
+        otag: optional(array(string())),
+        e: nullable(string()),
+      };
+      expectTypedStrictEqual(buildUnnestSchema(schema, ntag.as('e')), oracle);
+    });
+
+    it('nullable(array(E)) with an index field: index nullable(int64) (null on the no-op row)', () => {
+      const oracle = {
+        tag: array(string()),
+        ntag: nullable(array(string())),
+        otag: optional(array(string())),
+        e: nullable(string()),
+        i: nullable(int64()),
+      };
+      expectTypedStrictEqual(buildUnnestSchema(schema, ntag.as('e'), 'i'), oracle);
+    });
+
+    it('optional(array(E)): alias E & Optional — absence reaches the ALIAS (absent no-op row)', () => {
+      // The asymmetry: an ABSENT source emits a no-op row whose alias is itself
+      // ABSENT (Optional), NOT null — so absence carries onto the alias, unlike
+      // the index below which nulls on the same row.
+      const oracle = {
+        tag: array(string()),
+        ntag: nullable(array(string())),
+        otag: optional(array(string())),
+        e: optional(string()),
+      };
+      expectTypedStrictEqual(buildUnnestSchema(schema, otag.as('e')), oracle);
+    });
+
+    it('optional(array(E)) with an index field: index nullable(int64) — the index picks up NULL from absence', () => {
+      // Same absent-source row as above, but the index is null (present, not
+      // absent). The alias and the index do NOT travel together.
+      const oracle = {
+        tag: array(string()),
+        ntag: nullable(array(string())),
+        otag: optional(array(string())),
+        e: optional(string()),
+        i: nullable(int64()),
+      };
+      expectTypedStrictEqual(buildUnnestSchema(schema, otag.as('e'), 'i'), oracle);
+    });
+  });
+
+  it('unnests a NESTED array via a dotted source path (only the OUTPUT name is top-level)', () => {
+    const nested = { m: map({ k: array(string()) }) } satisfies DocumentSchema;
+    const oracle = { m: map({ k: array(string()) }), e: string() };
+    const mk = field(array(string()), 'm.k');
+    expectTypedStrictEqual(buildUnnestSchema(nested, mk.as('e')), oracle);
+  });
+
+  it('an alias onto the SOURCE own name replaces the array with the element', () => {
+    // Probed: `field('t').as('t')` yields rows whose `t` is the ELEMENT, no
+    // trace of the array. The `addFields` added-field-wins overlay expresses it.
+    const one = { tag: array(string()) } satisfies DocumentSchema;
+    const oracle = { tag: string() };
+    expectTypedStrictEqual(buildUnnestSchema(one, field(one.tag, 'tag').as('tag')), oracle);
+  });
+
+  it('an alias colliding with an UNRELATED existing field overwrites it (added-field-wins)', () => {
+    // The element descriptor (int64) replaces the existing `other: string()`.
+    const withOther = { tag: array(int64()), other: string() } satisfies DocumentSchema;
+    const oracle = { tag: array(int64()), other: int64() };
+    const actual = buildUnnestSchema(withOther, field(withOther.tag, 'tag').as('other'));
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('an index field colliding with an existing field overwrites it with the int64 offset', () => {
+    // Probed: `indexField: 'n'` replaces the document's `n`.
+    const withN = { tag: array(string()), n: string() } satisfies DocumentSchema;
+    const oracle = { tag: array(string()), n: int64(), e: string() };
+    const actual = buildUnnestSchema(withN, field(withN.tag, 'tag').as('e'), 'n');
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a bare Field selectable equals the aliased-same-name form (its path IS its output name)', () => {
+    // A bare `Field` folds exactly as `field(p).as(p)` — output name = its path,
+    // so it too replaces the source array with the element.
+    const one = { tag: array(string()) } satisfies DocumentSchema;
+    const oracle = { tag: string() };
+    const bare = buildUnnestSchema(one, field(one.tag, 'tag'));
+    expectTypedStrictEqual(bare, oracle);
+    expectTypedStrictEqual(bare, buildUnnestSchema(one, field(one.tag, 'tag').as('tag')));
+  });
+
+  it('a COMPUTED array-valued expression selectable projects the expression at its alias', () => {
+    // The `functionCall` arm of the source dispatch: a computed array (never a
+    // field path, so never conditional) — its own descriptor is the source, the
+    // element is the alias. `arrayReverse` of a plain array stays non-null.
+    const one = { tag: array(string()) } satisfies DocumentSchema;
+    const oracle = { tag: array(string()), e: string() };
+    const actual = buildUnnestSchema(one, arrayReverse(field(one.tag, 'tag')).as('e'));
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('an optional ANCESTOR on the source path is conditional exactly as a leaf-optional array is', () => {
+    // `a?.b.c` shape: the source array is REQUIRED at its leaf, but the path
+    // crosses an optional ancestor (`WithConditionality`), so the source reads
+    // back `optional(array(E))` — alias `E & Optional`, index nullable — the
+    // same cell as the direct optional-array row, reached via an ancestor.
+    const deep = { om: optional(map({ k: array(string()) })) } satisfies DocumentSchema;
+    const oracle = {
+      om: optional(map({ k: array(string()) })),
+      e: optional(string()),
+      i: nullable(int64()),
+    };
+    const omk = field(array(string()), 'om.k');
+    expectTypedStrictEqual(buildUnnestSchema(deep, omk.as('e'), 'i'), oracle);
   });
 });

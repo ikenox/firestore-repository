@@ -30,6 +30,7 @@ import {
   nullType,
   type NullType,
   type Optional,
+  optional,
   string,
   type StringType,
   timestamp,
@@ -777,6 +778,35 @@ type ElementsOf<T extends FieldType> = T extends {
   : FieldType;
 
 /**
+ * The ELEMENT descriptor of an array-valued descriptor, read THROUGH the
+ * value's null-ness and absence: `array(E)`, `nullable(array(E))` and
+ * `optional(array(E))` all yield `E`. Null-ness/absence of the array itself is
+ * a property of the CONTAINER, so it never belongs to the element domain —
+ * whether it re-surfaces on a derived descriptor is each caller's rule (see
+ * `UnnestAliasType`, which re-applies it, and `arrayGet`, which does not).
+ */
+export type ArrayElementType<T extends FieldType> = ElementsOf<StripNull<T>>;
+
+/**
+ * Runtime counterpart of {@link ArrayElementType}, typed as that operator
+ * applied to its input (the overload signature carries the type-level result;
+ * the loose implementation check is the runtime-to-type bridge, mirroring the
+ * type's `StripNull` then `ElementsOf` composition step for step).
+ *
+ * Throws for a non-array descriptor: the type-level `FieldType` fallback of
+ * `ElementsOf` is unreachable through the typed API (every caller constrains
+ * its operand to {@link ArrayValued}), so a throw is the defensive equivalent.
+ */
+export function arrayElementType<T extends FieldType>(t: T): ArrayElementType<T>;
+export function arrayElementType(t: FieldType): FieldType {
+  const stripped = stripNull(t);
+  if (stripped === undefined || stripped.type !== 'array') {
+    throw new Error('descriptor is not an array');
+  }
+  return stripped.dynamicPart;
+}
+
+/**
  * Whether `value` equals ANY element of the `options` array. Total like the
  * comparisons (probed): an absent value or a no-match is `false` — a null
  * ELEMENT is matched as a value (`equalAny(null-field, constant([null]))` is
@@ -820,7 +850,7 @@ export const notEqualAny = <const L extends OperandInput, const R extends ArrayO
  * `not` mirror it), and so do most value functions. The comparison
  * operators do NOT: they are total (never null).
  */
-type PropagateNull<Operands extends FieldType, T extends FieldType> = [
+export type PropagateNull<Operands extends FieldType, T extends FieldType> = [
   Extract<Operands['firestoreType'], 'null'> | Extract<Operands, Optional>,
 ] extends [never]
   ? T
@@ -843,6 +873,24 @@ function propagateNull<Ops extends readonly Expression[], T extends FieldType>(
 ): PropagateNull<Ops[number]['type'], T>;
 function propagateNull(operands: readonly Expression[], type: FieldType): FieldType {
   return operands.some((operand) => mayBeNull(operand.type)) ? nullable(type) : type;
+}
+
+/**
+ * DESCRIPTOR-level counterpart of {@link PropagateNull}: the same operator for
+ * callers that hold a descriptor rather than the operand expressions.
+ *
+ * A separate entry point rather than a widened `propagateNull`, because the
+ * two calling conventions are not interchangeable: a stage may propagate from a
+ * descriptor that no expression carries — `unnest` propagates from the source
+ * field's descriptor AFTER `WithConditionality` has moved ancestor optionality
+ * onto it, which the `Field` node's own `type` does not record.
+ */
+export function propagateNullType<T extends FieldType, X extends FieldType>(
+  source: T,
+  type: X,
+): PropagateNull<T, X>;
+export function propagateNullType(source: FieldType, type: FieldType): FieldType {
+  return mayBeNull(source) ? nullable(type) : type;
 }
 
 /**
@@ -912,14 +960,49 @@ const mayBeAbsent = (t: FieldType & { optional?: boolean }): boolean => t.option
  */
 export type WithoutOptional<T extends FieldType> = T extends Optional ? Omit<T, 'optional'> : T;
 
-/** Runtime counterpart of {@link WithoutOptional}. */
-export const withoutOptional = (t: FieldType & { optional?: boolean }): FieldType => {
+/**
+ * Runtime counterpart of {@link WithoutOptional}, typed as that operator
+ * applied to its input (same overload bridge shape as `propagateNull`).
+ */
+export function withoutOptional<T extends FieldType>(t: T): WithoutOptional<T>;
+export function withoutOptional(t: FieldType & { optional?: boolean }): FieldType {
   if (t.optional !== true) {
     return t;
   }
   const { optional: _optional, ...rest } = t;
   return rest;
-};
+}
+
+/**
+ * The inverse of {@link WithoutOptional}: re-applies `source`'s absence marker
+ * to a descriptor `derived` computed from it. For the stages whose output slot
+ * is absent exactly when the input slot was — `unnest`'s alias, which is absent
+ * only for an absent source (probed) — so absence CARRIES OVER rather than
+ * being observed as null.
+ *
+ * The `infer R extends FieldType` re-binding discharges the descriptor
+ * constraint lazily (the `AbsentMergesIntoNull` idiom): over an unresolved
+ * `Derived` the `Derived & Optional` arm is not PROVABLY a `FieldType`, so
+ * without it the result is rejected wherever a descriptor is required. Identity
+ * on every instantiation, so callers need no re-binding of their own.
+ */
+export type PreserveOptional<Source extends FieldType, Derived extends FieldType> = (
+  Source extends Optional ? Derived & Optional : Derived
+) extends infer R extends FieldType
+  ? R
+  : never;
+
+/** Runtime counterpart of {@link PreserveOptional} (same overload bridge shape as `propagateNull`). */
+export function preserveOptional<Source extends FieldType, Derived extends FieldType>(
+  source: Source,
+  derived: Derived,
+): PreserveOptional<Source, Derived>;
+export function preserveOptional(
+  source: FieldType & { optional?: boolean },
+  derived: FieldType,
+): FieldType {
+  return source.optional === true ? optional(derived) : derived;
+}
 
 /**
  * The type of "one of these two expressions' values" — the return descriptor
@@ -1889,8 +1972,16 @@ const typeNameLiteral = (): LiteralType<FirestoreTypeName[]> =>
 // false). `arrayContainsAll`/`arrayContainsAny` take one array-typed
 // options expression, like `equalAny`.
 
+/**
+ * The descriptor domain of an ARRAY-valued expression — null-tolerated like
+ * every {@link Valued} domain, so `array(E)`, `nullable(array(E))` and
+ * `optional(array(E))` all qualify. Exported because it is also the constraint
+ * on the `unnest` stage's selectable, which is array-valued by construction.
+ */
+export type ArrayValued = Valued<readonly FirestoreType[]>;
+
 /** An array-domain operand. */
-type ArrayOperand = Expression<Valued<readonly FirestoreType[]>>;
+type ArrayOperand = Expression<ArrayValued>;
 
 /** The canonical element-type union of a tuple of element expressions. */
 type ElementUnion<Els extends readonly Expression[]> = Normalize<ElementTypes<Els>>;
@@ -1964,14 +2055,10 @@ export const arrayGet = <
   return new FunctionCall(nullable(elementTypeOf(v)), { name: 'arrayGet', value: v, index: i });
 };
 
-/** Runtime counterpart of `ElementsOf<StripNull<...>>` (same bridge shape as `propagateNull`). */
-function elementTypeOf<Arr extends Expression>(value: Arr): ElementsOf<StripNull<Arr['type']>>;
+/** {@link arrayElementType} over an EXPRESSION (same bridge shape as `propagateNull`). */
+function elementTypeOf<Arr extends Expression>(value: Arr): ArrayElementType<Arr['type']>;
 function elementTypeOf(value: Expression): FieldType {
-  const t = stripNull(value.type);
-  if (t === undefined || t.type !== 'array') {
-    throw new Error('operand is not an array');
-  }
-  return t.dynamicPart;
+  return arrayElementType(value.type);
 }
 
 /** Whether the array contains the element (a null element is compared as a value). */
@@ -2144,7 +2231,7 @@ type WithoutDottedKeys<F> = {
   [K in keyof F]: K extends `${string}.${string}` ? never : F[K];
 };
 /** A key literal that must not contain the path separator. */
-type UndottedKey<K extends string> = K extends `${string}.${string}` ? never : K;
+export type UndottedKey<K extends string> = K extends `${string}.${string}` ? never : K;
 
 /** Builds a map EXPRESSION from field-value expressions — `mapValue({ x: field('num') })`. See {@link arrayValue}. */
 export const mapValue = <const F extends Readonly<Record<string, OperandInput>>>(
