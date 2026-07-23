@@ -14,17 +14,184 @@ import {
   type LiteralType,
   map,
   type MapType,
+  nullable,
   type Optional,
   rootCollection,
   string,
   type StringType,
 } from '../schema.js';
 import { countAll, documentId, equal, field, sum } from './expression.js';
-import { collection, type Pipeline, type PipelineResult } from './index.js';
+import { collection, collectionGroup, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
 
 describe('pipeline', () => {
   const base = collection(authorsCollection);
+
+  // Shared by the method-contract tests below. `RowOf` is the result-row type of
+  // a pipeline (`id` present iff `Id` is a `DocRef` — see `PipelineResult`);
+  // `SchemaOf` is its data-field schema. Every method-level test asserts three
+  // things through the METHOD: the output `Schema` it threads, the `Id`
+  // (identity) it carries, and the stage node it builds.
+  type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
+  type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
+
+  it('collection / collectionGroup start identity-preserving with the collection schema and an input node', () => {
+    // The two document-backed inputs thread the collection's field schema as the
+    // pipeline's `Schema` and a source document ref (`DocRef`) as its `Id`, so
+    // result rows carry `id`. They differ only in the input node an executor
+    // rebuilds the source from (a single instance vs. a collection group).
+    expectTypeOf<SchemaOf<typeof base>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    const _preserving: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = base;
+    void _preserving;
+    // @ts-expect-error -- a collection input is identity-preserving, not dropped
+    const _notDropped: Pipeline<AuthorsCollection['schema'], undefined> = base;
+    void _notDropped;
+    expect(base.stages().input).toEqual({
+      kind: 'collection',
+      collection: authorsCollection,
+      parent: [],
+    });
+
+    const group = collectionGroup(authorsCollection);
+    expectTypeOf<SchemaOf<typeof group>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    const _groupPreserving: Pipeline<
+      AuthorsCollection['schema'],
+      DocRef<AuthorsCollection>
+    > = group;
+    void _groupPreserving;
+    expect(group.stages().input).toEqual({
+      kind: 'collectionGroup',
+      collection: authorsCollection,
+    });
+  });
+
+  it('where preserves the schema and identity, and carries a where-condition node', () => {
+    const filtered = base.where((field) => equal(field('name'), field('name')));
+    // `where` only drops rows — the schema is UNCHANGED and identity threads
+    // through (rows still carry `id`).
+    expectTypeOf<SchemaOf<typeof filtered>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    expectTypeOf<RowOf<typeof filtered>>().toHaveProperty('id');
+    const _preserving: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = filtered;
+    void _preserving;
+    // The stage node an executor walks: kind + the resolved condition expression.
+    expect(filtered.stages().transforms).toEqual([
+      {
+        kind: 'where',
+        condition: equal(
+          field(base.node.schema.name, 'name'),
+          field(base.node.schema.name, 'name'),
+        ),
+      },
+    ]);
+  });
+
+  it('sort preserves the schema and identity, and carries a sort-orderings node', () => {
+    const sorted = base.sort((field) => [asc(field('rank'))]);
+    // Reordering rows changes neither the schema nor identity.
+    expectTypeOf<SchemaOf<typeof sorted>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    expectTypeOf<RowOf<typeof sorted>>().toHaveProperty('id');
+    const _preserving: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = sorted;
+    void _preserving;
+    // The node carries the resolved `Ordering[]` (expression + direction).
+    expect(sorted.stages().transforms).toEqual([
+      { kind: 'sort', orderings: [asc(field(base.node.schema.rank, 'rank'))] },
+    ]);
+  });
+
+  it('limit / offset preserve the schema and identity, and carry a count node', () => {
+    const limited = base.limit(5);
+    // Truncating / skipping rows changes neither the schema nor identity.
+    expectTypeOf<SchemaOf<typeof limited>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    expectTypeOf<RowOf<typeof limited>>().toHaveProperty('id');
+    const _limitPreserving: Pipeline<
+      AuthorsCollection['schema'],
+      DocRef<AuthorsCollection>
+    > = limited;
+    void _limitPreserving;
+    expect(limited.stages().transforms).toEqual([{ kind: 'limit', limit: 5 }]);
+
+    const skipped = base.offset(3);
+    expectTypeOf<SchemaOf<typeof skipped>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    expectTypeOf<RowOf<typeof skipped>>().toHaveProperty('id');
+    const _offsetPreserving: Pipeline<
+      AuthorsCollection['schema'],
+      DocRef<AuthorsCollection>
+    > = skipped;
+    void _offsetPreserving;
+    expect(skipped.stages().transforms).toEqual([{ kind: 'offset', offset: 3 }]);
+  });
+
+  it('select projects to exactly the chosen fields and carries a select node', () => {
+    const projected = base.select(() => ['name', 'rank']);
+    // The output schema is EXACTLY the projected fields — every unselected field
+    // is revoked (the identity drop is pinned separately, in the ratchet test).
+    expectTypeOf<SchemaOf<typeof projected>>().toEqualTypeOf<{
+      name: StringType;
+      rank: DoubleType;
+    }>();
+    // The node carries the conflict-resolved selection list, 1:1 with the schema.
+    expect(projected.stages().transforms).toEqual([
+      { kind: 'select', selections: ['name', 'rank'] },
+    ]);
+  });
+
+  it('addFields overlays the aliased field on the context and carries an addFields node', () => {
+    const augmented = base.addFields((field) => [field('rank').as('score')]);
+    // The output schema is the WHOLE input context plus the added alias (a
+    // non-colliding alias, so every original field survives alongside `score`).
+    expectTypeOf<SchemaOf<typeof augmented>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: DoubleType;
+      tag: ArrayType<StringType>;
+      score: DoubleType;
+    }>();
+    // Identity threads through (addFields reshapes without breaking identity).
+    expectTypeOf<RowOf<typeof augmented>>().toHaveProperty('id');
+    expect(augmented.stages().transforms).toEqual([
+      {
+        kind: 'addFields',
+        selections: [{ expression: field(base.node.schema.rank, 'rank'), alias: 'score' }],
+      },
+    ]);
+  });
+
+  it('removeFields drops the named field and carries a removeFields node', () => {
+    const trimmed = base.removeFields('tag');
+    // The output schema is the context with exactly `tag` gone.
+    expectTypeOf<SchemaOf<typeof trimmed>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: DoubleType;
+    }>();
+    // Identity threads through (removeFields reshapes without breaking identity).
+    expectTypeOf<RowOf<typeof trimmed>>().toHaveProperty('id');
+    expect(trimmed.stages().transforms).toEqual([{ kind: 'removeFields', fields: ['tag'] }]);
+  });
+
+  it('aggregate overlays accumulator results on the group keys and carries an aggregate node', () => {
+    const grouped = base.aggregate((field) => ({
+      accumulators: [sum(field('rank')).as('total')],
+      groups: ['name'],
+    }));
+    // The output schema is the group key overlaid with the accumulator result.
+    // `sum` over a group is nullable (an empty / all-null group sums to null —
+    // probed), so `total` is `nullable(double())`; the `name` group key is not
+    // optional, so it stays a plain string (only an optional key would merge
+    // absent into null). Identity-breaking is pinned in the ratchet test above.
+    expectTypeOf<SchemaOf<typeof grouped>>().toEqualTypeOf<{
+      total: ReturnType<typeof nullable<DoubleType>>;
+      name: StringType;
+    }>();
+    // The node carries the accumulators and the conflict-resolved group keys.
+    expect(grouped.stages().transforms).toEqual([
+      {
+        kind: 'aggregate',
+        accumulators: [sum(field(base.node.schema.rank, 'rank')).as('total')],
+        groups: ['name'],
+      },
+    ]);
+  });
 
   it('Id is structurally anchored: pipelines with different identities do not interchange', () => {
     // `Id` appears in a (phantom) property position, not only in recursive
@@ -69,9 +236,6 @@ describe('pipeline', () => {
   });
 
   it('identity ratchet: preserving stages keep `id`, select drops it for good', () => {
-    // The result-row type of a pipeline: `id` present iff `Id` is a `DocRef`.
-    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
-
     // A chain of identity-preserving stages keeps `id` on the result rows.
     const preserved = base.removeFields('tag').addFields((field) => [field('rank').as('score')]);
     expectTypeOf<RowOf<typeof preserved>>().toHaveProperty('id');
@@ -110,8 +274,6 @@ describe('pipeline', () => {
   });
 
   it('aggregate is identity-breaking (Id = undefined): a grouped row is not a source document', () => {
-    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
-
     const grouped = base.aggregate((field) => ({
       accumulators: [sum(field('rank')).as('total')],
       groups: ['name'],
@@ -124,9 +286,6 @@ describe('pipeline', () => {
   });
 
   it('distinct is identity-breaking (Id = undefined) and carries a distinct stage node', () => {
-    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
-    type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
-
     const distinct = base.distinct(() => ['name']);
     // No `id` on the result rows — a distinct row is not a source document.
     expectTypeOf<RowOf<typeof distinct>>().not.toHaveProperty('id');
@@ -190,8 +349,6 @@ describe('pipeline', () => {
   });
 
   it('unnest takes a bare Field: its path IS its output name, so it replaces the source', () => {
-    type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
-
     // No `.as(...)` needed — a `Field` is inherently aliased (the SDK's
     // `Selectable` model), so `field('tag')` names its own output. Because that
     // output name IS the source's name, the array is replaced by the element.
@@ -211,8 +368,6 @@ describe('pipeline', () => {
   });
 
   it('unnest PRESERVES identity: rows keep `id`, and the pipeline stays identity-preserving', () => {
-    type RowOf<P> = P extends Pipeline<infer S, infer I> ? PipelineResult<S, I> : never;
-
     // `tag` is an array field; unnesting it keeps read-identity — an emitted row
     // still came from its source document (though ids are no longer unique
     // across rows). Contrast the identity-BREAKING stages above.
@@ -244,8 +399,6 @@ describe('pipeline', () => {
   });
 
   it('unnest overlays the index field on the output schema (the requested index name → int64)', () => {
-    type SchemaOf<P> = P extends Pipeline<infer S, infer _I> ? S : never;
-
     // `tag` is a REQUIRED array, so the index is a plain `int64()` (a row from a
     // real array always has a real offset; only a nullable/optional source makes
     // it nullable — covered exhaustively at the `buildUnnestSchema` level). Here
