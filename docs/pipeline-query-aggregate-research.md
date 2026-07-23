@@ -73,6 +73,20 @@ absent]` sorted), `first` returns null (a skip would return `y1`) and
   DISTINCT groups); only the wholly-absent map merges into the null group.
   Library consequence: the `AbsentMergesIntoNull` rewrite is SHALLOW —
   nullable at the top of each group key, inner optionality untouched.
+- **OUTPUT NAMES MUST BE UNIQUE — no overlap wins, ever** (probed:
+  `.ikenox/probe-aggregate-collision.mjs`). The `aggregate` stage rejects two
+  output fields sharing a name, in BOTH forms:
+  - an accumulator alias equal to a group-key name →
+    `INVALID_ARGUMENT: The 'aggregate(...)' stage cannot have overlapping field names: [g]`;
+  - two accumulators with the same alias → `Duplicate alias or field 'x'`.
+
+  So there is NO overwrite semantics here: the model must NOT resolve either
+  collision by picking a winner (`MergeSchemas` accumulator-wins /
+  `OverwriteMerge` last-wins would silently type-check a query the backend
+  rejects). By the ban-what-silently-succeeds rule, both collisions should be
+  type-level errors. Contrast `select` / `addFields` / `unnest`, whose overlaps
+  DO resolve (last-wins / added-field-wins) because the backend accepts them
+  there — overlap resolution is stage-specific, not universal.
 
 ## `distinct` stage (probed: `.ikenox/probe-distinct.mjs`)
 
