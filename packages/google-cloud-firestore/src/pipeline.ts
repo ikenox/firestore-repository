@@ -143,7 +143,17 @@ const applyStage = (
         selectable: toSdkSelectable(db, stage.selectable),
         ...(stage.indexField !== undefined ? { indexField: stage.indexField } : {}),
       });
-    case 'replaceWith':
+    case 'replaceWith': {
+      // `full_replace` via the SDK's typed `replaceWith(map)`; the two merge
+      // modes via the raw stage — the SDK hardcodes `full_replace` and exposes
+      // no mode parameter, so the mode is passed as a bare string value (its
+      // `constant(...)._toProto` is byte-identical to the SDK's own
+      // `serializer.encodeValue('full_replace')` — verified live).
+      const mapExpr = toSdkExpression(db, stage.map);
+      return stage.mode === 'full_replace'
+        ? sdk.replaceWith(mapExpr)
+        : sdk.rawStage('replace_with', [mapExpr, Pipelines.constant(stage.mode)]);
+    }
     case 'union':
     case 'findNearest':
     case 'let':

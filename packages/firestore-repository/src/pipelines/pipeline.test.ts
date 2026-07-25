@@ -20,7 +20,7 @@ import {
   string,
   type StringType,
 } from '../schema.js';
-import { countAll, documentId, equal, field, sum } from './expression.js';
+import { countAll, documentId, equal, field, mapValue, sum } from './expression.js';
 import { collection, collectionGroup, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
 
@@ -491,6 +491,95 @@ describe('pipeline', () => {
       // @ts-expect-error -- a dotted bare Field is not a top-level output
       collection(nestedArrayCollection).unnest((field) => ({ selectable: field('m.k') }));
       collection(nestedArrayCollection).unnest((field) => ({ selectable: field('m.k').as('e') }));
+    };
+    void _rejections;
+  });
+
+  it('replaceWith BREAKS identity (Id = undefined): the document becomes the map', () => {
+    // The document BECOMES the map source, so the result IS its field record.
+    // Sourcing from the map field `profile` makes the document its two fields
+    // (the inner `gender` optional survives). Identity is dropped — the map is
+    // the whole document, no re-addressable `__name__` (probed).
+    const replaced = base.replaceWith((field) => field('profile'));
+    expectTypeOf<SchemaOf<typeof replaced>>().toEqualTypeOf<{
+      age: DoubleType;
+      gender: LiteralType<['male', 'female']> & Optional;
+    }>();
+    // No `id` on the result rows — the identity ratchet dropped it.
+    expectTypeOf<RowOf<typeof replaced>>().not.toHaveProperty('id');
+
+    // The stage node an executor walks: the map expression + the resolved wire
+    // mode `full_replace`.
+    expect(replaced.stages().transforms).toEqual([
+      {
+        kind: 'replaceWith',
+        map: field(base.node.schema.profile, 'profile'),
+        mode: 'full_replace',
+      },
+    ]);
+
+    // @ts-expect-error -- a replaceWith pipeline cannot pose as identity-preserving
+    const _lie: Pipeline<{ age: DoubleType }, DocRef<AuthorsCollection>> = replaced;
+    void _lie;
+  });
+
+  it('mergeOverwrite PRESERVES identity and the map wins a shallow collision', () => {
+    // The map is merged onto the existing document, so the row keeps its `id`
+    // (identity threads through — a merge reshapes in place, probed). The map
+    // WINS a top-level collision, so `rank` becomes the string the map supplies.
+    const overwritten = base.mergeOverwrite((field) => mapValue({ rank: field('name') }));
+    expectTypeOf<SchemaOf<typeof overwritten>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: StringType;
+      tag: ArrayType<StringType>;
+    }>();
+    expectTypeOf<RowOf<typeof overwritten>>().toHaveProperty('id');
+    // Threads the SAME `Id` — assignable where an identity-preserving pipeline is
+    // expected.
+    const _preserving: Pipeline<
+      Omit<AuthorsCollection['schema'], 'rank'> & { rank: StringType },
+      DocRef<AuthorsCollection>
+    > = overwritten;
+    void _preserving;
+
+    // The stage node carries the map expression and the resolved wire mode.
+    expect(overwritten.stages().transforms).toEqual([
+      {
+        kind: 'replaceWith',
+        map: mapValue({ rank: field(base.node.schema.name, 'name') }),
+        mode: 'merge_overwrite_existing',
+      },
+    ]);
+  });
+
+  it('mergeKeep PRESERVES identity and the existing wins a shallow collision', () => {
+    // The existing `rank` (a double) wins the collision, so the schema is the
+    // source schema unchanged; the row keeps its `id`.
+    const kept = base.mergeKeep((field) => mapValue({ rank: field('name') }));
+    expectTypeOf<SchemaOf<typeof kept>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    expectTypeOf<RowOf<typeof kept>>().toHaveProperty('id');
+    const _preserving: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = kept;
+    void _preserving;
+
+    expect(kept.stages().transforms).toEqual([
+      {
+        kind: 'replaceWith',
+        map: mapValue({ rank: field(base.node.schema.name, 'name') }),
+        mode: 'merge_keep_existing',
+      },
+    ]);
+  });
+
+  it('replaceWith / mergeOverwrite / mergeKeep reject a non-map source at the type level', () => {
+    const _rejections = () => {
+      // The source must be MAP-valued — a scalar field is not a document shape.
+      // @ts-expect-error -- a string field is not a map-valued replaceWith source
+      base.replaceWith((field) => field('name'));
+      // @ts-expect-error -- a string field is not a map-valued mergeOverwrite source
+      base.mergeOverwrite((field) => field('name'));
+      // @ts-expect-error -- a string field is not a map-valued mergeKeep source
+      base.mergeKeep((field) => field('name'));
     };
     void _rejections;
   });

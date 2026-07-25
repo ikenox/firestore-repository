@@ -14,11 +14,11 @@ backend-validated capability, not a guess.
 
 ## The three modes
 
-| mode | schema effect | identity |
-| ---- | ------------- | -------- |
-| `full_replace` | the document BECOMES the map; every original field dropped | **BROKEN** (`Id = undefined`) |
-| `merge_overwrite_existing` | the map merged onto the existing document, **the map wins** a top-level collision | **PRESERVED** |
-| `merge_keep_existing` | the map merged onto the existing document, **the existing wins** a top-level collision | **PRESERVED** |
+| mode                       | schema effect                                                                          | identity                      |
+| -------------------------- | -------------------------------------------------------------------------------------- | ----------------------------- |
+| `full_replace`             | the document BECOMES the map; every original field dropped                             | **BROKEN** (`Id = undefined`) |
+| `merge_overwrite_existing` | the map merged onto the existing document, **the map wins** a top-level collision      | **PRESERVED**                 |
+| `merge_keep_existing`      | the map merged onto the existing document, **the existing wins** a top-level collision | **PRESERVED**                 |
 
 Probed with existing `{ a:1, b:2, n:{p:10,q:20} }` and new map `{ a:99, c:7, n:{p:999,r:3} }`:
 
