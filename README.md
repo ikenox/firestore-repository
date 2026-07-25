@@ -163,12 +163,7 @@ await repository.set(
   { id: 'user3', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
   { tx: batch },
 );
-await repository.batchSet(
-  [
-    /* ... */
-  ],
-  { tx: batch },
-);
+await repository.batchSet([/* ... */], { tx: batch });
 await repository.delete('user4', { tx: batch });
 await repository.batchDelete(['user5', 'user6'], { tx: batch });
 
