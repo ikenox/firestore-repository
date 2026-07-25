@@ -7,7 +7,7 @@
 A minimal, universal Firestore client for TypeScript, built around the Repository Pattern.
 
 > [!NOTE]
-> **New in v0.6.0:** [Pipeline Query](#pipeline-query) support (Firestore Enterprise) — build type-safe, multi-stage queries (`where` / `sort` / `select` / `aggregate` / `distinct` / `unnest` / `replaceWith` / ...) whose result shape is derived from your schema. See [Pipeline Query](#pipeline-query) for details.
+> **New in v0.6.0:** [Pipeline operations](https://docs.cloud.google.com/firestore/native/docs/pipeline/overview) support (Firestore Enterprise) — build type-safe, multi-stage pipelines (`where` / `sort` / `select` / `aggregate` / `distinct` / `unnest` / `replaceWith` / ...) whose result shape is derived from your schema. See the [Pipeline operations](#pipeline-operations) section for details.
 
 ## Features
 
@@ -282,9 +282,9 @@ const user: User | undefined = await repository.get('user1');
 await repository.delete('user1');
 ```
 
-### Pipeline Query
+### Pipeline operations
 
-> **Note:** Pipeline queries require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
+> **Note:** [Pipeline operations](https://docs.cloud.google.com/firestore/native/docs/pipeline/overview) require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
 
 A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
 
