@@ -230,10 +230,15 @@ This is the one deliberate departure from the "SDK vocabulary" naming rule, and
 it is the same trade the rule itself is for: names should describe the thing
 they name. Recorded here so it is not mistaken for an oversight.
 
-The **callback form is kept** (`(field) => spec`) even though nothing in the
-options references a field today — every other stage method takes it, and the
-geo slice's `geoDistance` will need a field path. A plain-object parameter would
-be a structural deviation that the geo slice then has to undo.
+The options are accepted **either directly or through the `(field) => spec`
+callback**, because the rule the callback actually encodes — visible across the
+existing stages — is "the callback exists to hand over the typed field
+accessor": the stages that need no field access (`limit`, `offset`,
+`removeFields`) already take plain arguments. A text query needs none
+(`documentMatches` takes a literal), so requiring `() =>` for it would be the
+deviation; a geospatial query names the field it measures from, so it will need
+the callback. Accepting both is what lets the geo slice land without changing
+this signature.
 
 ### 9. `SearchQuery` / score are NOT `Expression` members
 

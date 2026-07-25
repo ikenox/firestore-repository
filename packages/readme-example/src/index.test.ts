@@ -326,12 +326,12 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     // the freshly named collection above can never have. Enable once an indexed
     // fixture exists. See docs/plan/pipeline-query-search.md.
     it.skip('search', async () => {
-      const q = pipelineCollection(authors).search(() => ({
+      const q = pipelineCollection(authors).search({
         query: documentMatches('alice'),
         scoreAs: 'relevance',
         sort: { by: 'score', direction: 'descending' },
         limit: 10,
-      }));
+      });
       const rows = await pipeline!.executor.execute(q);
       console.log(rows);
     });

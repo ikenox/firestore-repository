@@ -327,13 +327,13 @@ const rows = await pipe.execute(pipeline);
 import { collection } from 'firestore-repository/pipelines/source';
 import { documentMatches } from 'firestore-repository/pipelines/search';
 
-const pipeline = collection(users).search(() => ({
+const pipeline = collection(users).search({
   query: documentMatches('alice'),
   // Optional: surface the relevance score under this name, and order by it.
   scoreAs: 'relevance',
   sort: { by: 'score', direction: 'descending' },
   limit: 10,
-}));
+});
 
 // The score joins the document's own fields in the result type:
 //   { id: DocRef<...>; data: { name: string; profile: {...}; tag: string[]; relevance: number } }[]

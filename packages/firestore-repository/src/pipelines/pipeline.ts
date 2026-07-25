@@ -455,16 +455,23 @@ export class Pipeline<
    *   rows come back by document creation time, NEWEST first.
    * - `offset` — only together with `limit`. `retrievalDepth` bounds the rows
    *   pulled from the index BEFORE scoring and must be `>= offset + limit`.
+   *
+   * The options may be passed **directly**, or through a callback that receives
+   * the typed field accessor. The callback exists only to hand you that
+   * accessor, so pass the options directly whenever the query needs no field —
+   * which is every text query, since {@link documentMatches} takes a literal
+   * (the same rule that leaves `limit` / `offset` / `removeFields` callback-free).
+   * A geospatial query, which names the field it measures from, will need the
+   * callback form.
    */
   search<const Alias extends string | undefined = undefined>(
     // The undotted guard is a PARAMETER intersection (the `unnest` `indexField`
     // precedent), so `Alias` still infers from the value untouched while a
     // dotted alias collapses the parameter to `never` at the call site.
-    spec: (field: FieldProvider<Schema>) => SearchSpec<Alias>,
+    spec: SearchSpec<Alias> | ((field: FieldProvider<Schema>) => SearchSpec<Alias>),
   ): Pipeline<SearchSchema<Schema, Alias>, Id> {
-    const { query, scoreAs, sort, languageCode, retrievalDepth, limit, offset } = spec(
-      fieldProvider(this.node.schema),
-    );
+    const { query, scoreAs, sort, languageCode, retrievalDepth, limit, offset } =
+      typeof spec === 'function' ? spec(fieldProvider(this.node.schema)) : spec;
     return new Pipeline<SearchSchema<Schema, Alias>, Id>({
       schema: buildSearchSchema<Schema, Alias>(this.node.schema, scoreAs),
       // Each absent option is spread away rather than set to `undefined`

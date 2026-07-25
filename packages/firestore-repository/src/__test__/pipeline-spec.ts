@@ -2701,7 +2701,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // projection. a1 mentions `waffles` once, a3 three times.
         const [a1, , a3] = items;
         await expectPipeline(
-          source().search(() => ({ query: documentMatches(scoped('waffles')) })),
+          source().search({ query: documentMatches(scoped('waffles')) }),
           [a3, a1],
           { ordered: false },
         );
@@ -2711,18 +2711,16 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // The null-`text` and no-`text` rows carry the token in no indexed
         // field, so a token-only query returns exactly the three text rows.
         const [a1, a2, a3] = items;
-        await expectPipeline(
-          source().search(() => ({ query: documentMatches(token) })),
-          [a1, a2, a3],
-          { ordered: false },
-        );
+        await expectPipeline(source().search({ query: documentMatches(token) }), [a1, a2, a3], {
+          ordered: false,
+        });
       });
 
       describe('the rquery DSL', () => {
         it('ANDs bare terms', async () => {
           const [a1] = items;
           await expectPipeline(
-            source().search(() => ({ query: documentMatches(scoped('waffles coffee')) })),
+            source().search({ query: documentMatches(scoped('waffles coffee')) }),
             [a1],
           );
         });
@@ -2730,7 +2728,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         it('matches a quoted phrase exactly', async () => {
           const [a1] = items;
           await expectPipeline(
-            source().search(() => ({ query: documentMatches(scoped('"belgian waffles"')) })),
+            source().search({ query: documentMatches(scoped('"belgian waffles"')) }),
             [a1],
           );
         });
@@ -2738,7 +2736,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         it('excludes a term prefixed with -', async () => {
           const [, , a3] = items;
           await expectPipeline(
-            source().search(() => ({ query: documentMatches(scoped('waffles -coffee')) })),
+            source().search({ query: documentMatches(scoped('waffles -coffee')) }),
             [a3],
           );
         });
@@ -2748,12 +2746,12 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           // nothing (probed) — the docs are wrong about this.
           const [a1, a2, a3] = items;
           await expectPipeline(
-            source().search(() => ({ query: documentMatches(scoped('waffles|pancakes')) })),
+            source().search({ query: documentMatches(scoped('waffles|pancakes')) }),
             [a1, a2, a3],
             { ordered: false },
           );
           await expectPipeline(
-            source().search(() => ({ query: documentMatches(scoped('waffles OR pancakes')) })),
+            source().search({ query: documentMatches(scoped('waffles OR pancakes')) }),
             [],
           );
         });
@@ -2763,10 +2761,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // The score is reachable ONLY here — the backend rejects `score()` in
         // any other stage, including stages AFTER the search.
         const results = await executor.execute(
-          source().search(() => ({
-            query: documentMatches(scoped('waffles')),
-            scoreAs: 'relevance',
-          })),
+          source().search({ query: documentMatches(scoped('waffles')), scoreAs: 'relevance' }),
         );
         assert.strictEqual(results.length, 2);
         for (const row of results) {
@@ -2778,10 +2773,10 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // a3 repeats the term, so it outranks a1's single mention.
         const [a1, , a3] = items;
         const results = await executor.execute(
-          source().search(() => ({
+          source().search({
             query: documentMatches(scoped('waffles')),
             sort: { by: 'score', direction: 'descending' },
-          })),
+          }),
         );
         assert.deepStrictEqual(
           results.map((r) => r.id),
@@ -2802,7 +2797,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           await repository.set(item);
         }
         const results = await executor.execute(
-          source().search(() => ({ query: documentMatches(scoped('orderprobe')) })),
+          source().search({ query: documentMatches(scoped('orderprobe')) }),
         );
         assert.deepStrictEqual(
           results.map((r) => r.id),
@@ -2813,20 +2808,20 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('pages with limit and offset within the resulting order', async () => {
         const [a1, , a3] = items;
         await expectPipeline(
-          source().search(() => ({
+          source().search({
             query: documentMatches(scoped('waffles')),
             sort: { by: 'score', direction: 'descending' },
             limit: 1,
-          })),
+          }),
           [a3],
         );
         await expectPipeline(
-          source().search(() => ({
+          source().search({
             query: documentMatches(scoped('waffles')),
             sort: { by: 'score', direction: 'descending' },
             limit: 1,
             offset: 1,
-          })),
+          }),
           [a1],
         );
       });
@@ -2835,7 +2830,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // Added-field-wins: aliasing the score onto an existing field name
         // overwrites that field (probed).
         const results = await executor.execute(
-          source().search(() => ({ query: documentMatches(scoped('waffles')), scoreAs: 'rank' })),
+          source().search({ query: documentMatches(scoped('waffles')), scoreAs: 'rank' }),
         );
         assert.strictEqual(results.length, 2);
         for (const row of results) {
@@ -2849,14 +2844,14 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // `where` keeps identity...
         await expectPipeline(
           source()
-            .search(() => ({ query: documentMatches(scoped('waffles')) }))
+            .search({ query: documentMatches(scoped('waffles')) })
             .where((field) => greaterThan(field('rank'), 1)),
           [a3],
         );
         // ...and `select` drops it, as after any other stage.
         await expectPipeline(
           source()
-            .search(() => ({ query: documentMatches(scoped('waffles')) }))
+            .search({ query: documentMatches(scoped('waffles')) })
             .select(() => ['rank']),
           [{ data: { rank: 1 } }, { data: { rank: 3 } }],
           { ordered: false },
@@ -2871,7 +2866,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           executor.execute(
             source()
               .where((field) => greaterThan(field('rank'), 0))
-              .search(() => ({ query: documentMatches(token) })),
+              .search({ query: documentMatches(token) }),
           ),
         ).rejects.toThrow(/first stage/);
       });
