@@ -408,7 +408,7 @@ export class Pipeline<
   mergeOverwrite<const Map extends MapValuedExpression>(
     map: (field: FieldProvider<Schema>) => Map,
   ): Pipeline<MergeWithSchema<Schema, Map, 'overwrite'>, Id> {
-    return this.#merge(map, 'overwrite');
+    return mergeStage(this, map, 'overwrite');
   }
   /**
    * Merges the map the callback returns onto the existing document, the EXISTING
@@ -420,28 +420,7 @@ export class Pipeline<
   mergeKeep<const Map extends MapValuedExpression>(
     map: (field: FieldProvider<Schema>) => Map,
   ): Pipeline<MergeWithSchema<Schema, Map, 'keep'>, Id> {
-    return this.#merge(map, 'keep');
-  }
-  /**
-   * Shared construction for {@link mergeOverwrite} / {@link mergeKeep}: the two
-   * differ ONLY in the collision winner, which is `mode` — it selects both the
-   * {@link MergeWithSchema} argument order (`buildMergeWithSchema`) and the
-   * resolved wire mode carried by the stage node.
-   */
-  #merge<const Map extends MapValuedExpression, const Mode extends MergeMode>(
-    map: (field: FieldProvider<Schema>) => Map,
-    mode: Mode,
-  ): Pipeline<MergeWithSchema<Schema, Map, Mode>, Id> {
-    const mapExpr = map(fieldProvider(this.node.schema));
-    return new Pipeline<MergeWithSchema<Schema, Map, Mode>, Id>({
-      schema: buildMergeWithSchema<Schema, Map, Mode>(this.node.schema, mapExpr, mode),
-      stage: {
-        kind: 'replaceWith',
-        map: mapExpr,
-        mode: mode === 'overwrite' ? 'merge_overwrite_existing' : 'merge_keep_existing',
-      },
-      parent: this.node,
-    });
+    return mergeStage(this, map, 'keep');
   }
   // TODO
   // union(..._args: unknown[]): Pipeline<Fields> {
@@ -524,6 +503,38 @@ export type PipelineStages = {
   readonly input: InputStage;
   readonly transforms: readonly TransformStage[];
   // TODO: add `output?: OutputStage` once output/DML stages are in the node model.
+};
+
+/**
+ * Shared construction for {@link Pipeline.mergeOverwrite} /
+ * {@link Pipeline.mergeKeep}: the two differ ONLY in the collision winner
+ * (`mode`), which selects both the {@link MergeWithSchema} argument order
+ * (`buildMergeWithSchema`) and the resolved wire mode the stage node carries.
+ *
+ * Takes the whole `pipeline` (not just its node) so `Id` — a phantom type
+ * parameter with no runtime witness — is inferred from the argument; the two
+ * merge methods then delegate with no explicit type arguments.
+ */
+const mergeStage = <
+  Schema extends Fields,
+  Id extends PipelineRowIdentity,
+  const Map extends MapValuedExpression,
+  const Mode extends MergeMode,
+>(
+  pipeline: Pipeline<Schema, Id>,
+  map: (field: FieldProvider<Schema>) => Map,
+  mode: Mode,
+): Pipeline<MergeWithSchema<Schema, Map, Mode>, Id> => {
+  const mapExpr = map(fieldProvider(pipeline.node.schema));
+  return new Pipeline<MergeWithSchema<Schema, Map, Mode>, Id>({
+    schema: buildMergeWithSchema<Schema, Map, Mode>(pipeline.node.schema, mapExpr, mode),
+    stage: {
+      kind: 'replaceWith',
+      map: mapExpr,
+      mode: mode === 'overwrite' ? 'merge_overwrite_existing' : 'merge_keep_existing',
+    },
+    parent: pipeline.node,
+  });
 };
 
 /**
