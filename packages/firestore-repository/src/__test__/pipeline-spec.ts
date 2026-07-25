@@ -2537,7 +2537,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // map is the whole document, probed), so the expected rows are `{ data }`
         // only — a mismatch would surface an unexpected `id`.
         await expectPipeline(
-          src().replaceWith((field) => mapValue({ who: field('a'), c: constant(7) })),
+          src().replaceWith((field) => mapValue({ who: field('a'), c: 7 })),
           [{ data: { who: 1, c: 7 } }, { data: { who: 2, c: 7 } }, { data: { who: 3, c: 7 } }],
           { ordered: false },
         );
@@ -2583,12 +2583,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
       // The map overlaps on `a` and `n`, adds `c`; its `n` is a DIFFERENT map
       // (`{ p, r }`), so a shallow merge replaces the whole `n` (no `q`).
-      const newMap = () =>
-        mapValue({
-          a: constant(99),
-          c: constant(7),
-          n: mapValue({ p: constant(999), r: constant(3) }),
-        });
+      const newMap = () => mapValue({ a: 99, c: 7, n: mapValue({ p: 999, r: 3 }) });
 
       it('mergeOverwrite: the map wins a collision, a colliding map key replaced WHOLESALE; identity preserved', async () => {
         // `a` → 99, `c` added, `n` REPLACED by `{ p: 999, r: 3 }` (the existing
