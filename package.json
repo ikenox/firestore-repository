@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "vitest run --coverage",
+    "test:integration": "set -a && . ./.env.integration-test && set +a && vitest run",
+    "test:integration:firebase-js-sdk": "set -a && . ./.env.integration-test && set +a && vitest run --project @firestore-repository/firebase-js-sdk",
+    "test:integration:google-cloud-firestore": "set -a && . ./.env.integration-test && set +a && vitest run --project @firestore-repository/google-cloud-firestore",
     "test:watch": "vitest",
     "check": "pnpm run \"/check:.*/\"",
     "check:lint": "oxlint",

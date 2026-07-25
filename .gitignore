@@ -8,6 +8,9 @@ packages/**/README.md
 # local private test or debugging purpose
 *.local.test.ts
 
+# integration-test env (holds a real Firebase client API key)
+.env.integration-test
+
 .claude/settings.local.json
 
 .worktree
