@@ -3,11 +3,13 @@ import {
   type FieldType,
   type FieldTypeOfPath,
   fieldTypeOfPath,
+  type FirestoreType,
   int64,
   type Int64Type,
   isMapType,
   map,
   type MapFieldPath,
+  type MapFields,
   type MapType,
   nullable,
   type NullType,
@@ -21,6 +23,7 @@ import {
   type ArrayElementType,
   arrayElementType,
   type ArrayValued,
+  type Expression,
   type ExpressionWithAlias,
   type Field,
   type PreserveOptional,
@@ -28,6 +31,7 @@ import {
   type PropagateNull,
   propagateNullType,
   type UndottedKey,
+  type Valued,
   type WithoutOptional,
   withoutOptional,
 } from './expression.js';
@@ -482,6 +486,152 @@ type UnnestIndexType<Source extends FieldType> = PropagateNull<Source, Int64Type
 type UnnestIndexSchema<Index extends string | undefined, T extends FieldType> = Index extends string
   ? PathToSchema<Index, T>
   : {};
+
+// ---------------------------------------------------------------------------
+// `replaceWith` / `mergeOverwrite` / `mergeKeep` — reshaping the document FROM a
+// map-valued expression. Three backend modes on the `replace_with` stage —
+// `full_replace` (the document BECOMES the map, identity BROKEN) and the two
+// merge modes (`merge_overwrite_existing` / `merge_keep_existing`, the map
+// merged onto the existing document, identity PRESERVED) — surfaced as the three
+// flat methods. See `docs/pipeline-query-replacewith-research.md`.
+// ---------------------------------------------------------------------------
+
+/**
+ * The collision-winner discriminator of the two MERGE modes of the Firestore
+ * replace-with stage (the third mode, `full_replace`, is `replaceWith`).
+ * INTERNAL: it is not a user-facing parameter — each merge is its own flat
+ * method (`mergeOverwrite` / `mergeKeep`) that fixes its mode — it only keys
+ * {@link MergeWithSchema} to the right argument order.
+ * - `overwrite`: the merged map's values win a top-level collision (`merge_overwrite_existing`).
+ * - `keep`: existing document values win (`merge_keep_existing`).
+ */
+export type MergeMode = 'overwrite' | 'keep';
+
+/**
+ * A map-valued expression source for {@link Pipeline.replaceWith} /
+ * {@link Pipeline.mergeOverwrite} / {@link Pipeline.mergeKeep}: an
+ * {@link Expression} whose value is a MAP.
+ * `Valued` (map tags OR `'null'`) so a `nullable(map(...))` field and an
+ * optional one both qualify — an absent/null source degrades identically
+ * (probed), so both are legitimate sources. A non-map expression (a scalar, an
+ * array) is unassignable here, so the callback cannot name the plain non-map
+ * case; it only surfaces through an OPTIONAL/NULLABLE map source, whose absence
+ * reads back as the empty document (see {@link ReplaceWithSchema}).
+ */
+export type MapValuedExpression = Expression<Valued<{ readonly [field: string]: FirestoreType }>>;
+
+/**
+ * The map source descriptor as the ROW sees it — the expression's own
+ * descriptor, with ancestor optionality moved onto it ({@link WithConditionality})
+ * when it reads a field path. Mirrors {@link UnnestSourceType} arm for arm (a
+ * path-reading source is conditional; a computed map — a `mapValue({...})`
+ * literal — always produces a value), the sole difference being that the value
+ * is a bare map expression rather than a `{ selectable }` binding.
+ */
+type ReplaceMapSource<Context extends Fields, MapExpr> =
+  MapExpr extends Field<infer T, infer P>
+    ? WithConditionality<Context, P, T>
+    : MapExpr extends { readonly type: infer T extends FieldType }
+      ? T
+      : never;
+
+/**
+ * The field record a map descriptor projects to a document: the map's own
+ * `fields`, reached THROUGH null-ness — a `nullable(map)` is a union whose MAP
+ * member carries the fields. `{}` for a non-map (unreachable through the typed
+ * API — the source is a {@link MapValuedExpression}).
+ */
+type MapSchemaOf<S extends FieldType> = FieldType extends S
+  ? MapFields // wide/unresolved input: break the recursion (the `MapFieldPath` trick)
+  : S extends { type: 'map'; fields: infer F extends MapFields }
+    ? F
+    : S extends { type: 'union'; elements: infer E extends readonly FieldType[] }
+      ? // The MAP member only — a `nullable(map)` union pairs the map with
+        // `NullType`, and the null member contributes no fields (it is the
+        // ABSENT case, whose optionality `SourceMayBeAbsent` records separately).
+        MapSchemaOf<Extract<E[number], { type: 'map' }>>
+      : {};
+
+/**
+ * Whether a map source can be ABSENT or NULL: it carries the `Optional` marker
+ * (an optional field, or a dotted path through an optional ancestor) or its tag
+ * set includes `'null'` (a `nullable(map)` field). Both degrade a `full_replace`
+ * to the empty document and a merge to a no-op (probed), so both make the
+ * contributed fields conditional. Mirrors the `PropagateNull` condition.
+ */
+type SourceMayBeAbsent<S extends FieldType> = [
+  Extract<S['firestoreType'], 'null'> | Extract<S, Optional>,
+] extends [never]
+  ? false
+  : true;
+
+/**
+ * Every field of `M` marked `& Optional`. An absent/null map source replaces
+ * to the empty document / no-ops the merge (probed), so each contributed field
+ * is present iff the source map is present — an all-or-nothing-per-row
+ * optionality soundly over-approximated as each field independently optional.
+ */
+type EachOptional<M extends MapFields> = {
+  [K in keyof M]: M[K] & Optional;
+  // Re-bound to `Fields` for the same reason as {@link AbsentMergesIntoNull}:
+  // over an unresolved `M` the `M[K] & Optional` value positions are not
+  // PROVABLY `FieldType`. Identity on every instantiation.
+} extends infer R extends Fields
+  ? R
+  : never;
+
+/**
+ * The field record a map SOURCE contributes to the result document: the map's
+ * fields ({@link MapSchemaOf}), made each-optional ({@link EachOptional}) when
+ * the source can be absent/null ({@link SourceMayBeAbsent}). The definite-map
+ * case (a `mapValue({...})` literal or a required map field) contributes its
+ * fields unchanged.
+ */
+type ConditionalMapSchema<S extends FieldType> =
+  SourceMayBeAbsent<S> extends true ? EachOptional<MapSchemaOf<S>> : MapSchemaOf<S>;
+
+/**
+ * Output schema of `replaceWith` (`full_replace`): the document BECOMES the
+ * map, so the result is exactly the map source's field record
+ * ({@link ConditionalMapSchema} — each field optional when the source can be
+ * absent/null, since such a source replaces to the empty document). Identity is
+ * BROKEN (`Id = undefined`) — see {@link Pipeline.replaceWith}.
+ */
+export type ReplaceWithSchema<Context extends Fields, MapExpr> = ConditionalMapSchema<
+  ReplaceMapSource<Context, MapExpr>
+>;
+
+/**
+ * Output schema of the two merge modes: the map source's field record
+ * SHALLOW-merged onto the existing context. `'overwrite'`
+ * (`merge_overwrite_existing`, {@link Pipeline.mergeOverwrite}) — the map wins a
+ * top-level collision (`ShallowMergeSchemas<M, Context>`); `'keep'`
+ * (`merge_keep_existing`, {@link Pipeline.mergeKeep}) — the existing wins
+ * (`ShallowMergeSchemas<Context, M>`). SHALLOW: a colliding top-level key takes
+ * the WHOLE winning value — the backend replaces a colliding map key wholesale,
+ * NOT a deep map merge (probed, contrast `addFields`). Identity is PRESERVED
+ * (`Id` threads through).
+ */
+export type MergeWithSchema<Context extends Fields, MapExpr, Mode extends MergeMode> =
+  ConditionalMapSchema<ReplaceMapSource<Context, MapExpr>> extends infer M extends Fields
+    ? Mode extends 'overwrite'
+      ? ShallowMergeSchemas<M, Context>
+      : ShallowMergeSchemas<Context, M>
+    : never;
+
+/**
+ * Shallow key-wise schema merge: `A` wins a shared key, taking the WHOLE value
+ * with NO recursion into colliding maps — unlike {@link MergeSchemas}, which
+ * deep-merges two map-typed values. The replace-with merge modes need this
+ * because the backend replaces a colliding top-level key wholesale (probed): a
+ * colliding map key is NOT deep-merged.
+ */
+type ShallowMergeSchemas<A, B> = {
+  [K in keyof A | keyof B]: K extends keyof A ? A[K] : K extends keyof B ? B[K] : never;
+  // Re-bound to `Fields` for the same reason as {@link MergeSchemas}.
+} extends infer R extends Fields
+  ? R
+  : never;
 
 /**
  * Folds the accumulators into a flat `alias -> result descriptor` record.
@@ -1036,4 +1186,123 @@ const mergeSchemas = <A extends Fields, B extends Fields>(a: A, b: B): MergeSche
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `MergeSchemas` is a mapped type over `keyof A | keyof B` whose per-key branch the compiler cannot connect to the spread-and-patch loop below it.
   return result as MergeSchemas<A, B>;
+};
+
+// ---------------------------------------------------------------------------
+// `replaceWith` / `mergeOverwrite` / `mergeKeep` runtime twins. Each helper is declared AS its
+// type-level operator applied to its own arguments, so the composition is
+// checked step for step (the same convention as the `unnest` twins above).
+// `buildReplaceWithSchema` / `buildMergeWithSchema` are the entry points the
+// `Pipeline` stages call.
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime counterpart of {@link ReplaceWithSchema}: the map source's contributed
+ * field record IS the whole document — `conditionalMapSchema(replaceMapSource(...))`
+ * IS `ConditionalMapSchema<ReplaceMapSource<Context, MapExpr>>`, so the
+ * composition needs no assertion of its own. The result feeds the executors' row
+ * decoding, so it must mirror the type exactly — the tests in `selection.test.ts`
+ * plus the pipeline spec pin both halves.
+ */
+export const buildReplaceWithSchema = <Context extends Fields, MapExpr extends MapValuedExpression>(
+  schema: Context,
+  mapExpr: MapExpr,
+): ReplaceWithSchema<Context, MapExpr> => conditionalMapSchema(replaceMapSource(schema, mapExpr));
+
+/**
+ * Runtime counterpart of {@link MergeWithSchema}: the map source's contributed
+ * field record shallow-merged onto the existing context, the ARGUMENT ORDER
+ * chosen by the mode (`'overwrite'` → the map wins; `'keep'` → the existing wins).
+ */
+export const buildMergeWithSchema = <
+  Context extends Fields,
+  MapExpr extends MapValuedExpression,
+  Mode extends MergeMode,
+>(
+  schema: Context,
+  mapExpr: MapExpr,
+  mode: Mode,
+): MergeWithSchema<Context, MapExpr, Mode> => {
+  const m = conditionalMapSchema(replaceMapSource(schema, mapExpr));
+  const result =
+    mode === 'overwrite' ? shallowMergeSchemas(m, schema) : shallowMergeSchemas(schema, m);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `MergeWithSchema` selects the shallow-merge ARGUMENT ORDER from the type-level `Mode`, which the runtime decides from the `mode` value; the compiler does not relate the value branch to the conditional type.
+  return result as MergeWithSchema<Context, MapExpr, Mode>;
+};
+
+/**
+ * Runtime counterpart of {@link ReplaceMapSource}, mirroring
+ * {@link unnestSourceType}'s dispatch: a field-reading source is conditional on
+ * its path, a computed map expression carries its own descriptor.
+ */
+const replaceMapSource = <Context extends Fields, MapExpr extends MapValuedExpression>(
+  schema: Context,
+  mapExpr: MapExpr,
+): ReplaceMapSource<Context, MapExpr> => {
+  // Widened to the union first: narrowing a generic `MapExpr` in place leaves it
+  // a type parameter that `switch` cannot discriminate.
+  const node: Expression = mapExpr;
+  const result = ((): FieldType => {
+    switch (node.kind) {
+      case 'field':
+        return withConditionality(schema, node.path, node.type);
+      case 'constant':
+      case 'functionExpression':
+        return node.type;
+      default:
+        return assertNever(node);
+    }
+  })();
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `ReplaceMapSource` dispatches on the shape of `MapExpr` with a conditional type, the runtime on the VALUE's `kind`; narrowing the value does not narrow `MapExpr`.
+  return result as ReplaceMapSource<Context, MapExpr>;
+};
+
+/**
+ * Runtime counterpart of {@link ConditionalMapSchema}: the map's fields, made
+ * each-optional when the source can be absent/null.
+ */
+const conditionalMapSchema = <S extends FieldType>(s: S): ConditionalMapSchema<S> => {
+  const result = sourceMayBeAbsent(s) ? eachOptional(mapSchemaOf(s)) : mapSchemaOf(s);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `ConditionalMapSchema` branches on the type-level `SourceMayBeAbsent`, which the runtime decides from the descriptor value; the compiler cannot connect the boolean to the conditional type.
+  return result as ConditionalMapSchema<S>;
+};
+
+/** Runtime counterpart of {@link MapSchemaOf}: the map's `fields`, reached through null-ness. */
+const mapSchemaOf = <S extends FieldType>(s: S): MapSchemaOf<S> => {
+  const result = ((): Fields => {
+    if (isMapType(s)) {
+      return s.fields;
+    }
+    if (s.type === 'union') {
+      const mapMember = s.elements.find(isMapType);
+      return mapMember !== undefined ? mapMember.fields : {};
+    }
+    return {};
+  })();
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `MapSchemaOf` reads `.fields` through a conditional type over the descriptor shape, which the compiler cannot match to the value's `type` dispatch.
+  return result as MapSchemaOf<S>;
+};
+
+/**
+ * Runtime counterpart of {@link SourceMayBeAbsent}: the source carries the
+ * `optional` marker, or is a union with a `null` member (a `nullable(map)`).
+ */
+const sourceMayBeAbsent = (s: FieldType & { optional?: boolean }): boolean =>
+  s.optional === true || (s.type === 'union' && s.elements.some((e) => e.type === 'null'));
+
+/** Runtime counterpart of {@link EachOptional}: mark every field of the record optional. */
+const eachOptional = <M extends MapFields>(m: M): EachOptional<M> => {
+  const result = Object.fromEntries(Object.entries(m).map(([k, v]) => [k, optional(v)]));
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `EachOptional` is a mapped type over `keyof M`, which the compiler cannot match against an `Object.entries`/`fromEntries` rebuild.
+  return result as EachOptional<M>;
+};
+
+/** Runtime counterpart of {@link ShallowMergeSchemas} (`a` wins, whole value, no deep merge). */
+const shallowMergeSchemas = <A extends Fields, B extends Fields>(
+  a: A,
+  b: B,
+): ShallowMergeSchemas<A, B> => {
+  const result: Record<string, FieldType> = { ...b, ...a };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `ShallowMergeSchemas` is a mapped type over `keyof A | keyof B` whose per-key branch the compiler cannot connect to the object spread below it.
+  return result as ShallowMergeSchemas<A, B>;
 };

@@ -45,9 +45,12 @@ adapter, and wired identically in the firebase adapter):
 | `addFields`                              | context + added fields                   | preserved  |
 | `removeFields`                           | context − removed paths                  | preserved  |
 | `unnest`                                 | context + alias/index (addFields-shaped) | preserved† |
+| `mergeOverwrite`                         | context + map, map wins (SHALLOW)        | preserved  |
+| `mergeKeep`                              | context + map, existing wins (SHALLOW)   | preserved  |
 | `select`                                 | only the selections                      | **broken** |
 | `aggregate`                              | accumulators over group keys             | **broken** |
 | `distinct`                               | the group keys                           | **broken** |
+| `replaceWith`                            | the map (becomes the whole document)     | **broken** |
 
 † `unnest` preserves identity but ids are no longer unique across rows — an
 n-element array yields n rows carrying the SAME source id.
@@ -57,9 +60,9 @@ pipeline's second type parameter becomes `undefined` and the results carry no
 `id` — see "Identity ratchet" below.
 
 **Still stubs** (`unimplemented()`, and the executors throw on them):
-`replaceWith` (`fullReplaceWith` / `mergeWith`), `union`, `findNearest`, `let`,
-`search`, `sample`; the `database()` / `documents()` / `literals()` input
-sources; and the DML output stages (`update` / `delete`).
+`union`, `findNearest`, `let`, `search`, `sample`; the `database()` /
+`documents()` / `literals()` input sources; and the DML output stages
+(`update` / `delete`).
 
 **How the runtime AST works:**
 
@@ -170,9 +173,10 @@ ratchet is structural: preserving stages thread `Id`, breaking stages reset to
 - [x] Add `Id extends PipelineRowIdentity` (`= DocRef<Collection> | undefined`)
       as the second type parameter of `Pipeline<Context, Id>`.
 - [x] Identity-preserving methods (`where`, `sort`, `limit`, `offset`,
-      `addFields`, `removeFields`, `unnest`) thread `Id` through unchanged.
+      `addFields`, `removeFields`, `unnest`, `mergeOverwrite`, `mergeKeep`) thread
+      `Id` through unchanged (a merge reshapes the row in place — probed).
 - [x] Identity-breaking methods (`select`, `distinct`, `aggregate`,
-      `fullReplaceWith`, `mergeWith`) return `Id = undefined`.
+      `replaceWith`) return `Id = undefined`.
 - [x] **`select` always drops identity — made honest by forbidding `__name__`
       (option A).** `select` is actually only conditionally identity-breaking: it
       keeps `id`/`ref` iff `field("__name__")` is projected un-aliased (`"__name__"`
@@ -328,7 +332,39 @@ Transformation stages already stubbed:
       `sdk.unnest({ selectable, indexField })`. Verified live (google-cloud) —
       the spec reproduces every probed cell incl. empty-array (0 rows),
       null-element, and the index-null-on-absent-alias asymmetry.
-- [ ] `replaceWith(...)` — Context replacement + identity break.
+- [x] `replaceWith(...)` — done (2026-07; semantics in
+      `../pipeline-query-replacewith-research.md`). Reshapes the document FROM a
+      map-valued expression, surfacing the backend's THREE `replace_with` modes
+      as THREE flat methods. `replaceWith(map)` = `full_replace`: the document
+      BECOMES the map, identity BROKEN (`Id = undefined` — the map is the whole
+      document, no re-addressable `__name__`; probed). `mergeOverwrite(map)` →
+      `merge_overwrite_existing` (the map wins a top-level collision) and
+      `mergeKeep(map)` → `merge_keep_existing` (the existing wins) are the two
+      merge modes — NO user-facing mode parameter, each method hardcodes its own
+      wire mode (they share one private `#merge`, differing only in the collision
+      winner). Both PRESERVE identity (`Id` threads through — a merge reshapes in
+      place). The merge is SHALLOW (`ShallowMergeSchemas`, a dedicated shallow
+      twin of
+      `MergeSchemas`): a colliding top-level key takes the WHOLE winning value —
+      the backend replaces a colliding map key wholesale, NOT a deep map merge
+      (probed, contrast `addFields`). The map SOURCE is a `MapValuedExpression`
+      (map/optional/nullable — a `Valued` map tag); a `mapValue({...})` literal or
+      a required map field is definite, while an OPTIONAL/NULLABLE map source
+      degrades — a `full_replace` over an absent/null source → the EMPTY document
+      (`ReplaceWithSchema` marks each field optional), a merge over one is a
+      NO-OP (`MergeWithSchema` overlays the map-only keys as optional, existing
+      schema preserved). The bare-field-reference source covers the field-name
+      and dotted-source forms (`f('parents')`, `f('deep.inner')`). Stage node
+      carries the resolved WIRE mode (`full_replace` / `merge_overwrite_existing`
+      / `merge_keep_existing`). Both executors: `full_replace` via the SDK's
+      typed `replaceWith(map)`; the merge modes via `rawStage('replace_with',
+[map, constant(mode)])` — the SDK's typed `replaceWith` hardcodes
+      `full_replace`, and `constant(mode)` encodes byte-identically to the SDK's
+      own `serializer.encodeValue('full_replace')` (verified live). Verified live
+      (google-cloud) — the spec reproduces the document-becomes-map + identity
+      drop, absent/null/dotted source cells, both merge modes with the
+      shallow-collision (colliding map replaced wholesale, `q` gone) + identity
+      preserved, and the absent/null-source no-op.
 - [ ] `union(other)` — combine sources; identity break (conservative).
 - [ ] `findNearest(...)` — vector search; behavior TBD.
 - [ ] `let(...)` — variable binding for sub-pipelines.
@@ -584,6 +620,9 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       | `aggregate`               | ✓           | ✓ break  | ✓          |
       | `distinct`                | ✓           | ✓ break  | ✓          |
       | `unnest`                  | ✓           | ✓ preserve | ✓        |
+      | `replaceWith`             | ✓           | ✓ break  | ✓ (wire mode) |
+      | `mergeOverwrite`          | ✓           | ✓ preserve | ✓ (wire mode) |
+      | `mergeKeep`               | ✓           | ✓ preserve | ✓ (wire mode) |
 
       One representative-but-real case per method proves the wiring (the full
       operator matrix stays in `selection.test.ts`); the shared `SchemaOf` /

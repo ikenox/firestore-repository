@@ -27,6 +27,7 @@ import {
   field,
   type Field,
   greaterThan,
+  mapValue,
   sum,
 } from './expression.js';
 import {
@@ -34,6 +35,8 @@ import {
   buildAddFieldsSchema,
   buildAggregateSchema,
   buildDistinctSchema,
+  buildMergeWithSchema,
+  buildReplaceWithSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   buildUnnestSchema,
@@ -959,5 +962,113 @@ describe('buildUnnestSchema (runtime)', () => {
     };
     const omk = field(array(string()), 'om.k');
     expectTypedStrictEqual(buildUnnestSchema(deep, omk.as('e'), 'i'), oracle);
+  });
+});
+
+// Stage-schema synthesis of `replaceWith` (`full_replace`). The document BECOMES
+// the map source, so the result IS the map's field record — each field made
+// OPTIONAL when the source can be absent/null (such a source replaces to the
+// empty document, probed). The matrix is derived from the map-SOURCE structure:
+// the definite forms (a `mapValue({...})` literal, a required map field) contribute
+// their fields unchanged; the conditional forms (an OPTIONAL map field, a NULLABLE
+// map field, an optional ANCESTOR on a dotted source path) contribute each field
+// optional. Each pins ONE oracle on BOTH sides via `expectTypedStrictEqual` (the
+// return type IS `ReplaceWithSchema<...>`), the safety net for the bridging
+// assertions inside `buildReplaceWithSchema`.
+describe('buildReplaceWithSchema (runtime)', () => {
+  const schema = {
+    a: double(),
+    m: map({ x: string(), y: double() }), //        required map field
+    om: optional(map({ x: string() })), //          optional map field
+    nm: nullable(map({ x: string() })), //          nullable map field
+    deep: optional(map({ inner: map({ z: string() }) })), // optional ANCESTOR
+  } satisfies DocumentSchema;
+
+  it('a mapValue({...}) literal contributes its fields unchanged (definite source)', () => {
+    // The document becomes exactly the literal's key/value pairs.
+    const oracle = { who: double(), tag: string() };
+    const actual = buildReplaceWithSchema(
+      schema,
+      mapValue({ who: constant(1), tag: constant('t') }),
+    );
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a required map field contributes its fields unchanged (definite source)', () => {
+    const oracle = { x: string(), y: double() };
+    const actual = buildReplaceWithSchema(schema, field(schema.m, 'm'));
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('an OPTIONAL map field makes each field optional (absent source → empty document)', () => {
+    const oracle = { x: optional(string()) };
+    const actual = buildReplaceWithSchema(schema, field(schema.om, 'om'));
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a NULLABLE map field makes each field optional (null source → empty document)', () => {
+    // A `nullable(map)` is a union whose MAP member carries the fields; the null
+    // member is the absent case, so the fields read back optional.
+    const oracle = { x: optional(string()) };
+    const actual = buildReplaceWithSchema(schema, field(schema.nm, 'nm'));
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('a dotted source through an optional ANCESTOR is conditional (each field optional)', () => {
+    // `deep` is optional, so reading `deep.inner` crosses an optional ancestor —
+    // `WithConditionality` marks the source conditional exactly as a directly
+    // optional field is, so the inner map's fields read back optional.
+    const oracle = { z: optional(string()) };
+    const actual = buildReplaceWithSchema(schema, field(map({ z: string() }), 'deep.inner'));
+    expectTypedStrictEqual(actual, oracle);
+  });
+});
+
+// Stage-schema synthesis of the two merge modes (`mergeOverwrite` / `mergeKeep`,
+// which share the `buildMergeWithSchema` operator keyed on the internal
+// `'overwrite'` / `'keep'` discriminator). The map source's
+// field record is SHALLOW-merged onto the existing context — `'overwrite'` (the
+// map wins a top-level collision) vs `'keep'` (the existing wins), a colliding key
+// taking the WHOLE winning value with NO deep map merge (probed). The matrix is
+// (definite / conditional source) × (overwrite / keep), plus the collision
+// direction and the shallow-vs-deep distinction (a colliding map key replaced
+// wholesale). Each pins ONE oracle on BOTH sides via `expectTypedStrictEqual`
+// (the return type IS `MergeWithSchema<...>`), the safety net for the bridging
+// assertion inside `buildMergeWithSchema`.
+describe('buildMergeWithSchema (runtime)', () => {
+  const schema = {
+    a: double(),
+    b: string(),
+    n: map({ p: double(), q: double() }), // collides with the map's `n`
+  } satisfies DocumentSchema;
+  // Overlaps on `a` and `n`, adds `c`; the colliding `n` is a DIFFERENT map
+  // (`{ r }`), so a shallow merge replaces it wholesale (no `p`/`q`).
+  const newMap = () =>
+    mapValue({ a: constant('99'), c: constant(7), n: mapValue({ r: constant(3) }) });
+
+  it("'overwrite': the map wins a top-level collision, taking the WHOLE value (shallow)", () => {
+    // `a` → the map's string, `n` → the map's `{ r }` WHOLESALE (`p`/`q` gone —
+    // NOT deep-merged), `c` added, `b` kept.
+    const oracle = { a: string(), b: string(), n: map({ r: double() }), c: double() };
+    const actual = buildMergeWithSchema(schema, newMap(), 'overwrite');
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it("'keep': the existing wins a top-level collision, taking the WHOLE value (shallow)", () => {
+    // `a` and `n` keep their EXISTING values (`n` still `{ p, q }`), only the
+    // non-colliding `c` is added.
+    const oracle = { a: double(), b: string(), n: map({ p: double(), q: double() }), c: double() };
+    const actual = buildMergeWithSchema(schema, newMap(), 'keep');
+    expectTypedStrictEqual(actual, oracle);
+  });
+
+  it('an OPTIONAL map source overlays its map-only keys as OPTIONAL (absent merge is a no-op)', () => {
+    // An absent/null map merges nothing (probed), so the map-only keys are each
+    // present iff the map is present → optional; the existing schema is preserved
+    // (the source field `msrc` is itself part of the document and survives).
+    const withOpt = { a: double(), msrc: optional(map({ c: string() })) } satisfies DocumentSchema;
+    const oracle = { a: double(), msrc: optional(map({ c: string() })), c: optional(string()) };
+    const actual = buildMergeWithSchema(withOpt, field(withOpt.msrc, 'msrc'), 'overwrite');
+    expectTypedStrictEqual(actual, oracle);
   });
 });

@@ -67,7 +67,17 @@ export type TransformStage =
   // for an executor to translate 1:1. Always nonempty (a distinct with no keys
   // is meaningless).
   | { kind: 'distinct'; groups: readonly SelectionNode[] }
-  | { kind: 'replaceWith' }
+  // Reshapes the document FROM the map-valued `map` expression. `mode` is the
+  // RESOLVED wire mode (mapped to it by `Pipeline.replaceWith` /
+  // `Pipeline.mergeOverwrite` / `Pipeline.mergeKeep`), so an executor is a
+  // straight translation: `full_replace` via the SDK's `replaceWith(map)`, the
+  // two merge modes via `rawStage('replace_with', [map, constant(mode)])` (the
+  // SDK's typed `replaceWith` hardcodes `full_replace`).
+  | {
+      kind: 'replaceWith';
+      map: Expression;
+      mode: 'full_replace' | 'merge_overwrite_existing' | 'merge_keep_existing';
+    }
   | { kind: 'union' }
   | { kind: 'findNearest' }
   | { kind: 'let' }

@@ -7,7 +7,6 @@ import {
   type FieldTypeOfPath,
   type FieldValue,
   type MapFieldPath,
-  type MapFields,
   type MapType,
   type OmitPaths,
   omitPaths,
@@ -23,12 +22,18 @@ import {
   buildAddFieldsSchema,
   buildAggregateSchema,
   buildDistinctSchema,
+  buildMergeWithSchema,
+  buildReplaceWithSchema,
   buildSelectionSchema,
   type BuildSelectionSchema,
   buildUnnestSchema,
   type DistinctSchema,
   dropOverriddenSelections,
   type ExpressionWithAlias,
+  type MapValuedExpression,
+  type MergeMode,
+  type MergeWithSchema,
+  type ReplaceWithSchema,
   type Selection,
   type UndottedGroupAliases,
   type UndottedIndexField,
@@ -65,11 +70,11 @@ export type PipelineQueryExecutor = {
  * `docs/pipeline-query-identity-research.md`.
  *
  * - Identity-preserving stages (`where` / `sort` / `limit` / `offset` /
- *   `addFields` / `removeFields` / `unnest`) thread `Id` through unchanged.
+ *   `addFields` / `removeFields` / `unnest` / `mergeOverwrite` / `mergeKeep`)
+ *   thread `Id` through unchanged (a merge reshapes the row in place).
  * - Identity-breaking stages (`select` / `distinct` / `aggregate` /
- *   `fullReplaceWith` / `mergeWith`) return `Id = undefined`. Because the
- *   preserving stages thread whatever `Id` they receive, identity never comes
- *   back once dropped.
+ *   `replaceWith`) return `Id = undefined`. Because the preserving stages thread
+ *   whatever `Id` they receive, identity never comes back once dropped.
  */
 export class Pipeline<
   Schema extends Fields = Fields,
@@ -359,19 +364,63 @@ export class Pipeline<
       parent: this.node,
     });
   }
-  /** `full_replace`: the document becomes the given map value. */
-  fullReplaceWith<M extends MapFields>(
-    _map: (field: FieldProvider<Schema>) => Expression<MapType<M>>,
-  ): Pipeline<M, undefined> {
-    return unimplemented();
+  /**
+   * Replaces the document WITH the map the callback returns (`full_replace`):
+   * the emitted row IS that map's key/value pairs, every original field dropped.
+   * Identity-BREAKING (`Id = undefined`): the map is the whole document, with no
+   * re-addressable `__name__` afterward (probed — the row carries no ref), so
+   * the result rows carry no `id`.
+   *
+   * The result schema is exactly the map source's field record. When the source
+   * can be ABSENT or NULL (an optional/nullable map field ref, rather than a
+   * `mapValue({...})` literal or a required map field), an absent/null source
+   * replaces to the EMPTY document `{}` (probed), so each field reads back
+   * OPTIONAL ({@link ReplaceWithSchema}); the definite-map case is unchanged. A
+   * bare field reference (`f('parents')`, `f('deep.inner')`) covers the
+   * field-name and dotted-source forms.
+   */
+  replaceWith<const Map extends MapValuedExpression>(
+    map: (field: FieldProvider<Schema>) => Map,
+  ): Pipeline<ReplaceWithSchema<Schema, Map>, undefined> {
+    const mapExpr = map(fieldProvider(this.node.schema));
+    return new Pipeline<ReplaceWithSchema<Schema, Map>, undefined>({
+      schema: buildReplaceWithSchema<Schema, Map>(this.node.schema, mapExpr),
+      stage: { kind: 'replaceWith', map: mapExpr, mode: 'full_replace' },
+      parent: this.node,
+    });
   }
-  // TODO: tighten the return Schema — `overwrite` -> map wins over the existing
-  // Schema, `keep` -> existing wins. Left loose for now.
-  mergeWith<M extends MapFields>(
-    _map: (field: FieldProvider<Schema>) => Expression<MapType<M>>,
-    _mode: MergeMode,
-  ): Pipeline<Fields, undefined> {
-    return unimplemented();
+  /**
+   * Merges the map the callback returns onto the existing document, the MAP
+   * WINNING a top-level collision (`merge_overwrite_existing`). Read-identity is
+   * PRESERVED (`Id` threads through — a merge reshapes the row in place, so its
+   * ref and `__name__` stay addressable; probed).
+   *
+   * The merge is SHALLOW: a colliding top-level key takes the WHOLE winning value
+   * — the backend replaces a colliding map key wholesale, NOT a deep map merge
+   * (probed, contrast `addFields`) — so {@link MergeWithSchema} shallow-merges
+   * the map onto the context. An absent/null map source is a NO-OP (probed: the
+   * original document is kept, nothing merged), so a source that can be
+   * absent/null overlays its map-only keys as OPTIONAL and preserves the existing
+   * schema. Goes through the SDK's raw stage: the SDK's typed `replaceWith`
+   * hardcodes `full_replace` and exposes no mode parameter, so the executors
+   * reach the merge modes via `rawStage('replace_with', [map, mode])`.
+   */
+  mergeOverwrite<const Map extends MapValuedExpression>(
+    map: (field: FieldProvider<Schema>) => Map,
+  ): Pipeline<MergeWithSchema<Schema, Map, 'overwrite'>, Id> {
+    return mergeStage(this, map, 'overwrite');
+  }
+  /**
+   * Merges the map the callback returns onto the existing document, the EXISTING
+   * document WINNING a top-level collision (`merge_keep_existing`) — otherwise
+   * identical to {@link mergeOverwrite} (identity PRESERVED, SHALLOW merge,
+   * absent/null source is a no-op, raw-stage executor). Only the collision winner
+   * differs: the map contributes just its NON-colliding keys.
+   */
+  mergeKeep<const Map extends MapValuedExpression>(
+    map: (field: FieldProvider<Schema>) => Map,
+  ): Pipeline<MergeWithSchema<Schema, Map, 'keep'>, Id> {
+    return mergeStage(this, map, 'keep');
   }
   // TODO
   // union(..._args: unknown[]): Pipeline<Fields> {
@@ -457,6 +506,38 @@ export type PipelineStages = {
 };
 
 /**
+ * Shared construction for {@link Pipeline.mergeOverwrite} /
+ * {@link Pipeline.mergeKeep}: the two differ ONLY in the collision winner
+ * (`mode`), which selects both the {@link MergeWithSchema} argument order
+ * (`buildMergeWithSchema`) and the resolved wire mode the stage node carries.
+ *
+ * Takes the whole `pipeline` (not just its node) so `Id` — a phantom type
+ * parameter with no runtime witness — is inferred from the argument; the two
+ * merge methods then delegate with no explicit type arguments.
+ */
+const mergeStage = <
+  Schema extends Fields,
+  Id extends PipelineRowIdentity,
+  const Map extends MapValuedExpression,
+  const Mode extends MergeMode,
+>(
+  pipeline: Pipeline<Schema, Id>,
+  map: (field: FieldProvider<Schema>) => Map,
+  mode: Mode,
+): Pipeline<MergeWithSchema<Schema, Map, Mode>, Id> => {
+  const mapExpr = map(fieldProvider(pipeline.node.schema));
+  return new Pipeline<MergeWithSchema<Schema, Map, Mode>, Id>({
+    schema: buildMergeWithSchema<Schema, Map, Mode>(pipeline.node.schema, mapExpr, mode),
+    stage: {
+      kind: 'replaceWith',
+      map: mapExpr,
+      mode: mode === 'overwrite' ? 'merge_overwrite_existing' : 'merge_keep_existing',
+    },
+    parent: pipeline.node,
+  });
+};
+
+/**
  * Runtime {@link FieldProvider}: builds a {@link Field} AST node for a path,
  * resolving the field's `type` from `schema` (via {@link fieldTypeOfPath}) so
  * the expression carries a real type descriptor.
@@ -465,19 +546,5 @@ const fieldProvider =
   <Schema extends Fields>(schema: Schema): FieldProvider<Schema> =>
   (path) =>
     field(fieldTypeOfPath(schema, path), path);
-
-/**
- * Conflict resolution for `merge` (the merge modes of the Firestore replace-with
- * stage).
- * - `overwrite`: the merged map's values win on overlap (`merge_overwrite_existing`).
- * - `keep`: existing document values win on overlap (`merge_keep_existing`).
- */
-export type MergeMode = 'overwrite' | 'keep';
-
-// TODO: placeholder return value used by stage stubs that are not implemented yet.
-// Returns a value (not `throw`) so the type tests, which evaluate stage calls at
-// runtime via expectTypeOf, do not blow up.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stub return value
-const unimplemented = <T>(): T => undefined as T;
 
 type Fields = DocumentSchema;

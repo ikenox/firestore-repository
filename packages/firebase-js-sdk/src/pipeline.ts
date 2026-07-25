@@ -254,7 +254,17 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
         selectable: toSdkSelectable(db, stage.selectable),
         ...(stage.indexField !== undefined ? { indexField: stage.indexField } : {}),
       });
-    case 'replaceWith':
+    case 'replaceWith': {
+      // `full_replace` via the SDK's typed `replaceWith(map)`; the two merge
+      // modes via the raw stage — the SDK hardcodes `full_replace` and exposes
+      // no mode parameter, so the mode is passed as a bare string value (its
+      // `constant(...)` encodes to the same string value the SDK's own
+      // ReplaceWith uses for `full_replace` — verified live).
+      const mapExpr = toSdkExpression(db, stage.map);
+      return stage.mode === 'full_replace'
+        ? sdk.replaceWith(mapExpr)
+        : sdk.rawStage('replace_with', [mapExpr, sdkConstant(stage.mode)]);
+    }
     case 'union':
     case 'findNearest':
     case 'let':

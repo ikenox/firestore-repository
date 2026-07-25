@@ -2497,5 +2497,148 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
     });
+
+    // `replaceWith` (`full_replace`): the document BECOMES the map source, every
+    // original field dropped, and read-identity is BROKEN (the map is the whole
+    // document — no re-addressable `__name__`, so the rows carry no `id`).
+    // Seed derived from `docs/pipeline-query-replacewith-research.md`.
+    describe('replaceWith (full_replace)', () => {
+      const replaceWithCollection = rootCollection({
+        name: 'ReplaceWith',
+        schema: {
+          a: double(),
+          n: map({ p: double(), q: double() }),
+          // An OPTIONAL + NULLABLE map field — the source whose absence/null
+          // degrades the replacement to the EMPTY document.
+          msrc: optional(nullable(map({ x: double() }))),
+          // A nested map, replaced-with via a DOTTED source path.
+          deep: map({ inner: map({ z: double() }) }),
+        },
+      });
+      type RWDoc = Doc<typeof replaceWithCollection>;
+      const rwItems: RWDoc[] = [
+        {
+          id: ['d1'],
+          data: { a: 1, n: { p: 10, q: 20 }, msrc: { x: 5 }, deep: { inner: { z: 9 } } },
+        },
+        { id: ['d2'], data: { a: 2, n: { p: 10, q: 20 }, msrc: null, deep: { inner: { z: 8 } } } },
+        { id: ['d3'], data: { a: 3, n: { p: 10, q: 20 }, deep: { inner: { z: 7 } } } }, // msrc absent
+      ];
+      let coll: typeof replaceWithCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(replaceWithCollection);
+        await createRepository(coll).batchSet(rwItems);
+      });
+      const src = () => collectionInput(coll);
+
+      it('the document BECOMES the map and read-identity is DROPPED (no id on any row)', async () => {
+        // A `mapValue({...})` literal: each row becomes exactly the map's
+        // key/value pairs, every original field gone. The rows carry NO id (the
+        // map is the whole document, probed), so the expected rows are `{ data }`
+        // only — a mismatch would surface an unexpected `id`.
+        await expectPipeline(
+          src().replaceWith((field) => mapValue({ who: field('a'), c: 7 })),
+          [{ data: { who: 1, c: 7 } }, { data: { who: 2, c: 7 } }, { data: { who: 3, c: 7 } }],
+          { ordered: false },
+        );
+      });
+
+      it('a map FIELD source replaces with the map at that field; an absent/null source → EMPTY document', async () => {
+        // `replaceWith(f('msrc'))`: the document becomes the map AT `msrc`. A
+        // present map (d1) contributes its keys; an ABSENT (d3) or NULL (d2)
+        // source replaces with the empty document `{}` (probed) — each field
+        // reads back optional. Asserted with an explicit length so the two empty
+        // rows are both accounted for.
+        const results = await executor.execute(src().replaceWith((field) => field('msrc')));
+        expect(results).toHaveLength(3);
+        assert.sameDeepMembers(results, [{ data: { x: 5 } }, { data: {} }, { data: {} }]);
+      });
+
+      it('a DOTTED source path replaces with the nested map at that path', async () => {
+        // Only the RESULT is a fresh top-level document; the source is read by an
+        // ordinary nested field reference (`deep.inner`).
+        await expectPipeline(
+          src().replaceWith((field) => field('deep.inner')),
+          [{ data: { z: 9 } }, { data: { z: 8 } }, { data: { z: 7 } }],
+          { ordered: false },
+        );
+      });
+    });
+
+    // `mergeOverwrite` / `mergeKeep` (the two merge modes): the map source merged
+    // onto the existing document, SHALLOW (a colliding top-level key replaced
+    // wholesale, no deep map merge — probed), read-identity PRESERVED (the row
+    // keeps its `id`).
+    describe('mergeOverwrite / mergeKeep (shallow merge, identity preserved)', () => {
+      const mergeCollection = rootCollection({
+        name: 'MergeWith',
+        schema: { a: double(), b: double(), n: map({ p: double(), q: double() }) },
+      });
+      let coll: typeof mergeCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(mergeCollection);
+        await createRepository(coll).batchSet([
+          { id: ['c1'], data: { a: 1, b: 2, n: { p: 10, q: 20 } } },
+        ]);
+      });
+      // The map overlaps on `a` and `n`, adds `c`; its `n` is a DIFFERENT map
+      // (`{ p, r }`), so a shallow merge replaces the whole `n` (no `q`).
+      const newMap = () => mapValue({ a: 99, c: 7, n: mapValue({ p: 999, r: 3 }) });
+
+      it('mergeOverwrite: the map wins a collision, a colliding map key replaced WHOLESALE; identity preserved', async () => {
+        // `a` → 99, `c` added, `n` REPLACED by `{ p: 999, r: 3 }` (the existing
+        // `q` is gone — SHALLOW, not a deep merge), `b` kept. The row keeps its
+        // source id `c1`.
+        await expectPipeline(
+          collectionInput(coll).mergeOverwrite(() => newMap()),
+          [{ id: ['c1'], data: { a: 99, b: 2, n: { p: 999, r: 3 }, c: 7 } }],
+        );
+      });
+
+      it('mergeKeep: the existing wins a collision (the colliding map kept whole); identity preserved', async () => {
+        // `a` and `n` keep their EXISTING values (`n` still `{ p: 10, q: 20 }`),
+        // only the non-colliding `c` is added.
+        await expectPipeline(
+          collectionInput(coll).mergeKeep(() => newMap()),
+          [{ id: ['c1'], data: { a: 1, b: 2, n: { p: 10, q: 20 }, c: 7 } }],
+        );
+      });
+    });
+
+    // An absent/null map source under a merge mode is a NO-OP (probed): the
+    // original document is kept, nothing merged, identity preserved. Only a
+    // PRESENT map contributes its keys (merged to the top level; the source field
+    // itself survives).
+    describe('merge (an absent/null source is a no-op)', () => {
+      const optMergeCollection = rootCollection({
+        name: 'MergeWithOptional',
+        schema: { a: double(), msrc: optional(nullable(map({ c: double() }))) },
+      });
+      type Item = Doc<typeof optMergeCollection>;
+      const items: Item[] = [
+        { id: ['o1'], data: { a: 1, msrc: { c: 99 } } }, // present → keys merge
+        { id: ['o2'], data: { a: 2, msrc: null } }, //     null → no-op
+        { id: ['o3'], data: { a: 3 } }, //                 absent → no-op
+      ];
+      let coll: typeof optMergeCollection;
+      beforeEach(async () => {
+        coll = uniqueCollection(optMergeCollection);
+        await createRepository(coll).batchSet(items);
+      });
+
+      it('a present source merges its keys; an absent/null source leaves the document unchanged; identity preserved', async () => {
+        // o1 present → `c: 99` merged to the top level, `msrc` survives; o2 null
+        // and o3 absent → unchanged (no `c`). Every row keeps its source id.
+        await expectPipeline(
+          collectionInput(coll).mergeOverwrite((field) => field('msrc')),
+          [
+            { id: ['o1'], data: { a: 1, msrc: { c: 99 }, c: 99 } },
+            { id: ['o2'], data: { a: 2, msrc: null } },
+            { id: ['o3'], data: { a: 3 } },
+          ],
+          { ordered: false },
+        );
+      });
+    });
   });
 };
