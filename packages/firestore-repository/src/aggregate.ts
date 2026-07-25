@@ -1,4 +1,4 @@
-import type { DocumentSchema, FieldPath } from './schema.js';
+import type { DocumentSchema, DocFieldPath } from './schema.js';
 
 /** The result type of an aggregate query, where each key maps to a numeric value */
 export type Aggregated<T extends AggregateSpec> = {
@@ -18,20 +18,23 @@ export type AggregateMethod<Schema extends DocumentSchema> = Count | Sum<Schema>
 export type Count = { kind: 'count' };
 
 /** An aggregate method that sums the values of a numeric field */
-export type Sum<Schema extends DocumentSchema> = { kind: 'sum'; path: FieldPath<Schema> };
+export type Sum<Schema extends DocumentSchema> = { kind: 'sum'; path: DocFieldPath<Schema> };
 
 /** An aggregate method that averages the values of a numeric field */
-export type Average<Schema extends DocumentSchema> = { kind: 'average'; path: FieldPath<Schema> };
+export type Average<Schema extends DocumentSchema> = {
+  kind: 'average';
+  path: DocFieldPath<Schema>;
+};
 
 /** Creates a sum aggregate for the specified field */
-export const sum = <Schema extends DocumentSchema>(path: FieldPath<Schema>): Sum<Schema> => ({
+export const sum = <Schema extends DocumentSchema>(path: DocFieldPath<Schema>): Sum<Schema> => ({
   kind: 'sum',
   path,
 });
 
 /** Creates an average aggregate for the specified field */
 export const average = <Schema extends DocumentSchema>(
-  path: FieldPath<Schema>,
+  path: DocFieldPath<Schema>,
 ): Average<Schema> => ({ kind: 'average', path });
 
 /** Creates a count aggregate */

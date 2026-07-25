@@ -18,7 +18,7 @@ import {
   subcollectionRepository as googleCloudFirestoreSubcollectionRepository,
 } from '@firestore-repository/google-cloud-firestore';
 import { Firestore } from '@google-cloud/firestore';
-import { randomString } from 'firestore-repository/__test__/util';
+import { randomString, uniqueCollection } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
 import { eq, gte, limit, query, where } from 'firestore-repository/query';
 import type {
@@ -314,7 +314,7 @@ describe('README example', () => {
       onlyGoogleCloudFirestore: (name, fn) => {
         const repo = googleCloudFirestoreRepositoryWithMapper(
           db,
-          { ...users, name: `${users.name}-${randomString()}` },
+          uniqueCollection(users),
           rootCollectionPlainMapper(users),
         );
         it(name, () => fn(repo));

@@ -58,6 +58,8 @@ describe('repository', () => {
     expectTypeOf<DocRef<AuthorsCollection>>().toEqualTypeOf<[string]>();
     expectTypeOf<DocRef<PostsCollection>>().toEqualTypeOf<[string, string]>();
     expectTypeOf<DocRef<CommentsCollection>>().toEqualTypeOf<[string, string, string]>();
-    expectTypeOf<DocRef<Collection>>().toEqualTypeOf<string[]>();
+    // A ref path is always a non-empty tuple (at least the doc id), so the loose
+    // `DocRef<Collection>` is `[...string[], string]`, not a plain `string[]`.
+    expectTypeOf<DocRef<Collection>>().toEqualTypeOf<[...string[], string]>();
   });
 });

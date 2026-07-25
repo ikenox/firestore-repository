@@ -21,7 +21,7 @@ import {
 import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeSchema } from './codec.js';
+import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -247,9 +247,13 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   };
 };
 
-const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, collection: T) => {
+export const buildFirestoreUtilities = <T extends Collection>(
+  db: firestore.Firestore,
+  collection: T,
+) => {
   const decodeSchema = buildDecodeSchema(collection.schema);
   const encodeSchema = buildEncodeSchema(collection.schema, db);
+  const encodeFilterValue = buildEncodeFilterValue(collection.schema, db);
 
   const toFirestore = {
     docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
@@ -302,7 +306,11 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
     filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
       switch (expr.kind) {
         case 'fieldValueCondition':
-          return Filter.where(expr.fieldPath, expr.opStr, expr.value);
+          return Filter.where(
+            expr.fieldPath,
+            expr.opStr,
+            encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
+          );
         case 'and':
           return Filter.and(...expr.filters.map(toFirestore.filter));
         case 'or':
@@ -318,17 +326,18 @@ const buildFirestoreUtilities = <T extends Collection>(db: firestore.Firestore, 
       if (!data) {
         throw new Error('document must exist');
       }
-      return {
-        id: fromFirestore.docRef(document.ref),
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by schema
-        data: decodeSchema.parse(data) as DocData<T>,
-      };
+      return { id: fromFirestore.docRef(document.ref), data: fromFirestore.decode(data) };
     },
     document: (document: firestore.DocumentSnapshot): Doc<T> | undefined => {
       if (!document.exists) {
         return undefined;
       }
       return fromFirestore.documentMustExist(document);
+    },
+    /** Decodes raw Firestore document data into the schema's read type. */
+    decode: (data: firestore.DocumentData): DocData<T> => {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
+      return decodeSchema.parse(data) as DocData<T>;
     },
     docRef: (ref: firestore.DocumentReference): DocRef<T> => {
       const docRef: string[] = [];
