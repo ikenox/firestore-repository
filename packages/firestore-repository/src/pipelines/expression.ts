@@ -650,12 +650,16 @@ type SharedKeysComparable<
   K extends keyof A & keyof B,
 > = false extends (K extends unknown ? TagSetsComparable<A[K], B[K]> : never) ? false : true;
 
-// ---- Prototype: direct literal operands (branch `direct-literal-operands`) ----
+// ---- Direct literal operands ----
 // An operand position accepts a raw value alongside an expression; the factory
 // lifts the raw via `Constant.of` internally — exactly the official SDK's
-// `equal(field('x'), 5)`. ONE lifting rule, applied uniformly, NOT per-function
-// overloads. Prototyped on five factories (`equal` / `add` / `startsWith` /
-// `and` / `timestampAdd`); the rest still take `Expression`s.
+// `equal(field('x'), 5)`. ONE lifting rule, applied uniformly across every
+// operand-taking factory, NOT per-function overloads: a factory declares its
+// parameter as the liftable `*OperandInput` and calls `toOperand` / `liftOperands`.
+// So a raw literal is first-class in OPERAND positions (inside functions,
+// comparisons, `mapValue` values). `constant()` stays for the standalone /
+// aliasable constant a SELECTION position needs (`constant(5).as('x')`), which
+// lifting does not cover — a bare `Field` is a selectable but a raw value is not.
 
 /** Anything usable in an operand position: an expression, or a raw value liftable via `constant()`. */
 type OperandInput = Expression | ConstantValue;
