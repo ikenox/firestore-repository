@@ -14,6 +14,7 @@ import {
 import type { AggregateWithAlias } from './expression.js';
 import { field, type Expression, type Field, type Valued } from './expression.js';
 import { Ordering } from './ordering.js';
+import type { SearchOrdering, SearchQuery } from './search.js';
 import {
   type AggregateGroup,
   type AggregateOutputNames,
@@ -24,6 +25,7 @@ import {
   buildDistinctSchema,
   buildMergeWithSchema,
   buildReplaceWithSchema,
+  buildSearchSchema,
   buildSelectionSchema,
   type BuildSelectionSchema,
   buildUnnestSchema,
@@ -34,9 +36,10 @@ import {
   type MergeMode,
   type MergeWithSchema,
   type ReplaceWithSchema,
+  type SearchSchema,
   type Selection,
   type UndottedGroupAliases,
-  type UndottedIndexField,
+  type UndottedOptionalKey,
   type UndottedSelectionAlias,
   type UniqueAggregateOutputs,
   type UnnestSchema,
@@ -262,7 +265,7 @@ export class Pipeline<
     // shared with `aggregate` / `distinct`'s `UndottedGroupAliases`.
     spec: (field: FieldProvider<Schema>) => {
       selectable: Sel & UndottedSelectionAlias<Sel>;
-      indexField?: Index & UndottedIndexField<Index>;
+      indexField?: Index & UndottedOptionalKey<Index>;
     },
   ): Pipeline<UnnestSchema<Schema, Sel, Index>, Id> {
     const { selectable, indexField } = spec(fieldProvider(this.node.schema));
@@ -422,6 +425,64 @@ export class Pipeline<
   ): Pipeline<MergeWithSchema<Schema, Map, 'keep'>, Id> {
     return mergeStage(this, map, 'keep');
   }
+  /**
+   * Runs ONE full-text query against the collection's text index, keeping the
+   * matching documents. Identity-PRESERVING (`Id` threads through — the rows
+   * are the source documents, with their refs and all their fields).
+   *
+   * **Must be the FIRST stage**, directly after the `collection` /
+   * `collectionGroup` input: the backend rejects any other position outright
+   * (`INVALID_ARGUMENT: search(...) must be the first stage after a collection
+   * or collection_group stage` — probed). Not modelled in the types, because
+   * that failure is loud rather than silent. Ordinary stages may follow.
+   *
+   * The collection needs a **text index** covering the fields to search;
+   * without one the query fails with `FAILED_PRECONDITION`. Only indexed fields
+   * are searched.
+   *
+   * Each option is far narrower than the SDK's own signature, which is what the
+   * backend actually accepts (probed — see
+   * `docs/pipeline-query-search-research.md`):
+   *
+   * - `query` — exactly one {@link documentMatches}; `and` / `or` / `not` and
+   *   ordinary comparisons are rejected, so {@link SearchQuery} is not an
+   *   expression union.
+   * - `scoreAs` — surfaces the relevance score under that name (a `double`).
+   *   The score is available NOWHERE else: it cannot be referenced from a later
+   *   stage. Top-level names only, and a name that collides with an existing
+   *   field REPLACES it.
+   * - `sort` — `{ by: 'score', direction: 'descending' }` or nothing. Omitted,
+   *   rows come back by document creation time, NEWEST first.
+   * - `offset` — only together with `limit`. `retrievalDepth` bounds the rows
+   *   pulled from the index BEFORE scoring and must be `>= offset + limit`.
+   */
+  search<const Alias extends string | undefined = undefined>(
+    // The undotted guard is a PARAMETER intersection (the `unnest` `indexField`
+    // precedent), so `Alias` still infers from the value untouched while a
+    // dotted alias collapses the parameter to `never` at the call site.
+    spec: (field: FieldProvider<Schema>) => SearchSpec<Alias>,
+  ): Pipeline<SearchSchema<Schema, Alias>, Id> {
+    const { query, scoreAs, sort, languageCode, retrievalDepth, limit, offset } = spec(
+      fieldProvider(this.node.schema),
+    );
+    return new Pipeline<SearchSchema<Schema, Alias>, Id>({
+      schema: buildSearchSchema<Schema, Alias>(this.node.schema, scoreAs),
+      // Each absent option is spread away rather than set to `undefined`
+      // (`exactOptionalPropertyTypes`), so the node carries only what was asked
+      // for and an executor can test presence directly.
+      stage: {
+        kind: 'search',
+        query,
+        ...(scoreAs !== undefined ? { scoreAs } : {}),
+        ...(sort !== undefined ? { sort } : {}),
+        ...(languageCode !== undefined ? { languageCode } : {}),
+        ...(retrievalDepth !== undefined ? { retrievalDepth } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      },
+      parent: this.node,
+    });
+  }
   // TODO
   // union(..._args: unknown[]): Pipeline<Fields> {
   //   return unimplemented();
@@ -430,9 +491,6 @@ export class Pipeline<
   //   return unimplemented();
   // }
   // let(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // search(..._args: unknown[]): Pipeline<Schema> {
   //   return unimplemented();
   // }
   // sample(..._args: unknown[]): Pipeline<Schema> {
@@ -458,6 +516,33 @@ export class Pipeline<
 export type PipelineResult<Schema extends Fields, Id extends PipelineRowIdentity> = {
   data: FieldValue<MapType<Schema>, 'read'>;
 } & (Id extends undefined ? unknown : { readonly id: Id });
+
+/**
+ * The options of {@link Pipeline.search}, parameterized by the score alias so
+ * the stage's output schema can name the score field.
+ *
+ * Every option is the narrow shape the backend accepts, not the SDK's wider
+ * declaration — see the method's JSDoc.
+ */
+export type SearchSpec<Alias extends string | undefined> = {
+  query: SearchQuery;
+  scoreAs?: Alias & UndottedOptionalKey<Alias>;
+  sort?: SearchOrdering;
+  languageCode?: string;
+  retrievalDepth?: number;
+} & SearchPaging;
+
+/**
+ * The `search` stage's row-window options. `offset` is expressible only
+ * ALONGSIDE `limit`: the backend rejects it on its own (`INVALID_ARGUMENT:
+ * search(...): 'offset' cannot be used without 'limit'` — probed), and that
+ * pairing is a shape the type system can state, so it does.
+ *
+ * The companion rule `retrievalDepth >= offset + limit` is a relation between
+ * three runtime numbers, which the types cannot state — it stays with the
+ * backend.
+ */
+type SearchPaging = { limit?: undefined; offset?: undefined } | { limit: number; offset?: number };
 
 export type FieldProvider<Schema extends Fields> = <Path extends DocFieldPath<Schema>>(
   path: Path,

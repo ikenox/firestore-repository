@@ -1,6 +1,7 @@
 import type { Collection } from '../schema.js';
 import type { AggregateWithAlias, Expression, ExpressionWithAlias, Valued } from './expression.js';
 import type { Ordering } from './ordering.js';
+import type { SearchOrdering, SearchQuery } from './search.js';
 import type { SelectionNode } from './selection.js';
 
 /**
@@ -78,10 +79,26 @@ export type TransformStage =
       map: Expression;
       mode: 'full_replace' | 'merge_overwrite_existing' | 'merge_keep_existing';
     }
+  // Runs ONE text query against the collection's text index. Every field is
+  // already the narrow shape the backend accepts (probed — see
+  // `docs/pipeline-query-search-research.md`), so an executor translates them
+  // back into the SDK's wider option object 1:1: `scoreAs` becomes
+  // `addFields: [score().as(scoreAs)]` and `sort` becomes
+  // `score().descending()`. `offset` is only ever present alongside `limit`
+  // (guaranteed by `Pipeline.search`'s parameter).
+  | {
+      kind: 'search';
+      query: SearchQuery;
+      scoreAs?: string;
+      sort?: SearchOrdering;
+      languageCode?: string;
+      retrievalDepth?: number;
+      offset?: number;
+      limit?: number;
+    }
   | { kind: 'union' }
   | { kind: 'findNearest' }
   | { kind: 'let' }
-  | { kind: 'search' }
   | { kind: 'sample' };
 
 /**

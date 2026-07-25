@@ -28,6 +28,7 @@ import {
   greaterThanOrEqual as pipelineGreaterThanOrEqual,
 } from 'firestore-repository/pipelines/expression';
 import type { PipelineQueryExecutor } from 'firestore-repository/pipelines/pipeline';
+import { documentMatches } from 'firestore-repository/pipelines/search';
 import { collection as pipelineCollection } from 'firestore-repository/pipelines/source';
 import { eq, gte, limit, query, where } from 'firestore-repository/query';
 import type {
@@ -316,6 +317,21 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
             pipelineCountAll().as('count'),
           ],
         }));
+      const rows = await pipeline!.executor.execute(q);
+      console.log(rows);
+    });
+
+    // SKIPPED, but still type-checked: a full-text `search` needs a TEXT INDEX
+    // on the searched collection, created out of band per collection ID — which
+    // the freshly named collection above can never have. Enable once an indexed
+    // fixture exists. See docs/plan/pipeline-query-search.md.
+    it.skip('search', async () => {
+      const q = pipelineCollection(authors).search(() => ({
+        query: documentMatches('alice'),
+        scoreAs: 'relevance',
+        sort: { by: 'score', direction: 'descending' },
+        limit: 10,
+      }));
       const rows = await pipeline!.executor.execute(q);
       console.log(rows);
     });

@@ -123,6 +123,7 @@ import type {
   PipelineResult,
   PipelineRowIdentity,
 } from '../pipelines/pipeline.js';
+import { documentMatches } from '../pipelines/search.js';
 import {
   collection as collectionInput,
   collectionGroup as collectionGroupInput,
@@ -146,7 +147,7 @@ import {
   type PostsCollection,
   postsCollection,
 } from './specification.js';
-import { uniqueCollection } from './util.js';
+import { randomString, uniqueCollection } from './util.js';
 
 /**
  * Behavioural spec that every pipeline-query adapter (`@firebase/firestore`,
@@ -2639,6 +2640,246 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
           { ordered: false },
         );
       });
+    });
+
+    /**
+     * The `search` stage — SKIPPED, pending a provisioned fixture.
+     *
+     * Unlike every other case in this spec these cannot run against a per-run
+     * `uniqueCollection(...)`: a TEXT INDEX is created per collection ID, by
+     * hand in the Cloud console (no CLI path is documented), so a freshly named
+     * collection can never be indexed. The cases below therefore target the
+     * FIXED `TextSearchTest` collection with a text index on its `text` field —
+     * the same fixture `.ikenox/probe-search.mjs` uses — and are enabled once
+     * that index exists wherever this suite runs. Without it every case fails
+     * with `FAILED_PRECONDITION: No matching search index found for query.`
+     *
+     * Cross-run isolation comes from a per-run TOKEN that participates in every
+     * query rather than from a fresh collection: rquery terms AND together, so
+     * `'<token> waffles'` only ever matches this run's documents even though the
+     * collection accumulates. Indexing is effectively synchronous (probed:
+     * searchable 50 ms after the write), so seeding per test is fine.
+     *
+     * Every assertion below is the behaviour pinned in
+     * `docs/pipeline-query-search-research.md`.
+     */
+    describe.skip('search', () => {
+      const searchCollection = rootCollection({
+        name: 'TextSearchTest',
+        // `text` is optional AND nullable so the fixture can carry the two rows
+        // that must never match: one with no `text` at all, one with `null`.
+        schema: { text: optional(nullable(string())), rank: double() },
+      });
+      type Item = Doc<typeof searchCollection>;
+
+      // Assigned per test: the token, the seeded rows, and the rquery prefix
+      // that scopes every query to this run.
+      let token: string;
+      let items: [Item, Item, Item, Item, Item];
+      /** `'<token> <terms>'` — the run-scoped form of every rquery below. */
+      let scoped: (terms: string) => string;
+
+      beforeEach(async () => {
+        // Letters only: digits and underscores tokenize unpredictably.
+        token = `t${randomString().replace(/[^a-z]/g, 'q')}`;
+        scoped = (terms) => `${token} ${terms}`;
+        items = [
+          { id: [`${token}1`], data: { text: `${token} belgian waffles and coffee`, rank: 1 } },
+          { id: [`${token}2`], data: { text: `${token} pancakes with syrup`, rank: 2 } },
+          // Repeats the term, so it scores higher than the single-mention row.
+          { id: [`${token}3`], data: { text: `${token} waffles waffles waffles`, rank: 3 } },
+          { id: [`${token}4`], data: { text: null, rank: 4 } },
+          { id: [`${token}5`], data: { rank: 5 } },
+        ];
+        await createRepository(searchCollection).batchSet(items);
+      });
+
+      const source = () => collectionInput(searchCollection);
+
+      it('matches documents by a term, keeping row identity and every field', async () => {
+        // The rows ARE the source documents: refs and full data, not a
+        // projection. a1 mentions `waffles` once, a3 three times.
+        const [a1, , a3] = items;
+        await expectPipeline(
+          source().search(() => ({ query: documentMatches(scoped('waffles')) })),
+          [a3, a1],
+          { ordered: false },
+        );
+      });
+
+      it('never matches a row whose indexed field is absent or null', async () => {
+        // The null-`text` and no-`text` rows carry the token in no indexed
+        // field, so a token-only query returns exactly the three text rows.
+        const [a1, a2, a3] = items;
+        await expectPipeline(
+          source().search(() => ({ query: documentMatches(token) })),
+          [a1, a2, a3],
+          { ordered: false },
+        );
+      });
+
+      describe('the rquery DSL', () => {
+        it('ANDs bare terms', async () => {
+          const [a1] = items;
+          await expectPipeline(
+            source().search(() => ({ query: documentMatches(scoped('waffles coffee')) })),
+            [a1],
+          );
+        });
+
+        it('matches a quoted phrase exactly', async () => {
+          const [a1] = items;
+          await expectPipeline(
+            source().search(() => ({ query: documentMatches(scoped('"belgian waffles"')) })),
+            [a1],
+          );
+        });
+
+        it('excludes a term prefixed with -', async () => {
+          const [, , a3] = items;
+          await expectPipeline(
+            source().search(() => ({ query: documentMatches(scoped('waffles -coffee')) })),
+            [a3],
+          );
+        });
+
+        it('disjoins with a space-less pipe (NOT the `OR` the official docs show)', async () => {
+          // `a|b` disjoins; `a OR b` matches `OR` as an ordinary term and finds
+          // nothing (probed) — the docs are wrong about this.
+          const [a1, a2, a3] = items;
+          await expectPipeline(
+            source().search(() => ({ query: documentMatches(scoped('waffles|pancakes')) })),
+            [a1, a2, a3],
+            { ordered: false },
+          );
+          await expectPipeline(
+            source().search(() => ({ query: documentMatches(scoped('waffles OR pancakes')) })),
+            [],
+          );
+        });
+      });
+
+      it('surfaces the relevance score under its alias as a double', async () => {
+        // The score is reachable ONLY here — the backend rejects `score()` in
+        // any other stage, including stages AFTER the search.
+        const results = await executor.execute(
+          source().search(() => ({
+            query: documentMatches(scoped('waffles')),
+            scoreAs: 'relevance',
+          })),
+        );
+        assert.strictEqual(results.length, 2);
+        for (const row of results) {
+          assert.typeOf(row.data.relevance, 'number');
+        }
+      });
+
+      it('orders by score, highest first, when asked', async () => {
+        // a3 repeats the term, so it outranks a1's single mention.
+        const [a1, , a3] = items;
+        const results = await executor.execute(
+          source().search(() => ({
+            query: documentMatches(scoped('waffles')),
+            sort: { by: 'score', direction: 'descending' },
+          })),
+        );
+        assert.deepStrictEqual(
+          results.map((r) => r.id),
+          [a3.id, a1.id],
+        );
+      });
+
+      it('orders by document creation time, NEWEST first, when no sort is given', async () => {
+        // The seed is one batch, so these three share a createTime; write three
+        // more sequentially to make the order observable.
+        const ordered: [Item, Item, Item] = [
+          { id: [`${token}o1`], data: { text: `${token} orderprobe`, rank: 0 } },
+          { id: [`${token}o2`], data: { text: `${token} orderprobe`, rank: 0 } },
+          { id: [`${token}o3`], data: { text: `${token} orderprobe`, rank: 0 } },
+        ];
+        const repository = createRepository(searchCollection);
+        for (const item of ordered) {
+          await repository.set(item);
+        }
+        const results = await executor.execute(
+          source().search(() => ({ query: documentMatches(scoped('orderprobe')) })),
+        );
+        assert.deepStrictEqual(
+          results.map((r) => r.id),
+          [ordered[2].id, ordered[1].id, ordered[0].id],
+        );
+      });
+
+      it('pages with limit and offset within the resulting order', async () => {
+        const [a1, , a3] = items;
+        await expectPipeline(
+          source().search(() => ({
+            query: documentMatches(scoped('waffles')),
+            sort: { by: 'score', direction: 'descending' },
+            limit: 1,
+          })),
+          [a3],
+        );
+        await expectPipeline(
+          source().search(() => ({
+            query: documentMatches(scoped('waffles')),
+            sort: { by: 'score', direction: 'descending' },
+            limit: 1,
+            offset: 1,
+          })),
+          [a1],
+        );
+      });
+
+      it('replaces a colliding field with the score', async () => {
+        // Added-field-wins: aliasing the score onto an existing field name
+        // overwrites that field (probed).
+        const results = await executor.execute(
+          source().search(() => ({ query: documentMatches(scoped('waffles')), scoreAs: 'rank' })),
+        );
+        assert.strictEqual(results.length, 2);
+        for (const row of results) {
+          // `rank` was 1 / 3 in the seed; it now carries the score instead.
+          assert.notInclude([1, 3], row.data.rank);
+        }
+      });
+
+      it('lets ordinary stages follow, with their usual identity behaviour', async () => {
+        const [, , a3] = items;
+        // `where` keeps identity...
+        await expectPipeline(
+          source()
+            .search(() => ({ query: documentMatches(scoped('waffles')) }))
+            .where((field) => greaterThan(field('rank'), 1)),
+          [a3],
+        );
+        // ...and `select` drops it, as after any other stage.
+        await expectPipeline(
+          source()
+            .search(() => ({ query: documentMatches(scoped('waffles')) }))
+            .select(() => ['rank']),
+          [{ data: { rank: 1 } }, { data: { rank: 3 } }],
+          { ordered: false },
+        );
+      });
+
+      it('rejects a search that is not the first stage', async () => {
+        // The premise of NOT type-banning a misplaced search: the backend fails
+        // loudly ("search(...) must be the first stage after a collection or
+        // collection_group stage").
+        await expect(
+          executor.execute(
+            source()
+              .where((field) => greaterThan(field('rank'), 0))
+              .search(() => ({ query: documentMatches(token) })),
+          ),
+        ).rejects.toThrow(/first stage/);
+      });
+
+      // NOT covered here: `offset` without `limit`, a dotted score alias, an
+      // ascending score ordering, and a non-`documentMatches` query. Each is
+      // unreachable through the typed API, so no live test can exist for it —
+      // they are pinned as compile-time guards in `pipelines/pipeline.test.ts`.
     });
   });
 };

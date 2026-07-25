@@ -109,8 +109,12 @@ import {
   last as sdkLast,
   arrayAgg as sdkArrayAgg,
   arrayAggDistinct as sdkArrayAggDistinct,
+  documentMatches as sdkDocumentMatches,
+  score as sdkScore,
   type AggregateFunction as SdkAggregateFunction,
+  type BooleanExpression as SdkBooleanExpression,
   type Expression as SdkExpression,
+  type Ordering as SdkOrdering,
   type Pipeline as SdkPipeline,
   type Selectable as SdkSelectable,
 } from '@firebase/firestore/pipelines';
@@ -134,6 +138,7 @@ import type {
   PipelineResult,
   PipelineRowIdentity,
 } from 'firestore-repository/pipelines/pipeline';
+import type { SearchOrdering, SearchQuery } from 'firestore-repository/pipelines/search';
 import { selectionPath, type SelectionNode } from 'firestore-repository/pipelines/selection';
 import type { TransformStage } from 'firestore-repository/pipelines/stage';
 import type { Collection, DocumentSchema } from 'firestore-repository/schema';
@@ -265,10 +270,24 @@ const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): Sdk
         ? sdk.replaceWith(mapExpr)
         : sdk.rawStage('replace_with', [mapExpr, sdkConstant(stage.mode)]);
     }
+    case 'search':
+      // The narrow stage options are translated back into the SDK's wider
+      // option object: the score alias becomes the one `addFields` selectable
+      // the backend accepts (`score()`, at most once), and the ordering becomes
+      // `score().descending()` — the only ordering a text search takes. Absent
+      // options are spread away for `exactOptionalPropertyTypes`.
+      return sdk.search({
+        query: toSdkSearchQuery(stage.query),
+        ...(stage.scoreAs !== undefined ? { addFields: [sdkScore().as(stage.scoreAs)] } : {}),
+        ...(stage.sort !== undefined ? { sort: toSdkSearchOrdering(stage.sort) } : {}),
+        ...(stage.languageCode !== undefined ? { languageCode: stage.languageCode } : {}),
+        ...(stage.retrievalDepth !== undefined ? { retrievalDepth: stage.retrievalDepth } : {}),
+        ...(stage.limit !== undefined ? { limit: stage.limit } : {}),
+        ...(stage.offset !== undefined ? { offset: stage.offset } : {}),
+      });
     case 'union':
     case 'findNearest':
     case 'let':
-    case 'search':
     case 'sample':
       throw new Error(`firebase pipeline executor: stage "${stage.kind}" not supported yet`);
     default:
@@ -594,6 +613,43 @@ const aggregateTranslators: AggregateTranslators = {
   last: (c, t) => sdkLast(t(c.value)),
   arrayAgg: (c, t) => sdkArrayAgg(t(c.value)),
   arrayAggDistinct: (c, t) => sdkArrayAggDistinct(t(c.value)),
+};
+
+/**
+ * Translates a {@link SearchQuery} into the SDK's search-stage `query`. Its own
+ * dispatch rather than a reuse of {@link toSdkExpression}: a search query is not
+ * an expression (the backend accepts only this closed set here), and the union
+ * grows as the backend's accepted set does.
+ */
+const toSdkSearchQuery = (query: SearchQuery): SdkBooleanExpression => {
+  switch (query.kind) {
+    case 'documentMatches':
+      return sdkDocumentMatches(query.rquery);
+    default:
+      // Over the DISCRIMINANT, not the node: `SearchQuery` has a single member
+      // today, and a switch narrows only unions — `query` itself is therefore
+      // not `never` here, while `query.kind` is.
+      return assertNever(query.kind);
+  }
+};
+
+/**
+ * Translates a {@link SearchOrdering} into the SDK's `Ordering`. Both axes are
+ * enumerated explicitly even though each has a single member today, so widening
+ * either (an ascending geo-distance ordering) surfaces here as a compile error.
+ */
+const toSdkSearchOrdering = (ordering: SearchOrdering): SdkOrdering => {
+  switch (ordering.by) {
+    case 'score':
+      switch (ordering.direction) {
+        case 'descending':
+          return sdkScore().descending();
+        default:
+          return assertNever(ordering.direction);
+      }
+    default:
+      return assertNever(ordering.by);
+  }
 };
 
 const toSdkOrdering = (ordering: Ordering) => {

@@ -287,7 +287,7 @@ await repository.delete('user1');
 
 > **Note:** [Pipeline operations](https://docs.cloud.google.com/firestore/native/docs/pipeline/overview) require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
 
-A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
+A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, `search`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
 
 Pipelines follow the same **type-safe** philosophy as the rest of the library: the schema flows through every stage, so field paths, aggregate inputs, and the shape of the result rows are all derived from the schema and checked at compile time. A stage that reshapes the rows (e.g. `select` / `aggregate`) reshapes the result type to match.
 
@@ -316,3 +316,28 @@ const pipeline = collection(users)
 //   { data: { gender: 'male' | 'female' | null; avgAge: number | null; count: number } }[]
 const rows = await pipe.execute(pipeline);
 ```
+
+#### Full-text search
+
+> **Note:** `search` additionally requires a **text index** on the fields you search. Without one the query fails with `FAILED_PRECONDITION`.
+
+`search` runs one full-text query against the collection's text index. It must be the **first** stage, directly after the collection, and it keeps row identity — the results are the matching documents themselves.
+
+```ts
+import { collection } from 'firestore-repository/pipelines/source';
+import { documentMatches } from 'firestore-repository/pipelines/search';
+
+const pipeline = collection(users).search(() => ({
+  query: documentMatches('alice'),
+  // Optional: surface the relevance score under this name, and order by it.
+  scoreAs: 'relevance',
+  sort: { by: 'score', direction: 'descending' },
+  limit: 10,
+}));
+
+// The score joins the document's own fields in the result type:
+//   { id: DocRef<...>; data: { name: string; profile: {...}; tag: string[]; relevance: number } }[]
+const rows = await pipe.execute(pipeline);
+```
+
+The query string uses the backend's search DSL: `waffles syrup` requires both terms, `"belgian waffles"` matches the phrase, `-syrup` excludes, and `waffles|syrup` (no spaces around the pipe) matches either. Omitting `sort` returns the newest documents first.

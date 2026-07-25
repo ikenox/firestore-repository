@@ -1,5 +1,7 @@
 import {
+  double,
   type DocumentSchema,
+  type DoubleType,
   type FieldType,
   type FieldTypeOfPath,
   fieldTypeOfPath,
@@ -145,14 +147,15 @@ export type UndottedGroupAliases<G> = {
 export type UndottedSelectionAlias<S> = SelectionPath<S> extends `${string}.${string}` ? never : S;
 
 /**
- * The top-level-output guard for an `unnest` index field: `undefined` (no index
- * field) passes through, a name passes through {@link UndottedKey}. A separate
+ * The top-level-output guard for an OPTIONAL bare output key — `unnest`'s
+ * `indexField` and `search`'s score alias: `undefined` (the option omitted)
+ * passes through, a name passes through {@link UndottedKey}. A separate
  * operator from {@link UndottedSelectionAlias} only because the value is a bare
  * key rather than a selection — the restriction is the same one.
  */
-export type UndottedIndexField<Index extends string | undefined> = Index extends string
-  ? UndottedKey<Index>
-  : Index;
+export type UndottedOptionalKey<K extends string | undefined> = K extends string
+  ? UndottedKey<K>
+  : K;
 
 /**
  * The output-name uniqueness guard for the aggregate/distinct family, applied
@@ -790,6 +793,41 @@ type MergeSchemas<A, B> = {
   : never;
 
 // ---------------------------------------------------------------------------
+// `search` — the full-text stage. Its only schema effect is the relevance
+// score, optionally surfaced under an alias. See
+// `docs/pipeline-query-search-research.md`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Output schema of the `search` stage: the input context with the relevance
+ * score overlaid under the stage's score alias — and the context UNCHANGED
+ * when no alias is requested.
+ *
+ * The overlay is a single `double()` field, because that is the whole of what
+ * the stage can add: the backend accepts `score()` and nothing else in its
+ * `addFields` option, at most ONCE (probed). It is the same
+ * `MergeSchemas<additions, Context>` composition as {@link BuildAddFieldsSchema}
+ * / {@link UnnestSchema}, so an alias colliding with an existing field REPLACES
+ * it — including replacing a whole map with the score, which is what the
+ * backend does (probed; `MergeSchemas` only recurses when BOTH sides are maps).
+ */
+export type SearchSchema<Context extends Fields, Alias extends string | undefined> = MergeSchemas<
+  SearchScoreSchema<Alias>,
+  Context
+>;
+
+/**
+ * The score's contribution to the row: its single-entry schema under the alias,
+ * or `{}` when no alias was requested — the {@link UnnestIndexSchema} shape,
+ * for the same reason (an optional output key). The alias is guaranteed
+ * top-level by {@link UndottedOptionalKey} at the `Pipeline.search` parameter,
+ * so {@link PathToSchema} never nests here.
+ */
+type SearchScoreSchema<Alias extends string | undefined> = Alias extends string
+  ? PathToSchema<Alias, DoubleType>
+  : {};
+
+// ---------------------------------------------------------------------------
 // Runtime counterparts. Each helper is DECLARED AS the type-level operator of
 // the same name applied to its own arguments, so the assertion inside it claims
 // exactly one step and the COMPOSITION of the steps is checked by the compiler:
@@ -1228,6 +1266,32 @@ export const buildMergeWithSchema = <
     mode === 'overwrite' ? shallowMergeSchemas(m, schema) : shallowMergeSchemas(schema, m);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `MergeWithSchema` selects the shallow-merge ARGUMENT ORDER from the type-level `Mode`, which the runtime decides from the `mode` value; the compiler does not relate the value branch to the conditional type.
   return result as MergeWithSchema<Context, MapExpr, Mode>;
+};
+
+/**
+ * Runtime counterpart of {@link SearchSchema}: the score's single-entry schema
+ * merged over the context, the `MergeSchemas<SearchScoreSchema<Alias>, Context>`
+ * composition of the type.
+ */
+export const buildSearchSchema = <
+  Context extends Fields,
+  const Alias extends string | undefined = undefined,
+>(
+  schema: Context,
+  scoreAs?: Alias,
+): SearchSchema<Context, Alias> => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: an omitted `scoreAs` argument means "no score alias" and leaves `Alias` at its `undefined` default, but the compiler does not tie a parameter's absence to a type parameter's default (the `buildUnnestSchema` precedent).
+  const alias = scoreAs as Alias;
+  return mergeSchemas(searchScoreSchema(alias), schema);
+};
+
+/** Runtime counterpart of {@link SearchScoreSchema}, typed as that operator applied to its input. */
+const searchScoreSchema = <Alias extends string | undefined>(
+  alias: Alias,
+): SearchScoreSchema<Alias> => {
+  const result = alias === undefined ? {} : pathToSchema(alias, double());
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: `SearchScoreSchema` branches on `Alias extends string`, a type-level test the runtime performs with an `undefined` check; the compiler does not relate the two (the `unnestIndexSchema` precedent).
+  return result as SearchScoreSchema<Alias>;
 };
 
 /**
