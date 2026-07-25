@@ -6,6 +6,9 @@
 
 A minimal, universal Firestore client for TypeScript, built around the Repository Pattern.
 
+> [!NOTE]
+> **New in v0.6.0:** [Pipeline Query](#pipeline-query) support (Firestore Enterprise) — build type-safe, multi-stage queries (`where` / `sort` / `select` / `aggregate` / `distinct` / `unnest` / `replaceWith` / ...) whose result shape is derived from your schema. See [Pipeline Query](#pipeline-query) for details.
+
 ## Features
 
 - 🚀 **Minimal**: Only a few straightforward interfaces and classes. You can start using it immediately without a steep learning curve.
