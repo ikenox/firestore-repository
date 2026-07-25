@@ -238,7 +238,7 @@ The following updates are required:
 - Build tool: TypeScript (tsc)
 - Test framework: Vitest
 - Lint/Format: oxlint, oxfmt
-- Type checking: tsgo (TypeScript native preview)
+- Type checking: oxlint's type-aware mode (tsgolint), enabled by default via `.oxlintrc.json`
 
 ### Workspace Dependencies
 

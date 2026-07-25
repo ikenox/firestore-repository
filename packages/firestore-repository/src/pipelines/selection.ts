@@ -884,7 +884,7 @@ export const buildUnnestSchema = <
 >(
   schema: Context,
   selectable: Sel,
-  indexField: Index | undefined = undefined,
+  indexField?: Index,
 ): UnnestSchema<Context, Sel, Index> => {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- bridges ONE step: an omitted `indexField` argument means "no index field" and leaves `Index` at its `undefined` default, but the compiler does not tie a parameter's absence to a type parameter's default.
   const index = indexField as Index;

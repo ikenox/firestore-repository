@@ -608,25 +608,25 @@ Query API (admin has `query.stream()`, web only `getDocs()`):
       and the exact stage node via `stages()`). Scope: `pipeline.test.ts` only —
       the runtime/live behavior is covered elsewhere.
 
-      | method                    | schema type | identity | stage node |
-      | ------------------------- | ----------- | -------- | ---------- |
-      | `collection`/`collectionGroup` | ✓      | ✓ preserve | ✓ (input node) |
-      | `where`                   | ✓ unchanged | ✓ preserve | ✓        |
-      | `sort`                    | ✓ unchanged | ✓ preserve | ✓        |
-      | `limit` / `offset`        | ✓ unchanged | ✓ preserve | ✓        |
-      | `select`                  | ✓           | ✓ drop   | ✓          |
-      | `addFields`               | ✓           | ✓ preserve | ✓        |
-      | `removeFields`            | ✓           | ✓ preserve | ✓        |
-      | `aggregate`               | ✓           | ✓ break  | ✓          |
-      | `distinct`                | ✓           | ✓ break  | ✓          |
-      | `unnest`                  | ✓           | ✓ preserve | ✓        |
-      | `replaceWith`             | ✓           | ✓ break  | ✓ (wire mode) |
-      | `mergeOverwrite`          | ✓           | ✓ preserve | ✓ (wire mode) |
-      | `mergeKeep`               | ✓           | ✓ preserve | ✓ (wire mode) |
+  | method                         | schema type | identity   | stage node     |
+  | ------------------------------ | ----------- | ---------- | -------------- |
+  | `collection`/`collectionGroup` | ✓           | ✓ preserve | ✓ (input node) |
+  | `where`                        | ✓ unchanged | ✓ preserve | ✓              |
+  | `sort`                         | ✓ unchanged | ✓ preserve | ✓              |
+  | `limit` / `offset`             | ✓ unchanged | ✓ preserve | ✓              |
+  | `select`                       | ✓           | ✓ drop     | ✓              |
+  | `addFields`                    | ✓           | ✓ preserve | ✓              |
+  | `removeFields`                 | ✓           | ✓ preserve | ✓              |
+  | `aggregate`                    | ✓           | ✓ break    | ✓              |
+  | `distinct`                     | ✓           | ✓ break    | ✓              |
+  | `unnest`                       | ✓           | ✓ preserve | ✓              |
+  | `replaceWith`                  | ✓           | ✓ break    | ✓ (wire mode)  |
+  | `mergeOverwrite`               | ✓           | ✓ preserve | ✓ (wire mode)  |
+  | `mergeKeep`                    | ✓           | ✓ preserve | ✓ (wire mode)  |
 
-      One representative-but-real case per method proves the wiring (the full
-      operator matrix stays in `selection.test.ts`); the shared `SchemaOf` /
-      `RowOf` helpers are hoisted to the top of the `describe`.
+  One representative-but-real case per method proves the wiring (the full
+  operator matrix stays in `selection.test.ts`); the shared `SchemaOf` /
+  `RowOf` helpers are hoisted to the top of the `describe`.
 
 ## Docs
 
@@ -719,52 +719,51 @@ nullable(T)`); count family unaffected. Also probe the un-probed
       neither contains the other, and the type is their union parameterized by
       the output VALUE kind:
 
-      ```ts
-      type Selectable<Context, V extends FieldType = FieldType> =
-        | Field<V, MapFieldPath<Context>>
-        | ExpressionWithAlias<V>;
+  ```ts
+  type Selectable<Context, V extends FieldType = FieldType> =
+    Field<V, MapFieldPath<Context>> | ExpressionWithAlias<V>;
 
-      type Selection<Context> = MapFieldPath<Context> | Selectable<Context>;
-      type AggregateGroup<Context> = (keyof Context & string) | Selectable<Context>;
-      type UnnestSelectable<Context> = Selectable<Context, ArrayValued>;
-      ```
+  type Selection<Context> = MapFieldPath<Context> | Selectable<Context>;
+  type AggregateGroup<Context> = (keyof Context & string) | Selectable<Context>;
+  type UnnestSelectable<Context> = Selectable<Context, ArrayValued>;
+  ```
 
-      The real axis is "bare (names an existing field) vs aliased (names a new
-      output)", so a bare `Field` and an `ExpressionWithAlias` are accepted
-      TOGETHER at every site; each stage adds its own bare-string form
-      (`Selection`, `AggregateGroup`) and value constraint (`unnest`'s
-      `ArrayValued`). `addFields` STAYS `ExpressionWithAlias[]`, NOT routed
-      through `Selectable`: it excludes BARENESS as a category (the bare string
-      form too), because a bare form names an existing field — re-adding it
-      under its own name is a no-op at best and, through an optional map,
-      silently materializes empty maps (see `BuildAddFieldsSchema`).
+  The real axis is "bare (names an existing field) vs aliased (names a new
+  output)", so a bare `Field` and an `ExpressionWithAlias` are accepted
+  TOGETHER at every site; each stage adds its own bare-string form
+  (`Selection`, `AggregateGroup`) and value constraint (`unnest`'s
+  `ArrayValued`). `addFields` STAYS `ExpressionWithAlias[]`, NOT routed
+  through `Selectable`: it excludes BARENESS as a category (the bare string
+  form too), because a bare form names an existing field — re-adding it
+  under its own name is a no-op at best and, through an optional map,
+  silently materializes empty maps (see `BuildAddFieldsSchema`).
 
-      `SelectionNode` (`string | Field | ExpressionWithAlias`) is the concept's
-      context-free ERASURE — what stage payloads carry and what the runtime
-      folds and executors see. The concept's two operations are each defined
-      ONCE over it, and every site delegates:
+  `SelectionNode` (`string | Field | ExpressionWithAlias`) is the concept's
+  context-free ERASURE — what stage payloads carry and what the runtime
+  folds and executors see. The concept's two operations are each defined
+  ONCE over it, and every site delegates:
 
-      - **output name** — `SelectionPath` (runtime twin `selectionPath`,
-        exported for the executors). `UndottedSelectionAlias` (hence
-        `UndottedGroupAliases`), both executors' `toSdkSelectable`, and the
-        schema fold `SelectionToSchema`/`selectionToSchema` all obtain the
-        output name through this one operator instead of re-matching alias /
-        bare-`Field` / string.
-      - **schema contribution** — `SelectionToSchema` (runtime twin
-        `selectionToSchema`). The per-form arms (aliased-`Field` conditionality,
-        computed-expression as-is, bare-`Field`-as-its-path, bare-string with
-        conditionality) live INSIDE it; its callers (`FoldSelections`,
-        `GroupSchema`) delegate.
+  - **output name** — `SelectionPath` (runtime twin `selectionPath`,
+    exported for the executors). `UndottedSelectionAlias` (hence
+    `UndottedGroupAliases`), both executors' `toSdkSelectable`, and the
+    schema fold `SelectionToSchema`/`selectionToSchema` all obtain the
+    output name through this one operator instead of re-matching alias /
+    bare-`Field` / string.
+  - **schema contribution** — `SelectionToSchema` (runtime twin
+    `selectionToSchema`). The per-form arms (aliased-`Field` conditionality,
+    computed-expression as-is, bare-`Field`-as-its-path, bare-string with
+    conditionality) live INSIDE it; its callers (`FoldSelections`,
+    `GroupSchema`) delegate.
 
-      `UndottedGroupAliases` is the one irreducible arm: a parameter
-      intersection over the user's UN-normalized tuple, so it stays a
-      per-element tuple map matching the input forms at the parameter position
-      (it obtains the NAME via `SelectionPath`, but the guard itself cannot move
-      off the tuple). Two alternatives were rejected: normalizing `Field` into
-      `{ expression: f, alias: f.path }` at the stage boundary (collapses the
-      node/binding layers and loses what the user wrote in the payload); and
-      giving `Field` `expression`/`alias` members so it structurally satisfies
-      `ExpressionWithAlias` (would silently let a bare `Field` into `addFields`).
+  `UndottedGroupAliases` is the one irreducible arm: a parameter
+  intersection over the user's UN-normalized tuple, so it stays a
+  per-element tuple map matching the input forms at the parameter position
+  (it obtains the NAME via `SelectionPath`, but the guard itself cannot move
+  off the tuple). Two alternatives were rejected: normalizing `Field` into
+  `{ expression: f, alias: f.path }` at the stage boundary (collapses the
+  node/binding layers and loses what the user wrote in the payload); and
+  giving `Field` `expression`/`alias` members so it structurally satisfies
+  `ExpressionWithAlias` (would silently let a bare `Field` into `addFields`).
 
 - [x] **Align AST node names with the SDK's vocabulary** (done 2026-07):
       renamed the expression node `FunctionCall` → `FunctionExpression` (the
