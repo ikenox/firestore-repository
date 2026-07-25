@@ -16,6 +16,7 @@ A minimal, universal Firestore client for TypeScript, built around the Repositor
 - 🤝 **Unopinionated**: This library introduces no additional concepts and follows the vocabulary of the official Firestore client libraries.
 - ✅ **Type-safe**: This library provides a type-safe interface. It also covers the untyped parts of the official Firestore library.
 - 🗄️ **Repository Pattern**: A simple and consistent way to access Firestore data.
+- 🧩 **[Pipeline operations](#pipeline-operations)**: Build advanced, multi-stage queries (Firestore Enterprise) with the same type-safety — field paths, stage inputs, and the shape of the result rows are all derived from your schema.
 
 ## Installation
 
