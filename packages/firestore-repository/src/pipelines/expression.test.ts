@@ -17,6 +17,7 @@ import {
   literal,
   map,
   type MapType,
+  neverType,
   nullable,
   nullType,
   optional,
@@ -44,6 +45,7 @@ import {
   arrayLength,
   arrayReverse,
   arrayValue,
+  arrayValueOf,
   byteLength,
   average,
   ceil,
@@ -250,10 +252,13 @@ describe('expression factories', () => {
     const vectors = constant([vectorValue([1]), vectorValue([2])]);
     expectTypedStrictEqual(vectors.type, array(vector()));
 
-    expect(() =>
-      // @ts-expect-error -- an empty array literal has no element to infer from
-      constant([]),
-    ).toThrow('constant arrays must not be empty');
+    // @ts-expect-error -- an empty array literal has no element to infer from
+    const empty = constant([]);
+    // The runtime is nonetheless TOTAL: `union()` over no element yields the
+    // uninhabited descriptor, so the inferred type is the one whose only
+    // inhabitant is the empty array. Plain `toStrictEqual` because the call
+    // above is a deliberate type error, so there is no static type to pin.
+    expect(empty.type).toStrictEqual(array(neverType()));
   });
 
   it('comparisons unify within a value domain', () => {
@@ -1077,6 +1082,55 @@ describe('array / map operators (slice 6)', () => {
     // @ts-expect-error -- dotted keys are banned, as in the schema factories
     void (() => mapValue({ 'a.b': rank }));
     expect(() => mapValue({ ['a.b' as string]: rank })).toThrow(/must not contain/);
+  });
+
+  describe('arrayValueOf takes the element descriptor instead of inferring it', () => {
+    // The cases are the product of (list arity) x (element origin): a static
+    // literal vs a runtime-built `string[]`, empty vs not. What distinguishes
+    // this constructor from `arrayValue` / `constant` is that the descriptor is
+    // the SAME in every cell, because it comes from the argument.
+    const runtimeBuilt: string[] = ['a', 'b'];
+    const runtimeEmpty: string[] = [];
+
+    it('yields the given element descriptor for every arity and element origin', () => {
+      expectTypedStrictEqual(arrayValueOf(string(), ['a', 'b']).type, array(string()));
+      expectTypedStrictEqual(arrayValueOf(string(), []).type, array(string()));
+      expectTypedStrictEqual(arrayValueOf(string(), runtimeBuilt).type, array(string()));
+      expectTypedStrictEqual(arrayValueOf(string(), runtimeEmpty).type, array(string()));
+    });
+
+    it('lifts the elements into an arrayValue node, empty list included', () => {
+      expect(arrayValueOf(string(), runtimeEmpty).call).toStrictEqual({
+        name: 'arrayValue',
+        elements: [],
+      });
+      expect(arrayValueOf(string(), ['a']).call).toStrictEqual({
+        name: 'arrayValue',
+        elements: [constant('a')],
+      });
+    });
+
+    it('accepts expression elements as well as raw values', () => {
+      expectTypedStrictEqual(arrayValueOf(int64(), [rank, 1]).type, array(int64()));
+    });
+
+    it('rejects an element domain disjoint from the element descriptor', () => {
+      // @ts-expect-error -- string elements against a timestamp element descriptor
+      void (() => arrayValueOf(timestamp(), runtimeBuilt));
+      // An EMPTY list has no element to conflict, so any descriptor is allowed —
+      // that is the whole point of supplying it explicitly.
+      expectTypedStrictEqual(arrayValueOf(timestamp(), []).type, array(timestamp()));
+    });
+
+    it('serves as an options operand for the any-of family', () => {
+      // The comparison guard still runs, against the DECLARED element type.
+      expectTypedStrictEqual(
+        equalAny(field(string(), 'ward'), arrayValueOf(string(), runtimeBuilt)).type,
+        bool(),
+      );
+      // @ts-expect-error -- a timestamp field cannot be compared with string options
+      void (() => equalAny(field(timestamp(), 'at'), arrayValueOf(string(), runtimeBuilt)));
+    });
   });
 
   it('array accessors', () => {

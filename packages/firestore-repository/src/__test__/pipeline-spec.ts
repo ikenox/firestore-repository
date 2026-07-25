@@ -15,6 +15,7 @@ import {
   arrayLength,
   arrayReverse,
   arrayValue,
+  arrayValueOf,
   average,
   byteLength,
   ceil,
@@ -1522,6 +1523,58 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
             .where((field) => equal(field('rank'), constant(2)))
             .select(() => ['name']),
           [{ data: { name: 'bob' } }],
+          { ordered: false },
+        );
+      });
+    });
+
+    // `arrayValueOf` takes its element descriptor explicitly so a list built at
+    // RUNTIME — possibly empty — can be an options operand. The empty case is
+    // the reason it exists, so what the backend actually does with an empty
+    // options array is pinned here rather than only claimed by the types. All
+    // four answers are the vacuous-quantifier ones.
+    describe('an empty options list (arrayValueOf)', () => {
+      const [a1, a2, a3] = items;
+      const none: string[] = [];
+
+      it('equalAny against no options matches no row', async () => {
+        await expectPipeline(
+          source().where((field) => equalAny(field('name'), arrayValueOf(string(), none))),
+          [],
+          { ordered: false },
+        );
+      });
+
+      it('notEqualAny against no options matches EVERY row', async () => {
+        await expectPipeline(
+          source().where((field) => notEqualAny(field('name'), arrayValueOf(string(), none))),
+          [a1, a2, a3],
+          { ordered: false },
+        );
+      });
+
+      it('arrayContainsAny against no options matches no row', async () => {
+        await expectPipeline(
+          source().where((field) => arrayContainsAny(field('tag'), arrayValueOf(string(), none))),
+          [],
+          { ordered: false },
+        );
+      });
+
+      it('arrayContainsAll against no options matches EVERY row, including an empty array field', async () => {
+        // a2's `tag` is `[]`: containing all of nothing holds for it too.
+        await expectPipeline(
+          source().where((field) => arrayContainsAll(field('tag'), arrayValueOf(string(), none))),
+          [a1, a2, a3],
+          { ordered: false },
+        );
+      });
+
+      it('carries a non-empty runtime-built list like any other options operand', async () => {
+        const names: string[] = ['alice', 'carol'];
+        await expectPipeline(
+          source().where((field) => equalAny(field('name'), arrayValueOf(string(), names))),
+          [a1, a3],
           { ordered: false },
         );
       });

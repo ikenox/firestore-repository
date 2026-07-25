@@ -125,6 +125,7 @@ export type FieldType =
   | GeoPointType
   | VectorType
   | NullType
+  | NeverType
   | AnyMapType
   | AnyArrayType
   | AnyUnionType
@@ -234,6 +235,23 @@ export type VectorType = {
   output: number[];
 };
 export type NullType = { type: 'null'; firestoreType: 'null'; input: null; output: null };
+/**
+ * The UNINHABITED descriptor — "no value is possible here". It classifies no
+ * Firestore value (`firestoreType: never`) and has no read/write value, so it
+ * is the identity element of {@link union}: as a member it contributes nothing
+ * and {@link DropNever} removes it, which is why a `NeverType` only ever
+ * appears STANDALONE and never inside a `UnionType`'s element list.
+ *
+ * It exists because "nothing remains" is a real outcome of the descriptor
+ * algebra and needs a representation that can be HELD, not just signalled:
+ * null-stripping a pure-null descriptor (`StripNull`, `pipelines/expression.ts`)
+ * leaves nothing, and an empty array constant has no element to infer a type
+ * from. Where a consumer meets it, read the enclosing descriptor rather than
+ * the `NeverType` itself — `array(neverType())` is the type whose only
+ * inhabitant is the empty array (`output` resolves to `never[]`), and
+ * `nullable(neverType())` is just `null`.
+ */
+export type NeverType = { type: 'never'; firestoreType: never; input: never; output: never };
 /**
  * The widest map/array/union descriptors — the recursive members of the
  * closed {@link FieldType} union. Each concrete `MapType<T>` /
@@ -430,14 +448,19 @@ export const array = <T extends FieldType>(elementType: T): ArrayType<T> =>
  * "a `UnionType` is canonical" true by construction: no caller has to
  * re-normalize, and no two spellings of the same union coexist.
  *
- * A member list that reduces to nothing has no descriptor to return (its
- * type is `never`), so it throws.
+ * A member list that reduces to nothing yields {@link NeverType}, the
+ * uninhabited descriptor — so this is a TOTAL function: `union()` and
+ * `union(neverType())` are both `neverType()`, and callers never have to
+ * special-case an empty member list.
  */
 export function union<T extends FieldType[]>(...elements: T): Normalize<T>;
 export function union(...elements: FieldType[]): FieldType {
   return normalize(elements);
 }
 export const nullType = (): NullType => buildType({ type: 'null' });
+
+/** The uninhabited descriptor — see {@link NeverType}. */
+export const neverType = (): NeverType => buildType({ type: 'never' });
 
 export const literal = <const T extends (string | number | boolean | null)[]>(
   ...values: T
@@ -466,10 +489,11 @@ export const optional = <T extends FieldType>(type: T): T & Optional =>
  *    own members, so unions never nest.
  * 2. {@link DedupDescriptors} — structurally equal members collapse, keeping
  *    the FIRST occurrence, so the result is deterministic and order-stable.
- * 3. {@link DropNever} — a `never` member (an empty possibility, e.g. a fully
- *    null-stripped descriptor) contributes nothing.
+ * 3. {@link DropNever} — a {@link NeverType} member (an empty possibility,
+ *    e.g. a fully null-stripped descriptor) contributes nothing.
  * 4. {@link UnwrapSingleton} — a one-member list IS that member, so a union
- *    of one is never spelled as a `UnionType`; an empty list is `never`.
+ *    of one is never spelled as a `UnionType`; an empty list is
+ *    {@link NeverType}.
  */
 export type Normalize<T extends readonly FieldType[]> = UnwrapSingleton<
   DropNever<DedupDescriptors<FlattenUnions<T>>>
@@ -479,14 +503,10 @@ export type Normalize<T extends readonly FieldType[]> = UnwrapSingleton<
  * Runtime counterpart of {@link Normalize}, composed of the same four steps
  * applied in the same order, each typed as its own type-level twin so the
  * compiler checks that the steps compose.
- *
- * The second overload accepts `undefined` members: that is this codebase's
- * standing runtime encoding of a type-level `never` descriptor (see
- * `stripNull` in `pipelines/expression.ts`), which step 3 drops.
  */
 export function normalize<T extends readonly FieldType[]>(elements: T): Normalize<T>;
-export function normalize(elements: readonly (FieldType | undefined)[]): FieldType;
-export function normalize(elements: readonly (FieldType | undefined)[]): FieldType {
+export function normalize(elements: readonly FieldType[]): FieldType;
+export function normalize(elements: readonly FieldType[]): FieldType {
   return unwrapSingleton(dropNever(dedupDescriptors(flattenUnions(elements))));
 }
 
@@ -515,10 +535,10 @@ type MembersOf<T extends FieldType> = [T] extends [never]
 
 /** Runtime counterpart of {@link FlattenUnions}. */
 function flattenUnions<T extends readonly FieldType[]>(elements: T): FlattenUnions<T>;
-function flattenUnions(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[];
-function flattenUnions(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[] {
+function flattenUnions(elements: readonly FieldType[]): FieldType[];
+function flattenUnions(elements: readonly FieldType[]): FieldType[] {
   return elements.flatMap((element) =>
-    element !== undefined && element.type === 'union' ? flattenUnions(element.elements) : [element],
+    element.type === 'union' ? flattenUnions(element.elements) : [element],
   );
 }
 
@@ -546,8 +566,8 @@ type DescriptorEquals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false)
 
 /** Runtime counterpart of {@link DedupDescriptors}. */
 function dedupDescriptors<T extends readonly FieldType[]>(elements: T): DedupDescriptors<T>;
-function dedupDescriptors(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[];
-function dedupDescriptors(elements: readonly (FieldType | undefined)[]): (FieldType | undefined)[] {
+function dedupDescriptors(elements: readonly FieldType[]): FieldType[];
+function dedupDescriptors(elements: readonly FieldType[]): FieldType[] {
   return elements.filter((e, i) => elements.findIndex((o) => descriptorEquals(o, e)) === i);
 }
 
@@ -570,39 +590,54 @@ const descriptorEquals = (a: unknown, b: unknown): boolean => {
   );
 };
 
-/** Step 3: a `never` member is an empty possibility and contributes nothing. */
+/**
+ * Step 3: a {@link NeverType} member is an empty possibility and contributes
+ * nothing — which is what keeps a `NeverType` out of every `UnionType`
+ * element list.
+ *
+ * The test is the non-distributive `[H] extends [NeverType]` form, so ONE
+ * check covers both spellings an uninhabited member can arrive as: the
+ * `NeverType` descriptor (the system's encoding) and a degenerate TS `never`
+ * in the element position (assignable to everything, hence matched here too).
+ * There is deliberately no second check for the latter — `NeverType` is the
+ * single encoding, and TS `never` is absorbed rather than given a parallel
+ * meaning.
+ */
 type DropNever<T extends readonly FieldType[]> = T extends readonly [
   infer H extends FieldType,
   ...infer R extends readonly FieldType[],
 ]
-  ? [H] extends [never]
+  ? [H] extends [NeverType]
     ? DropNever<R>
     : [H, ...DropNever<R>]
   : [];
 
-/** Runtime counterpart of {@link DropNever} (`undefined` is the runtime `never`). */
+/** Runtime counterpart of {@link DropNever}. */
 function dropNever<T extends readonly FieldType[]>(elements: T): DropNever<T>;
-function dropNever(elements: readonly (FieldType | undefined)[]): FieldType[];
-function dropNever(elements: readonly (FieldType | undefined)[]): FieldType[] {
-  return elements.filter((e) => e !== undefined);
+function dropNever(elements: readonly FieldType[]): FieldType[];
+function dropNever(elements: readonly FieldType[]): FieldType[] {
+  return elements.filter((e) => e.type !== 'never');
 }
 
-/** Step 4: a one-member list IS that member; an empty list is `never`. */
+/**
+ * Step 4: a one-member list IS that member; an empty list is
+ * {@link NeverType} — nothing is possible when there is no member left.
+ */
 type UnwrapSingleton<T extends readonly FieldType[]> = T extends readonly [
   infer One extends FieldType,
 ]
   ? One
   : T extends readonly []
-    ? never
+    ? NeverType
     : UnionType<[...T]>;
 
-/** Runtime counterpart of {@link UnwrapSingleton} (`never` has no value, so it throws). */
+/** Runtime counterpart of {@link UnwrapSingleton}. */
 function unwrapSingleton<T extends readonly FieldType[]>(elements: T): UnwrapSingleton<T>;
 function unwrapSingleton(elements: readonly FieldType[]): FieldType;
 function unwrapSingleton(elements: readonly FieldType[]): FieldType {
   const [first, ...rest] = elements;
   if (first === undefined) {
-    throw new Error('a union must have at least one member');
+    return neverType();
   }
   return rest.length === 0
     ? first

@@ -1,9 +1,23 @@
 import { initializeApp } from '@firebase/app';
 import { Bytes, doc, getFirestore } from '@firebase/firestore';
-import { array, docRef, int64, map, rootCollection, string } from 'firestore-repository/schema';
+import {
+  array,
+  docRef,
+  int64,
+  map,
+  neverType,
+  rootCollection,
+  string,
+} from 'firestore-repository/schema';
 import { describe, expect, it } from 'vitest';
 
-import { buildEncodeFilterValue, isBytes, isDocumentReference } from './codec.js';
+import {
+  buildDecodeSchema,
+  buildEncodeFilterValue,
+  buildEncodeSchema,
+  isBytes,
+  isDocumentReference,
+} from './codec.js';
 
 const db = getFirestore(initializeApp({ projectId: 'codec-guard-test' }, 'codec-guard-test'));
 const ref = doc(db, 'col/id');
@@ -106,5 +120,23 @@ describe('buildEncodeFilterValue', () => {
   it('rejects a segment path that does not match the field descriptor', () => {
     expect(() => encode('author', '==', ['Posts', 'p1'])).toThrow();
     expect(() => encode('anyRef', '==', ['odd-length'])).toThrow();
+  });
+});
+
+describe('the uninhabited descriptor', () => {
+  // `array(neverType())` is what an empty array constant infers to, and it is
+  // the one descriptor whose element schema must reject EVERY value: its only
+  // inhabitant is the empty array. Both directions are pinned because the
+  // encode and decode switches carry the arm independently.
+  const schema = { xs: array(neverType()) };
+
+  it('decodes the empty array and nothing else', () => {
+    expect(buildDecodeSchema(schema).parse({ xs: [] })).toStrictEqual({ xs: [] });
+    expect(() => buildDecodeSchema(schema).parse({ xs: ['a'] })).toThrow();
+  });
+
+  it('encodes the empty array and nothing else', () => {
+    expect(buildEncodeSchema(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
+    expect(() => buildEncodeSchema(schema, db).parse({ xs: ['a'] })).toThrow();
   });
 });

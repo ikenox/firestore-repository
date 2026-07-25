@@ -50,7 +50,8 @@ import {
   ArrayUnion,
   nullType,
   nullable,
-  normalize,
+  neverType,
+  type NeverType,
   type Normalize,
   type NullType,
   type UnionType,
@@ -830,26 +831,30 @@ describe('union normalization', () => {
   });
 
   describe('3. drop `never` members', () => {
-    // A `never` member has no runtime value; `undefined` is its runtime
-    // encoding (see `stripNull`), which the typed overload cannot express —
-    // so the two claims are made side by side here.
     it('drops some-but-not-all `never` members', () => {
-      expect(normalize([undefined, string(), undefined, nullType()])).toStrictEqual(
+      expectTypedStrictEqual(
+        union(neverType(), string(), neverType(), nullType()),
         union(string(), nullType()),
       );
-      expectTypeOf<Normalize<[never, StringType, never, NullType]>>().toEqualTypeOf<
-        UnionType<[StringType, NullType]>
-      >();
     });
 
     it('leaves a single member bare once the `never`s are dropped', () => {
-      expect(normalize([undefined, string()])).toStrictEqual(string());
-      expectTypeOf<Normalize<[never, StringType]>>().toEqualTypeOf<StringType>();
+      expectTypedStrictEqual(union(neverType(), string()), string());
     });
 
     it('has nothing left when every member is `never`', () => {
-      expect(() => normalize([undefined, undefined])).toThrow();
-      expectTypeOf<Normalize<[never, never]>>().toEqualTypeOf<never>();
+      expectTypedStrictEqual(union(neverType(), neverType()), neverType());
+    });
+
+    it('absorbs a degenerate type-level `never` member too', () => {
+      // Type-level only: TS `never` has no runtime value to pass, and
+      // `DropNever`'s single check matches it because `never` is assignable
+      // to `NeverType` (see its doc comment). No parallel encoding.
+      expectTypeOf<Normalize<[never, StringType, never, NullType]>>().toEqualTypeOf<
+        UnionType<[StringType, NullType]>
+      >();
+      expectTypeOf<Normalize<[never, StringType]>>().toEqualTypeOf<StringType>();
+      expectTypeOf<Normalize<[never, never]>>().toEqualTypeOf<NeverType>();
     });
   });
 
@@ -858,9 +863,9 @@ describe('union normalization', () => {
       expectTypedStrictEqual(union(string()), string());
     });
 
-    it('an empty list has no descriptor', () => {
-      expect(() => union()).toThrow();
-      expectTypeOf<Normalize<[]>>().toEqualTypeOf<never>();
+    it('an empty list is the uninhabited descriptor', () => {
+      expectTypedStrictEqual(union(), neverType());
+      expectTypeOf<Normalize<[]>>().toEqualTypeOf<NeverType>();
     });
   });
 
