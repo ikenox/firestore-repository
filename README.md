@@ -6,6 +6,9 @@
 
 A minimal, universal Firestore client for TypeScript, built around the Repository Pattern.
 
+> [!NOTE]
+> **New in v0.6.0:** [Pipeline operations](https://docs.cloud.google.com/firestore/native/docs/pipeline/overview) support (Firestore Enterprise) — build type-safe, multi-stage pipelines (`where` / `sort` / `select` / `aggregate` / `distinct` / `unnest` / `replaceWith` / ...) whose result shape is derived from your schema. See the [Pipeline operations](#pipeline-operations) section for details.
+
 ## Features
 
 - 🚀 **Minimal**: Only a few straightforward interfaces and classes. You can start using it immediately without a steep learning curve.
@@ -13,6 +16,7 @@ A minimal, universal Firestore client for TypeScript, built around the Repositor
 - 🤝 **Unopinionated**: This library introduces no additional concepts and follows the vocabulary of the official Firestore client libraries.
 - ✅ **Type-safe**: This library provides a type-safe interface. It also covers the untyped parts of the official Firestore library.
 - 🗄️ **Repository Pattern**: A simple and consistent way to access Firestore data.
+- 🧩 **[Pipeline operations](#pipeline-operations)**: Build advanced, multi-stage queries (Firestore Enterprise) with the same type-safety — field paths, stage inputs, and the shape of the result rows are all derived from your schema.
 
 ## Installation
 
@@ -279,9 +283,9 @@ const user: User | undefined = await repository.get('user1');
 await repository.delete('user1');
 ```
 
-### Pipeline Query
+### Pipeline operations
 
-> **Note:** Pipeline queries require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
+> **Note:** [Pipeline operations](https://docs.cloud.google.com/firestore/native/docs/pipeline/overview) require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
 
 A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
 
