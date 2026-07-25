@@ -283,3 +283,37 @@ await repository.set({
 const user: User | undefined = await repository.get('user1');
 await repository.delete('user1');
 ```
+
+### Pipeline Query
+
+> **Note:** Pipeline queries require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
+
+A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
+
+Pipelines follow the same **type-safe** philosophy as the rest of the library: the schema flows through every stage, so field paths, aggregate inputs, and the shape of the result rows are all derived from the schema and checked at compile time. A stage that reshapes the rows (e.g. `select` / `aggregate`) reshapes the result type to match.
+
+```ts
+import { collection } from 'firestore-repository/pipelines/source';
+import { average, countAll, greaterThanOrEqual } from 'firestore-repository/pipelines/expression';
+
+// For backend
+import { executor } from '@firestore-repository/google-cloud-firestore/pipeline';
+// For web frontend
+import { executor } from '@firestore-repository/firebase-js-sdk/pipeline';
+
+const pipe = executor(db);
+
+// Build a multi-stage pipeline. `field(...)` paths are auto-completed and
+// type-checked against the schema, and `20` is validated as `number` because
+// `profile.age` is `number`.
+const pipeline = collection(users)
+  .where((field) => greaterThanOrEqual(field('profile.age'), 20))
+  .aggregate((field) => ({
+    groups: [field('profile.gender').as('gender')],
+    accumulators: [average(field('profile.age')).as('avgAge'), countAll().as('count')],
+  }));
+
+// Execute it. The result type is derived from the pipeline's final shape:
+//   { data: { gender: 'male' | 'female' | null; avgAge: number | null; count: number } }[]
+const rows = await pipe.execute(pipeline);
+```

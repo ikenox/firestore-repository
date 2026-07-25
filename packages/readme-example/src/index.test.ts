@@ -11,15 +11,24 @@ import {
   rootCollectionRepository as firebaseJsSdkRepository,
   subcollectionRepository as firebaseJsSdkSubcollectionRepository,
 } from '@firestore-repository/firebase-js-sdk';
+import { executor as firebaseJsSdkPipelineExecutor } from '@firestore-repository/firebase-js-sdk/pipeline';
 import {
   type GoogleCloudFirestoreRepository,
   repositoryWithMapper as googleCloudFirestoreRepositoryWithMapper,
   rootCollectionRepository as googleCloudFirestoreRepository,
   subcollectionRepository as googleCloudFirestoreSubcollectionRepository,
 } from '@firestore-repository/google-cloud-firestore';
+import { executor as googleCloudFirestorePipelineExecutor } from '@firestore-repository/google-cloud-firestore/pipeline';
 import { Firestore } from '@google-cloud/firestore';
 import { randomString, uniqueCollection } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
+import {
+  average as pipelineAverage,
+  countAll as pipelineCountAll,
+  greaterThanOrEqual as pipelineGreaterThanOrEqual,
+} from 'firestore-repository/pipelines/expression';
+import type { PipelineQueryExecutor } from 'firestore-repository/pipelines/pipeline';
+import { collection as pipelineCollection } from 'firestore-repository/pipelines/source';
 import { eq, gte, limit, query, where } from 'firestore-repository/query';
 import type {
   AppModel,
@@ -42,7 +51,7 @@ import {
   type SubCollection,
   subCollection,
 } from 'firestore-repository/schema';
-import { describe, it } from 'vitest';
+import { beforeAll, describe, it } from 'vitest';
 
 const console = {
   log: (_arg: unknown) => {
@@ -75,6 +84,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   createRepositoryWithMapper,
   createSubcollectionRepository,
   onlyGoogleCloudFirestore = () => {},
+  pipeline,
 }: {
   createRepository: <T extends RootCollection>(
     collection: T,
@@ -99,6 +109,16 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       >,
     ) => Promise<void>,
   ) => void;
+  // Pipeline queries require a Firestore Enterprise database (the emulator
+  // cannot run them), so the adapter supplies the executor and an
+  // Enterprise-backed repository for seeding only when the integration env is
+  // configured; otherwise this stays undefined and the block is skipped.
+  pipeline?: {
+    executor: PipelineQueryExecutor;
+    createRepository: <T extends RootCollection>(
+      collection: T,
+    ) => Repository<T, RootCollectionPlainModel<T>, Env>;
+  };
 }) => {
   const repository = createRepository({ ...users, name: `${users.name}-${randomString()}` });
 
@@ -273,6 +293,33 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       await userRepository.delete('user1');
     });
   });
+
+  describe.skipIf(!pipeline)('Pipeline Query', () => {
+    // A fresh collection instance seeded on the Enterprise DB for this run.
+    const authors = { ...users, name: `${users.name}-${randomString()}` };
+
+    beforeAll(async () => {
+      await pipeline!.createRepository(authors).batchSet([
+        { id: 'a1', data: { name: 'Alice', profile: { age: 30, gender: 'female' }, tag: [] } },
+        { id: 'a2', data: { name: 'Bob', profile: { age: 20, gender: 'male' }, tag: [] } },
+        { id: 'a3', data: { name: 'Carol', profile: { age: 40, gender: 'female' }, tag: [] } },
+      ]);
+    });
+
+    it('aggregate', async () => {
+      const q = pipelineCollection(authors)
+        .where((field) => pipelineGreaterThanOrEqual(field('profile.age'), 20))
+        .aggregate((field) => ({
+          groups: [field('profile.gender').as('gender')],
+          accumulators: [
+            pipelineAverage(field('profile.age')).as('avgAge'),
+            pipelineCountAll().as('count'),
+          ],
+        }));
+      const rows = await pipeline!.executor.execute(q);
+      console.log(rows);
+    });
+  });
 };
 
 describe('README example', () => {
@@ -288,6 +335,22 @@ describe('README example', () => {
       connectFirestoreEmulator(db, host!, Number(port));
     }
 
+    // Pipeline queries need a real Enterprise DB and, for the client SDK, a real
+    // API key — build the executor only when all three integration vars are set.
+    const enterpriseProject = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_PROJECT'];
+    const enterpriseDbId = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB'];
+    const clientApiKey = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_CLIENT_API_KEY'];
+    const enterpriseDb =
+      enterpriseProject && enterpriseDbId && clientApiKey
+        ? getFirestore(
+            initializeApp(
+              { projectId: enterpriseProject, apiKey: clientApiKey },
+              'readme-pipeline',
+            ),
+            enterpriseDbId,
+          )
+        : undefined;
+
     defineReadmeExampleTests({
       createRepository: (collection) => firebaseJsSdkRepository(db, collection),
       createRepositoryWithMapper: (collection, mapper) =>
@@ -295,6 +358,14 @@ describe('README example', () => {
       createSubcollectionRepository: (collection) =>
         firebaseJsSdkSubcollectionRepository(db, collection),
       db: { writeBatch: () => writeBatch(db), transaction: (runner) => runTransaction(db, runner) },
+      ...(enterpriseDb
+        ? {
+            pipeline: {
+              executor: firebaseJsSdkPipelineExecutor(enterpriseDb),
+              createRepository: (collection) => firebaseJsSdkRepository(enterpriseDb, collection),
+            },
+          }
+        : {}),
     });
   });
 
@@ -303,6 +374,21 @@ describe('README example', () => {
       projectId: process.env['FIRESTORE_TEST_PROJECT']!,
       databaseId: process.env['FIRESTORE_TEST_DB']!,
     });
+
+    // Pipeline queries need a real Enterprise DB (the admin SDK authenticates via
+    // ADC, so no API key is needed). Build it with the emulator host temporarily
+    // removed so the SDK targets the real backend, not the emulator.
+    const enterpriseProject = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_PROJECT'];
+    const enterpriseDbId = process.env['FIRESTORE_REPOSITORY_INTEGRATION_TEST_DB'];
+    let enterpriseDb: Firestore | undefined;
+    if (enterpriseProject && enterpriseDbId) {
+      const emulatorHost = process.env['FIRESTORE_EMULATOR_HOST'];
+      delete process.env['FIRESTORE_EMULATOR_HOST'];
+      enterpriseDb = new Firestore({ projectId: enterpriseProject, databaseId: enterpriseDbId });
+      if (emulatorHost !== undefined) {
+        process.env['FIRESTORE_EMULATOR_HOST'] = emulatorHost;
+      }
+    }
 
     defineReadmeExampleTests({
       createRepository: (collection) => googleCloudFirestoreRepository(db, collection),
@@ -319,6 +405,15 @@ describe('README example', () => {
         );
         it(name, () => fn(repo));
       },
+      ...(enterpriseDb
+        ? {
+            pipeline: {
+              executor: googleCloudFirestorePipelineExecutor(enterpriseDb),
+              createRepository: (collection) =>
+                googleCloudFirestoreRepository(enterpriseDb, collection),
+            },
+          }
+        : {}),
     });
   });
 });
