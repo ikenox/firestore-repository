@@ -39,66 +39,71 @@ export type { ExpressionWithAlias } from './expression.js';
 type Fields = DocumentSchema;
 
 /**
- * A single select argument: a data field path, a bare {@link Field}, or an
- * aliased expression.
+ * Something that names ONE output of a reshaping stage: a bare {@link Field}
+ * (whose `path` IS its output name), or an aliased expression (an
+ * {@link ExpressionWithAlias}, whose `alias` is its output name). The two are
+ * different layers — a `Field` is an expression NODE, an `ExpressionWithAlias`
+ * is a `{ expression, alias }` BINDING — so neither contains the other; what
+ * they share is "names one output", the concept the official SDK models as the
+ * `Selectable` interface that its `Field` and `AliasedExpression` implement
+ * independently. Parameterized by the output VALUE kind `V` so a stage can
+ * demand a specific descriptor (`unnest` requires {@link ArrayValued}).
  *
- * A bare `Field` needs no `.as(...)`: a `Field<T, Path>` is inherently aliased —
- * its `path` IS its output name — which is why the official SDK's `Field`
- * implements `Selectable`. So `select((f) => [f('profile.age')])` and
- * `select(() => ['profile.age'])` produce the same schema, and the two forms
- * conflict-resolve against each other as one and the same output path.
+ * A bare `Field` needs no `.as(...)`: its `path` is inherently its output name,
+ * so `select((f) => [f('profile.age')])` and `select(() => ['profile.age'])`
+ * produce the same schema and conflict-resolve as one and the same output path.
  *
- * Uses {@link MapFieldPath} (data fields only) for BOTH bare forms, **not** the
- * document-level `DocFieldPath` — the reserved key `"__name__"` is
- * intentionally not projectable here, whether written as a string or as
- * `f('__name__')`. Projecting `"__name__"` un-aliased would preserve the row's
- * read-identity at runtime, but `select` is typed to always drop it
- * (`Id = undefined`), so allowing it would make the type lie. Keep identity
- * while reshaping via `addFields` / `removeFields`; `"__name__"` stays usable in
- * `where` / `sort` (they go through `FieldProvider`, not `Selection`). See
- * `docs/pipeline-query-identity-research.md`.
+ * The bare `Field` uses {@link MapFieldPath} (data fields only), **not** the
+ * document-level `DocFieldPath`: the reserved key `"__name__"` is intentionally
+ * not projectable, whether written as `f('__name__')` or (in {@link Selection})
+ * as a string. Projecting `"__name__"` un-aliased would preserve the row's
+ * read-identity at runtime, but the reshaping stages are typed to drop it
+ * (`Id = undefined`), so allowing it would make the type lie. `FieldProvider`
+ * itself resolves the reserved key, so the exclusion has to happen here. Keep
+ * identity while reshaping via `addFields` / `removeFields`; `"__name__"` stays
+ * usable in `where` / `sort` (they go through `FieldProvider`, not a selection).
+ * See `docs/pipeline-query-identity-research.md`.
  */
-export type Selection<Context extends Fields> =
-  | MapFieldPath<Context>
-  | BareField<Context>
-  | ExpressionWithAlias;
+type Selectable<Context extends Fields, V extends FieldType = FieldType> =
+  | Field<V, MapFieldPath<Context>>
+  | ExpressionWithAlias<V>;
 
 /**
- * A group selection of the `aggregate` stage: a TOP-LEVEL bare field path, a
- * bare {@link Field} whose path is top-level, or an aliased expression whose
- * alias is undotted. The backend rejects dotted assignment targets in
- * `aggregate` (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed: a dotted bare path, a
- * dotted bare `Field` and a dotted alias are all INVALID_ARGUMENT), so unlike
- * `select`'s {@link Selection} there is no nested output form — group a
- * NESTED field via an expression with a top-level alias:
+ * A single `select` argument: a bare data field path, or any {@link Selectable}
+ * (a bare {@link Field}, or an aliased expression). The bare STRING form is
+ * `select`'s own third form — it names an existing data field by path, like a
+ * bare `Field` does — which the SDK's `Selectable` lacks.
+ */
+export type Selection<Context extends Fields> = MapFieldPath<Context> | Selectable<Context>;
+
+/**
+ * A group selection of the `aggregate` stage: a TOP-LEVEL bare field path (a
+ * `keyof Context` key, dot-free by construction), or any {@link Selectable} (a
+ * bare {@link Field}, or an aliased expression). The backend rejects dotted
+ * assignment targets in `aggregate` (`TOP_LEVEL_PROPERTY_PATH_ONLY` — probed: a
+ * dotted bare path, a dotted bare `Field` and a dotted alias are all
+ * INVALID_ARGUMENT), so unlike `select`'s {@link Selection} there is no nested
+ * output form — group a NESTED field via an expression with a top-level alias:
  * `field('a.b.c').as('c')`.
  *
- * A bare `Field` is accepted here for the same reason as in {@link Selection}
- * (its `path` is its alias — probed: an unaliased top-level `field('g')` groups
- * under the row key `g`). Its top-level restriction is NOT expressed in this
- * union but in the {@link UndottedGroupAliases} tuple guard, so a dotted bare
- * `Field` and a dotted alias fail the same way.
+ * The top-level restriction on the two `Selectable` forms is NOT expressed in
+ * this union but in the {@link UndottedGroupAliases} tuple guard, so a dotted
+ * bare `Field` and a dotted alias fail the same way. (An unaliased top-level
+ * `field('g')` groups under the row key `g` — probed.)
  */
-export type AggregateGroup<Context extends Fields> =
-  | (keyof Context & string)
-  | BareField<Context>
-  | ExpressionWithAlias;
+export type AggregateGroup<Context extends Fields> = (keyof Context & string) | Selectable<Context>;
 
 /**
- * A `Field` usable as an un-aliased selection: any of the context's **data**
- * field paths. `'__name__'` is excluded so the bare `Field` form allows exactly
- * what the bare string form allows (see {@link Selection}) — `FieldProvider`
- * itself resolves the reserved key, so the exclusion has to happen here.
- */
-type BareField<Context extends Fields> = Field<FieldType, MapFieldPath<Context>>;
-
-/**
- * The context-free shape of a single selection, as the stage payloads and the
- * runtime folds see it: a bare field path, a bare `Field`, or an aliased
- * expression. The type-erased counterpart of {@link Selection} /
- * {@link AggregateGroup} — the context-dependent narrowing (which paths are
- * legal, which output names are top-level) has already been discharged by the
- * typed `Pipeline` methods, so nothing downstream needs to re-check it.
+ * The context-free erasure of a {@link Selectable} (plus `select`'s bare string
+ * form): a bare field path, a bare `Field`, or an aliased expression, with the
+ * `Context` type parameter dropped. This is what the stage payloads carry and
+ * what the runtime folds and the executors see — the context-dependent
+ * narrowing (which paths are legal, which output names are top-level) has
+ * already been discharged by the typed `Pipeline` methods, so nothing
+ * downstream needs to re-check it. `Selectable` is the context-typed concept;
+ * `SelectionNode` is the erased value the machinery below operates on, and the
+ * concept's two operations — {@link SelectionPath} (output name) and
+ * {@link SelectionToSchema} (schema contribution) — are defined over it.
  */
 export type SelectionNode = string | Field | ExpressionWithAlias;
 
@@ -125,21 +130,15 @@ export type UndottedGroupAliases<G> = {
  * `indexField` are both restricted to top level — probed, both INVALID_ARGUMENT
  * when dotted).
  *
- * A selection whose output name contains the path separator collapses to
- * `never`: an aliased selection by its `alias`, a bare {@link Field} by its
- * `path` (which is its alias). Sharing this one operator is what makes the two
- * dotted forms produce the same error at the same place, in every stage whose
+ * A selection whose output name — obtained through the shared
+ * {@link SelectionPath} operator, so the forms are not re-matched here —
+ * contains the path separator collapses to `never`. Sharing that one operator
+ * for the name, and this one guard for the check, is what makes the two dotted
+ * forms (an aliased selection by its `alias`, a bare {@link Field} by its
+ * `path`) produce the same error at the same place, in every stage whose
  * outputs are top-level-only.
  */
-export type UndottedSelectionAlias<S> = S extends { alias: infer A extends string }
-  ? A extends `${string}.${string}`
-    ? never
-    : S
-  : S extends Field<FieldType, infer P>
-    ? P extends `${string}.${string}`
-      ? never
-      : S
-    : S;
+export type UndottedSelectionAlias<S> = SelectionPath<S> extends `${string}.${string}` ? never : S;
 
 /**
  * The top-level-output guard for an `unnest` index field: `undefined` (no index
@@ -387,24 +386,23 @@ export type UnnestSchema<
 > = MergeSchemas<UnnestOverlay<Context, Sel, Index>, Context>;
 
 /**
- * A selectable of the `unnest` stage: a bare ARRAY-valued {@link Field} of the
- * context, or an aliased ARRAY-valued expression. Array-valued by construction
- * ({@link ArrayValued}), which is what makes the non-array no-op row of the
- * backend (an alias carrying the source VALUE — probed, contradicting the SDK's
- * doc comment) unreachable through this library.
+ * A selectable of the `unnest` stage: a {@link Selectable} constrained to an
+ * ARRAY-valued descriptor ({@link ArrayValued}) — a bare ARRAY-valued
+ * {@link Field}, or an aliased ARRAY-valued expression. Array-valued by
+ * construction, which is what makes the non-array no-op row of the backend (an
+ * alias carrying the source VALUE — probed, contradicting the SDK's doc
+ * comment) unreachable through this library.
  *
- * A bare `Field` is accepted for the same reason as in {@link Selection}: its
- * `path` IS its output name. A bare path STRING is deliberately NOT offered —
- * the SDK takes a `Selectable`, and the bare-`Field` form already covers it.
+ * `select`'s bare path STRING form is deliberately NOT offered here — the SDK
+ * takes a `Selectable`, and the bare-`Field` form already covers naming an
+ * existing array field.
  *
  * The SOURCE path may be dotted (`field('m.k').as('e')` unnests a nested array
  * — probed); only the OUTPUT name is restricted to top level, which is enforced
  * one level up by {@link UndottedSelectionAlias} at the `Pipeline.unnest`
  * parameter, so a dotted bare `Field` and a dotted alias fail the same way.
  */
-export type UnnestSelectable<Context extends Fields> =
-  | Field<ArrayValued, MapFieldPath<Context>>
-  | ExpressionWithAlias<ArrayValued>;
+export type UnnestSelectable<Context extends Fields> = Selectable<Context, ArrayValued>;
 
 /**
  * The fields `unnest` overlays on its input context: the element at the
@@ -541,11 +539,19 @@ type RewriteAbsentField<T extends FieldType> = T extends Optional
   : T;
 
 /**
- * Resolves one selection into the partial schema it contributes to the output.
- * Selections that read a source **field path** (bare paths, bare `Field`s, and
- * aliases whose expression is a `Field`) mark the projected leaf `Optional`
- * when the path crosses an optional ancestor ({@link WithConditionality});
- * computed expressions always produce a value and stay as-is.
+ * The schema-contribution operation of the selectable concept: maps one
+ * selection to the partial schema it contributes to the output. This is the one
+ * place the per-form arms live — every schema fold ({@link FoldSelections},
+ * {@link GroupSchema}) delegates here rather than pattern-matching the forms
+ * itself.
+ *
+ * The output NAME comes from the shared {@link SelectionPath} operator (bound
+ * once as `Name`), so this operator does not re-derive it; the per-form arms
+ * differ only in the DESCRIPTOR. Selections that read a source **field path**
+ * (bare paths, bare `Field`s, and aliases whose expression is a `Field`) mark
+ * the projected leaf `Optional` when the path crosses an optional ancestor
+ * ({@link WithConditionality}); computed expressions always produce a value and
+ * stay as-is.
  *
  * A bare `Field` folds exactly as `field(p).as(p)` would: output path = its
  * `path`, descriptor = its own `type`. The descriptor comes from the node, not
@@ -553,20 +559,18 @@ type RewriteAbsentField<T extends FieldType> = T extends Optional
  * cannot drift apart — and `FieldProvider` resolves the node's `type` from the
  * very same schema, which is what makes a bare `Field` equal the bare string.
  */
-type SelectionToSchema<Context extends Fields, S> = S extends {
-  expression: Field<infer T, infer P>;
-  alias: infer A extends string;
-}
-  ? PathToSchema<A, WithConditionality<Context, P, T>>
-  : S extends ExpressionWithAlias<infer T, infer P>
-    ? PathToSchema<P, T>
-    : S extends Field<infer T, infer P>
-      ? PathToSchema<P, WithConditionality<Context, P, T>>
-      : S extends string
-        ? S extends MapFieldPath<Context>
-          ? PathToSchema<S, WithConditionality<Context, S, FieldTypeOfPath<Context, S>>>
-          : {}
-        : {};
+type SelectionToSchema<Context extends Fields, S> =
+  SelectionPath<S> extends infer Name extends string
+    ? S extends { expression: Field<infer T, infer P>; alias: string }
+      ? PathToSchema<Name, WithConditionality<Context, P, T>>
+      : S extends ExpressionWithAlias<infer T>
+        ? PathToSchema<Name, T>
+        : S extends Field<infer T, infer P>
+          ? PathToSchema<Name, WithConditionality<Context, P, T>>
+          : S extends MapFieldPath<Context>
+            ? PathToSchema<Name, WithConditionality<Context, S, FieldTypeOfPath<Context, S>>>
+            : {}
+    : {};
 
 /**
  * Marks the resolved leaf type `Optional` when its source path is conditional
@@ -925,25 +929,28 @@ const selectionToSchema = <Context extends Fields, S extends SelectionNode>(
   // Widened to the union first: narrowing a generic `S` in place leaves it an
   // object-or-string type parameter that `typeof` / `in` cannot discriminate.
   const node: SelectionNode = s;
+  // The output name comes from the shared output-name operation, mirroring the
+  // type's `SelectionPath<S>` binding; only the descriptor is dispatched per form.
+  const name = selectionPath(node);
   const result = ((): Fields => {
     if (typeof node === 'string') {
       return pathToSchema(
-        node,
+        name,
         withConditionality(schema, node, fieldTypeOfPath<Fields, string>(schema, node)),
       );
     }
     if (!('alias' in node)) {
-      // A bare `Field`: its `path` is its output name, and its own `type` is the
-      // descriptor — the exact fold the aliased `field(p).as(p)` arm below runs.
-      return pathToSchema(node.path, withConditionality(schema, node.path, node.type));
+      // A bare `Field`: its own `type` is the descriptor, conditional on its
+      // path — the exact resolution the aliased `field(p).as(p)` arm below runs.
+      return pathToSchema(name, withConditionality(schema, node.path, node.type));
     }
-    const { expression, alias } = node;
+    const { expression } = node;
     switch (expression.kind) {
       case 'field':
-        return pathToSchema(alias, withConditionality(schema, expression.path, expression.type));
+        return pathToSchema(name, withConditionality(schema, expression.path, expression.type));
       case 'constant':
       case 'functionExpression':
-        return pathToSchema(alias, expression.type);
+        return pathToSchema(name, expression.type);
       default:
         return assertNever(expression);
     }
@@ -981,8 +988,13 @@ const isConditionalPath = (schema: Fields, path: string): boolean => {
   return isMapType(head) ? isConditionalPath(head.fields, path.slice(dot + 1)) : false;
 };
 
-/** Runtime counterpart of {@link SelectionPath}, typed as that operator applied to its input. */
-const selectionPath = <S extends SelectionNode>(s: S): SelectionPath<S> => {
+/**
+ * Runtime counterpart of {@link SelectionPath}, typed as that operator applied
+ * to its input: the shared output-name operation of the selectable concept.
+ * Exported so the executors' `toSdkSelectable` names its SDK selectable through
+ * this one operator instead of re-deriving the name per form.
+ */
+export const selectionPath = <S extends SelectionNode>(s: S): SelectionPath<S> => {
   // Widened to the union first: narrowing a generic `S` in place leaves it an
   // object-or-string type parameter that `in` rejects.
   const node: SelectionNode = s;

@@ -19,7 +19,7 @@ import type {
   PipelineResult,
   PipelineRowIdentity,
 } from 'firestore-repository/pipelines/pipeline';
-import type { SelectionNode } from 'firestore-repository/pipelines/selection';
+import { selectionPath, type SelectionNode } from 'firestore-repository/pipelines/selection';
 import type { TransformStage } from 'firestore-repository/pipelines/stage';
 import type { Collection, DocumentSchema } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
@@ -156,17 +156,17 @@ const applyStage = (
 };
 
 /**
- * Translates a selection (bare path, bare `Field`, or aliased expression) into
- * an SDK selectable. Both bare forms become an SDK `Field`, which implements
- * `Selectable` with its own path as the alias — the same wire proto as the
- * SDK's string handling for `select`, in the form `addFields` also accepts.
+ * Translates a selection into an SDK `Selectable`. The output name comes from
+ * the shared `selectionPath` operation for every form; only the SDK translation
+ * is dispatched per form: an aliased expression becomes `expr.as(name)`, while
+ * both bare forms (a path string, a bare `Field`) become an SDK `Field`, which
+ * implements `Selectable` with its own path as the alias — the same wire proto
+ * as the SDK's string handling for `select`, in the form `addFields` accepts.
  */
 const toSdkSelectable = (db: Firestore, s: SelectionNode): Pipelines.Selectable =>
-  typeof s === 'string'
-    ? Pipelines.field(s)
-    : 'alias' in s
-      ? toSdkExpression(db, s.expression).as(s.alias)
-      : Pipelines.field(s.path);
+  typeof s === 'string' || !('alias' in s)
+    ? Pipelines.field(selectionPath(s))
+    : toSdkExpression(db, s.expression).as(selectionPath(s));
 
 /**
  * Translates the repository expression AST into an SDK expression. Threads

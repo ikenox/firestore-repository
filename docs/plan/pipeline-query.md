@@ -672,46 +672,13 @@ Items agreed in discussion but previously recorded only inline in DONE notes
 nullable(T)`); count family unaffected. Also probe the un-probed
       all-null-group cell (nullable operand, every value null in a group)
       before relying on it.
-- [ ] **Make "a selectable" a first-class concept** (agreed 2026-07, after the
-      bare-`Field` selection landed). A `Field` is NOT a kind of
-      `ExpressionWithAlias`: the latter is a BINDING (`{ expression, alias }`),
-      the former is a NODE — different layers, so neither contains the other.
-      What they share is "something that names ONE output", which the official
-      SDK models as the `Selectable` interface that `Field` and
-      `AliasedExpression` implement INDEPENDENTLY. This library has the same
-      concept, but it is currently spelled as a type-erased implementation
-      detail (`SelectionNode = string | Field | ExpressionWithAlias`; the string
-      path is our third form, which the SDK lacks) — so the same "which output
-      name, which schema contribution" judgment is re-derived at SIX sites: the
-      types `SelectionPath` / `SelectionToSchema` / `UndottedGroupAliases`, the
-      runtime `selectionPath` / `selectionToSchema`, and both executors'
-      `toSdkSelectable`. Fix: promote the concept (name it for what it is, not
-      for its erasure) and define its two operations — output path, and schema
-      contribution — ONCE, with every call site delegating to them; the
-      per-form arms then live inside those operations instead of being
-      rewritten per site. NOT the alternative considered and rejected:
-      normalizing `Field` into `{ expression: f, alias: f.path }` at the stage
-      boundary — it collapses the node/binding layers to save arms, and it also
-      loses what the user wrote in the stage payload. Also rejected: giving
-      `Field` `expression`/`alias` members so it structurally satisfies
-      `ExpressionWithAlias` — that would silently let a bare `Field` into
-      `addFields`, whose bare-form exclusion is deliberate (see
-      `BuildAddFieldsSchema`). Note one arm is irreducible: `UndottedGroupAliases`
-      is a parameter intersection over the user's un-normalized tuple, so it
-      must keep matching the input forms directly.
-
-      **The invariant that makes this a concept and not a coincidence** (noted
-      2026-07 while reviewing `unnest`): a bare `Field` and an
-      `ExpressionWithAlias` are accepted TOGETHER at every site — `Selection`,
-      `AggregateGroup`, `UnnestSelectable` — with `addFields` the lone
-      exception, and it is not a counterexample: it excludes BARENESS as a
-      category (the bare string form too), because a bare form names an
-      EXISTING field, so re-adding it under its own name is a no-op at best and,
-      through an optional map, silently materializes empty maps. So the real
-      axis is not "`Field` vs aliased" but "bare (names an existing field) vs
-      aliased (names a new output)". Under that framing the target shape falls
-      out — one parameterized concept plus each site's own bare-string form and
-      value constraint:
+- [x] **Make "a selectable" a first-class concept** (done 2026-07). "Something
+      that names ONE output" is the `Selectable` type in `selection.ts` — the
+      concept the official SDK models as its `Selectable` interface. A `Field`
+      is NOT a kind of `ExpressionWithAlias`: the latter is a BINDING
+      (`{ expression, alias }`), the former is a NODE — different layers, so
+      neither contains the other, and the type is their union parameterized by
+      the output VALUE kind:
 
       ```ts
       type Selectable<Context, V extends FieldType = FieldType> =
@@ -721,11 +688,44 @@ nullable(T)`); count family unaffected. Also probe the un-probed
       type Selection<Context> = MapFieldPath<Context> | Selectable<Context>;
       type AggregateGroup<Context> = (keyof Context & string) | Selectable<Context>;
       type UnnestSelectable<Context> = Selectable<Context, ArrayValued>;
-      // addFields stays ExpressionWithAlias[] — the documented bareness exclusion
       ```
 
-      `unnest` made this a THIRD site spelling the same union by hand, so the
-      duplication now costs more than when it was first noted.
+      The real axis is "bare (names an existing field) vs aliased (names a new
+      output)", so a bare `Field` and an `ExpressionWithAlias` are accepted
+      TOGETHER at every site; each stage adds its own bare-string form
+      (`Selection`, `AggregateGroup`) and value constraint (`unnest`'s
+      `ArrayValued`). `addFields` STAYS `ExpressionWithAlias[]`, NOT routed
+      through `Selectable`: it excludes BARENESS as a category (the bare string
+      form too), because a bare form names an existing field — re-adding it
+      under its own name is a no-op at best and, through an optional map,
+      silently materializes empty maps (see `BuildAddFieldsSchema`).
+
+      `SelectionNode` (`string | Field | ExpressionWithAlias`) is the concept's
+      context-free ERASURE — what stage payloads carry and what the runtime
+      folds and executors see. The concept's two operations are each defined
+      ONCE over it, and every site delegates:
+
+      - **output name** — `SelectionPath` (runtime twin `selectionPath`,
+        exported for the executors). `UndottedSelectionAlias` (hence
+        `UndottedGroupAliases`), both executors' `toSdkSelectable`, and the
+        schema fold `SelectionToSchema`/`selectionToSchema` all obtain the
+        output name through this one operator instead of re-matching alias /
+        bare-`Field` / string.
+      - **schema contribution** — `SelectionToSchema` (runtime twin
+        `selectionToSchema`). The per-form arms (aliased-`Field` conditionality,
+        computed-expression as-is, bare-`Field`-as-its-path, bare-string with
+        conditionality) live INSIDE it; its callers (`FoldSelections`,
+        `GroupSchema`) delegate.
+
+      `UndottedGroupAliases` is the one irreducible arm: a parameter
+      intersection over the user's UN-normalized tuple, so it stays a
+      per-element tuple map matching the input forms at the parameter position
+      (it obtains the NAME via `SelectionPath`, but the guard itself cannot move
+      off the tuple). Two alternatives were rejected: normalizing `Field` into
+      `{ expression: f, alias: f.path }` at the stage boundary (collapses the
+      node/binding layers and loses what the user wrote in the payload); and
+      giving `Field` `expression`/`alias` members so it structurally satisfies
+      `ExpressionWithAlias` (would silently let a bare `Field` into `addFields`).
 
 - [x] **Align AST node names with the SDK's vocabulary** (done 2026-07):
       renamed the expression node `FunctionCall` → `FunctionExpression` (the
