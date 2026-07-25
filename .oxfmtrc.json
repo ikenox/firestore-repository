@@ -7,9 +7,9 @@
   "singleQuote": true,
   "trailingComma": "all",
   "objectWrap": "collapse",
-  "experimentalSortImports": {
+  "sortImports": {
     "groups": [
-      ["side-effect"],
+      ["side_effect"],
       ["builtin", "external", "type-external"],
       [
         "internal",
