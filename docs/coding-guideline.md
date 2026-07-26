@@ -15,6 +15,20 @@
   over an alternative, probe references) stays a **plain comment** inside the
   implementation. The test: "would a user of this API make a wrong decision
   without knowing this?" — yes → JSDoc, no → plain comment.
+- **A comment must not describe what its declaration does not own.** Facts
+  that belong to another declaration — which members a `switch` handles, what
+  a sibling function validates, the members of a union defined elsewhere, the
+  shape a helper returns — are that declaration's to state. Restating them
+  creates a second copy of the same knowledge that nothing keeps in sync, and
+  it rots SILENTLY: no compiler checks prose, so the stale claim survives
+  every refactor that updates the real owner. Say what THIS declaration is and
+  why it is the way it is; for anything else, link the owner (`{@link}`) or
+  say nothing and let the code be read. When the absence of an obvious
+  summary would tempt the next author to add one back, say why it is absent.
+  Precedent: the pipeline executors' doc comment enumerated which stages were
+  implemented — knowledge owned by `applyStage`'s exhaustive `switch`, which
+  the compiler already keeps complete — and was wrong twice as stages landed,
+  shipping the stale claim in the `.d.ts` where a hover shows it.
 
 ## Code Style
 
