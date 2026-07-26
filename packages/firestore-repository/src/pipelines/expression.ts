@@ -120,7 +120,28 @@ export class Field<
   }
 }
 
-/** Builds a field-reference expression node carrying its resolved `type`. */
+/**
+ * Builds a field-reference expression node from a path and an EXPLICITLY
+ * SUPPLIED descriptor — the schema-bypassing escape hatch, not the way to
+ * reference a field in a query.
+ *
+ * Inside a stage callback, use the provider the stage hands you:
+ * `p.where((f) => equal(f('profile.age'), 20))`. It resolves the descriptor
+ * from the pipeline's schema, so the path is checked against it and
+ * auto-completed. This constructor takes the descriptor as an argument
+ * instead, which means NOTHING relates it to any schema: a path that the
+ * collection does not have compiles just as happily, in `where` and `select`
+ * as much as in `sort`, and a schema field renamed out from under it keeps
+ * compiling. At execution such a field simply resolves to nothing, so the
+ * query returns wrong rows rather than failing.
+ *
+ * It stays public because a node sometimes has to be built where no provider
+ * is in scope — assembling an expected AST in a test, tooling over the AST —
+ * and because the descriptor is genuinely the input there. Prefer the provider
+ * everywhere else. The trap to know about: extracting an expression out of a
+ * callback to share it between pipelines is exactly the situation that makes
+ * this constructor tempting, and exactly the one where the lost checking bites.
+ */
 export const field = <T extends FieldType, Path extends string>(
   type: T,
   path: Path,
