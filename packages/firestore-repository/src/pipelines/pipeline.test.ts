@@ -737,6 +737,31 @@ describe('pipeline', () => {
 
     const withAlias = base.unnest((field) => ({ selectable: field('tag').as('t') }));
 
+    it('a schema-preserving branch is just a reassignment, and keeps value comparisons', () => {
+      // The preferred shape: `where` threads Schema and Id unchanged, so the
+      // variable's type never moves and the tail stays inline with a CONCRETE
+      // schema — which is why the comparison below type-checks here and not in
+      // the generic form.
+      let p = base.where((field) => equal(field('rank'), 1));
+      if (Math.random() > 2) {
+        p = p.where((field) => equal(field('name'), 'alice'));
+      }
+      const done = p.where((field) => equal(field('rank'), 2)).limit(20);
+      expect(done.stages().transforms).toHaveLength(3);
+    });
+
+    it('a schema-CHANGING branch cannot be reassigned, nor called through a union', () => {
+      let p = base.where((field) => equal(field('rank'), 1));
+      // @ts-expect-error -- unnest adds `t`, so the result is a different Schema
+      p = withAlias;
+      void p;
+
+      const either = Math.random() > 2 ? withAlias : base;
+      // @ts-expect-error -- the two `FieldProvider<Schema>` signatures are not
+      // compatible with each other, so the union's methods are not callable
+      either.sort((field) => [asc(field('rank'))]);
+    });
+
     it('a tail generic over `S extends BaseSchema` applies to a branch that added a field', () => {
       const tail = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
         p.sort((field) => [asc(field('rank'))]).limit(20);

@@ -83,7 +83,30 @@ export type PipelineQueryExecutor = {
  * ## Sharing a stage tail between conditionally-built pipelines
  *
  * A query with an optional filter branches and then wants the same stages on
- * both branches. Write that tail once as a function generic over the schema,
+ * both branches. Which tool you need depends on whether the branch changes the
+ * SCHEMA.
+ *
+ * Most optional filters do not — `where` / `sort` / `limit` / `offset` thread
+ * `Schema` and `Id` through unchanged — so the branch is just a reassignment
+ * and the tail stays inline:
+ *
+ * ```ts
+ * let p = collection(listings).where((f) => equalAny(f('siteId'), siteIds));
+ * if (wards.length > 0) {
+ *   p = p.where((f) => equalAny(f('ward'), wards));
+ * }
+ * const rows = await pipe.execute(p.sort(...).aggregate(...).limit(20));
+ * ```
+ *
+ * Prefer this. The schema stays CONCRETE, so everything type-checks as usual —
+ * including comparisons against a value, which the generic form below cannot
+ * carry.
+ *
+ * A branch that reshapes the schema (`unnest`, `addFields`, `select`) cannot be
+ * reassigned to the same variable, and a variable typed as the union of both
+ * shapes cannot have its stage methods called at all (the two
+ * `FieldProvider<Schema>` signatures are not compatible with each other). For
+ * that case, write the tail once as a function generic over the schema,
  * bounded by the schema the tail actually reads:
  *
  * ```ts
