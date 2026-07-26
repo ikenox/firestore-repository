@@ -316,28 +316,3 @@ const pipeline = collection(users)
 //   { data: { gender: 'male' | 'female' | null; avgAge: number | null; count: number } }[]
 const rows = await pipe.execute(pipeline);
 ```
-
-#### Full-text search
-
-> **Note:** `search` additionally requires a **text index** on the fields you search. Without one the query fails with `FAILED_PRECONDITION`.
-
-`search` runs one full-text query against the collection's text index. It must be the **first** stage, directly after the collection, and it keeps row identity — the results are the matching documents themselves.
-
-```ts
-import { collection } from 'firestore-repository/pipelines/source';
-import { documentMatches } from 'firestore-repository/pipelines/search';
-
-const pipeline = collection(users).search({
-  query: documentMatches('alice'),
-  // Optional: surface the relevance score under this name, and order by it.
-  scoreAs: 'relevance',
-  sort: { by: 'score', direction: 'descending' },
-  limit: 10,
-});
-
-// The score joins the document's own fields in the result type:
-//   { id: DocRef<...>; data: { name: string; profile: {...}; tag: string[]; relevance: number } }[]
-const rows = await pipe.execute(pipeline);
-```
-
-The query string uses the backend's search DSL: `waffles syrup` requires both terms, `"belgian waffles"` matches the phrase, `-syrup` excludes, and `waffles|syrup` (no spaces around the pipe) matches either. Omitting `sort` returns the newest documents first.

@@ -362,10 +362,13 @@ stage.` — loud, and it also applies to stages AFTER the search. Pins the
   `pipeline-spec.ts` but the block is `describe.skip` — they need an indexed
   fixture that does not exist yet (see below). Enabling it is the remaining
   work.
-- [x] **S5 — README + `packages/readme-example`.** A "Full-text search"
-      subsection with the prerequisite note, and a `search` example in the
-      readme-example suite — `it.skip`, for the same missing fixture, but still
-      type-checked.
+- [-] **S5 — README + `packages/readme-example`.** Only the stage list in the
+  Pipeline operations overview gains `search`. **No per-stage section**: the
+  README documents pipelines at overview level, and a section for one stage
+  would sit at the wrong altitude — there is no stage catalog to belong to,
+  and the API is close enough to the official SDK's that per-stage prose
+  adds little. Consumer-facing detail lives in the JSDoc instead. With no
+  README snippet to verify, `readme-example` gains nothing either.
 - [x] **S6 — doc updates.** `pipeline-query.md` status table and stage
       checklist updated, and `pipeline-query-spec-coverage-gap.md` has a
       `search` section recording which of the 16 considerations are live-GAPed
