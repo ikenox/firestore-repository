@@ -330,3 +330,43 @@ unique: every collision is rejected` pins all three collision kinds (both stages
 as `@ts-expect-error` plus positive controls. `selection.test.ts` no longer
 asserts any accumulator-wins / group last-wins collapse for these stages (those
 described rejected queries).
+
+---
+
+## search
+
+**Every live row below is a GAP by construction, not by omission.** The `search`
+spec block exists in `pipeline-spec.ts` but is `describe.skip`ped: a text index
+is created per collection ID (by hand, in the Cloud console), so the per-run
+`uniqueCollection(...)` the rest of the spec seeds can never be indexed. The
+cases are written against the probed behaviour and turn green the moment an
+indexed fixture is provisioned — until then the only live evidence for this
+stage is `.ikenox/probe-search.mjs`, whose findings are recorded in
+`pipeline-query-search-research.md`.
+
+| #   | special consideration                                                              | source                                    | covered?   | spec test / GAP                                              |
+| --- | ---------------------------------------------------------------------------------- | ----------------------------------------- | ---------- | ------------------------------------------------------------ |
+| 1   | matches by rquery term; rows are the source documents, identity PRESERVED          | `pipeline.ts:search` returns `Id`         | SKIPPED    | `search › matches documents by a term, keeping row identity` |
+| 2   | rows whose indexed field is absent / null never match                              | research §rquery DSL                      | SKIPPED    | `search › never matches a row whose indexed field is…`       |
+| 3   | rquery DSL: AND / phrase / exclusion / the space-less `a\|b` disjunction           | `search.ts:documentMatches` JSDoc         | SKIPPED    | `search › the rquery DSL › …` (4 cases)                      |
+| 4   | the score is a double, surfaced only under `scoreAs`                               | `SearchSchema`, `search.ts`               | SKIPPED    | `search › surfaces the relevance score under its alias`      |
+| 5   | `sort: { by: 'score', direction: 'descending' }` orders by relevance               | `search.ts:SearchOrdering`                | SKIPPED    | `search › orders by score, highest first, when asked`        |
+| 6   | default order is document creation time, NEWEST first                              | `pipeline.ts:search` JSDoc                | SKIPPED    | `search › orders by document creation time, NEWEST first`    |
+| 7   | `limit` / `offset` page within the resulting order                                 | `SearchPaging`                            | SKIPPED    | `search › pages with limit and offset`                       |
+| 8   | a score alias colliding with an existing field REPLACES it                         | `SearchSchema` (`MergeSchemas`)           | SKIPPED    | `search › replaces a colliding field with the score`         |
+| 9   | ordinary stages may follow, with their usual identity behaviour                    | research §"Stages after search"           | SKIPPED    | `search › lets ordinary stages follow`                       |
+| 10  | a non-head `search` is rejected LOUDLY (the premise for not type-banning it)       | `pipeline.ts:search` JSDoc                | SKIPPED    | `search › rejects a search that is not the first stage`      |
+| 11  | a dotted score alias is not a top-level output name                                | `UndottedOptionalKey`                     | TYPE-ONLY  | `pipeline.test.ts` `@ts-expect-error`                        |
+| 12  | `offset` is not expressible without `limit`                                        | `SearchPaging`                            | TYPE-ONLY  | `pipeline.test.ts` `@ts-expect-error`                        |
+| 13  | `query` takes a `SearchQuery`, not a boolean expression                            | `search.ts:SearchQuery`                   | TYPE-ONLY  | `pipeline.test.ts` `@ts-expect-error`                        |
+| 14  | only score-DESCENDING exists as an ordering                                        | `search.ts:SearchOrdering`                | TYPE-ONLY  | `pipeline.test.ts` `@ts-expect-error`                        |
+| 15  | a `SearchQuery` is not an `Expression` (misplacement is a compile error)           | `search.ts` (AggregateFunction precedent) | TYPE-ONLY  | `pipeline.test.ts` `a search query is not an expression`     |
+| 16  | schema effect: one `double()` under the alias, added-field-wins, whole-map replace | `SearchSchema`                            | YES (unit) | `selection.test.ts` `buildSearchSchema (runtime)` (4 cases)  |
+
+Considerations: 16. Live GAPs: 10 (all blocked on the fixture). TYPE-ONLY: 5.
+Unit-pinned: 1.
+
+Still unprobed entirely: **collection-group search** — the fixture's index is
+collection-scoped, so the probe could not separate "the stage does not support
+groups" from "this index does not cover the group". Needs a group-scoped text
+index.

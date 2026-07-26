@@ -22,6 +22,9 @@ Related plans:
 
 - [`pipeline-query-expressions.md`](./pipeline-query-expressions.md) — the
   expression-function restoration plan (class tree, inventory, rollout slices).
+- [`pipeline-query-search.md`](./pipeline-query-search.md) — the `search` stage
+  (full-text) plan: SDK surface, settled design decisions, the not-yet-run
+  probe checklist, and rollout slices.
 
 Related research / decisions:
 
@@ -47,6 +50,7 @@ adapter, and wired identically in the firebase adapter):
 | `unnest`                                 | context + alias/index (addFields-shaped) | preserved† |
 | `mergeOverwrite`                         | context + map, map wins (SHALLOW)        | preserved  |
 | `mergeKeep`                              | context + map, existing wins (SHALLOW)   | preserved  |
+| `search`                                 | context + the score under its alias      | preserved  |
 | `select`                                 | only the selections                      | **broken** |
 | `aggregate`                              | accumulators over group keys             | **broken** |
 | `distinct`                               | the group keys                           | **broken** |
@@ -59,8 +63,13 @@ n-element array yields n rows carrying the SAME source id.
 pipeline's second type parameter becomes `undefined` and the results carry no
 `id` — see "Identity ratchet" below.
 
+`search` is the one implemented stage whose live spec does NOT run: its cases
+exist in `pipeline-spec.ts` but are `describe.skip`ped, because a text index is
+created per collection ID and the spec's per-run `uniqueCollection(...)` can
+never have one. See [`pipeline-query-search.md`](./pipeline-query-search.md).
+
 **Still stubs** (`unimplemented()`, and the executors throw on them):
-`union`, `findNearest`, `let`, `search`, `sample`; the `database()` /
+`union`, `findNearest`, `let`, `sample`; the `database()` /
 `documents()` / `literals()` input sources; and the DML output stages
 (`update` / `delete`).
 
@@ -368,7 +377,23 @@ Transformation stages already stubbed:
 - [ ] `union(other)` — combine sources; identity break (conservative).
 - [ ] `findNearest(...)` — vector search; behavior TBD.
 - [ ] `let(...)` — variable binding for sub-pipelines.
-- [ ] `search(...)` — full-text search; behavior TBD.
+- [~] `search(...)` — done (2026-07; semantics in
+  `../pipeline-query-search-research.md`, plan in
+  [`pipeline-query-search.md`](./pipeline-query-search.md)). Runs ONE full-text
+  query against the collection's text index, identity PRESERVED. Every option is
+  typed to the narrow shape the backend actually accepts, which is far narrower
+  than the SDK's declarations: `query` is a dedicated `SearchQuery` node (one
+  `documentMatches` with a string LITERAL — `and`/`or`/`not`/comparisons are all
+  rejected), `sort` is `{ by: 'score', direction: 'descending' }` or nothing
+  (the default order is creation time, newest first), the `addFields` option is
+  just `scoreAs` (the backend takes `score()` only, at most once), and `offset`
+  is expressible only alongside `limit`. `SearchQuery` is NOT an `Expression`
+  (the `AggregateFunction` precedent), so misplacing a query is a compile error.
+  Schema effect is a single `double()` overlay under `scoreAs`
+  (`SearchSchema` = `MergeSchemas<score, Context>`, added-field-wins). Both
+  executors translate back into the SDK's option object. **Remaining:** the live
+  spec is written but SKIPPED (needs a text-indexed fixture), and
+  collection-group search is unprobed (needs a group-scoped index).
 - [ ] `sample(...)` — sampling; identity preserve presumably.
 
 Output stages (Pipeline DML):

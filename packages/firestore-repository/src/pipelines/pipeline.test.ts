@@ -23,6 +23,7 @@ import {
 import { countAll, documentId, equal, field, mapValue, sum } from './expression.js';
 import { collection, collectionGroup, type Pipeline, type PipelineResult } from './index.js';
 import { asc } from './ordering.js';
+import { documentMatches } from './search.js';
 
 describe('pipeline', () => {
   const base = collection(authorsCollection);
@@ -582,6 +583,115 @@ describe('pipeline', () => {
       base.mergeKeep((field) => field('name'));
     };
     void _rejections;
+  });
+
+  it('search preserves the schema and identity when no score alias is asked for', () => {
+    const searched = base.search({ query: documentMatches('waffles') });
+    // A search only filters — the schema is UNCHANGED and identity threads
+    // through (the rows are the source documents, refs included — probed).
+    expectTypeOf<SchemaOf<typeof searched>>().toEqualTypeOf<AuthorsCollection['schema']>();
+    expectTypeOf<RowOf<typeof searched>>().toHaveProperty('id');
+    const _preserving: Pipeline<AuthorsCollection['schema'], DocRef<AuthorsCollection>> = searched;
+    void _preserving;
+    // Only the options that were asked for reach the node.
+    expect(searched.stages().transforms).toEqual([
+      { kind: 'search', query: { kind: 'documentMatches', rquery: 'waffles' } },
+    ]);
+  });
+
+  it('search takes its options directly or through a field callback, identically', () => {
+    // The callback exists only to hand over the typed field accessor, so a query
+    // that needs no field skips it — the rule that already leaves `limit` /
+    // `offset` / `removeFields` callback-free. Both forms infer the same alias
+    // and build the same node.
+    const direct = base.search({ query: documentMatches('waffles'), scoreAs: 'relevance' });
+    const viaCallback = base.search(() => ({
+      query: documentMatches('waffles'),
+      scoreAs: 'relevance',
+    }));
+    expectTypeOf<SchemaOf<typeof direct>>().toEqualTypeOf<SchemaOf<typeof viaCallback>>();
+    expect(direct.stages().transforms).toEqual(viaCallback.stages().transforms);
+  });
+
+  it('search adds the score as a double under its alias, keeping identity', () => {
+    const scored = base.search({
+      query: documentMatches('waffles'),
+      scoreAs: 'relevance',
+      sort: { by: 'score', direction: 'descending' },
+      languageCode: 'en',
+      retrievalDepth: 100,
+      limit: 10,
+      offset: 5,
+    });
+    expectTypeOf<SchemaOf<typeof scored>>().toEqualTypeOf<{
+      name: StringType;
+      profile: MapType<{ age: DoubleType; gender: LiteralType<['male', 'female']> & Optional }>;
+      rank: DoubleType;
+      tag: ArrayType<StringType>;
+      relevance: DoubleType;
+    }>();
+    expectTypeOf<RowOf<typeof scored>>().toHaveProperty('id');
+    expect(scored.stages().transforms).toEqual([
+      {
+        kind: 'search',
+        query: { kind: 'documentMatches', rquery: 'waffles' },
+        scoreAs: 'relevance',
+        sort: { by: 'score', direction: 'descending' },
+        languageCode: 'en',
+        retrievalDepth: 100,
+        limit: 10,
+        offset: 5,
+      },
+    ]);
+  });
+
+  it('a score alias colliding with an existing field replaces it, whole', () => {
+    // The `addFields` overlay rule: added-field-wins, and a non-map value takes
+    // a colliding map WHOLESALE — what the backend does (probed).
+    const overMap = base.search({ query: documentMatches('x'), scoreAs: 'profile' });
+    expectTypeOf<SchemaOf<typeof overMap>>().toEqualTypeOf<{
+      name: StringType;
+      profile: DoubleType;
+      rank: DoubleType;
+      tag: ArrayType<StringType>;
+    }>();
+  });
+
+  it('search rejects the shapes the backend cannot run, at the type level', () => {
+    const _rejections = () => {
+      // The score alias names a TOP-LEVEL output: a dotted alias returns
+      // INTERNAL from the backend rather than a clean rejection (probed), so it
+      // is banned here — the `unnest` indexField precedent.
+      // @ts-expect-error -- a dotted score alias is not a top-level output name
+      base.search({ query: documentMatches('x'), scoreAs: 'a.b' });
+      // `offset` is only expressible alongside `limit` (the backend rejects it
+      // on its own).
+      // @ts-expect-error -- offset without limit
+      base.search({ query: documentMatches('x'), offset: 5 });
+      // The query is a `SearchQuery`, NOT a boolean expression: the backend
+      // accepts only `document_matches` here, so `and`/`or`/comparisons — which
+      // a boolean-expression parameter would admit — are unrepresentable.
+      // @ts-expect-error -- a comparison is not a SearchQuery
+      base.search((field) => ({ query: equal(field('name'), 'x') }));
+      // Only the score ordering exists, descending only.
+      // @ts-expect-error -- score() ascending is rejected by the backend
+      base.search({ query: documentMatches('x'), sort: { by: 'score', direction: 'ascending' } });
+    };
+    void _rejections;
+  });
+
+  it('a search query is not an expression (misplacement is a type error)', () => {
+    // The `AggregateFunction` treatment: `documentMatches` only makes sense as a
+    // search stage's query, and the backend rejects it everywhere else
+    // ("The 'document_matches' function can only be used in the search(...)
+    // stage" — probed), so misplacing one is a compile error here.
+    const _misplacements = () => {
+      // @ts-expect-error -- a SearchQuery is not a boolean-valued condition
+      base.where(() => documentMatches('x'));
+      // @ts-expect-error -- a SearchQuery is not a select selection
+      base.select(() => [documentMatches('x')]);
+    };
+    void _misplacements;
   });
 
   it('accumulators and expressions do not interchange across stages (misplacement is a type error)', () => {

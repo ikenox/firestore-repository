@@ -287,7 +287,7 @@ await repository.delete('user1');
 
 > **Note:** [Pipeline operations](https://docs.cloud.google.com/firestore/native/docs/pipeline/overview) require a Firestore **Enterprise** database. They are not available on Standard databases or the emulator.
 
-A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
+A pipeline expresses a query as a chain of stages (`where`, `sort`, `select`, `aggregate`, `distinct`, `unnest`, `replaceWith`, `search`, ...) that reshape the rows one stage at a time — far more expressive than a single `query(...)`.
 
 Pipelines follow the same **type-safe** philosophy as the rest of the library: the schema flows through every stage, so field paths, aggregate inputs, and the shape of the result rows are all derived from the schema and checked at compile time. A stage that reshapes the rows (e.g. `select` / `aggregate`) reshapes the result type to match.
 

@@ -37,6 +37,7 @@ import {
   buildDistinctSchema,
   buildMergeWithSchema,
   buildReplaceWithSchema,
+  buildSearchSchema,
   type BuildSelectionSchema,
   buildSelectionSchema,
   buildUnnestSchema,
@@ -1070,5 +1071,36 @@ describe('buildMergeWithSchema (runtime)', () => {
     const oracle = { a: double(), msrc: optional(map({ c: string() })), c: optional(string()) };
     const actual = buildMergeWithSchema(withOpt, field(withOpt.msrc, 'msrc'), 'overwrite');
     expectTypedStrictEqual(actual, oracle);
+  });
+});
+
+// The `search` stage's only schema effect. Both halves are pinned against one
+// oracle, which is the safety net for the bridging assertion inside
+// `searchScoreSchema`.
+describe('buildSearchSchema (runtime)', () => {
+  const schema = { name: string(), profile: map({ age: double() }) } satisfies DocumentSchema;
+
+  it('no alias: the context is unchanged (the score is not surfaced at all)', () => {
+    const oracle = { name: string(), profile: map({ age: double() }) };
+    expectTypedStrictEqual(buildSearchSchema(schema), oracle);
+  });
+
+  it('an alias adds ONE double field alongside the context', () => {
+    const oracle = { name: string(), profile: map({ age: double() }), relevance: double() };
+    expectTypedStrictEqual(buildSearchSchema(schema, 'relevance'), oracle);
+  });
+
+  it('an alias colliding with an existing field REPLACES it', () => {
+    // Added-field-wins, the `addFields` overlay rule — the backend overwrites a
+    // colliding field with the score (probed).
+    const oracle = { name: double(), profile: map({ age: double() }) };
+    expectTypedStrictEqual(buildSearchSchema(schema, 'name'), oracle);
+  });
+
+  it('an alias colliding with a MAP field replaces the WHOLE map (no deep merge)', () => {
+    // The score is not a map, so `MergeSchemas`'s map-vs-map recursion cannot
+    // fire — which is what the backend does (probed: the map became a number).
+    const oracle = { name: string(), profile: double() };
+    expectTypedStrictEqual(buildSearchSchema(schema, 'profile'), oracle);
   });
 });
