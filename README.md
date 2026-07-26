@@ -316,21 +316,3 @@ const pipeline = collection(users)
 //   { data: { gender: 'male' | 'female' | null; avgAge: number | null; count: number } }[]
 const rows = await pipe.execute(pipeline);
 ```
-
-#### Filtering against a list built at runtime
-
-`equalAny` / `arrayContainsAny` normally infer the element type from the literal you pass (`equalAny(field('gender'), ['male', 'female'])`). A list assembled at runtime — the selected values of a multi-select filter, say — has no literal to infer from, so pass its element descriptor explicitly with `arrayValueOf`:
-
-```ts
-import { arrayValueOf, equalAny } from 'firestore-repository/pipelines/expression';
-import { string } from 'firestore-repository/schema';
-
-// Whatever the user checked; possibly empty.
-const selectedGenders: string[] = readFromRequest();
-
-const pipeline = collection(users).where((field) =>
-  equalAny(field('profile.gender'), arrayValueOf(string(), selectedGenders)),
-);
-```
-
-An empty list is a valid operand and needs no branch of your own: `equalAny` / `arrayContainsAny` then match no row, and `notEqualAny` / `arrayContainsAll` match every row. (Unlike `query(...)`'s `in` filter, which rejects an empty list.)

@@ -23,10 +23,8 @@ import { Firestore } from '@google-cloud/firestore';
 import { randomString, uniqueCollection } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
 import {
-  arrayValueOf as pipelineArrayValueOf,
   average as pipelineAverage,
   countAll as pipelineCountAll,
-  equalAny as pipelineEqualAny,
   greaterThanOrEqual as pipelineGreaterThanOrEqual,
 } from 'firestore-repository/pipelines/expression';
 import type { PipelineQueryExecutor } from 'firestore-repository/pipelines/pipeline';
@@ -320,22 +318,6 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
         }));
       const rows = await pipeline!.executor.execute(q);
       console.log(rows);
-    });
-
-    it('filtering against a list built at runtime', async () => {
-      // Whatever the user checked; possibly empty.
-      const selectedGenders: string[] = ['female'];
-      const q = pipelineCollection(authors).where((field) =>
-        pipelineEqualAny(field('profile.gender'), pipelineArrayValueOf(string(), selectedGenders)),
-      );
-      console.log(await pipeline!.executor.execute(q));
-
-      // An empty list needs no branch of the caller's own: it matches no row.
-      const nothingSelected: string[] = [];
-      const empty = pipelineCollection(authors).where((field) =>
-        pipelineEqualAny(field('profile.gender'), pipelineArrayValueOf(string(), nothingSelected)),
-      );
-      console.log(await pipeline!.executor.execute(empty));
     });
   });
 };

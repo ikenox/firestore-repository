@@ -837,6 +837,10 @@ export function arrayElementType(t: FieldType): FieldType {
  * array is just the ordinary lifting rule, and the element-comparability
  * guard runs against the lifted `ArrayType`'s element). Its elements must be
  * comparable with `value`.
+ *
+ * That lifting needs a static element tuple, so a list built at RUNTIME
+ * (possibly empty) goes through {@link arrayValueOf}, which takes the element
+ * descriptor explicitly instead of inferring it.
  */
 export const equalAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
   value: L,
@@ -848,7 +852,10 @@ export const equalAny = <const L extends OperandInput, const R extends ArrayOper
     options: toOperand(options),
   });
 
-/** Whether `value` differs from EVERY element of the `options` array — see {@link equalAny}. */
+/**
+ * Whether `value` differs from EVERY element of the `options` array — see
+ * {@link equalAny}, and {@link arrayValueOf} for a runtime-built options list.
+ */
 export const notEqualAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
   value: L,
   options: R & Comparable<TypeOfOperand<L>, ElementsOf<TypeOfOperand<R>>>,
@@ -2182,7 +2189,10 @@ export const arrayContains = <const Arr extends ArrayOperandInput, const El exte
   });
 };
 
-/** Whether the array contains EVERY element of the options array. */
+/**
+ * Whether the array contains EVERY element of the options array — see
+ * {@link arrayValueOf} for a runtime-built options list.
+ */
 export const arrayContainsAll = <
   const Arr extends ArrayOperandInput,
   const Opts extends ArrayOperandInput,
@@ -2206,7 +2216,10 @@ export const arrayContainsAll = <
   });
 };
 
-/** Whether the array contains ANY element of the options array. */
+/**
+ * Whether the array contains ANY element of the options array — see
+ * {@link arrayValueOf} for a runtime-built options list.
+ */
 export const arrayContainsAny = <
   const Arr extends ArrayOperandInput,
   const Opts extends ArrayOperandInput,
