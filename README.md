@@ -316,3 +316,29 @@ const pipeline = collection(users)
 //   { data: { gender: 'male' | 'female' | null; avgAge: number | null; count: number } }[]
 const rows = await pipe.execute(pipeline);
 ```
+
+#### Applying a mapper to the results
+
+A result row carries `id` only while the pipeline preserves **read-identity** — that is, while every stage keeps each row tied to the source document it came from. Such a row is structurally the same `{ id, data }` shape as a repository document, so the [custom mapper](#custom-mapper) you already wrote for the collection can convert pipeline results into your application model, with no pipeline-specific mapper needed.
+
+```ts
+import { asc } from 'firestore-repository/pipelines/ordering';
+
+const identified = await pipe.execute(
+  collection(users)
+    .where((field) => greaterThanOrEqual(field('profile.age'), 20))
+    .sort((field) => [asc(field('name'))])
+    .limit(10),
+);
+
+// Reuses the `userMapper` defined in "Custom Mapper" above
+const found: User[] = identified.map(userMapper.fromFirestore);
+```
+
+Stages that reshape a row into something that is no longer a source document — `select`, `aggregate`, `distinct`, `replaceWith` — drop read-identity, and the result rows then have no `id` at all. Passing those to a mapper is a **compile-time error** rather than a runtime surprise:
+
+```ts
+const projected = await pipe.execute(collection(users).select((field) => [field('name')]));
+// @ts-expect-error `select` dropped read-identity, so the rows have no `id`
+projected.map(userMapper.fromFirestore);
+```
