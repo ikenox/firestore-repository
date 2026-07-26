@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest';
 
-import { Doc, DocRef } from './repository.js';
+import { AppModel, Doc, DocRef, Mapper } from './repository.js';
 import {
   Collection,
   rootCollection,
@@ -9,6 +9,7 @@ import {
   subCollection,
   timestamp,
 } from './schema.js';
+import { serverTimestamp } from './server-value.js';
 
 describe('repository', () => {
   const authorsCollection = rootCollection({
@@ -52,6 +53,63 @@ describe('repository', () => {
       // @ts-expect-error -- TODO: this assertion should be passed once generic constraint is resolved
       expectTypeOf<Doc<T>>().toExtend<Doc<T, 'write'>>();
     })();
+  });
+
+  // Both directions of the read/write relation are legitimate models, so
+  // `AppModel` constrains neither — see its JSDoc. Each row here is a shape
+  // that must stay expressible.
+  it('AppModel admits a write type on either side of the read type', () => {
+    type User = { id: string; name: string; createdAt: Date };
+
+    // Wider write: what the plain models are — a write also accepts the server
+    // operations that a read never produces.
+    expectTypeOf<
+      AppModel<DocRef<AuthorsCollection>, Doc<AuthorsCollection>, Doc<AuthorsCollection, 'write'>>
+    >().toEqualTypeOf<{
+      id: DocRef<AuthorsCollection>;
+      read: Doc<AuthorsCollection>;
+      write: Doc<AuthorsCollection, 'write'>;
+    }>();
+
+    // Narrower write: the README's case — server-managed fields are dropped
+    // from what a caller has to supply.
+    expectTypeOf<AppModel<string, User, Omit<User, 'createdAt'>>>().toEqualTypeOf<{
+      id: string;
+      read: User;
+      write: Omit<User, 'createdAt'>;
+    }>();
+
+    // Omitted, the write type is the read type.
+    expectTypeOf<AppModel<string, User>['write']>().toEqualTypeOf<User>();
+
+    // The bare alias is the bound of every `Model extends AppModel`, so it has
+    // to stay maximally permissive.
+    expectTypeOf<AppModel>().toEqualTypeOf<{ id: unknown; read: unknown; write: unknown }>();
+    expectTypeOf<AppModel<string, User, Omit<User, 'createdAt'>>>().toExtend<AppModel>();
+  });
+
+  // The README's "omit server-managed fields from the write type" case, at the
+  // shape a caller actually writes it: a mapper whose write model drops a field
+  // the read model carries, with the collection supplying it on write instead.
+  it('Mapper accepts a model whose write type omits a read-only field', () => {
+    type User = { id: string; name: string; createdAt: Date };
+    type UserInput = Omit<User, 'createdAt'>;
+
+    const mapper: Mapper<AuthorsCollection, AppModel<string, User, UserInput>> = {
+      toDocRef: (id) => [id],
+      fromFirestore: (doc) => ({
+        id: doc.id[0],
+        name: doc.data.name,
+        createdAt: doc.data.registeredAt,
+      }),
+      toFirestore: (user) => ({
+        id: [user.id],
+        data: { name: user.name, registeredAt: serverTimestamp() },
+      }),
+    };
+
+    expectTypeOf(mapper.toFirestore).parameter(0).toEqualTypeOf<UserInput>();
+    expectTypeOf(mapper.fromFirestore).returns.toEqualTypeOf<User>();
   });
 
   it('DocRef', () => {

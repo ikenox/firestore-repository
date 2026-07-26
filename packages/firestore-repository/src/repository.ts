@@ -77,8 +77,26 @@ export type Mapper<T extends Collection = Collection, Model extends AppModel = A
   toFirestore: (model: Model['write']) => Doc<T, 'write'>;
 };
 
-/** An application model type definition with id, read, and write shapes */
-export type AppModel<Id = unknown, R = unknown, W extends R = R> = { id: Id; read: R; write: W };
+/**
+ * The three types a repository is parameterized by: the model's id, the value
+ * a read produces (`R`), and the value a write accepts (`W`, defaulting to `R`
+ * when the two are the same).
+ *
+ * The two value types are deliberately left UNRELATED by constraint, because
+ * both directions occur. The plain models make the write type the WIDER one —
+ * `Doc<T, 'write'>` also accepts `ServerTimestamp` / `Increment` where `Doc<T>`
+ * reads a `Date` / `number` — while a custom model narrows it the other way to
+ * drop server-managed fields from what a caller has to supply. A constraint in
+ * either direction rejects one of those, and neither {@link Mapper} nor
+ * {@link Repository} needs the relation: both are generic over all three.
+ *
+ * What does depend on a relation is reading a document and writing it back
+ * (`repository.set(await repository.get(id))`), which needs `R` assignable to
+ * `W`. That is a property of a particular model, so it is checked at the call
+ * site that relies on it rather than declared here — the plain models satisfy
+ * it, pinned in `repository.test.ts`.
+ */
+export type AppModel<Id = unknown, R = unknown, W = R> = { id: Id; read: R; write: W };
 
 /**
  * Platform-specific environment types for Firestore
