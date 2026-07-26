@@ -77,11 +77,10 @@ export type PipelineQueryExecutor = {
  *   `replaceWith`) return `Id = undefined`. Because the preserving stages thread
  *   whatever `Id` they receive, identity never comes back once dropped.
  *
- * ## Sharing a stage tail between conditionally-built pipelines
+ * ## Building a pipeline conditionally
  *
- * If the optional branch does not change `Schema` — `where` / `sort` / `limit`
- * / `offset` thread it through — the branch is a reassignment and the tail
- * stays inline:
+ * An optional filter is a reassignment: `where` / `sort` / `limit` / `offset`
+ * thread `Schema` and `Id` through, so the variable's type never moves.
  *
  * ```ts
  * let p = collection(listings).where((f) => equalAny(f('siteId'), siteIds));
@@ -89,36 +88,27 @@ export type PipelineQueryExecutor = {
  * const rows = await pipe.execute(p.sort(...).aggregate(...).limit(20));
  * ```
  *
- * Prefer this: the schema stays CONCRETE, so a comparison against a value
- * type-checks — which the generic form below cannot carry.
- *
  * A branch that RESHAPES the schema (`unnest`, `addFields`, `select`) cannot
- * share that variable: the reshaped pipeline is not assignable back to it, and
- * a variable typed as the union of both shapes has no callable stage methods
- * (the two `FieldProvider<Schema>` signatures are incompatible). Write the
- * tail once instead, generic over the schema it reads:
+ * share that variable — the reshaped pipeline is not assignable back to it,
+ * and a variable typed as the union of both shapes has no callable stage
+ * methods, since the two `FieldProvider<Schema>` signatures are incompatible.
+ * To avoid duplicating what follows, take the shared stages as a function
+ * bounded by the fields they read — `S extends BaseSchema` means "at least
+ * these", so a branch that added some still satisfies it:
  *
  * ```ts
  * const tail = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
  *   p.sort((f) => [asc(f('crawlingDate'))]).limit(20);
- *
- * tail(base);
- * tail(base.unnest((f) => ({ selectable: f('property.stations').as('station') })));
  * ```
  *
- * `S extends BaseSchema` means "at least these fields", so a branch that ADDED
- * some satisfies it and no assignability between the two pipeline types is
- * needed. Pinning the parameter to `BaseSchema` does NOT work — `Schema` is
- * invariant, occurring both in the result types and in every callback's
- * `FieldProvider<Schema>` — and that is the constraint working, not a gap.
- * Paths and operand domains are still checked inside the tail.
- *
- * **A comparison against a VALUE cannot move into the tail.** Comparison
- * compatibility is a conditional type over the field's descriptor, and
- * TypeScript does not evaluate conditionals over an unresolved type parameter,
- * so the guard defers and rejects every operand. Keep such comparisons in the
+ * Two things to know about that form. Pinning the parameter to `BaseSchema`
+ * instead does not work: `Schema` is invariant, occurring in the result types
+ * AND in every callback's `FieldProvider<Schema>`. And a comparison against a
+ * VALUE cannot move into it — comparison compatibility is a conditional type
+ * over the field's descriptor, which TypeScript will not evaluate over an
+ * unresolved type parameter, so the guard defers and rejects every operand.
+ * Paths and operand domains are still checked; keep value comparisons in the
  * per-branch part, where the schema is concrete.
- *
  */
 export class Pipeline<
   Schema extends Fields = Fields,
