@@ -945,8 +945,28 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             sumAge: sum('profile.age'),
             count: count(),
           });
-          expectTypeOf(res).toEqualTypeOf<{ avgAge: number; sumAge: number; count: number }>();
+          expectTypeOf(res).toEqualTypeOf<{
+            avgAge: number | null;
+            sumAge: number;
+            count: number;
+          }>();
           expect(res).toStrictEqual<typeof res>({ avgAge: 50, sumAge: 150, count: 3 });
+        });
+
+        // An average has no answer without a numeric value to average, and
+        // Firestore reports that absence as `null` — which is why `average` is
+        // the one nullable member of `Aggregated`. `count` and `sum` answer
+        // `0` for the very same input, so all three are pinned together here
+        // against one empty result set.
+        it('aggregate over an empty result set', async () => {
+          const res = await repository.aggregate(
+            query(
+              { collection: repository.collection },
+              where(eq('name', 'no author has this name')),
+            ),
+            { avgAge: average('profile.age'), sumAge: sum('profile.age'), count: count() },
+          );
+          expect(res).toStrictEqual<typeof res>({ avgAge: null, sumAge: 0, count: 0 });
         });
       });
 
