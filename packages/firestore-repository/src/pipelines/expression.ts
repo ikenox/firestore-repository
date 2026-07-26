@@ -24,6 +24,8 @@ import {
   type LiteralType,
   map,
   type MapType,
+  neverType,
+  type NeverType,
   normalize,
   type Normalize,
   nullable,
@@ -246,13 +248,17 @@ export type ConstantScalar = string | number | boolean | null | Date | Uint8Arra
  */
 export type ConstantLeafNode = GeoPointValue | VectorValue | DocRefValue<Collection | 'unknown'>;
 /**
- * Non-empty (an empty literal has no element to infer a descriptor from) and
- * non-nested: directly nested arrays (`constant([1, [2, 3]])`) are excluded
- * from the element type because Firestore's data model itself forbids an
- * array value inside another array — the official SDK does not support them
+ * A tuple (`['a', 'b']`) or an unbounded array (`string[]`, the shape of a
+ * list assembled at runtime) — see {@link ArrayConstantTypeOf} for how the
+ * element descriptor is derived in each case, and what the unbounded case
+ * cannot express.
+ *
+ * Non-nested either way: directly nested arrays (`constant([1, [2, 3]])`) are
+ * excluded from the element type because Firestore's data model itself forbids
+ * an array value inside another array — the official SDK does not support them
  * either. (An array inside a *map* inside an array is fine.)
  */
-export type ConstantArray = readonly [ConstantElement, ...ConstantElement[]];
+export type ConstantArray = readonly ConstantElement[];
 type ConstantElement = ConstantScalar | ConstantLeafNode | ConstantMap;
 export type ConstantMap = { readonly [key: string]: ConstantValue };
 
@@ -289,19 +295,60 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
                         : never;
 
 /**
- * The element descriptor is derived by walking the TUPLE (not the union of
- * the element types): tuple order is stable, so the runtime can mirror the
+ * A TUPLE's element descriptor is derived by walking the tuple (not the union
+ * of the element types): tuple order is stable, so the runtime can mirror the
  * exact same canonicalization. `Normalize` then decides the shape — a single
  * distinct element type stays bare, several become a `UnionType` in
  * first-occurrence order — matching the runtime's `union(...elements)`.
+ *
+ * An UNBOUNDED array (`string[]` — a list assembled at runtime) has no tuple
+ * to walk, so its descriptor comes from the ELEMENT TYPE instead. That path is
+ * restricted to a single element descriptor, because the runtime still derives
+ * the union from the ACTUAL values: for a heterogeneous `(string | number)[]`
+ * neither the members that occur nor their first-occurrence order is
+ * statically knowable, so the two sides could not agree and the call is
+ * rejected — reach for {@link arrayValueOf}, which states the descriptor
+ * outright. See {@link UnboundedArrayConstantTypeOf} for the one approximation
+ * this path does make.
  */
-type ArrayConstantTypeOf<V extends ConstantArray> = {
-  readonly [K in keyof V]: ConstantTypeOf<V[K]>;
-} extends infer D extends readonly FieldType[]
-  ? Normalize<D> extends infer N extends FieldType
-    ? ArrayType<N>
-    : never
-  : never;
+type ArrayConstantTypeOf<V extends ConstantArray> =
+  IsUnboundedArray<V> extends true
+    ? UnboundedArrayConstantTypeOf<V[number]>
+    : {
+          readonly [K in keyof V]: ConstantTypeOf<V[K]>;
+        } extends infer D extends readonly FieldType[]
+      ? Normalize<D> extends infer N extends FieldType
+        ? ArrayType<N>
+        : never
+      : never;
+
+/**
+ * The unbounded case's descriptor, from the element TYPE.
+ *
+ * The one approximation: an unbounded array may be EMPTY, and an empty array
+ * has no element for the runtime to infer from, so the runtime descriptor is
+ * `array(neverType())` while this yields `array(D)`. Both describe the same
+ * (and only possible) value — `[]` — and `NeverType` is the identity element
+ * of {@link Normalize}, so the two collapse back together wherever the
+ * descriptor flows onward (`arrayConcat(constant(empty), constant(['a']))` is
+ * `array(string())` from either side). Where the exact descriptor matters,
+ * {@link arrayValueOf} supplies it instead of inferring.
+ */
+type UnboundedArrayConstantTypeOf<E extends ConstantElement> =
+  ConstantTypeOf<E> extends infer D
+    ? IsUnion<D> extends true
+      ? never
+      : D extends FieldType
+        ? ArrayType<D>
+        : never
+    : never;
+
+/** Whether `V` is an unbounded array type rather than a tuple. */
+type IsUnboundedArray<V> = V extends readonly unknown[]
+  ? number extends V['length']
+    ? true
+    : false
+  : false;
 
 /**
  * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
@@ -329,12 +376,10 @@ function constantTypeOf(value: ConstantValue): FieldType {
     return value.type;
   }
   if (isConstantArray(value)) {
-    if (value.length === 0) {
-      // Runtime twin of ConstantArray's non-empty tuple constraint.
-      throw new Error('constant arrays must not be empty (no element to infer a type from)');
-    }
     // Mirrors ArrayConstantTypeOf: the element descriptors in tuple order,
-    // canonicalized by the union constructor.
+    // canonicalized by the union constructor — which is total, so an empty
+    // array needs no special case and infers `array(neverType())`, the type
+    // whose only inhabitant is the empty array.
     return array(union(...value.map((element) => constantTypeOf(element))));
   }
   switch (typeof value) {
@@ -492,7 +537,9 @@ export type FunctionPayload =
   | { name: 'ifAbsent'; value: Expression; fallback: Expression }
   | { name: 'ifNull'; value: Expression; fallback: Expression }
   // array
-  | { name: 'arrayValue'; elements: readonly [Expression, ...Expression[]] }
+  // Possibly empty: `arrayValueOf` builds a node from a runtime-built list,
+  // which may have no elements (the backend accepts an empty array value).
+  | { name: 'arrayValue'; elements: readonly Expression[] }
   | { name: 'arrayLength'; value: Expression }
   | { name: 'arrayReverse'; value: Expression }
   | { name: 'arrayGet'; value: Expression; index: Expression }
@@ -819,7 +866,7 @@ export type ArrayElementType<T extends FieldType> = ElementsOf<StripNull<T>>;
 export function arrayElementType<T extends FieldType>(t: T): ArrayElementType<T>;
 export function arrayElementType(t: FieldType): FieldType {
   const stripped = stripNull(t);
-  if (stripped === undefined || stripped.type !== 'array') {
+  if (stripped.type !== 'array') {
     throw new Error('descriptor is not an array');
   }
   return stripped.dynamicPart;
@@ -835,6 +882,11 @@ export function arrayElementType(t: FieldType): FieldType {
  * array is just the ordinary lifting rule, and the element-comparability
  * guard runs against the lifted `ArrayType`'s element). Its elements must be
  * comparable with `value`.
+ *
+ * A list built at RUNTIME lifts the same way, as long as its element type maps
+ * to ONE descriptor (`string[]`, `number[]`, ... — including an empty list).
+ * A heterogeneous one (`(string | number)[]`) cannot be inferred and goes
+ * through {@link arrayValueOf}.
  */
 export const equalAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
   value: L,
@@ -846,7 +898,11 @@ export const equalAny = <const L extends OperandInput, const R extends ArrayOper
     options: toOperand(options),
   });
 
-/** Whether `value` differs from EVERY element of the `options` array — see {@link equalAny}. */
+/**
+ * Whether `value` differs from EVERY element of the `options` array — see
+ * {@link equalAny}, and {@link arrayValueOf} for an options list whose element
+ * descriptor cannot be inferred.
+ */
 export const notEqualAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
   value: L,
   options: R & Comparable<TypeOfOperand<L>, ElementsOf<TypeOfOperand<R>>>,
@@ -929,6 +985,8 @@ const mayBeNull = (t: FieldType & { optional?: boolean }): boolean => {
       return t.elements.some(mayBeNull);
     case 'const':
       return t.values.includes(null);
+    // `never` admits no value at all, so in particular not `null`.
+    case 'never':
     case 'bool':
     case 'string':
     case 'int64':
@@ -1045,17 +1103,16 @@ function eitherType(a: Expression, b: Expression): FieldType {
   return fallbackType(withoutOptional(a.type), b.type);
 }
 
-/** `EitherType` over already-resolved descriptors, with the `never` side as `undefined`. */
-const fallbackType = (a: FieldType | undefined, b: FieldType): FieldType =>
-  normalize([a, withoutOptional(b)]);
+/** `EitherType` over already-resolved descriptors. */
+const fallbackType = (a: FieldType, b: FieldType): FieldType => normalize([a, withoutOptional(b)]);
 
 /**
  * The descriptor with its null-ness removed — what remains of a value that
  * was JUST OBSERVED to be non-null (`ifNull`'s pass-through side,
  * `logicalMaximum`/`logicalMinimum`'s operands, whose null/absent inputs are
- * ignored). `never` when nothing remains (a pure-null descriptor). Strips
- * the `NullType` member from unions, `null` from literal value sets; wide
- * inputs pass through (a recursion breaker, like `TagSetsComparable`).
+ * ignored). {@link NeverType} when nothing remains (a pure-null descriptor).
+ * Strips the `NullType` member from unions, `null` from literal value sets;
+ * wide inputs pass through (a recursion breaker, like `TagSetsComparable`).
  */
 type StripNull<T extends FieldType> = FieldType extends T
   ? T
@@ -1064,7 +1121,7 @@ type StripNull<T extends FieldType> = FieldType extends T
     : never;
 
 type StripNullBare<T extends FieldType> = T extends NullType
-  ? never
+  ? NeverType
   : T extends { type: 'union'; elements: infer E extends readonly FieldType[] }
     ? FieldType[] extends E
       ? T
@@ -1075,7 +1132,7 @@ type StripNullBare<T extends FieldType> = T extends NullType
         }
       ? NonNullLiteralValues<V> extends infer W extends readonly (string | number | boolean)[]
         ? W extends readonly []
-          ? never
+          ? NeverType
           : LiteralType<[...W]>
         : never
       : T;
@@ -1099,20 +1156,22 @@ type NonNullLiteralValues<V extends readonly (string | number | boolean | null)[
       : [H, ...NonNullLiteralValues<R>]
     : [];
 
-/** Runtime counterpart of {@link StripNull} (`never` is `undefined`). */
-const stripNull = (raw: FieldType): FieldType | undefined => {
+/** Runtime counterpart of {@link StripNull}. */
+const stripNull = (raw: FieldType): FieldType => {
   const t = withoutOptional(raw);
   switch (t.type) {
     case 'null':
-      return undefined;
+      return neverType();
     case 'union': {
-      const nonNull = t.elements.filter((e) => e.type !== 'null');
-      return nonNull.length === 0 ? undefined : union(...nonNull);
+      // `union` is total, so a fully null-stripped member list normalizes to
+      // `neverType()` on its own — no empty-list case to handle here.
+      return union(...t.elements.filter((e) => e.type !== 'null'));
     }
     case 'const': {
       const [first, ...rest] = t.values.filter((v) => v !== null);
-      return first === undefined ? undefined : literal(first, ...rest);
+      return first === undefined ? neverType() : literal(first, ...rest);
     }
+    case 'never':
     case 'bool':
     case 'string':
     case 'int64':
@@ -1170,7 +1229,7 @@ type MayBeNullOrAbsent<T extends FieldType> = [
 /** Runtime counterpart of {@link LogicalExtreme} (same bridge shape as `propagateNull`). */
 function logicalExtremeType<Ops extends readonly Expression[]>(operands: Ops): LogicalExtreme<Ops>;
 function logicalExtremeType(operands: readonly Expression[]): FieldType {
-  const stripped: (FieldType | undefined)[] = operands.map((operand) => stripNull(operand.type));
+  const stripped: FieldType[] = operands.map((operand) => stripNull(operand.type));
   if (operands.every((operand) => mayBeNull(operand.type) || mayBeAbsent(operand.type))) {
     stripped.push(nullType());
   }
@@ -1302,9 +1361,7 @@ function numericResultType<Ops extends readonly Expression[]>(
   operands: Ops,
 ): NumericResult<Ops[number]['type']>;
 function numericResultType(operands: readonly Expression[]): FieldType {
-  return operands.every((operand) => stripNull(operand.type)?.type === 'int64')
-    ? int64()
-    : double();
+  return operands.every((operand) => stripNull(operand.type).type === 'int64') ? int64() : double();
 }
 
 /** A uniformly distributed random double in [0, 1), regenerated per row. */
@@ -2061,8 +2118,9 @@ function elementUnionType(elements: readonly Expression[]): FieldType {
  * Builds an array EXPRESSION — `arrayValue([field('a'), constant(1)])`.
  * Unlike the value nodes (which hold plain values and enter expressions via
  * `constant()`), the elements here are expressions, evaluated per row
- * (probed: fields nest arbitrarily). Non-empty, mirroring `constant([])`'s
- * rejection: an empty literal has no element to infer a descriptor from.
+ * (probed: fields nest arbitrarily). Non-empty, because the element descriptor
+ * is INFERRED from the elements and an empty literal has none to infer from —
+ * use {@link arrayValueOf} to state the element descriptor instead.
  */
 export const arrayValue = <const Els extends readonly [OperandInput, ...OperandInput[]]>(
   elements: Els,
@@ -2073,6 +2131,46 @@ export const arrayValue = <const Els extends readonly [OperandInput, ...OperandI
     elements: lifted,
   });
 };
+
+/**
+ * Builds an array expression whose ELEMENT DESCRIPTOR is given EXPLICITLY,
+ * for the lists inference cannot type on its own. Ordinary lists do NOT need
+ * it — a tuple and a homogeneous runtime-built array both lift on their own
+ * (`equalAny(f('address.ward'), wards)` with `wards: string[]` is fine, empty
+ * included). Reach for this in the two cases where inference has nothing to go
+ * on:
+ *
+ * - a HETEROGENEOUS runtime list, whose element union the runtime derives from
+ *   the actual values in first-occurrence order — not statically knowable, so
+ *   `(string | number)[]` is rejected (see {@link ArrayConstantTypeOf});
+ * - an EMPTY list whose element descriptor must be EXACT rather than the
+ *   approximation the inferred path makes (`array(neverType())` at runtime).
+ *
+ * ```ts
+ * declare const mixed: (string | number)[];
+ * p.where((f) => equalAny(f('code'), arrayValueOf(union(string(), double()), mixed)));
+ * ```
+ *
+ * The descriptor comes from the argument rather than the data, so the
+ * type-level and runtime results are identical for every arity — this is the
+ * narrowing entry point of the array-operand domain ("parse, don't validate"),
+ * with `elements` checked against `elementType` so the descriptor still
+ * describes the value.
+ *
+ * An empty list is a legitimate, well-defined operand rather than an error to
+ * reject: probed, an empty options array gives the vacuous-quantifier answers
+ * — no row for `equalAny` / `arrayContainsAny`, EVERY row for `notEqualAny` /
+ * `arrayContainsAll`. The classic query API's non-empty `IN` requirement does
+ * not apply to pipelines.
+ */
+export const arrayValueOf = <T extends FieldType, const Els extends readonly OperandInput[]>(
+  elementType: T,
+  elements: Els & readonly Comparable<T, TypeOfOperand<Els[number]>>[],
+): FunctionExpression<ArrayType<T>> =>
+  new FunctionExpression(array(elementType), {
+    name: 'arrayValue',
+    elements: liftOperands(elements),
+  });
 
 /** The number of elements. */
 export const arrayLength = <const Op extends ArrayOperandInput>(
@@ -2096,7 +2194,7 @@ export const arrayReverse = <const Op extends ArrayOperandInput>(
 /** Runtime counterpart of `StripNull<Op['type']>` over an expression (same bridge shape as `propagateNull`). */
 function stripNullOf<Op extends Expression>(value: Op): StripNull<Op['type']>;
 function stripNullOf(value: Expression): FieldType {
-  return stripNull(value.type) ?? nullType();
+  return stripNull(value.type);
 }
 
 /**
@@ -2141,7 +2239,11 @@ export const arrayContains = <const Arr extends ArrayOperandInput, const El exte
   });
 };
 
-/** Whether the array contains EVERY element of the options array. */
+/**
+ * Whether the array contains EVERY element of the options array — see
+ * {@link arrayValueOf} for an options list whose element descriptor cannot be
+ * inferred.
+ */
 export const arrayContainsAll = <
   const Arr extends ArrayOperandInput,
   const Opts extends ArrayOperandInput,
@@ -2165,7 +2267,11 @@ export const arrayContainsAll = <
   });
 };
 
-/** Whether the array contains ANY element of the options array. */
+/**
+ * Whether the array contains ANY element of the options array — see
+ * {@link arrayValueOf} for an options list whose element descriptor cannot be
+ * inferred.
+ */
 export const arrayContainsAny = <
   const Arr extends ArrayOperandInput,
   const Opts extends ArrayOperandInput,
@@ -2270,7 +2376,7 @@ function mapValueTypeOf<M extends Expression, K extends string>(
 ): MapValueType<FieldsOf<StripNull<M['type']>>[K]>;
 function mapValueTypeOf(value: Expression, key: string): FieldType {
   const t = stripNull(value.type);
-  if (t === undefined || t.type !== 'map') {
+  if (t.type !== 'map') {
     throw new Error('operand is not a map');
   }
   const v = t.fields[key];
@@ -2386,7 +2492,7 @@ function mapFieldUnionType<M extends Expression>(
 ): MapFieldUnion<FieldsOf<StripNull<M['type']>>>;
 function mapFieldUnionType(value: Expression): FieldType {
   const t = stripNull(value.type);
-  if (t === undefined || t.type !== 'map') {
+  if (t.type !== 'map') {
     throw new Error('operand is not a map');
   }
   const values = Object.values(t.fields).map((v) => withoutOptional(v));
@@ -2442,7 +2548,7 @@ function setField<M extends Expression, K extends string, V extends Expression>(
 ): SetField<FieldsOf<StripNull<M['type']>>, K, WithoutOptional<V['type']>>;
 function setField(value: Expression, key: string, entry: Expression): FieldsRecord {
   const t = stripNull(value.type);
-  if (t === undefined || t.type !== 'map') {
+  if (t.type !== 'map') {
     throw new Error('operand is not a map');
   }
   return { ...t.fields, [key]: withoutOptional(entry.type) };
@@ -2473,7 +2579,7 @@ function removeField<M extends Expression, K extends string>(
 ): Omit<FieldsOf<StripNull<M['type']>>, K>;
 function removeField(value: Expression, key: string): FieldsRecord {
   const t = stripNull(value.type);
-  if (t === undefined || t.type !== 'map') {
+  if (t.type !== 'map') {
     throw new Error('operand is not a map');
   }
   const { [key]: _removed, ...rest } = t.fields;
@@ -2515,7 +2621,7 @@ function mergeFields<Ops extends readonly Expression[]>(operands: Ops): MergeFie
 function mergeFields(operands: readonly Expression[]): FieldsRecord {
   return operands.reduce<FieldsRecord>((acc, operand) => {
     const t = stripNull(operand.type);
-    if (t === undefined || t.type !== 'map') {
+    if (t.type !== 'map') {
       throw new Error('operand is not a map');
     }
     return { ...acc, ...t.fields };

@@ -57,6 +57,11 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
       return z.number();
     case 'null':
       return z.null();
+    // The uninhabited descriptor admits no value, which `z.never()` states
+    // directly: `array(neverType())` then validates the empty array and
+    // nothing else, so the element schema is never actually applied.
+    case 'never':
+      return z.never();
     case 'bytes':
       return z
         .unknown()
@@ -123,6 +128,11 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       return z.boolean();
     case 'null':
       return z.null();
+    // The uninhabited descriptor admits no value, which `z.never()` states
+    // directly: `array(neverType())` then validates the empty array and
+    // nothing else, so the element schema is never actually applied.
+    case 'never':
+      return z.never();
     case 'bytes':
       return z.instanceof(Uint8Array).transform((b) => FirestoreBytes.fromUint8Array(b));
     case 'geoPoint':
