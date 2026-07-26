@@ -90,7 +90,7 @@ const applyStage = (
 ): Pipelines.Pipeline => {
   switch (stage.kind) {
     case 'sort': {
-      const [first, ...rest] = stage.orderings.map(toSdkOrdering);
+      const [first, ...rest] = stage.orderings.map((o) => toSdkOrdering(db, o));
       return first === undefined ? sdk : sdk.sort(first, ...rest);
     }
     case 'select': {
@@ -583,25 +583,13 @@ const toSdkSearchOrdering = (ordering: SearchOrdering): Pipelines.Ordering => {
   }
 };
 
-const toSdkOrdering = (ordering: Ordering) => {
-  const { expression } = ordering;
-  switch (expression.kind) {
-    case 'field':
-      break;
-    case 'constant':
-    case 'functionExpression':
-      throw new Error(
-        'google-cloud pipeline executor: only field orderings are supported in sort yet',
-      );
-    default:
-      return assertNever(expression);
-  }
-  const f = Pipelines.field(expression.path);
+const toSdkOrdering = (db: Firestore, ordering: Ordering) => {
+  const e = toSdkExpression(db, ordering.expression);
   switch (ordering.direction) {
     case 'ascending':
-      return f.ascending();
+      return e.ascending();
     case 'descending':
-      return f.descending();
+      return e.descending();
     default:
       return assertNever(ordering.direction);
   }

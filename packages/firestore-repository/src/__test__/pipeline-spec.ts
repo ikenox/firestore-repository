@@ -289,6 +289,28 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         );
       });
 
+      // The sort key is an `Expression`, so the cases are its three kinds:
+      // `field` (above), `functionExpression` and `constant`.
+      it('sorts by a COMPUTED value, not just a stored field', async () => {
+        // Negating rank makes the ascending order of the computed value the
+        // DESCENDING order of the field — so this passes only if the backend
+        // really evaluates the expression per row.
+        await expectPipeline(
+          source().sort((field) => [asc(multiply(field('rank'), -1))]),
+          [a3, a2, a1],
+        );
+      });
+
+      it('accepts a constant sort key, which leaves the order unspecified', async () => {
+        // Every row shares one key, so no order is asserted — what is pinned is
+        // that a constant ordering is accepted rather than rejected.
+        await expectPipeline(
+          source().sort(() => [asc(constant(1))]),
+          [a1, a2, a3],
+          { ordered: false },
+        );
+      });
+
       it('sorts by the reserved __name__ key (the document id)', async () => {
         // `__name__` stays addressable in `sort` / `where` even though it is
         // not projectable — ids a1 < a2 < a3, so descending reverses them.
