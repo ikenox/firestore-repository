@@ -107,7 +107,7 @@ await repository.delete('user2');
 Field paths in query conditions are **automatically derived from the schema type**, not just plain strings — so typos and invalid paths are caught at compile time. The filter value is also **type-checked based on the field type and operator** (e.g., `array-contains` expects the element type of the array field).
 
 ```ts
-import { eq, gte, limit, query, where } from 'firestore-repository/query';
+import { eq, gte, limit, offset, query, where } from 'firestore-repository/query';
 import { average, count, sum } from 'firestore-repository/aggregate';
 
 // Define a query
@@ -119,6 +119,7 @@ const q = query(
   // where(gte('profile.age', 'foo')) // ← Compile error: string is not assignable to number
   // where(eq('nonExistent', 1))      // ← Compile error: invalid field path
   limit(10),
+  offset(5),
 );
 
 // List documents
