@@ -27,6 +27,7 @@ import {
   countAll as pipelineCountAll,
   greaterThanOrEqual as pipelineGreaterThanOrEqual,
 } from 'firestore-repository/pipelines/expression';
+import { asc as pipelineAsc } from 'firestore-repository/pipelines/ordering';
 import type { PipelineQueryExecutor } from 'firestore-repository/pipelines/pipeline';
 import { collection as pipelineCollection } from 'firestore-repository/pipelines/source';
 import { eq, gte, limit, query, where } from 'firestore-repository/query';
@@ -77,6 +78,25 @@ const posts = subCollection({
 });
 
 type UsersCollection = typeof users;
+
+// Defined at module scope because the README's "Custom Mapper" section and its
+// pipeline counterpart share one mapper — the point of the latter being that no
+// pipeline-specific mapper is needed.
+type User = {
+  id: string;
+  name: string;
+  profile: { age: number; gender?: 'male' | 'female' };
+  tag: string[];
+};
+
+const userMapper: Mapper<UsersCollection, AppModel<string, User, User>> = {
+  toDocRef: (id) => [id],
+  fromFirestore: (doc) => ({ id: doc.id[0], ...doc.data }),
+  toFirestore: (user) => ({
+    id: [user.id],
+    data: { name: user.name, profile: user.profile, tag: user.tag },
+  }),
+};
 
 const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   db,
@@ -257,22 +277,6 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
   });
 
   describe('Custom mapper', () => {
-    type User = {
-      id: string;
-      name: string;
-      profile: { age: number; gender?: 'male' | 'female' };
-      tag: string[];
-    };
-
-    const userMapper: Mapper<UsersCollection, AppModel<string, User, User>> = {
-      toDocRef: (id) => [id],
-      fromFirestore: (doc) => ({ id: doc.id[0], ...doc.data }),
-      toFirestore: (user) => ({
-        id: [user.id],
-        data: { name: user.name, profile: user.profile, tag: user.tag },
-      }),
-    };
-
     const userRepository = createRepositoryWithMapper(
       { ...users, name: `${users.name}-${randomString()}` },
       userMapper,
@@ -318,6 +322,29 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
         }));
       const rows = await pipeline!.executor.execute(q);
       console.log(rows);
+    });
+
+    it('applying a mapper to the results', async () => {
+      const identified = await pipeline!.executor.execute(
+        pipelineCollection(authors)
+          .where((field) => pipelineGreaterThanOrEqual(field('profile.age'), 20))
+          .sort((field) => [pipelineAsc(field('name'))])
+          .limit(10),
+      );
+
+      // Reuses the `userMapper` defined in "Custom Mapper" above
+      const found: User[] = identified.map(userMapper.fromFirestore);
+      console.log(found);
+
+      // Type-checked but deliberately never invoked: the `@ts-expect-error`
+      // is the assertion, and running it would throw on the absent `id`.
+      const rejectedAtCompileTime = async () => {
+        const projected = await pipeline!.executor.execute(
+          pipelineCollection(authors).select((field) => [field('name')]),
+        );
+        // @ts-expect-error `select` dropped read-identity, so the rows have no `id`
+        projected.map(userMapper.fromFirestore);
+      };
     });
   });
 };
