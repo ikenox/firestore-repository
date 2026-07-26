@@ -152,8 +152,11 @@ import { buildFirestoreUtilities } from './index.js';
  * client SDK (Enterprise edition). It walks the repository's `Pipeline` AST into
  * `db.pipeline()...` and runs it via the SDK's `execute`.
  *
- * Implemented so far: `collection` / `collectionGroup` inputs plus `sort`.
- * Other inputs / stages throw.
+ * A stage or input this adapter does not implement yet throws at execution,
+ * naming itself. Which ones those are is deliberately NOT listed here: the
+ * exhaustive `switch`es below are the single record of it, and a prose copy
+ * has already gone stale twice as stages landed — the more so because this
+ * comment ships in the `.d.ts` and is what a hover shows.
  */
 export const executor = (db: Firestore): PipelineQueryExecutor => {
   const execute = async <Schema extends DocumentSchema, Id extends PipelineRowIdentity>(

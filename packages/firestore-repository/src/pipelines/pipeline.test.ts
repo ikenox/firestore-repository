@@ -192,6 +192,17 @@ describe('pipeline', () => {
         groups: ['name'],
       },
     ]);
+    // The RESULT ROW is a plain object type. `MakeSomeFieldsOptional` builds it
+    // from a `Pick`/`Omit` pair that is a no-op when no field is optional — the
+    // pair used to survive into hovers and `.d.ts` output as
+    // `Merge<Pick<…, never> & Omit<…, never>>`. This asserts the identity, which
+    // held before too; what the `& {}` in `Merge` fixes is the presentation, and
+    // there is no way to assert a DISPLAY form — so the guard is here to catch a
+    // regression that changes the type itself while chasing the display.
+    expectTypeOf<RowOf<typeof grouped>['data']>().toEqualTypeOf<{
+      total: number | null;
+      name: string;
+    }>();
   });
 
   it('Id is structurally anchored: pipelines with different identities do not interchange', () => {
