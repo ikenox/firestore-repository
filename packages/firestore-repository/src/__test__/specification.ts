@@ -1187,7 +1187,17 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       describe('sentinel values', () => {
         const sentinelCollection = rootCollection({
           name: `SentinelTest_${randomString()}`,
-          schema: { updatedAt: timestamp(), counter: double(), tags: array(string()) },
+          schema: {
+            updatedAt: timestamp(),
+            counter: double(),
+            tags: array(string()),
+            // Element descriptors whose encoded form differs from their
+            // plain-JS one, so the array write forms can be compared on a
+            // value that is actually transformed on the way out — `string`
+            // alone cannot tell an encoded element from an unencoded one.
+            refs: array(docRef(authorsCollection)),
+            spots: array(geoPoint()),
+          },
         });
 
         const repository = createRepository(sentinelCollection);
@@ -1198,7 +1208,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           const now = Date.now();
           await repository.set({
             id: [id],
-            data: { updatedAt: serverTimestamp(), counter: 1, tags: [] },
+            data: { updatedAt: serverTimestamp(), counter: 1, tags: [], refs: [], spots: [] },
           });
 
           const doc = await repository.get([id]);
@@ -1213,7 +1223,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           // Verify increment works with set() without runtime error
           await repository.set({
             id: [id],
-            data: { updatedAt: new Date(), counter: increment(5), tags: [] },
+            data: { updatedAt: new Date(), counter: increment(5), tags: [], refs: [], spots: [] },
           });
 
           const doc = await repository.get([id]);
@@ -1231,7 +1241,13 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           // Verify arrayUnion works with set() without runtime error
           await repository.set({
             id: [id],
-            data: { updatedAt: new Date(), counter: 0, tags: arrayUnion('tag1', 'tag2') },
+            data: {
+              updatedAt: new Date(),
+              counter: 0,
+              tags: arrayUnion('tag1', 'tag2'),
+              refs: [],
+              spots: [],
+            },
           });
 
           const doc = await repository.get([id]);
@@ -1249,13 +1265,25 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           // First create a document with some tags
           await repository.set({
             id: [id],
-            data: { updatedAt: new Date(), counter: 0, tags: ['tag1', 'tag2'] },
+            data: {
+              updatedAt: new Date(),
+              counter: 0,
+              tags: ['tag1', 'tag2'],
+              refs: [],
+              spots: [],
+            },
           });
 
           // Verify arrayRemove works with set() without runtime error
           await repository.set({
             id: [id],
-            data: { updatedAt: new Date(), counter: 0, tags: arrayRemove('tag1') },
+            data: {
+              updatedAt: new Date(),
+              counter: 0,
+              tags: arrayRemove('tag1'),
+              refs: [],
+              spots: [],
+            },
           });
 
           const doc = await repository.get([id]);
@@ -1266,6 +1294,40 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
           // TODO: Test arrayRemove merge behavior with update/merge operation
           // Currently only testing that set() doesn't throw and overwrites the array
+        });
+
+        // A server operation carries element VALUES, so it owes them the same
+        // encoding a plain array element gets — a reference has to arrive as a
+        // reference, a geopoint as a geopoint. Unencoded, the two fail
+        // differently against the backend, which is why both are here: a
+        // reference's segment path becomes a nested array and is REJECTED at
+        // the write, while a geopoint's plain map is a legal array element, so
+        // it is accepted and only fails to decode afterwards.
+        //
+        // Only `arrayUnion` can demonstrate this live: `set()` applies
+        // `arrayRemove` to a field it is replacing in the same write, so the
+        // result is the empty array whatever the elements encoded to. Its
+        // encoding is pinned per descriptor in each platform's `codec.test.ts`.
+        it('arrayUnion encodes its elements like a plain array element', async () => {
+          const id = randomString();
+          const author = refPath(authorsCollection, [randomString()]);
+          const spot = { latitude: 12.3, longitude: 45.6 };
+
+          await repository.set({
+            id: [id],
+            data: {
+              updatedAt: new Date(),
+              counter: 0,
+              tags: [],
+              refs: arrayUnion(author),
+              spots: arrayUnion(spot),
+            },
+          });
+
+          const doc = await repository.get([id]);
+          assert(doc);
+          expect(doc.data.refs).toStrictEqual([author]);
+          expect(doc.data.spots).toStrictEqual([spot]);
         });
       });
     });
