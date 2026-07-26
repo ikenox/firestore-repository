@@ -1528,18 +1528,18 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       });
     });
 
-    // `arrayValueOf` takes its element descriptor explicitly so a list built at
-    // RUNTIME — possibly empty — can be an options operand. The empty case is
-    // the reason it exists, so what the backend actually does with an empty
-    // options array is pinned here rather than only claimed by the types. All
-    // four answers are the vacuous-quantifier ones.
-    describe('an empty options list (arrayValueOf)', () => {
+    // A runtime-built options list — possibly empty — reaches the backend
+    // either by lifting on its own (a homogeneous `string[]`) or through
+    // `arrayValueOf`. What the backend DOES with an empty options array is a
+    // behavioural claim, so it is pinned here rather than only in the types.
+    // All four answers are the vacuous-quantifier ones.
+    describe('an empty options list', () => {
       const [a1, a2, a3] = items;
       const none: string[] = [];
 
       it('equalAny against no options matches no row', async () => {
         await expectPipeline(
-          source().where((field) => equalAny(field('name'), arrayValueOf(string(), none))),
+          source().where((field) => equalAny(field('name'), none)),
           [],
           { ordered: false },
         );
@@ -1547,7 +1547,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
       it('notEqualAny against no options matches EVERY row', async () => {
         await expectPipeline(
-          source().where((field) => notEqualAny(field('name'), arrayValueOf(string(), none))),
+          source().where((field) => notEqualAny(field('name'), none)),
           [a1, a2, a3],
           { ordered: false },
         );
@@ -1555,7 +1555,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
 
       it('arrayContainsAny against no options matches no row', async () => {
         await expectPipeline(
-          source().where((field) => arrayContainsAny(field('tag'), arrayValueOf(string(), none))),
+          source().where((field) => arrayContainsAny(field('tag'), none)),
           [],
           { ordered: false },
         );
@@ -1564,7 +1564,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('arrayContainsAll against no options matches EVERY row, including an empty array field', async () => {
         // a2's `tag` is `[]`: containing all of nothing holds for it too.
         await expectPipeline(
-          source().where((field) => arrayContainsAll(field('tag'), arrayValueOf(string(), none))),
+          source().where((field) => arrayContainsAll(field('tag'), none)),
           [a1, a2, a3],
           { ordered: false },
         );
@@ -1573,7 +1573,24 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('carries a non-empty runtime-built list like any other options operand', async () => {
         const names: string[] = ['alice', 'carol'];
         await expectPipeline(
-          source().where((field) => equalAny(field('name'), arrayValueOf(string(), names))),
+          source().where((field) => equalAny(field('name'), names)),
+          [a1, a3],
+          { ordered: false },
+        );
+      });
+
+      it('reaches the backend the same way through an explicit arrayValueOf', async () => {
+        // The escape hatch must produce an equivalent query, so the two spellings
+        // are pinned against the same oracle.
+        await expectPipeline(
+          source().where((field) => equalAny(field('name'), arrayValueOf(string(), none))),
+          [],
+          { ordered: false },
+        );
+        await expectPipeline(
+          source().where((field) =>
+            equalAny(field('name'), arrayValueOf(string(), ['alice', 'carol'])),
+          ),
           [a1, a3],
           { ordered: false },
         );

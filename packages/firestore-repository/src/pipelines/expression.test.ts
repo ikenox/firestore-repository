@@ -252,13 +252,10 @@ describe('expression factories', () => {
     const vectors = constant([vectorValue([1]), vectorValue([2])]);
     expectTypedStrictEqual(vectors.type, array(vector()));
 
-    // @ts-expect-error -- an empty array literal has no element to infer from
-    const empty = constant([]);
-    // The runtime is nonetheless TOTAL: `union()` over no element yields the
-    // uninhabited descriptor, so the inferred type is the one whose only
-    // inhabitant is the empty array. Plain `toStrictEqual` because the call
-    // above is a deliberate type error, so there is no static type to pin.
-    expect(empty.type).toStrictEqual(array(neverType()));
+    // An empty array LITERAL is a zero-length tuple, so the tuple path applies
+    // and `union()` over no element yields the uninhabited descriptor on both
+    // sides — the type whose only inhabitant is the empty array.
+    expectTypedStrictEqual(constant([]).type, array(neverType()));
   });
 
   it('comparisons unify within a value domain', () => {
@@ -1082,6 +1079,48 @@ describe('array / map operators (slice 6)', () => {
     // @ts-expect-error -- dotted keys are banned, as in the schema factories
     void (() => mapValue({ 'a.b': rank }));
     expect(() => mapValue({ ['a.b' as string]: rank })).toThrow(/must not contain/);
+  });
+
+  describe('a runtime-built (non-tuple) array lifts on its own', () => {
+    // The cases are the product of (tuple | unbounded) x (homogeneous |
+    // heterogeneous) x (empty | not), which is what decides whether the element
+    // descriptor can be inferred at all.
+    const ward = field(string(), 'ward');
+
+    it('infers the element descriptor from the ELEMENT TYPE for a homogeneous list', () => {
+      const wards: string[] = ['minato', 'shibuya'];
+      expectTypeOf(constant(wards).type).toEqualTypeOf<ArrayType<StringType>>();
+      // The runtime walks the values and lands on the same descriptor.
+      expect(constant(wards).type).toStrictEqual(array(string()));
+      equalAny(ward, wards);
+    });
+
+    it('accepts a literal that TypeScript widened to a non-tuple', () => {
+      const widened = ['x', 'y'];
+      expectTypeOf(constant(widened).type).toEqualTypeOf<ArrayType<StringType>>();
+    });
+
+    it('approximates an EMPTY runtime list, which has no element at runtime', () => {
+      const empty: string[] = [];
+      // Static: the element type still says string.
+      expectTypeOf(constant(empty).type).toEqualTypeOf<ArrayType<StringType>>();
+      // Runtime: nothing to infer from, so the uninhabited element. Both
+      // descriptors admit exactly `[]`, and `NeverType` is the identity of
+      // `Normalize`, so they collapse back together downstream.
+      expect(constant(empty).type).toStrictEqual(array(neverType()));
+      equalAny(ward, empty);
+    });
+
+    it('rejects a heterogeneous list, whose element order is not statically knowable', () => {
+      const mixed: (string | number)[] = ['a', 1];
+      // @ts-expect-error -- (string | number)[] has no single element descriptor
+      void (() => equalAny(ward, mixed));
+    });
+
+    it('leaves the tuple path unchanged', () => {
+      expectTypedStrictEqual(constant(['a', 'b'] as const).type, array(string()));
+      expectTypedStrictEqual(constant([1, 'a']).type, array(union(double(), string())));
+    });
   });
 
   describe('arrayValueOf takes the element descriptor instead of inferring it', () => {

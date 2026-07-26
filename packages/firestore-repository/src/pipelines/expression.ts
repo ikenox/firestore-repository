@@ -248,13 +248,17 @@ export type ConstantScalar = string | number | boolean | null | Date | Uint8Arra
  */
 export type ConstantLeafNode = GeoPointValue | VectorValue | DocRefValue<Collection | 'unknown'>;
 /**
- * Non-empty (an empty literal has no element to infer a descriptor from) and
- * non-nested: directly nested arrays (`constant([1, [2, 3]])`) are excluded
- * from the element type because Firestore's data model itself forbids an
- * array value inside another array — the official SDK does not support them
+ * A tuple (`['a', 'b']`) or an unbounded array (`string[]`, the shape of a
+ * list assembled at runtime) — see {@link ArrayConstantTypeOf} for how the
+ * element descriptor is derived in each case, and what the unbounded case
+ * cannot express.
+ *
+ * Non-nested either way: directly nested arrays (`constant([1, [2, 3]])`) are
+ * excluded from the element type because Firestore's data model itself forbids
+ * an array value inside another array — the official SDK does not support them
  * either. (An array inside a *map* inside an array is fine.)
  */
-export type ConstantArray = readonly [ConstantElement, ...ConstantElement[]];
+export type ConstantArray = readonly ConstantElement[];
 type ConstantElement = ConstantScalar | ConstantLeafNode | ConstantMap;
 export type ConstantMap = { readonly [key: string]: ConstantValue };
 
@@ -291,19 +295,60 @@ export type ConstantTypeOf<V extends ConstantValue> = ConstantValue extends V
                         : never;
 
 /**
- * The element descriptor is derived by walking the TUPLE (not the union of
- * the element types): tuple order is stable, so the runtime can mirror the
+ * A TUPLE's element descriptor is derived by walking the tuple (not the union
+ * of the element types): tuple order is stable, so the runtime can mirror the
  * exact same canonicalization. `Normalize` then decides the shape — a single
  * distinct element type stays bare, several become a `UnionType` in
  * first-occurrence order — matching the runtime's `union(...elements)`.
+ *
+ * An UNBOUNDED array (`string[]` — a list assembled at runtime) has no tuple
+ * to walk, so its descriptor comes from the ELEMENT TYPE instead. That path is
+ * restricted to a single element descriptor, because the runtime still derives
+ * the union from the ACTUAL values: for a heterogeneous `(string | number)[]`
+ * neither the members that occur nor their first-occurrence order is
+ * statically knowable, so the two sides could not agree and the call is
+ * rejected — reach for {@link arrayValueOf}, which states the descriptor
+ * outright. See {@link UnboundedArrayConstantTypeOf} for the one approximation
+ * this path does make.
  */
-type ArrayConstantTypeOf<V extends ConstantArray> = {
-  readonly [K in keyof V]: ConstantTypeOf<V[K]>;
-} extends infer D extends readonly FieldType[]
-  ? Normalize<D> extends infer N extends FieldType
-    ? ArrayType<N>
-    : never
-  : never;
+type ArrayConstantTypeOf<V extends ConstantArray> =
+  IsUnboundedArray<V> extends true
+    ? UnboundedArrayConstantTypeOf<V[number]>
+    : {
+          readonly [K in keyof V]: ConstantTypeOf<V[K]>;
+        } extends infer D extends readonly FieldType[]
+      ? Normalize<D> extends infer N extends FieldType
+        ? ArrayType<N>
+        : never
+      : never;
+
+/**
+ * The unbounded case's descriptor, from the element TYPE.
+ *
+ * The one approximation: an unbounded array may be EMPTY, and an empty array
+ * has no element for the runtime to infer from, so the runtime descriptor is
+ * `array(neverType())` while this yields `array(D)`. Both describe the same
+ * (and only possible) value — `[]` — and `NeverType` is the identity element
+ * of {@link Normalize}, so the two collapse back together wherever the
+ * descriptor flows onward (`arrayConcat(constant(empty), constant(['a']))` is
+ * `array(string())` from either side). Where the exact descriptor matters,
+ * {@link arrayValueOf} supplies it instead of inferring.
+ */
+type UnboundedArrayConstantTypeOf<E extends ConstantElement> =
+  ConstantTypeOf<E> extends infer D
+    ? IsUnion<D> extends true
+      ? never
+      : D extends FieldType
+        ? ArrayType<D>
+        : never
+    : never;
+
+/** Whether `V` is an unbounded array type rather than a tuple. */
+type IsUnboundedArray<V> = V extends readonly unknown[]
+  ? number extends V['length']
+    ? true
+    : false
+  : false;
 
 /**
  * Runtime counterpart of {@link ConstantTypeOf} (same branch order). The
@@ -838,9 +883,10 @@ export function arrayElementType(t: FieldType): FieldType {
  * guard runs against the lifted `ArrayType`'s element). Its elements must be
  * comparable with `value`.
  *
- * That lifting needs a static element tuple, so a list built at RUNTIME
- * (possibly empty) goes through {@link arrayValueOf}, which takes the element
- * descriptor explicitly instead of inferring it.
+ * A list built at RUNTIME lifts the same way, as long as its element type maps
+ * to ONE descriptor (`string[]`, `number[]`, ... — including an empty list).
+ * A heterogeneous one (`(string | number)[]`) cannot be inferred and goes
+ * through {@link arrayValueOf}.
  */
 export const equalAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
   value: L,
@@ -854,7 +900,8 @@ export const equalAny = <const L extends OperandInput, const R extends ArrayOper
 
 /**
  * Whether `value` differs from EVERY element of the `options` array — see
- * {@link equalAny}, and {@link arrayValueOf} for a runtime-built options list.
+ * {@link equalAny}, and {@link arrayValueOf} for an options list whose element
+ * descriptor cannot be inferred.
  */
 export const notEqualAny = <const L extends OperandInput, const R extends ArrayOperandInput>(
   value: L,
@@ -2073,8 +2120,7 @@ function elementUnionType(elements: readonly Expression[]): FieldType {
  * `constant()`), the elements here are expressions, evaluated per row
  * (probed: fields nest arbitrarily). Non-empty, because the element descriptor
  * is INFERRED from the elements and an empty literal has none to infer from —
- * for a list built at runtime (including an empty one) use
- * {@link arrayValueOf}, which takes the element descriptor explicitly.
+ * use {@link arrayValueOf} to state the element descriptor instead.
  */
 export const arrayValue = <const Els extends readonly [OperandInput, ...OperandInput[]]>(
   elements: Els,
@@ -2088,24 +2134,28 @@ export const arrayValue = <const Els extends readonly [OperandInput, ...OperandI
 
 /**
  * Builds an array expression whose ELEMENT DESCRIPTOR is given EXPLICITLY,
- * for a value list assembled at RUNTIME — the `readonly string[]` behind a
- * multi-select filter, which is the usual right-hand side of {@link equalAny}
- * / {@link arrayContainsAny}:
+ * for the lists inference cannot type on its own. Ordinary lists do NOT need
+ * it — a tuple and a homogeneous runtime-built array both lift on their own
+ * (`equalAny(f('address.ward'), wards)` with `wards: string[]` is fine, empty
+ * included). Reach for this in the two cases where inference has nothing to go
+ * on:
+ *
+ * - a HETEROGENEOUS runtime list, whose element union the runtime derives from
+ *   the actual values in first-occurrence order — not statically knowable, so
+ *   `(string | number)[]` is rejected (see {@link ArrayConstantTypeOf});
+ * - an EMPTY list whose element descriptor must be EXACT rather than the
+ *   approximation the inferred path makes (`array(neverType())` at runtime).
  *
  * ```ts
- * declare const wards: string[];
- * p.where((f) => equalAny(f('address.ward'), arrayValueOf(string(), wards)));
+ * declare const mixed: (string | number)[];
+ * p.where((f) => equalAny(f('code'), arrayValueOf(union(string(), double()), mixed)));
  * ```
  *
- * {@link arrayValue} and `constant([...])` cannot type such a list: both
- * derive the element descriptor from the elements they can SEE, and a
- * runtime-built list has no static element tuple — an empty one has no element
- * at all, so inference could only reach `array(neverType())`. This is the
- * narrowing entry point for that case ("parse, don't validate"): the caller
- * supplies the static claim the values cannot carry, and `elements` is checked
- * against `elementType`, so the descriptor still describes the value while
- * being exact for an empty list — `arrayValueOf(string(), [])` is
- * `ArrayType<StringType>`.
+ * The descriptor comes from the argument rather than the data, so the
+ * type-level and runtime results are identical for every arity — this is the
+ * narrowing entry point of the array-operand domain ("parse, don't validate"),
+ * with `elements` checked against `elementType` so the descriptor still
+ * describes the value.
  *
  * An empty list is a legitimate, well-defined operand rather than an error to
  * reject: probed, an empty options array gives the vacuous-quantifier answers
@@ -2191,7 +2241,8 @@ export const arrayContains = <const Arr extends ArrayOperandInput, const El exte
 
 /**
  * Whether the array contains EVERY element of the options array — see
- * {@link arrayValueOf} for a runtime-built options list.
+ * {@link arrayValueOf} for an options list whose element descriptor cannot be
+ * inferred.
  */
 export const arrayContainsAll = <
   const Arr extends ArrayOperandInput,
@@ -2218,7 +2269,8 @@ export const arrayContainsAll = <
 
 /**
  * Whether the array contains ANY element of the options array — see
- * {@link arrayValueOf} for a runtime-built options list.
+ * {@link arrayValueOf} for an options list whose element descriptor cannot be
+ * inferred.
  */
 export const arrayContainsAny = <
   const Arr extends ArrayOperandInput,
