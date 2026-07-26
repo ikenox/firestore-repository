@@ -1,9 +1,28 @@
 import type { DocumentSchema, DocFieldPath } from './schema.js';
 
-/** The result type of an aggregate query, where each key maps to a numeric value */
+/** The result type of an aggregate query, resolved per aggregate method */
 export type Aggregated<T extends AggregateSpec> = {
-  [K in keyof T]: number;
+  [K in keyof T]: AggregatedValue<T[K]>;
 };
+
+/**
+ * The value one aggregate method produces.
+ *
+ * Only {@link Average} can come back ABSENT: an mean needs at least one
+ * numeric value, and Firestore answers `null` when the matched documents
+ * supply none — an empty result set, a field no matched document carries, or
+ * a field whose values are not numbers all reach that case (probed; pinned in
+ * the live spec). {@link Count} and {@link Sum} have a defined answer for the
+ * same input (`0`), so they are always a number.
+ *
+ * Keyed on the discriminant, so a new aggregate method cannot be added
+ * without stating the value it produces.
+ */
+export type AggregatedValue<T extends AggregateMethod<DocumentSchema>> = {
+  count: number;
+  sum: number;
+  average: number | null;
+}[T['kind']];
 
 /** A specification that defines which aggregate methods to apply to a query */
 export type AggregateSpec<Schema extends DocumentSchema = DocumentSchema> = Record<
