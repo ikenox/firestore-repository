@@ -174,16 +174,30 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       );
     }
     case 'array': {
+      // All three branches encode through the SAME element schema: a server
+      // operation carries element VALUES, so `arrayUnion(refPath(...))` has to
+      // reach Firestore as a `DocumentReference` exactly like `[refPath(...)]`
+      // does. Encoding only the plain-array branch would let one field hold two
+      // representations of the same logical value, decodable in one case only.
+      //
+      // The elements are `.pipe`d rather than parsed inside the transform so a
+      // bad element stays a zod issue carrying its index, instead of a nested
+      // `ZodError` thrown from within the enclosing parse.
+      const elements = z.array(buildEncodeField(fieldType.dynamicPart, db));
       return zodUnion([
-        z.array(buildEncodeField(fieldType.dynamicPart, db)),
+        elements,
         z
           .unknown()
           .refine(isArrayRemove)
-          .transform((v) => firestoreArrayRemove(...v.values)),
+          .transform((v) => v.values)
+          .pipe(elements)
+          .transform((values) => firestoreArrayRemove(...values)),
         z
           .unknown()
           .refine(isArrayUnion)
-          .transform((v) => firestoreArrayUnion(...v.values)),
+          .transform((v) => v.values)
+          .pipe(elements)
+          .transform((values) => firestoreArrayUnion(...values)),
       ]);
     }
     case 'union': {
