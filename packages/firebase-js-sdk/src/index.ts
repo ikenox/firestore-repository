@@ -6,6 +6,7 @@ import type {
   Query as FirestoreQuery,
   QueryFilterConstraint as FirestoreQueryFilterConstraint,
   QueryNonFilterConstraint,
+  QuerySnapshot,
   WriteBatch,
 } from '@firebase/firestore';
 import {
@@ -57,6 +58,7 @@ import {
   type Repository,
   rootCollectionPlainMapper,
   type RootCollectionPlainModel,
+  subscribeDecoded,
   type TransactionOption,
   type Unsubscribe,
   type WriteTransactionOption,
@@ -123,13 +125,15 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       error?: (error: Error) => void,
     ): Unsubscribe => {
       const docRef = toFirestore.docRef(mapper.toDocRef(ref));
-      return onSnapshot(docRef, {
-        next: (snapshot) => {
+      return subscribeDecoded(
+        (onNext, onError) => onSnapshot(docRef, { next: onNext, error: onError }),
+        (snapshot: DocumentSnapshot) => {
           const doc = fromFirestore.document(snapshot);
-          next(doc ? mapper.fromFirestore(doc) : undefined);
+          return doc ? mapper.fromFirestore(doc) : undefined;
         },
-        error: (e) => error?.(e),
-      });
+        next,
+        error,
+      );
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
@@ -144,11 +148,13 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       error?: (error: Error) => void,
     ): Unsubscribe => {
       const firestoreQueryObj = toFirestore.query(query);
-      return onSnapshot(firestoreQueryObj, {
-        next: ({ docs }) =>
-          next(docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)))),
-        error: (e) => error?.(e),
-      });
+      return subscribeDecoded(
+        (onNext, onError) => onSnapshot(firestoreQueryObj, { next: onNext, error: onError }),
+        ({ docs }: QuerySnapshot) =>
+          docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
+        next,
+        error,
+      );
     },
 
     aggregate: async <U extends AggregateSpec<T['schema']>>(

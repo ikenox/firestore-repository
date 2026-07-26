@@ -21,6 +21,7 @@ import {
   type Repository,
   rootCollectionPlainMapper,
   type RootCollectionPlainModel,
+  subscribeDecoded,
   type TransactionOption,
   type Unsubscribe,
   type WriteTransactionOption,
@@ -116,10 +117,15 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       error?: (error: Error) => void,
     ): Unsubscribe => {
       const docRef = toFirestore.docRef(mapper.toDocRef(ref));
-      return docRef.onSnapshot((snapshot) => {
-        const doc = fromFirestore.document(snapshot);
-        next(doc ? mapper.fromFirestore(doc) : undefined);
-      }, error);
+      return subscribeDecoded(
+        (onNext, onError) => docRef.onSnapshot(onNext, onError),
+        (snapshot: firestore.DocumentSnapshot) => {
+          const doc = fromFirestore.document(snapshot);
+          return doc ? mapper.fromFirestore(doc) : undefined;
+        },
+        next,
+        error,
+      );
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
@@ -134,11 +140,13 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       error?: (error: Error) => void,
     ): Unsubscribe => {
       const firestoreQuery = toFirestore.query(query);
-      return firestoreQuery.onSnapshot((snapshot) => {
-        next(
+      return subscribeDecoded(
+        (onNext, onError) => firestoreQuery.onSnapshot(onNext, onError),
+        (snapshot: firestore.QuerySnapshot) =>
           snapshot.docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
-        );
-      }, error);
+        next,
+        error,
+      );
     },
 
     aggregate: async <U extends AggregateSpec<T['schema']>>(

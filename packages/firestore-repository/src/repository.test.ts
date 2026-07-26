@@ -1,6 +1,14 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 
-import { AppModel, Doc, DocRef, DocumentDecodeError, Mapper } from './repository.js';
+import {
+  AppModel,
+  Doc,
+  DocRef,
+  DocumentDecodeError,
+  Mapper,
+  subscribeDecoded,
+  type Unsubscribe,
+} from './repository.js';
 import {
   Collection,
   rootCollection,
@@ -138,5 +146,192 @@ describe('repository', () => {
     // A ref path is always a non-empty tuple (at least the doc id), so the loose
     // `DocRef<Collection>` is `[...string[], string]`, not a plain `string[]`.
     expectTypeOf<DocRef<Collection>>().toEqualTypeOf<[...string[], string]>();
+  });
+});
+
+describe('subscribeDecoded', () => {
+  /**
+   * A stand-in for an SDK snapshot stream: hands back the two callbacks it was
+   * given so a test can drive them, and counts how often the subscription was
+   * released. `emitOnSubscribe` covers the one ordering the helper has to
+   * special-case — a snapshot arriving before `subscribe` has returned, so
+   * there is not yet an unsubscribe function to call.
+   */
+  const fakeStream = (emitOnSubscribe?: string) => {
+    let emit: ((snapshot: string) => void) | undefined;
+    let raise: ((error: Error) => void) | undefined;
+    let released = 0;
+    return {
+      subscribe: (next: (snapshot: string) => void, error: (error: Error) => void): Unsubscribe => {
+        emit = next;
+        raise = error;
+        if (emitOnSubscribe !== undefined) {
+          next(emitOnSubscribe);
+        }
+        return () => {
+          released += 1;
+        };
+      },
+      emit: (snapshot: string) => emit?.(snapshot),
+      raise: (error: Error) => raise?.(error),
+      released: () => released,
+    };
+  };
+
+  // Decodes anything but `'bad'`, which is the undecodable document.
+  const decode = (snapshot: string): string => {
+    if (snapshot === 'bad') {
+      throw new Error('boom');
+    }
+    return `decoded:${snapshot}`;
+  };
+
+  it('delivers a decoded snapshot to next', () => {
+    const stream = fakeStream();
+    const received: string[] = [];
+    subscribeDecoded(stream.subscribe, decode, (model) => received.push(model));
+
+    stream.emit('a');
+    stream.emit('b');
+
+    expect(received).toStrictEqual(['decoded:a', 'decoded:b']);
+    expect(stream.released()).toBe(0);
+  });
+
+  it('routes a decode failure to error, and delivers nothing to next', () => {
+    const stream = fakeStream();
+    const received: string[] = [];
+    const errors: Error[] = [];
+    subscribeDecoded(
+      stream.subscribe,
+      decode,
+      (model) => received.push(model),
+      (e) => errors.push(e),
+    );
+
+    stream.emit('bad');
+
+    expect(received).toStrictEqual([]);
+    expect(errors).toStrictEqual([new Error('boom')]);
+  });
+
+  it('ends the subscription on a decode failure', () => {
+    const stream = fakeStream();
+    const received: string[] = [];
+    const errors: Error[] = [];
+    subscribeDecoded(
+      stream.subscribe,
+      decode,
+      (model) => received.push(model),
+      (e) => errors.push(e),
+    );
+
+    stream.emit('bad');
+    // A stream that keeps pushing must not produce a second error, nor start
+    // delivering again once the failure has been reported.
+    stream.emit('bad');
+    stream.emit('a');
+
+    expect(stream.released()).toBe(1);
+    expect(errors.length).toBe(1);
+    expect(received).toStrictEqual([]);
+  });
+
+  it('releases a subscription whose failure landed before subscribe returned', () => {
+    const stream = fakeStream('bad');
+    const errors: Error[] = [];
+    subscribeDecoded(
+      stream.subscribe,
+      decode,
+      () => undefined,
+      (e) => errors.push(e),
+    );
+
+    expect(errors.length).toBe(1);
+    expect(stream.released()).toBe(1);
+  });
+
+  it('rethrows asynchronously when no error handler was given', () => {
+    const stream = fakeStream();
+    const scheduled: (() => void)[] = [];
+    vi.stubGlobal('queueMicrotask', (task: () => void) => scheduled.push(task));
+    try {
+      subscribeDecoded(stream.subscribe, decode, () => undefined);
+
+      // Nothing escapes the emit itself — that is the whole point, since the
+      // SDK calls it from inside its own stream handling.
+      expect(() => stream.emit('bad')).not.toThrow();
+      expect(stream.released()).toBe(1);
+      expect(scheduled.length).toBe(1);
+      expect(() => scheduled[0]?.()).toThrow('boom');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('wraps a thrown non-Error value', () => {
+    const stream = fakeStream();
+    const errors: Error[] = [];
+    subscribeDecoded(
+      stream.subscribe,
+      () => {
+        throw 'just a string';
+      },
+      () => undefined,
+      (e) => errors.push(e),
+    );
+
+    stream.emit('a');
+
+    expect(errors).toStrictEqual([new Error('just a string')]);
+  });
+
+  it('lets an exception from next propagate instead of reporting it as a stream failure', () => {
+    const stream = fakeStream();
+    const errors: Error[] = [];
+    subscribeDecoded(
+      stream.subscribe,
+      decode,
+      () => {
+        throw new Error('the consumer blew up');
+      },
+      (e) => errors.push(e),
+    );
+
+    expect(() => stream.emit('a')).toThrow('the consumer blew up');
+    expect(errors).toStrictEqual([]);
+    expect(stream.released()).toBe(0);
+  });
+
+  it('routes a stream failure to error and ends the subscription', () => {
+    const stream = fakeStream();
+    const received: string[] = [];
+    const errors: Error[] = [];
+    subscribeDecoded(
+      stream.subscribe,
+      decode,
+      (model) => received.push(model),
+      (e) => errors.push(e),
+    );
+
+    stream.raise(new Error('stream died'));
+    stream.emit('a');
+
+    expect(errors).toStrictEqual([new Error('stream died')]);
+    expect(stream.released()).toBe(1);
+    expect(received).toStrictEqual([]);
+  });
+
+  it('releases the subscription when the caller unsubscribes', () => {
+    const stream = fakeStream();
+    const received: string[] = [];
+    const unsubscribe = subscribeDecoded(stream.subscribe, decode, (m) => received.push(m));
+
+    stream.emit('a');
+    unsubscribe();
+    stream.emit('b');
+
+    expect(received).toStrictEqual(['decoded:a']);
+    expect(stream.released()).toBe(1);
   });
 });
