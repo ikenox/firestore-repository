@@ -264,8 +264,9 @@ oracle)` — the runtime value and the type-level computation together (the
 - Keep the same direction among the supporting declarations: more integrative
   above, more primitive / foundational below.
 - Example (`pipelines/pipeline.ts`): `Pipeline` (the API) → `PipelineResult`
-  (its output) → `FieldProvider` → `PipelineRowIdentity` → `MergeMode` →
-  `unimplemented` (stub helper) → `Fields` (the base schema alias).
+  (its output) → `FieldProvider` → `PipelineRowIdentity` → `PipelineNode` (the
+  erased AST) → `fieldProvider` (its runtime helper) → `Fields` (the base
+  schema alias).
 
 ## API Changes
 

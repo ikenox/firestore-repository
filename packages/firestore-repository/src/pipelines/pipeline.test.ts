@@ -21,7 +21,13 @@ import {
   type StringType,
 } from '../schema.js';
 import { countAll, documentId, equal, field, mapValue, sum } from './expression.js';
-import { collection, collectionGroup, type Pipeline, type PipelineResult } from './index.js';
+import {
+  collection,
+  collectionGroup,
+  type Pipeline,
+  type PipelineResult,
+  type PipelineRowIdentity,
+} from './index.js';
 import { asc } from './ordering.js';
 import { documentMatches } from './search.js';
 
@@ -720,5 +726,85 @@ describe('pipeline', () => {
       base.addFields((field) => [sum(field('rank')).as('total')]);
     };
     void _misplacements;
+  });
+
+  describe('sharing a stage tail between conditionally-built pipelines', () => {
+    // Pins the pattern documented on `Pipeline`. The cases are the product of
+    // (branch that added a field | branch that did not) x (what the tail does):
+    // path reference, operand-domain check, and the value comparison that
+    // cannot be factored out.
+    type BaseSchema = AuthorsCollection['schema'];
+
+    const withAlias = base.unnest((field) => ({ selectable: field('tag').as('t') }));
+
+    it('a schema-preserving branch is just a reassignment, and keeps value comparisons', () => {
+      // The preferred shape: `where` threads Schema and Id unchanged, so the
+      // variable's type never moves and the tail stays inline with a CONCRETE
+      // schema — which is why the comparison below type-checks here and not in
+      // the generic form.
+      let p = base.where((field) => equal(field('rank'), 1));
+      if (Math.random() > 2) {
+        p = p.where((field) => equal(field('name'), 'alice'));
+      }
+      const done = p.where((field) => equal(field('rank'), 2)).limit(20);
+      expect(done.stages().transforms).toHaveLength(3);
+    });
+
+    it('a schema-CHANGING branch cannot be reassigned, nor called through a union', () => {
+      let p = base.where((field) => equal(field('rank'), 1));
+      // @ts-expect-error -- unnest adds `t`, so the result is a different Schema
+      p = withAlias;
+      void p;
+
+      const either = Math.random() > 2 ? withAlias : base;
+      // @ts-expect-error -- the two `FieldProvider<Schema>` signatures are not
+      // compatible with each other, so the union's methods are not callable
+      either.sort((field) => [asc(field('rank'))]);
+    });
+
+    it('a tail generic over `S extends BaseSchema` applies to a branch that added a field', () => {
+      const tail = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
+        p.sort((field) => [asc(field('rank'))]).limit(20);
+
+      // Both branches satisfy "at least the base fields", including the one
+      // whose schema gained `t` — no assignability between the two is needed.
+      expect(tail(base).stages().transforms).toHaveLength(2);
+      expect(tail(withAlias).stages().transforms).toHaveLength(3);
+    });
+
+    it('pinning the parameter to the base schema instead does NOT accept the widened branch', () => {
+      const pinned = <Id extends PipelineRowIdentity>(p: Pipeline<BaseSchema, Id>) => p.limit(1);
+      pinned(base);
+      // @ts-expect-error -- `Schema` is invariant: it occurs in the result types
+      // AND in every stage callback's `FieldProvider<Schema>`.
+      pinned(withAlias);
+    });
+
+    it('keeps checking inside the tail', () => {
+      const badPath = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
+        // @ts-expect-error -- not a path of the constrained schema
+        p.sort((field) => [asc(field('nope'))]);
+      void badPath;
+
+      const badDomain = <S extends BaseSchema, Id extends PipelineRowIdentity>(
+        p: Pipeline<S, Id>,
+      ) =>
+        p.aggregate((field) => ({
+          // @ts-expect-error -- a string field is not a numeric operand
+          accumulators: [sum(field('name')).as('total')],
+          groups: ['rank'],
+        }));
+      void badDomain;
+    });
+
+    it('cannot carry a comparison against a value — the checker cannot discharge it', () => {
+      const compare = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
+        // @ts-expect-error -- `Comparable` is a conditional type over the field's
+        // descriptor, and TypeScript does not evaluate one over an unresolved `S`,
+        // so the guard stays deferred and rejects every operand. Documented on
+        // `Pipeline`: keep value comparisons in the per-branch part.
+        p.where((field) => equal(field('rank'), 1));
+      void compare;
+    });
   });
 });

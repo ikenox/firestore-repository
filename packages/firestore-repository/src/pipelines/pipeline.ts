@@ -59,11 +59,9 @@ export type PipelineQueryExecutor = {
 /**
  * A lazily-built Firestore Pipeline query.
  *
- * **⚠️ Work in progress / unstable.** Pipeline-query support is under active
- * development and incomplete — most stages are still stubs, and the public
- * surface (method names, argument shapes, the `Schema` / `Id` type parameters,
- * result types) is expected to change, likely with breaking changes. Do not
- * rely on it yet.
+ * **⚠️ Unstable surface.** Method names, argument shapes, the `Schema` / `Id`
+ * type parameters and the result types are still expected to change, in
+ * breaking ways — pin a version if that matters to you.
  *
  * `Schema` is the schema of the document's `data` fields (it changes as stages
  * reshape the document, and `execute()` resolves it into `PipelineResult.data`).
@@ -78,6 +76,39 @@ export type PipelineQueryExecutor = {
  * - Identity-breaking stages (`select` / `distinct` / `aggregate` /
  *   `replaceWith`) return `Id = undefined`. Because the preserving stages thread
  *   whatever `Id` they receive, identity never comes back once dropped.
+ *
+ * ## Building a pipeline conditionally
+ *
+ * An optional filter is a reassignment: `where` / `sort` / `limit` / `offset`
+ * thread `Schema` and `Id` through, so the variable's type never moves.
+ *
+ * ```ts
+ * let p = collection(listings).where((f) => equalAny(f('siteId'), siteIds));
+ * if (wards.length > 0) p = p.where((f) => equalAny(f('ward'), wards));
+ * const rows = await pipe.execute(p.sort(...).aggregate(...).limit(20));
+ * ```
+ *
+ * A branch that RESHAPES the schema (`unnest`, `addFields`, `select`) cannot
+ * share that variable — the reshaped pipeline is not assignable back to it,
+ * and a variable typed as the union of both shapes has no callable stage
+ * methods, since the two `FieldProvider<Schema>` signatures are incompatible.
+ * To avoid duplicating what follows, take the shared stages as a function
+ * bounded by the fields they read — `S extends BaseSchema` means "at least
+ * these", so a branch that added some still satisfies it:
+ *
+ * ```ts
+ * const tail = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
+ *   p.sort((f) => [asc(f('crawlingDate'))]).limit(20);
+ * ```
+ *
+ * Two things to know about that form. Pinning the parameter to `BaseSchema`
+ * instead does not work: `Schema` is invariant, occurring in the result types
+ * AND in every callback's `FieldProvider<Schema>`. And a comparison against a
+ * VALUE cannot move into it — comparison compatibility is a conditional type
+ * over the field's descriptor, which TypeScript will not evaluate over an
+ * unresolved type parameter, so the guard defers and rejects every operand.
+ * Paths and operand domains are still checked; keep value comparisons in the
+ * per-branch part, where the schema is concrete.
  */
 export class Pipeline<
   Schema extends Fields = Fields,
@@ -490,25 +521,8 @@ export class Pipeline<
       parent: this.node,
     });
   }
-  // TODO
-  // union(..._args: unknown[]): Pipeline<Fields> {
-  //   return unimplemented();
-  // }
-  // findNearest(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // let(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // sample(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // update(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // delete(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
+  // Not built yet: the `union` / `findNearest` / `let` / `sample` stages and the
+  // `update` / `delete` DML operations.
 }
 
 /**
