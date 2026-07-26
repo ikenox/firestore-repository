@@ -379,7 +379,19 @@ export type Increment = { [serverOperation]: 'increment'; amount: number };
 type MakeSomeFieldsOptional<T extends Record<string, unknown>, OptFields extends keyof T> = Merge<
   Pick<{ [K in keyof T]?: T[K] }, OptFields> & Omit<T, OptFields>
 >;
-type Merge<T> = { [K in keyof T]: T[K] };
+/**
+ * Flattens an intersection into a single object type — and, just as
+ * importantly, makes the compiler DISPLAY it that way.
+ *
+ * The `& {}` is what forces the display. Without it the checker keeps the
+ * alias reference, so a fully-resolved row type still surfaces as
+ * `Merge<Pick<…, never> & Omit<…, never>>` in hovers, error messages and the
+ * `.d.ts` of anything that infers from it — the no-op `Pick`/`Omit` pair from
+ * {@link MakeSomeFieldsOptional}'s "no optional fields" case being the common
+ * offender. The computed type is identical either way; only its presentation
+ * changes.
+ */
+type Merge<T> = { [K in keyof T]: T[K] } & {};
 
 export const serverOperation: unique symbol = Symbol();
 

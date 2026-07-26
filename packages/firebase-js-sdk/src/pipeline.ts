@@ -152,8 +152,16 @@ import { buildFirestoreUtilities } from './index.js';
  * client SDK (Enterprise edition). It walks the repository's `Pipeline` AST into
  * `db.pipeline()...` and runs it via the SDK's `execute`.
  *
- * Implemented so far: `collection` / `collectionGroup` inputs plus `sort`.
- * Other inputs / stages throw.
+ * Stage coverage is stated as what is NOT supported, because that set only
+ * ever shrinks — the previous "implemented so far" phrasing went stale twice
+ * as stages landed, and it ships in the `.d.ts`, so a hover read it as
+ * "pipelines are barely usable".
+ *
+ * Unsupported, and throwing: the `union` / `findNearest` / `let` / `sample`
+ * stages, and the `database` / `documents` / `literals` inputs. Everything
+ * else — `collection` / `collectionGroup` inputs and the `where` / `sort` /
+ * `select` / `addFields` / `removeFields` / `aggregate` / `distinct` / `limit`
+ * / `offset` / `unnest` / `replaceWith` / `search` stages — is implemented.
  */
 export const executor = (db: Firestore): PipelineQueryExecutor => {
   const execute = async <Schema extends DocumentSchema, Id extends PipelineRowIdentity>(
