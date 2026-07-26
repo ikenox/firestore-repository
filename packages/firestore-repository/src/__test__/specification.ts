@@ -146,11 +146,9 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         repository,
         items,
         expectDb: async (expected: Doc<T>[]) => {
-          const items = (
-            await currentRepository.list(
-              query({ collection: currentRepository.collection, group: true }),
-            )
-          ).toArray();
+          const items = await currentRepository.list(
+            query({ collection: currentRepository.collection, group: true }),
+          );
           expect(
             items.toSorted((a, b) => params.sortKey(a).localeCompare(params.sortKey(b))),
           ).toStrictEqual(
@@ -226,10 +224,16 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       it('list', async () => {
-        const res = (
-          await repository.list(query({ collection: repository.collection, group: true }))
-        ).toArray();
+        const res = await repository.list(
+          query({ collection: repository.collection, group: true }),
+        );
         expectArrayEqualsWithoutOrder(res, items);
+
+        // The result is materialized, not a one-shot iterator: it carries a
+        // length, and reading it a second time yields the same documents
+        // rather than nothing.
+        expect(res.length).toBe(items.length);
+        expectArrayEqualsWithoutOrder([...res], items);
       });
 
       it('listOnSnapshot', async () => {
@@ -528,7 +532,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           repository,
           items: params.items,
           expectQuery: async (query: Query<T>, expected: Doc<T>[]) => {
-            const result = (await repository.list(query)).toArray();
+            const result = await repository.list(query);
             expect(result).toStrictEqual(expected);
           },
         };

@@ -110,10 +110,10 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       }, error);
     },
 
-    list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
+    list: async (query: Query<T>): Promise<Model['read'][]> => {
       const firestoreQuery = toFirestore.query(query);
       const { docs } = await firestoreQuery.get();
-      return docs.values().map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
+      return docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
     },
 
     listOnSnapshot: (

@@ -28,9 +28,17 @@ export interface Repository<
   ) => Unsubscribe;
 
   /**
-   * Returns documents matching the specified query
+   * Returns documents matching the specified query.
+   *
+   * The whole result is materialized — an array, matching what
+   * {@link listOnSnapshot} delivers. Nothing is saved by deferring: the SDK's
+   * `get()` has already produced every snapshot before this resolves, so only
+   * the mapping of those snapshots to models could be lazy, and paying for
+   * that with a lazy iterator would cost a re-iterable, `length`-carrying
+   * result and would pull the iterator-helper baseline (Node 22 / a 2024-era
+   * browser) into a package that otherwise needs neither.
    */
-  list: (query: Query<T>) => Promise<IteratorObject<Model['read']>>;
+  list: (query: Query<T>) => Promise<Model['read'][]>;
 
   /**
    * Listens to documents matching the specified query for changes
