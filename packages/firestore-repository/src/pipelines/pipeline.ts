@@ -59,12 +59,9 @@ export type PipelineQueryExecutor = {
 /**
  * A lazily-built Firestore Pipeline query.
  *
- * **⚠️ Work in progress / unstable.** Pipeline-query support is under active
- * development, and the public surface (method names, argument shapes, the
- * `Schema` / `Id` type parameters, result types) is expected to change, likely
- * with breaking changes. Do not rely on it yet. Which stages an executor
- * implements is that executor's to state — an unimplemented one throws, naming
- * itself.
+ * **⚠️ Unstable surface.** Method names, argument shapes, the `Schema` / `Id`
+ * type parameters and the result types are still expected to change, in
+ * breaking ways — pin a version if that matters to you.
  *
  * `Schema` is the schema of the document's `data` fields (it changes as stages
  * reshape the document, and `execute()` resolves it into `PipelineResult.data`).
@@ -82,61 +79,46 @@ export type PipelineQueryExecutor = {
  *
  * ## Sharing a stage tail between conditionally-built pipelines
  *
- * A query with an optional filter branches and then wants the same stages on
- * both branches. Which tool you need depends on whether the branch changes the
- * SCHEMA.
- *
- * Most optional filters do not — `where` / `sort` / `limit` / `offset` thread
- * `Schema` and `Id` through unchanged — so the branch is just a reassignment
- * and the tail stays inline:
+ * If the optional branch does not change `Schema` — `where` / `sort` / `limit`
+ * / `offset` thread it through — the branch is a reassignment and the tail
+ * stays inline:
  *
  * ```ts
  * let p = collection(listings).where((f) => equalAny(f('siteId'), siteIds));
- * if (wards.length > 0) {
- *   p = p.where((f) => equalAny(f('ward'), wards));
- * }
+ * if (wards.length > 0) p = p.where((f) => equalAny(f('ward'), wards));
  * const rows = await pipe.execute(p.sort(...).aggregate(...).limit(20));
  * ```
  *
- * Prefer this. The schema stays CONCRETE, so everything type-checks as usual —
- * including comparisons against a value, which the generic form below cannot
- * carry.
+ * Prefer this: the schema stays CONCRETE, so a comparison against a value
+ * type-checks — which the generic form below cannot carry.
  *
- * A branch that reshapes the schema (`unnest`, `addFields`, `select`) cannot be
- * reassigned to the same variable, and a variable typed as the union of both
- * shapes cannot have its stage methods called at all (the two
- * `FieldProvider<Schema>` signatures are not compatible with each other). For
- * that case, write the tail once as a function generic over the schema,
- * bounded by the schema the tail actually reads:
+ * A branch that RESHAPES the schema (`unnest`, `addFields`, `select`) cannot
+ * share that variable: the reshaped pipeline is not assignable back to it, and
+ * a variable typed as the union of both shapes has no callable stage methods
+ * (the two `FieldProvider<Schema>` signatures are incompatible). Write the
+ * tail once instead, generic over the schema it reads:
  *
  * ```ts
  * const tail = <S extends BaseSchema, Id extends PipelineRowIdentity>(p: Pipeline<S, Id>) =>
- *   p.sort((f) => [asc(f('crawlingDate'))])
- *    .aggregate((f) => ({ accumulators: [sum(f('price')).as('total')], groups: ['siteId'] }))
- *    .limit(20);
+ *   p.sort((f) => [asc(f('crawlingDate'))]).limit(20);
  *
  * tail(base);
  * tail(base.unnest((f) => ({ selectable: f('property.stations').as('station') })));
  * ```
  *
- * `S extends BaseSchema` reads as "any schema with at least these fields", so a
- * branch that ADDED fields (an `unnest` alias, an `addFields` output) still
- * satisfies it — there is no need for the pipeline type itself to be
- * assignable. Pinning the parameter to `BaseSchema` instead does not work, and
- * that is the constraint doing its job rather than a gap: `Schema` is
- * invariant, because it occurs in the result types AND in every stage
- * callback's `FieldProvider<Schema>`.
+ * `S extends BaseSchema` means "at least these fields", so a branch that ADDED
+ * some satisfies it and no assignability between the two pipeline types is
+ * needed. Pinning the parameter to `BaseSchema` does NOT work — `Schema` is
+ * invariant, occurring both in the result types and in every callback's
+ * `FieldProvider<Schema>` — and that is the constraint working, not a gap.
+ * Paths and operand domains are still checked inside the tail.
  *
- * Inside the tail the schema is still checked — an unknown path is rejected,
- * and so is an operand outside a function's domain (`sum` of a timestamp).
+ * **A comparison against a VALUE cannot move into the tail.** Comparison
+ * compatibility is a conditional type over the field's descriptor, and
+ * TypeScript does not evaluate conditionals over an unresolved type parameter,
+ * so the guard defers and rejects every operand. Keep such comparisons in the
+ * per-branch part, where the schema is concrete.
  *
- * **The one thing that cannot move into the tail is a comparison against a
- * VALUE** — `where((f) => greaterThanOrEqual(f('crawlingDate'), someDate))`.
- * Comparison compatibility is a conditional type over the field's descriptor,
- * and TypeScript does not evaluate a conditional over an unresolved type
- * parameter, so the guard stays deferred and rejects every operand. This is a
- * limitation of the checker, not a rule of this API: keep value comparisons in
- * the per-branch part, where the schema is concrete.
  */
 export class Pipeline<
   Schema extends Fields = Fields,
@@ -549,25 +531,8 @@ export class Pipeline<
       parent: this.node,
     });
   }
-  // TODO
-  // union(..._args: unknown[]): Pipeline<Fields> {
-  //   return unimplemented();
-  // }
-  // findNearest(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // let(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // sample(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // update(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
-  // delete(..._args: unknown[]): Pipeline<Schema> {
-  //   return unimplemented();
-  // }
+  // Not built yet: the `union` / `findNearest` / `let` / `sample` stages and the
+  // `update` / `delete` DML operations.
 }
 
 /**
