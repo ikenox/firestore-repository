@@ -57,6 +57,6 @@
     "@firebase/firestore": "^4.13.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }
