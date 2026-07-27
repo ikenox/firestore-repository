@@ -4,7 +4,10 @@ import { Collection, FieldValue, MapType, RootCollection } from './schema.js';
 import type { ToStringTuple } from './util.js';
 
 /**
- * A universal repository interface
+ * A universal repository interface.
+ *
+ * Every read path fails with a {@link DocumentDecodeError} when a stored
+ * document does not match the collection's schema.
  */
 export interface Repository<
   T extends Collection = Collection,
@@ -111,6 +114,30 @@ export type WriteTransactionOption<T extends FirestoreEnvironment> = {
 };
 /** A function to unsubscribe from a snapshot listener */
 export type Unsubscribe = () => void;
+
+/**
+ * A stored document that does not match its collection's schema.
+ *
+ * The validation failure itself is the `cause`; this type exists to add the
+ * one thing that failure cannot know — WHICH document it was. A validation
+ * error names a field path *within* a document (`age`), which is unactionable
+ * on its own: schemas evolve and Firestore has no migrations, so the question
+ * a caller actually has is which stored document to go and look at.
+ *
+ * It is thrown per document, so it identifies the document that failed even
+ * when the read covered many.
+ */
+export class DocumentDecodeError extends Error {
+  override readonly name = 'DocumentDecodeError';
+
+  constructor(
+    /** The document's path relative to the database root, e.g. `Authors/a1`. */
+    readonly documentPath: string,
+    cause: unknown,
+  ) {
+    super(`failed to decode document "${documentPath}"`, { cause });
+  }
+}
 
 /** A repository that uses plain document types without custom mapping */
 export type PlainRepository<

@@ -1,6 +1,6 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { AppModel, Doc, DocRef, Mapper } from './repository.js';
+import { AppModel, Doc, DocRef, DocumentDecodeError, Mapper } from './repository.js';
 import {
   Collection,
   rootCollection,
@@ -110,6 +110,25 @@ describe('repository', () => {
 
     expectTypeOf(mapper.toFirestore).parameter(0).toEqualTypeOf<UserInput>();
     expectTypeOf(mapper.fromFirestore).returns.toEqualTypeOf<User>();
+  });
+
+  it('DocumentDecodeError', () => {
+    const cause = new Error('expected number, received string');
+    const error = new DocumentDecodeError('Authors/a1', cause);
+
+    // Catchable by class — the property a consumer branches on.
+    expect(error).toBeInstanceOf(DocumentDecodeError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('DocumentDecodeError');
+
+    // The document is named in both the structured field and the message, so
+    // it survives a bare `console.error(e.message)` as well as inspection.
+    expect(error.documentPath).toBe('Authors/a1');
+    expect(error.message).toBe('failed to decode document "Authors/a1"');
+
+    // The validation failure is kept rather than replaced: it is what says
+    // which FIELD is wrong, while this error says which DOCUMENT.
+    expect(error.cause).toBe(cause);
   });
 
   it('DocRef', () => {

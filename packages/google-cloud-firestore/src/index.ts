@@ -6,6 +6,7 @@ import type { FilterExpression, Query } from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
+  DocumentDecodeError,
   DocData,
   DocRef,
   type Mapper,
@@ -324,9 +325,12 @@ export const buildFirestoreUtilities = <T extends Collection>(
     documentMustExist: (document: firestore.DocumentSnapshot): Doc<T> => {
       const data = document.data();
       if (!data) {
-        throw new Error('document must exist');
+        throw new Error(`document "${document.ref.path}" must exist`);
       }
-      return { id: fromFirestore.docRef(document.ref), data: fromFirestore.decode(data) };
+      return {
+        id: fromFirestore.docRef(document.ref),
+        data: fromFirestore.decode(data, document.ref.path),
+      };
     },
     document: (document: firestore.DocumentSnapshot): Doc<T> | undefined => {
       if (!document.exists) {
@@ -334,10 +338,18 @@ export const buildFirestoreUtilities = <T extends Collection>(
       }
       return fromFirestore.documentMustExist(document);
     },
-    /** Decodes raw Firestore document data into the schema's read type. */
-    decode: (data: firestore.DocumentData): DocData<T> => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
-      return decodeSchema.parse(data) as DocData<T>;
+    /**
+     * Decodes raw Firestore document data into the schema's read type,
+     * attributing a validation failure to `documentPath` — the decoder itself
+     * only knows the field path within the document.
+     */
+    decode: (data: firestore.DocumentData, documentPath: string): DocData<T> => {
+      try {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
+        return decodeSchema.parse(data) as DocData<T>;
+      } catch (e) {
+        throw new DocumentDecodeError(documentPath, e);
+      }
     },
     docRef: (ref: firestore.DocumentReference): DocRef<T> => {
       const docRef: string[] = [];

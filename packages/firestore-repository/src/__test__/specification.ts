@@ -27,6 +27,7 @@ import {
   startAt,
   where,
 } from '../query.js';
+import { DocumentDecodeError } from '../repository.js';
 import type {
   AppModel,
   Doc,
@@ -1071,6 +1072,61 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             );
           });
         });
+      });
+    });
+
+    describe('decode failures', () => {
+      // Two collection definitions over ONE collection name: the value is
+      // written under a schema that admits it and read under one that does
+      // not. That is the portable way to produce an undecodable document —
+      // what is stored is legal Firestore data, and only the reading schema
+      // rejects it, so no raw SDK write is needed.
+      const name = `DecodeError_${randomString()}`;
+      const writable = rootCollection({ name, schema: { value: string() } });
+      const unreadable = rootCollection({ name, schema: { value: int64() } });
+
+      const writeUndecodable = async (id: string) => {
+        await createRepository(writable).set({ id: [id], data: { value: 'not a number' } });
+      };
+
+      it('get reports which document failed', async () => {
+        const id = randomString();
+        await writeUndecodable(id);
+
+        const error = await createRepository(unreadable)
+          .get([id])
+          .catch((e: unknown) => e);
+
+        assert(error instanceof DocumentDecodeError);
+        // The document is named both structurally and in the message, so it
+        // survives inspection and a bare log of `e.message` alike.
+        expect(error.documentPath).toBe(`${name}/${id}`);
+        expect(error.message).toContain(`${name}/${id}`);
+        // The validation failure is kept, not replaced: it is what says which
+        // FIELD is wrong, while this error says which DOCUMENT.
+        expect(error.cause).toBeDefined();
+      });
+
+      it('list singles out the offending document among readable ones', async () => {
+        const readable = randomString();
+        const broken = randomString();
+        await createRepository(unreadable).set({ id: [readable], data: { value: 1 } });
+        await writeUndecodable(broken);
+
+        // Each document is decoded as it is read, so the failure names the one
+        // document responsible rather than the query.
+        const docs = await createRepository(unreadable).list(query({ collection: unreadable }));
+        const error = ((): unknown => {
+          try {
+            docs.toArray();
+            return undefined;
+          } catch (e) {
+            return e;
+          }
+        })();
+
+        assert(error instanceof DocumentDecodeError);
+        expect(error.documentPath).toBe(`${name}/${broken}`);
       });
     });
 
