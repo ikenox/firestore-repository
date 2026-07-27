@@ -45,6 +45,6 @@
     "prepublishOnly": "cp ../../README.md . && pnpm build"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }
