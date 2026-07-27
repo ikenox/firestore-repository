@@ -70,6 +70,14 @@ export const query = <T extends Collection>(
 };
 
 /**
+ * Resolves the collection a query targets, unwrapping `extends` bases until it
+ * reaches the one that names a collection. Every {@link QueryBase} either names
+ * a collection or extends another query, so this always terminates.
+ */
+export const queryCollection = <T extends Collection>(query: Query<T>): T =>
+  'extends' in query.base ? queryCollection(query.base.extends) : query.base.collection;
+
+/**
  * A query constraint
  */
 export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
