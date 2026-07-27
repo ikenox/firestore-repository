@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { authorsCollection, postsCollection } from './__test__/specification.js';
-import { type FilterOperand, filterOperand, limit, offset, orderBy, query } from './query.js';
+import { type FilterOperand, filterOperand, limit, orderBy, query } from './query.js';
 import {
   type ArrayType,
   array,
@@ -43,10 +43,6 @@ describe('query', () => {
       query({ collection: postsCollection, group: true });
       query({ collection: postsCollection, group: true }, orderBy('postedAt'), limit(1));
     });
-  });
-
-  it('creates an offset constraint', () => {
-    expect(offset(10)).toStrictEqual({ kind: 'offset', offset: 10 });
   });
 
   it('FilterOperand', () => {

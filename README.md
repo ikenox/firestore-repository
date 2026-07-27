@@ -107,8 +107,10 @@ await repository.delete('user2');
 Field paths in query conditions are **automatically derived from the schema type**, not just plain strings — so typos and invalid paths are caught at compile time. The filter value is also **type-checked based on the field type and operator** (e.g., `array-contains` expects the element type of the array field).
 
 ```ts
-import { eq, gte, limit, offset, query, where } from 'firestore-repository/query';
+import { eq, gte, limit, query, where } from 'firestore-repository/query';
 import { average, count, sum } from 'firestore-repository/aggregate';
+// Backend only: @firebase/firestore does not support offset constraints.
+import { offset } from '@firestore-repository/google-cloud-firestore/query';
 
 // Define a query
 // Field paths like 'profile.age' are auto-completed and type-checked against the schema.

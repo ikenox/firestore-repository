@@ -115,8 +115,6 @@ export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast
 
 /** A constraint that skips the first N results */
 export type Offset = { kind: 'offset'; offset: number };
-/** Creates an offset constraint */
-export const offset = (offset: number): Offset => ({ kind: 'offset', offset });
 
 /** A cursor constraint that starts at the given values (inclusive) */
 export type StartAt<T extends DocumentSchema> = { kind: 'startAt'; cursor: Cursor<T> };
