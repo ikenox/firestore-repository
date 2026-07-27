@@ -18,7 +18,7 @@ import {
   union,
   vector as vectorType,
 } from 'firestore-repository/schema';
-import { arrayRemove, arrayUnion } from 'firestore-repository/server-value';
+import { arrayRemove, arrayUnion, increment } from 'firestore-repository/server-value';
 import { assert, describe, expect, it } from 'vitest';
 
 import {
@@ -129,6 +129,45 @@ describe('buildEncodeFilterValue', () => {
   it('rejects a segment path that does not match the field descriptor', () => {
     expect(() => encode('author', '==', ['Posts', 'p1'])).toThrow();
     expect(() => encode('anyRef', '==', ['odd-length'])).toThrow();
+  });
+});
+
+describe('numeric descriptors', () => {
+  const schema = { count: int64(), score: double(), nested: map({ count: int64() }) };
+
+  it('rejects fractional int64 values when encoding', () => {
+    const encode = buildEncodeSchema(schema, db);
+
+    expect(encode.parse({ count: 1, score: 1.5, nested: { count: 2 } })).toStrictEqual({
+      count: 1,
+      score: 1.5,
+      nested: { count: 2 },
+    });
+    expect(() => encode.parse({ count: 1.5, score: 1.5, nested: { count: 2 } })).toThrow();
+    expect(() => encode.parse({ count: 1, score: 1.5, nested: { count: 2.5 } })).toThrow();
+  });
+
+  it('rejects fractional int64 values when decoding', () => {
+    const decode = buildDecodeSchema(schema);
+
+    expect(decode.parse({ count: 1, score: 1.5, nested: { count: 2 } })).toStrictEqual({
+      count: 1,
+      score: 1.5,
+      nested: { count: 2 },
+    });
+    expect(() => decode.parse({ count: 1.5, score: 1.5, nested: { count: 2 } })).toThrow();
+    expect(() => decode.parse({ count: 1, score: 1.5, nested: { count: 2.5 } })).toThrow();
+  });
+
+  it('requires integer increment amounts for int64 fields', () => {
+    const encode = buildEncodeSchema(schema, db);
+
+    expect(() =>
+      encode.parse({ count: increment(1), score: increment(1.5), nested: { count: 2 } }),
+    ).not.toThrow();
+    expect(() =>
+      encode.parse({ count: increment(1.5), score: increment(1.5), nested: { count: 2 } }),
+    ).toThrow();
   });
 });
 

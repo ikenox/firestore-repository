@@ -53,6 +53,7 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'bool':
       return z.boolean();
     case 'int64':
+      return z.int();
     case 'double':
       return z.number();
     case 'null':
@@ -142,6 +143,16 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
     case 'vector':
       return z.array(z.number()).transform((arr) => vector(arr));
     case 'int64':
+      return zodUnion([
+        z.int(),
+        z
+          .unknown()
+          .refine(isIncrement)
+          .refine((v) => Number.isInteger(v.amount), {
+            message: 'int64 increment amount must be an integer',
+          })
+          .transform((v) => firestoreIncrement(v.amount)),
+      ]);
     case 'double':
       return zodUnion([
         z.number(),
