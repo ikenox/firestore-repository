@@ -8,10 +8,23 @@ import {
   average,
   type Count,
   count,
+  type NumericFieldPath,
   type Sum,
   sum,
 } from './aggregate.js';
-import { double, map, rootCollection, string } from './schema.js';
+import {
+  bool,
+  docRef,
+  double,
+  int64,
+  literal,
+  map,
+  nullable,
+  rootCollection,
+  string,
+  union,
+  type DocumentSchema,
+} from './schema.js';
 
 describe('Aggregated', () => {
   const authors = rootCollection({
@@ -48,5 +61,55 @@ describe('Aggregated', () => {
   // for something that can arrive as `null`.
   it('widens a key whose method is not statically known', () => {
     expectTypeOf<AggregatedValue<AggregateMethod<Schema>>>().toEqualTypeOf<number | null>();
+  });
+
+  it('restricts sum and average to numeric field paths', () => {
+    const posts = rootCollection({
+      name: 'Posts',
+      schema: {
+        title: string(),
+        published: bool(),
+        rank: int64(),
+        rating: double(),
+        nullableRank: nullable(int64()),
+        mixedNumber: union(int64(), double()),
+        status: literal('draft', 'published'),
+        author: docRef(authors),
+        meta: map({ views: int64(), label: string(), maybeScore: nullable(double()) }),
+      },
+    });
+    type PostSchema = (typeof posts)['schema'];
+
+    expectTypeOf<NumericFieldPath<PostSchema>>().toEqualTypeOf<
+      'rank' | 'rating' | 'nullableRank' | 'mixedNumber' | 'meta.views' | 'meta.maybeScore'
+    >();
+
+    sum<PostSchema>('rank');
+    sum<PostSchema>('rating');
+    sum<PostSchema>('nullableRank');
+    sum<PostSchema>('mixedNumber');
+    sum<PostSchema>('meta.views');
+    average<PostSchema>('meta.maybeScore');
+
+    // @ts-expect-error string fields are not valid numeric aggregate paths
+    sum<PostSchema>('title');
+    // @ts-expect-error booleans are not valid numeric aggregate paths
+    average<PostSchema>('published');
+    // @ts-expect-error literal unions are not valid numeric aggregate paths
+    sum<PostSchema>('status');
+    // @ts-expect-error document references are not valid numeric aggregate paths
+    average<PostSchema>('author');
+    // @ts-expect-error maps themselves are not valid numeric aggregate paths
+    sum<PostSchema>('meta');
+    // @ts-expect-error nested non-numeric fields are not valid numeric aggregate paths
+    average<PostSchema>('meta.label');
+    // @ts-expect-error the document key is not a numeric aggregate path
+    sum<PostSchema>('__name__');
+  });
+
+  it('keeps aggregate paths wide for unconstrained schemas', () => {
+    expectTypeOf<NumericFieldPath<DocumentSchema>>().toEqualTypeOf<string>();
+    sum('anything');
+    average('anything');
   });
 });
