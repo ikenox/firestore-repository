@@ -1081,15 +1081,24 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       // not. That is the portable way to produce an undecodable document —
       // what is stored is legal Firestore data, and only the reading schema
       // rejects it, so no raw SDK write is needed.
-      const name = `DecodeError_${randomString()}`;
-      const writable = rootCollection({ name, schema: { value: string() } });
-      const unreadable = rootCollection({ name, schema: { value: int64() } });
-
-      const writeUndecodable = async (id: string) => {
-        await createRepository(writable).set({ id: [id], data: { value: 'not a number' } });
+      //
+      // A fresh name per test: a collection-wide read reports the FIRST
+      // document it cannot decode, so an undecodable document left behind by
+      // a sibling test would otherwise decide the outcome.
+      const undecodableCollection = () => {
+        const name = `DecodeError_${randomString()}`;
+        const writable = rootCollection({ name, schema: { value: string() } });
+        const unreadable = rootCollection({ name, schema: { value: int64() } });
+        return {
+          name,
+          unreadable,
+          writeUndecodable: (id: string) =>
+            createRepository(writable).set({ id: [id], data: { value: 'not a number' } }),
+        };
       };
 
       it('get reports which document failed', async () => {
+        const { name, unreadable, writeUndecodable } = undecodableCollection();
         const id = randomString();
         await writeUndecodable(id);
 
@@ -1108,6 +1117,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       it('list singles out the offending document among readable ones', async () => {
+        const { name, unreadable, writeUndecodable } = undecodableCollection();
         const readable = randomString();
         const broken = randomString();
         await createRepository(unreadable).set({ id: [readable], data: { value: 1 } });
