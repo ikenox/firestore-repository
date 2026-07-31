@@ -74,7 +74,7 @@ export type Env = { transaction: Transaction; writeBatch: WriteBatch };
  * models: decoding them back is the caller's job.
  */
 export const toSdkQuery = <T extends Collection>(db: Firestore, query: Query<T>): FirestoreQuery =>
-  buildFirestoreUtilities(db, queryCollection(query)).toFirestore.query(query);
+  buildQueryConverter(db, queryCollection(query)).query(query);
 
 /** Creates a repository for a root collection using plain document types */
 export const rootCollectionRepository = <T extends RootCollection>(
@@ -252,13 +252,10 @@ export const fromSdkDocRef = <T extends Collection>(ref: FirestoreDocumentRefere
  * Exported only so the pipeline adapter in this package can reuse them — the
  * supported entry points are {@link toSdkQuery} and the repository factories.
  */
-export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
-  const decodeSchema = buildDecodeSchema(coll.schema);
+const buildQueryConverter = <T extends Collection>(db: Firestore, coll: T) => {
   const encodeFilterValue = buildEncodeFilterValue(coll.schema, db);
-  const encodeSchema = buildEncodeSchema(coll.schema, db);
 
-  const toFirestore = {
-    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
+  const converter = {
     query: (query: Query<T>): FirestoreQuery => {
       let base: FirestoreQuery;
       if ('collection' in query.base) {
@@ -266,7 +263,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
           ? collectionGroup(db, query.base.collection.name)
           : collection(db, collectionPath(query.base.collection, query.base.parent));
       } else if ('extends' in query.base) {
-        base = toFirestore.query(query.base.extends);
+        base = converter.query(query.base.extends);
       } else {
         return assertNever(query.base);
       }
@@ -282,7 +279,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         (acc, constraint) => {
           switch (constraint.kind) {
             case 'where': {
-              const f = toFirestore.filter(constraint.condition);
+              const f = converter.filter(constraint.condition);
               acc.filter = acc.filter ? and(acc.filter, f) : f;
               break;
             }
@@ -340,13 +337,29 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
             encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
           );
         case 'and':
-          return and(...expr.filters.map(toFirestore.filter));
+          return and(...expr.filters.map(converter.filter));
         case 'or':
-          return or(...expr.filters.map(toFirestore.filter));
+          return or(...expr.filters.map(converter.filter));
         default:
           return assertNever(expr);
       }
     },
+  };
+  return converter;
+};
+
+/**
+ * @internal Shared conversion helpers between this library's types and the SDK's.
+ * Exported only so the pipeline adapter in this package can reuse them — the
+ * supported entry points are {@link toSdkQuery} and the repository factories.
+ */
+export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
+  const decodeSchema = buildDecodeSchema(coll.schema);
+  const encodeSchema = buildEncodeSchema(coll.schema, db);
+
+  const toFirestore = {
+    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
+    ...buildQueryConverter(db, coll),
   };
 
   const fromFirestore = {

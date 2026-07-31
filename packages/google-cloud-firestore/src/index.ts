@@ -40,7 +40,7 @@ export type Env = { transaction: firestore.Transaction; writeBatch: firestore.Wr
 export const toSdkQuery = <T extends Collection>(
   db: firestore.Firestore,
   query: Query<T>,
-): firestore.Query => buildFirestoreUtilities(db, queryCollection(query)).toFirestore.query(query);
+): firestore.Query => buildQueryConverter(db, queryCollection(query)).query(query);
 
 /** Extended repository interface for Google Cloud Firestore with additional methods (create, batchCreate, batchGet) */
 export interface GoogleCloudFirestoreRepository<
@@ -282,16 +282,10 @@ export const fromSdkDocRef = <T extends Collection>(
  * Exported only so the pipeline adapter in this package can reuse them — the
  * supported entry points are {@link toSdkQuery} and the repository factories.
  */
-export const buildFirestoreUtilities = <T extends Collection>(
-  db: firestore.Firestore,
-  collection: T,
-) => {
-  const decodeSchema = buildDecodeSchema(collection.schema);
-  const encodeSchema = buildEncodeSchema(collection.schema, db);
+const buildQueryConverter = <T extends Collection>(db: firestore.Firestore, collection: T) => {
   const encodeFilterValue = buildEncodeFilterValue(collection.schema, db);
 
-  const toFirestore = {
-    docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
+  const converter = {
     query: (query: Query<T>): firestore.Query => {
       let base: firestore.Query;
       if ('collection' in query.base) {
@@ -299,7 +293,7 @@ export const buildFirestoreUtilities = <T extends Collection>(
           ? db.collectionGroup(query.base.collection.name)
           : db.collection(collectionPath(query.base.collection, query.base.parent));
       } else if ('extends' in query.base) {
-        base = toFirestore.query(query.base.extends);
+        base = converter.query(query.base.extends);
       } else {
         return assertNever(query.base);
       }
@@ -307,7 +301,7 @@ export const buildFirestoreUtilities = <T extends Collection>(
         query.constraints?.reduce((q, constraint) => {
           switch (constraint.kind) {
             case 'where':
-              return q.where(toFirestore.filter(constraint.condition));
+              return q.where(converter.filter(constraint.condition));
             case 'orderBy':
               return q.orderBy(constraint.field, constraint.direction);
             case 'limit':
@@ -347,13 +341,27 @@ export const buildFirestoreUtilities = <T extends Collection>(
             encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
           );
         case 'and':
-          return Filter.and(...expr.filters.map(toFirestore.filter));
+          return Filter.and(...expr.filters.map(converter.filter));
         case 'or':
-          return Filter.or(...expr.filters.map(toFirestore.filter));
+          return Filter.or(...expr.filters.map(converter.filter));
         default:
           return assertNever(expr);
       }
     },
+  };
+  return converter;
+};
+
+export const buildFirestoreUtilities = <T extends Collection>(
+  db: firestore.Firestore,
+  collection: T,
+) => {
+  const decodeSchema = buildDecodeSchema(collection.schema);
+  const encodeSchema = buildEncodeSchema(collection.schema, db);
+
+  const toFirestore = {
+    docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
+    ...buildQueryConverter(db, collection),
   };
   const fromFirestore = {
     documentMustExist: (document: firestore.DocumentSnapshot): Doc<T> => {
