@@ -109,6 +109,8 @@ Field paths in query conditions are **automatically derived from the schema type
 ```ts
 import { eq, gte, limit, query, where } from 'firestore-repository/query';
 import { average, count, sum } from 'firestore-repository/aggregate';
+// Backend only: @firebase/firestore does not support offset constraints.
+import { offset } from '@firestore-repository/google-cloud-firestore/query';
 
 // Define a query
 // Field paths like 'profile.age' are auto-completed and type-checked against the schema.
@@ -119,6 +121,7 @@ const q = query(
   // where(gte('profile.age', 'foo')) // ← Compile error: string is not assignable to number
   // where(eq('nonExistent', 1))      // ← Compile error: invalid field path
   limit(10),
+  offset(5),
 );
 
 // List documents
