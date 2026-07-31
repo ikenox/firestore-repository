@@ -345,3 +345,45 @@ const projected = await pipe.execute(collection(users).select((field) => [field(
 // @ts-expect-error `select` dropped read-identity, so the rows have no `id`
 projected.map(userMapper.fromFirestore);
 ```
+
+### Accessing the underlying SDK
+
+This library wraps only what it can express in a platform-agnostic, type-safe way. When you need a Firestore feature it does not cover, you can build the SDK object it _would_ have run and take over from there — no need to rebuild the query by hand.
+
+`toSdkQuery` returns the SDK query for a `query(...)` without running it, so any SDK method is available on it. [Query Explain](https://firebase.google.com/docs/firestore/query-explain), which reports the query plan and which indexes were used, is one such method (it exists in the backend SDK only):
+
+```ts
+// For backend
+import { toSdkQuery } from '@firestore-repository/google-cloud-firestore';
+// For web frontend
+import { toSdkQuery } from '@firestore-repository/firebase-js-sdk';
+
+const q = query({ collection: users }, where(gte('profile.age', 20)), limit(10));
+
+const { metrics } = await toSdkQuery(db, q).explain({ analyze: true });
+
+console.log(metrics.planSummary.indexesUsed);
+console.log(metrics.executionStats?.resultsReturned);
+```
+
+Pipelines have the same escape hatch, plus a decoder: `toSdkPipeline` builds the SDK pipeline, and `fromSdkPipelineResults` turns its snapshot back into the rows `execute()` would have returned. This is how you reach `execute()` options the executor does not expose, such as the pipeline flavor of Query Explain:
+
+```ts
+import {
+  fromSdkPipelineResults,
+  toSdkPipeline,
+} from '@firestore-repository/google-cloud-firestore/pipeline';
+
+const pipeline = collection(users).where((field) => greaterThanOrEqual(field('profile.age'), 20));
+
+const snapshot = await toSdkPipeline(db, pipeline).execute({
+  explainOptions: { mode: 'analyze', outputFormat: 'text' },
+});
+
+console.log(snapshot.explainStats?.text);
+
+// Same rows, and the same type, as `pipe.execute(pipeline)` returns
+const rows = fromSdkPipelineResults(pipeline, snapshot);
+```
+
+What comes back from these is an ordinary SDK object, so its results are SDK snapshots rather than this library's models. Pipelines have `fromSdkPipelineResults` for the way back; for queries, decoding the snapshot is up to you.

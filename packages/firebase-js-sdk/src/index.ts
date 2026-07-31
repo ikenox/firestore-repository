@@ -38,7 +38,7 @@ import {
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import type { FilterExpression, Query } from 'firestore-repository/query';
+import { type FilterExpression, type Query, queryCollection } from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
@@ -61,7 +61,20 @@ import { assertNever } from 'firestore-repository/util';
 import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
 
 /** Platform-specific environment types for Firebase JS SDK */
-export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
+export type Env = { transaction: Transaction; writeBatch: WriteBatch };
+
+/**
+ * Builds the `@firebase/firestore` query this library would run for `query`,
+ * without running it.
+ *
+ * This is the escape hatch to SDK features the repository interface does not
+ * wrap, and to ones this library cannot express — `getDocsFromCache()`,
+ * `getCountFromServer()`, and whatever the SDK gains next. The returned query is
+ * an ordinary SDK object, so its results are SDK snapshots, not this library's
+ * models: decoding them back is the caller's job.
+ */
+export const toSdkQuery = <T extends Collection>(db: Firestore, query: Query<T>): FirestoreQuery =>
+  buildQueryConverter(db, queryCollection(query)).query(query);
 
 /** Creates a repository for a root collection using plain document types */
 export const rootCollectionRepository = <T extends RootCollection>(
@@ -218,13 +231,31 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   };
 };
 
-export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
-  const decodeSchema = buildDecodeSchema(coll.schema);
-  const encodeFilterValue = buildEncodeFilterValue(coll.schema, db);
-  const encodeSchema = buildEncodeSchema(coll.schema, db);
+/**
+ * @internal Converts an SDK document reference into this library's tuple form.
+ * Shared with the pipeline adapter, which resolves row identities the same way.
+ */
+export const fromSdkDocRef = <T extends Collection>(ref: FirestoreDocumentReference): DocRef<T> => {
+  const docRef: string[] = [];
 
-  const toFirestore = {
-    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
+  let currentRef: FirestoreDocumentReference | null = ref;
+  while (currentRef != null) {
+    docRef.push(currentRef.id);
+    currentRef = currentRef.parent.parent;
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
+  return docRef.reverse() as DocRef<T>;
+};
+
+/**
+ * @internal Shared conversion helpers between this library's types and the SDK's.
+ * Exported only so the pipeline adapter in this package can reuse them — the
+ * supported entry points are {@link toSdkQuery} and the repository factories.
+ */
+const buildQueryConverter = <T extends Collection>(db: Firestore, coll: T) => {
+  const encodeFilterValue = buildEncodeFilterValue(coll.schema, db);
+
+  const converter = {
     query: (query: Query<T>): FirestoreQuery => {
       let base: FirestoreQuery;
       if ('collection' in query.base) {
@@ -232,7 +263,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
           ? collectionGroup(db, query.base.collection.name)
           : collection(db, collectionPath(query.base.collection, query.base.parent));
       } else if ('extends' in query.base) {
-        base = toFirestore.query(query.base.extends);
+        base = converter.query(query.base.extends);
       } else {
         return assertNever(query.base);
       }
@@ -248,7 +279,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         (acc, constraint) => {
           switch (constraint.kind) {
             case 'where': {
-              const f = toFirestore.filter(constraint.condition);
+              const f = converter.filter(constraint.condition);
               acc.filter = acc.filter ? and(acc.filter, f) : f;
               break;
             }
@@ -306,13 +337,29 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
             encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
           );
         case 'and':
-          return and(...expr.filters.map(toFirestore.filter));
+          return and(...expr.filters.map(converter.filter));
         case 'or':
-          return or(...expr.filters.map(toFirestore.filter));
+          return or(...expr.filters.map(converter.filter));
         default:
           return assertNever(expr);
       }
     },
+  };
+  return converter;
+};
+
+/**
+ * @internal Shared conversion helpers between this library's types and the SDK's.
+ * Exported only so the pipeline adapter in this package can reuse them — the
+ * supported entry points are {@link toSdkQuery} and the repository factories.
+ */
+export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
+  const decodeSchema = buildDecodeSchema(coll.schema);
+  const encodeSchema = buildEncodeSchema(coll.schema, db);
+
+  const toFirestore = {
+    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
+    ...buildQueryConverter(db, coll),
   };
 
   const fromFirestore = {
@@ -345,17 +392,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         throw new DocumentDecodeError(documentPath, e);
       }
     },
-    docRef: (ref: FirestoreDocumentReference): DocRef<T> => {
-      const docRef: string[] = [];
-
-      let currentRef: FirestoreDocumentReference | null = ref;
-      while (currentRef != null) {
-        docRef.push(currentRef.id);
-        currentRef = currentRef.parent.parent;
-      }
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- cannot infer type here
-      return docRef.reverse() as DocRef<T>;
-    },
+    docRef: (ref: FirestoreDocumentReference): DocRef<T> => fromSdkDocRef(ref),
   };
 
   const batchWriteOperation = async <U>(

@@ -17,8 +17,13 @@ import {
   repositoryWithMapper as googleCloudFirestoreRepositoryWithMapper,
   rootCollectionRepository as googleCloudFirestoreRepository,
   subcollectionRepository as googleCloudFirestoreSubcollectionRepository,
+  toSdkQuery,
 } from '@firestore-repository/google-cloud-firestore';
-import { executor as googleCloudFirestorePipelineExecutor } from '@firestore-repository/google-cloud-firestore/pipeline';
+import {
+  executor as googleCloudFirestorePipelineExecutor,
+  fromSdkPipelineResults,
+  toSdkPipeline,
+} from '@firestore-repository/google-cloud-firestore/pipeline';
 import { Firestore } from '@google-cloud/firestore';
 import { randomString, uniqueCollection } from 'firestore-repository/__test__/util';
 import { average, count, sum } from 'firestore-repository/aggregate';
@@ -138,6 +143,10 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     createRepository: <T extends RootCollection>(
       collection: T,
     ) => Repository<T, RootCollectionPlainModel<T>, Env>;
+    // README's "Accessing the underlying SDK": the same rows, obtained through
+    // `toSdkPipeline` / `fromSdkPipelineResults` instead of the executor. Only
+    // the backend adapter supplies it — Query Explain is a backend-SDK feature.
+    executeViaSdk?: PipelineQueryExecutor['execute'];
   };
 }) => {
   const repository = createRepository({ ...users, name: `${users.name}-${randomString()}` });
@@ -346,6 +355,20 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
         projected.map(userMapper.fromFirestore);
       };
     });
+
+    it.skipIf(!pipeline?.executeViaSdk)('accessing the underlying SDK', async () => {
+      const rows = await pipeline!.executeViaSdk!(
+        pipelineCollection(authors)
+          .where((field) => pipelineGreaterThanOrEqual(field('profile.age'), 20))
+          .sort((field) => [pipelineAsc(field('name'))])
+          .limit(10),
+      );
+
+      // The escape hatch decodes back to the rows `execute()` would have
+      // returned, identity included — so the same mapper still applies.
+      const found: User[] = rows.map(userMapper.fromFirestore);
+      console.log(found);
+    });
   });
 };
 
@@ -438,9 +461,33 @@ describe('README example', () => {
               executor: googleCloudFirestorePipelineExecutor(enterpriseDb),
               createRepository: (collection) =>
                 googleCloudFirestoreRepository(enterpriseDb, collection),
+              executeViaSdk: async (p) => {
+                const snapshot = await toSdkPipeline(enterpriseDb, p).execute({
+                  explainOptions: { mode: 'analyze', outputFormat: 'text' },
+                });
+                console.log(snapshot.explainStats?.text);
+                return fromSdkPipelineResults(p, snapshot);
+              },
             },
           }
         : {}),
+    });
+
+    describe('Accessing the underlying SDK', () => {
+      const q = query({ collection: users }, where(gte('profile.age', 20)), limit(10));
+
+      it('builds the SDK query', () => {
+        const sdkQuery = toSdkQuery(db, q);
+        console.log(sdkQuery);
+      });
+
+      // Query Explain needs a real backend — the emulator answers any explain
+      // request with "No explain results" — so this is type-checked only.
+      const explain = async () => {
+        const { metrics } = await toSdkQuery(db, q).explain({ analyze: true });
+        console.log(metrics.planSummary.indexesUsed);
+        console.log(metrics.executionStats?.resultsReturned);
+      };
     });
   });
 });
