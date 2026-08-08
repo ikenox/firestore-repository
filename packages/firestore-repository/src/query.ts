@@ -32,8 +32,8 @@ export type Query<T extends Collection = Collection> = {
    * (probed). Their values are already paired with the field each belongs to;
    * see {@link query}.
    */
-  start?: ResolvedStartBound<T['schema']>;
-  end?: ResolvedEndBound<T['schema']>;
+  start?: ResolvedStartBound<T['schema']> | undefined;
+  end?: ResolvedEndBound<T['schema']> | undefined;
 };
 
 /**
@@ -132,10 +132,8 @@ export const query = <T extends Collection>(
     kind: 'query',
     source,
     constraints: listed,
-    ...(start !== undefined
-      ? { start: { ...start, cursor: resolveCursor(start.cursor, ordering) } }
-      : {}),
-    ...(end !== undefined ? { end: { ...end, cursor: resolveCursor(end.cursor, ordering) } } : {}),
+    start: start && { ...start, cursor: resolveCursor(start.cursor, ordering) },
+    end: end && { ...end, cursor: resolveCursor(end.cursor, ordering) },
   };
 };
 
