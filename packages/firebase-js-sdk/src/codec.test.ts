@@ -141,6 +141,41 @@ describe('buildEncodeFilterValue', () => {
     expect(() => encode('author', '==', ['Posts', 'p1'])).toThrow();
     expect(() => encode('anyRef', '==', ['odd-length'])).toThrow();
   });
+
+  // Built schemas are memoized across calls, and encoding a reference binds the
+  // `Firestore` instance into the schema — so the memo has to be keyed by the
+  // database as well as the schema. Reusing one schema across databases is what
+  // a dropped database key would silently corrupt: the result is a structurally
+  // valid reference pointing at the wrong database, not an error.
+  describe('encoders stay bound to the database they were built for', () => {
+    const otherDb = getFirestore(
+      initializeApp({ projectId: 'codec-guard-test-other' }, 'codec-guard-test-other'),
+    );
+
+    it('filter operands', () => {
+      const encodeOther = buildEncodeFilterValue(schema, otherDb);
+
+      expect(encode('author', '==', ['Authors', 'a1'])).toStrictEqual(refDoc('Authors/a1'));
+      expect(encodeOther('author', '==', ['Authors', 'a1'])).toStrictEqual(
+        doc(otherDb, 'Authors/a1'),
+      );
+      expect(encodeOther('author', '==', ['Authors', 'a1'])).not.toStrictEqual(
+        refDoc('Authors/a1'),
+      );
+    });
+
+    it('document data', () => {
+      const docSchema = { author: docRef(authors) };
+      const written = { author: ['Authors', 'a1'] };
+
+      expect(buildEncodeSchema(docSchema, db).parse(written)).toStrictEqual({
+        author: refDoc('Authors/a1'),
+      });
+      expect(buildEncodeSchema(docSchema, otherDb).parse(written)).toStrictEqual({
+        author: doc(otherDb, 'Authors/a1'),
+      });
+    });
+  });
 });
 
 describe('array server operations', () => {

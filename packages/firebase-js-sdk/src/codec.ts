@@ -35,8 +35,49 @@ type ZodAny = z.ZodType<any, any>;
 export const isBytes = (v: unknown) => v instanceof FirestoreBytes;
 export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumentReference;
 
+/**
+ * Built schemas, shared by every caller that names the same schema. Building
+ * one walks the whole descriptor tree, which dominates the work of a repeated
+ * conversion, and the callers that would otherwise hold the memo are built per
+ * call by design (`toSdkQuery`, and a pipeline's row decoder).
+ *
+ * Decoding is database-independent, so it is cached against the schema alone.
+ * Encoding is not: it turns a `RefPath` into a `DocumentReference` via
+ * `doc(db, ...)`, binding that `Firestore` instance into the schema, so two
+ * databases cannot share one. Everything is held weakly and dies with the
+ * schema (or, for the per-database half, with the database).
+ */
+const schemaCaches = new WeakMap<DocumentSchema, SchemaCache>();
+
+type SchemaCache = {
+  decode?: z.ZodObject<z.ZodRawShape>;
+  perDb: WeakMap<Firestore, DbSchemaCache>;
+};
+
+type DbSchemaCache = { encode?: z.ZodObject<z.ZodRawShape>; operands: Map<string, ZodAny> };
+
+const cacheFor = (schema: DocumentSchema): SchemaCache => {
+  let cache = schemaCaches.get(schema);
+  if (cache === undefined) {
+    cache = { perDb: new WeakMap() };
+    schemaCaches.set(schema, cache);
+  }
+  return cache;
+};
+
+const dbCacheFor = (schema: DocumentSchema, db: Firestore): DbSchemaCache => {
+  const { perDb } = cacheFor(schema);
+  let cache = perDb.get(db);
+  if (cache === undefined) {
+    cache = { operands: new Map() };
+    perDb.set(db, cache);
+  }
+  return cache;
+};
+
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
-  return z.object(
+  const cache = cacheFor(schema);
+  cache.decode ??= z.object(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildDecodeField(v);
@@ -44,6 +85,7 @@ export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawS
       }),
     ),
   );
+  return cache.decode;
 }
 
 function buildDecodeField(fieldType: FieldType): ZodAny {
@@ -110,7 +152,8 @@ export function buildEncodeSchema(
   schema: DocumentSchema,
   db: Firestore,
 ): z.ZodObject<z.ZodRawShape> {
-  return z.object(
+  const cache = dbCacheFor(schema, db);
+  cache.encode ??= z.object(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildEncodeField(v, db);
@@ -118,6 +161,7 @@ export function buildEncodeSchema(
       }),
     ),
   );
+  return cache.encode;
 }
 
 function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
@@ -212,33 +256,6 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
 }
 
 /**
- * Operand schemas, shared across every call that names the same schema and
- * database. Building one is expensive enough to dominate query conversion when
- * repeated, and `toSdkQuery` builds its converter per call by design, so the
- * memo cannot live in the converter's closure.
- *
- * The database is part of the key because encoding a document ref binds the
- * `Firestore` instance into the schema (`doc(db, ...)`), so two databases
- * cannot share one. Both keys are held weakly: entries die with the schema or
- * the database they belong to.
- */
-const operandSchemaCaches = new WeakMap<Firestore, WeakMap<DocumentSchema, Map<string, ZodAny>>>();
-
-const operandSchemaCache = (schema: DocumentSchema, db: Firestore): Map<string, ZodAny> => {
-  let perDb = operandSchemaCaches.get(db);
-  if (perDb === undefined) {
-    perDb = new WeakMap();
-    operandSchemaCaches.set(db, perDb);
-  }
-  let perSchema = perDb.get(schema);
-  if (perSchema === undefined) {
-    perSchema = new Map();
-    perDb.set(schema, perSchema);
-  }
-  return perSchema;
-};
-
-/**
  * Builds the encoder for filter-condition operands, memoizing the operand
  * schema per (field path, operator) like `buildEncodeSchema` builds the
  * write schema once per collection. The operand schema reuses the write
@@ -257,15 +274,15 @@ export function buildEncodeFilterValue(
   schema: DocumentSchema,
   db: Firestore,
 ): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
-  const operandSchemas = operandSchemaCache(schema, db);
+  const { operands } = dbCacheFor(schema, db);
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
-    let operandSchema = operandSchemas.get(key);
+    let operandSchema = operands.get(key);
     if (operandSchema === undefined) {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
       const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
       operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
-      operandSchemas.set(key, operandSchema);
+      operands.set(key, operandSchema);
     }
     return operandSchema.parse(value);
   };
