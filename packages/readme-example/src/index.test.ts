@@ -30,7 +30,7 @@ import {
 import { asc as pipelineAsc } from 'firestore-repository/pipelines/ordering';
 import type { PipelineQueryExecutor } from 'firestore-repository/pipelines/pipeline';
 import { collection as pipelineCollection } from 'firestore-repository/pipelines/source';
-import { eq, gte, limit, query, where } from 'firestore-repository/query';
+import { collection, eq, gte, limit, query, where } from 'firestore-repository/query';
 import type {
   AppModel,
   FirestoreEnvironment,
@@ -174,7 +174,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
   describe('Query', () => {
     const q = query(
-      { collection: users },
+      collection(users),
       where(gte('profile.age', 20)),
       where(eq('profile.gender', 'male')),
       limit(10),

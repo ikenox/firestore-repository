@@ -38,7 +38,7 @@ import {
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import type { FilterExpression, Query } from 'firestore-repository/query';
+import type { FilterExpression, Query, QuerySource } from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
@@ -225,19 +225,21 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
 
   const toFirestore = {
     docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
-    query: (query: Query<T>): FirestoreQuery => {
-      let base: FirestoreQuery;
-      if ('collection' in query.base) {
-        base = query.base.group
-          ? collectionGroup(db, query.base.collection.name)
-          : collection(db, collectionPath(query.base.collection, query.base.parent));
-      } else if ('extends' in query.base) {
-        base = toFirestore.query(query.base.extends);
-      } else {
-        return assertNever(query.base);
+    source: (source: QuerySource<T>): FirestoreQuery => {
+      switch (source.kind) {
+        case 'collection':
+          return collection(db, collectionPath(source.collection, source.parent));
+        case 'collectionGroup':
+          return collectionGroup(db, source.collection.name);
+        case 'query':
+          return toFirestore.query(source);
+        default:
+          return assertNever(source);
       }
-
-      if (!query.constraints || query.constraints.length === 0) {
+    },
+    query: (query: Query<T>): FirestoreQuery => {
+      const base = toFirestore.source(query.source);
+      if (query.constraints.length === 0) {
         return base;
       }
 

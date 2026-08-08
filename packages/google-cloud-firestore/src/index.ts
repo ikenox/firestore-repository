@@ -2,7 +2,7 @@ import type * as firestore from '@google-cloud/firestore';
 import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import type { FilterExpression, Query } from 'firestore-repository/query';
+import type { FilterExpression, Query, QuerySource } from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
@@ -258,51 +258,52 @@ export const buildFirestoreUtilities = <T extends Collection>(
 
   const toFirestore = {
     docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
-    query: (query: Query<T>): firestore.Query => {
-      let base: firestore.Query;
-      if ('collection' in query.base) {
-        base = query.base.group
-          ? db.collectionGroup(query.base.collection.name)
-          : db.collection(collectionPath(query.base.collection, query.base.parent));
-      } else if ('extends' in query.base) {
-        base = toFirestore.query(query.base.extends);
-      } else {
-        return assertNever(query.base);
+    source: (source: QuerySource<T>): firestore.Query => {
+      switch (source.kind) {
+        case 'collection':
+          return db.collection(collectionPath(source.collection, source.parent));
+        case 'collectionGroup':
+          return db.collectionGroup(source.collection.name);
+        case 'query':
+          return toFirestore.query(source);
+        default:
+          return assertNever(source);
       }
-      return (
-        query.constraints?.reduce((q, constraint) => {
-          switch (constraint.kind) {
-            case 'where':
-              return q.where(toFirestore.filter(constraint.condition));
-            case 'orderBy':
-              return q.orderBy(constraint.field, constraint.direction);
-            case 'limit':
-              return q.limit(constraint.limit);
-            case 'limitToLast':
-              return q.limitToLast(constraint.limit);
-            case 'offset':
-              return q.offset(constraint.offset);
-            case 'startAt': {
-              const { cursor } = constraint;
-              return q.startAt(...cursor);
-            }
-            case 'startAfter': {
-              const { cursor } = constraint;
-              return q.startAfter(...cursor);
-            }
-            case 'endAt': {
-              const { cursor } = constraint;
-              return q.endAt(...cursor);
-            }
-            case 'endBefore': {
-              const { cursor } = constraint;
-              return q.endBefore(...cursor);
-            }
-            default:
-              return assertNever(constraint);
+    },
+    query: (query: Query<T>): firestore.Query => {
+      const base = toFirestore.source(query.source);
+      return query.constraints.reduce((q, constraint) => {
+        switch (constraint.kind) {
+          case 'where':
+            return q.where(toFirestore.filter(constraint.condition));
+          case 'orderBy':
+            return q.orderBy(constraint.field, constraint.direction);
+          case 'limit':
+            return q.limit(constraint.limit);
+          case 'limitToLast':
+            return q.limitToLast(constraint.limit);
+          case 'offset':
+            return q.offset(constraint.offset);
+          case 'startAt': {
+            const { cursor } = constraint;
+            return q.startAt(...cursor);
           }
-        }, base) ?? base
-      );
+          case 'startAfter': {
+            const { cursor } = constraint;
+            return q.startAfter(...cursor);
+          }
+          case 'endAt': {
+            const { cursor } = constraint;
+            return q.endAt(...cursor);
+          }
+          case 'endBefore': {
+            const { cursor } = constraint;
+            return q.endBefore(...cursor);
+          }
+          default:
+            return assertNever(constraint);
+        }
+      }, base);
     },
     filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
       switch (expr.kind) {

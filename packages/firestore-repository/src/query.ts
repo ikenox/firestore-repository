@@ -8,66 +8,87 @@ import {
   type FieldType,
   type FieldTypeOfPath,
   type FieldValue,
+  type RootCollection,
+  type SubCollection,
 } from './schema.js';
 import { assertNever } from './util.js';
 
 /**
- * A universal query definition
+ * A universal query definition: a {@link QuerySource} plus the constraints
+ * applied to it.
+ *
+ * A query is ITSELF a source, which is what makes extending one
+ * (`query(existing, limit(5))`) an ordinary call rather than a separate input
+ * form — the same relationship the SDK has, where `query()` accepts a
+ * `CollectionReference` or another `Query` alike.
  */
 export type Query<T extends Collection = Collection> = {
-  base: QueryBase<T>;
-  constraints?: QueryConstraint<T['schema']>[] | undefined;
+  kind: 'query';
+  source: QuerySource<T>;
+  constraints: QueryConstraint<T['schema']>[];
 };
 
 /**
- * A starting point to build a new query
+ * Where a query's rows come from — a single collection instance, a collection
+ * group, or another query.
+ *
+ * Deliberately built by the three factories below rather than accepted as an
+ * object literal shaped per collection flavor. A literal would have to say
+ * "`parent` is required for a subcollection and absent for a root collection"
+ * as a CONDITIONAL type, and a conditional over an unresolved type parameter
+ * never resolves: TypeScript then demands a value assignable to BOTH branches,
+ * which no literal satisfies. That made every generic helper —
+ * `<T extends RootCollection>(c: T) => query(...)` — impossible to write. Each
+ * factory instead has a fixed arity, so nothing needs deferring.
+ *
+ * The member shapes mirror the pipeline's {@link InputStage} of the same names.
  */
-export type QueryBase<T extends Collection> =
-  /**
-   * Target collection to query
-   */
-  | { collection: T; parent: ParentDocRef<T>; group?: false }
-  /**
-   * Collection group query
-   */
-  | { collection: T; group: true }
-  /**
-   * Extends another query
-   */
-  | { extends: Query<T> };
+export type QuerySource<T extends Collection = Collection> =
+  | CollectionSource<T>
+  | CollectionGroupSource<T>
+  | Query<T>;
 
-/** Input type for specifying the base of a query */
-export type QueryBaseInput<T extends Collection = Collection> =
-  /**
-   * Target collection to query
-   */
-  | (T['parent']['length'] extends 0
-      ? // Root Collection
-        { collection: T; group?: false; parent?: ParentDocRef<T> }
-      : // Subcollection
-        { collection: T; group?: false; parent: ParentDocRef<T> })
-  /**
-   * Collection group query
-   */
-  | { collection: T; group: true }
-  /**
-   * Extends another query
-   */
-  | { extends: Query<T> };
+/** A single collection instance; `parent` locates it when it is a subcollection. */
+export type CollectionSource<T extends Collection = Collection> = {
+  kind: 'collection';
+  collection: T;
+  parent: ParentDocRef<T>;
+};
+
+/** Every instance of a collection across the database, regardless of parent. */
+export type CollectionGroupSource<T extends Collection = Collection> = {
+  kind: 'collectionGroup';
+  collection: T;
+};
+
+/** A root collection, which has no parent document to locate it. */
+export const collection = <T extends RootCollection>(def: T): CollectionSource<T> => ({
+  kind: 'collection',
+  collection: def,
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a root collection's `parent` is `[]`, which the compiler cannot reduce `ParentDocRef<T>` to over an unresolved `T`
+  parent: [] as ParentDocRef<T>,
+});
+
+/** One instance of a subcollection, located by its parent document ids. */
+export const subcollection = <T extends SubCollection>(
+  def: T,
+  parent: ParentDocRef<T>,
+): CollectionSource<T> => ({ kind: 'collection', collection: def, parent });
+
+/** Every instance of a collection across the database, regardless of parent. */
+export const collectionGroup = <T extends Collection>(def: T): CollectionGroupSource<T> => ({
+  kind: 'collectionGroup',
+  collection: def,
+});
 
 /**
- * Builds a new query
+ * Builds a query over a source. Passing an existing {@link Query} extends it —
+ * a query is a source (see {@link QuerySource}).
  */
 export const query = <T extends Collection>(
-  base: QueryBaseInput<T>,
+  source: QuerySource<T>,
   ...constraints: QueryConstraint<T['schema']>[]
-): Query<T> => {
-  if ('extends' in base || base.group) {
-    return { base, constraints };
-  }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- schema without validation
-  return { base: { ...base, parent: base.parent ?? ([] as ParentDocRef<T>) }, constraints };
-};
+): Query<T> => ({ kind: 'query', source, constraints });
 
 /**
  * A query constraint
