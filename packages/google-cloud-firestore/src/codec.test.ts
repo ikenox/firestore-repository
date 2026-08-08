@@ -352,11 +352,18 @@ describe('buildEncodeCursorValue', () => {
     expect(() => encode('rank', 'not a number')).toThrow();
   });
 
-  // The document key is the one field the two SDKs disagree on, so it is left
-  // to the caller and the SDK — see the function's JSDoc.
-  it('passes a __name__ cursor through untouched', () => {
-    expect(encode('__name__', 'd1')).toBe('d1');
-    const ref = db.doc('Authors/a1');
-    expect(encode('__name__', ref)).toBe(ref);
+  // The document key takes a `RefPath` like a `__name__` filter does. This SDK
+  // wants the same `DocumentReference` for both, so the descriptor's own
+  // encoder covers it with nothing extra.
+  it('encodes a __name__ cursor to a DocumentReference', () => {
+    expect(encode('__name__', ['Authors', 'a1'])).toStrictEqual(db.doc('Authors/a1'));
+    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'])).toStrictEqual(
+      db.doc('Authors/a1/Posts/p1'),
+    );
+  });
+
+  it('rejects a __name__ cursor that is not a reference path', () => {
+    expect(() => encode('__name__', 'a1')).toThrow();
+    expect(() => encode('__name__', ['odd'])).toThrow();
   });
 });

@@ -177,6 +177,31 @@ const resolveCursor = <T extends DocumentSchema>(
     return { value, field };
   });
 
+/** Whether a query reads one collection instance, or every instance of it. */
+export type QueryScope = 'collection' | 'collectionGroup';
+
+/**
+ * The scope a query reads in — the kind of input its source chain bottoms out
+ * at, however many extensions sit on top.
+ *
+ * It matters to executors because the document key means different things in
+ * the two: within one collection a key is a document id, while across a
+ * collection group it has to name the instance too. Only the client SDK makes
+ * that visible, in the cursor form it accepts for `orderBy('__name__')`.
+ */
+export const queryScope = <T extends Collection>(source: QuerySource<T>): QueryScope => {
+  switch (source.kind) {
+    case 'collection':
+      return 'collection';
+    case 'collectionGroup':
+      return 'collectionGroup';
+    case 'query':
+      return queryScope(source.source);
+    default:
+      return assertNever(source);
+  }
+};
+
 /**
  * The ordering a source already carries — an extended query contributes its
  * own, in the order an executor applies the chain.
