@@ -231,17 +231,16 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
  */
-export function buildEncodeFilterValue(
-  schema: DocumentSchema,
+export function buildEncodeFilterValue<S extends DocumentSchema>(
+  schema: S,
   db: firestore.Firestore,
-): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
+): (fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown {
   const operandSchemas = new Map<string, ZodAny>();
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
     let operandSchema = operandSchemas.get(key);
     if (operandSchema === undefined) {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
-      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
       operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
       operandSchemas.set(key, operandSchema);
     }
@@ -270,10 +269,10 @@ export function buildEncodeFilterValue(
  * typing; until then a cursor on the key takes whatever the SDK takes, as it
  * did before cursor values were encoded at all.
  */
-export function buildEncodeCursorValue(
-  schema: DocumentSchema,
+export function buildEncodeCursorValue<S extends DocumentSchema>(
+  schema: S,
   db: firestore.Firestore,
-): (fieldPath: string, value: unknown) => unknown {
+): (fieldPath: DocFieldPath<S>, value: unknown) => unknown {
   const valueSchemas = new Map<string, ZodAny>();
   return (fieldPath, value) => {
     if (fieldPath === '__name__') {
@@ -281,8 +280,7 @@ export function buildEncodeCursorValue(
     }
     let valueSchema = valueSchemas.get(fieldPath);
     if (valueSchema === undefined) {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from an `orderBy` already typed against the schema
-      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
       valueSchema = buildEncodeField(fieldType, db);
       valueSchemas.set(fieldPath, valueSchema);
     }

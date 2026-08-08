@@ -14,6 +14,7 @@ import {
   bool,
   bytes as bytesType,
   docRef,
+  type DocFieldPath,
   double,
   type FieldType,
   geoPoint as geoPointType,
@@ -338,7 +339,7 @@ describe('buildEncodeCursorValue', () => {
   };
   const encode = buildEncodeCursorValue(schema, db);
 
-  const cases: [string, unknown, unknown][] = [
+  const cases: [DocFieldPath<typeof schema>, unknown, unknown][] = [
     ['author', ['Authors', 'a1'], doc(db, 'Authors/a1')],
     ['spot', { latitude: 12.3, longitude: 45.6 }, new GeoPoint(12.3, 45.6)],
     ['at', when, Timestamp.fromDate(when)],
