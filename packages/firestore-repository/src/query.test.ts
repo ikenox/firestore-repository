@@ -4,6 +4,8 @@ import { authorsCollection, postsCollection } from './__test__/specification.js'
 import {
   collectionGroup,
   collection,
+  constraintsWithOrdering,
+  encodeCursor,
   type FilterOperand,
   filterOperand,
   gte,
@@ -94,6 +96,62 @@ describe('query', () => {
           query(collection(c), where(gte('rank', min)), orderBy('rank', 'desc'), limit(20));
         expectTypeOf(f(authorsCollection, 1)).toEqualTypeOf<Query<typeof authorsCollection>>();
       });
+    });
+  });
+
+  // The rule a cursor depends on: which `orderBy` clauses are in effect where
+  // it appears. It lives here rather than in each executor, so it is pinned
+  // here too — an executor only encodes a value against the field it is given.
+  describe('constraintsWithOrdering', () => {
+    const orderingsOf = (q: Query<typeof authorsCollection>) =>
+      constraintsWithOrdering(q).map(({ ordering }) => ordering);
+
+    it('is empty until an orderBy has been applied', () => {
+      expect(orderingsOf(query(collection(authorsCollection), limit(1)))).toStrictEqual([[]]);
+      expect(orderingsOf(query(collectionGroup(authorsCollection), limit(1)))).toStrictEqual([[]]);
+    });
+
+    // A clause orders the cursors that FOLLOW it: its own entry must not
+    // already contain it, or every cursor would pair one field too far along.
+    it('orders the constraints after a clause, not the clause itself', () => {
+      expect(
+        orderingsOf(
+          query(collection(authorsCollection), orderBy('rank'), orderBy('name'), limit(1)),
+        ),
+      ).toStrictEqual([[], ['rank'], ['rank', 'name']]);
+    });
+
+    it('inherits the ordering of an extended query, ahead of its own', () => {
+      const base = query(collection(authorsCollection), orderBy('rank'));
+      expect(orderingsOf(query(base, orderBy('name'), limit(1)))).toStrictEqual([
+        ['rank'],
+        ['rank', 'name'],
+      ]);
+    });
+
+    it('inherits through more than one level of extension', () => {
+      const base = query(collection(authorsCollection), orderBy('rank'));
+      const extended = query(base, orderBy('name'));
+      expect(orderingsOf(query(extended, limit(1)))).toStrictEqual([['rank', 'name']]);
+    });
+  });
+
+  describe('encodeCursor', () => {
+    const encode = (fieldPath: string, value: unknown) => `${fieldPath}=${String(value)}`;
+
+    it('encodes each value against the field at its own position', () => {
+      expect(encodeCursor([1, 'a'], ['rank', 'name'], encode)).toStrictEqual(['rank=1', 'name=a']);
+    });
+
+    // The SDKs reject an over-long cursor themselves, so the rule stays theirs
+    // rather than being restated as an error here.
+    it('passes through a value with no field to pair with', () => {
+      expect(encodeCursor([1, 'a'], ['rank'], encode)).toStrictEqual(['rank=1', 'a']);
+      expect(encodeCursor([1], [], encode)).toStrictEqual([1]);
+    });
+
+    it('leaves an unordered cursor untouched', () => {
+      expect(encodeCursor([], ['rank'], encode)).toStrictEqual([]);
     });
   });
 

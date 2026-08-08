@@ -39,8 +39,10 @@ import {
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import {
+  constraintsWithOrdering,
+  type Cursor,
+  encodeCursor,
   type FilterExpression,
-  orderByPaths,
   type Query,
   type QuerySource,
 } from 'firestore-repository/query';
@@ -254,24 +256,15 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         return base;
       }
 
-      // The ordering is accumulated as the constraints are applied rather than
-      // read off the finished query: a cursor pairs with the `orderBy` clauses
-      // that PRECEDE it, which is also where the SDK validates the pairing.
-      const ordered = orderByPaths<T>(query.source);
-      // A value with no ordered field to pair with is passed through — the SDK
-      // rejects such a cursor itself, and that is the one place the rule
-      // should be stated.
-      const cursorOf = (values: readonly unknown[]): unknown[] =>
-        values.map((value, i) => {
-          const fieldPath = ordered[i];
-          return fieldPath === undefined ? value : encodeCursorValue(fieldPath, value);
-        });
-
-      const { filter, nonFilter } = query.constraints.reduce<{
+      // Which field each cursor value belongs to is `constraintsWithOrdering`'s
+      // to work out; this only has to encode against the field it is handed.
+      const { filter, nonFilter } = constraintsWithOrdering(query).reduce<{
         filter?: FirestoreQueryFilterConstraint;
         nonFilter: QueryNonFilterConstraint[];
       }>(
-        (acc, constraint) => {
+        (acc, { constraint, ordering }) => {
+          const cursorOf = (values: Cursor<T['schema']>): unknown[] =>
+            encodeCursor(values, ordering, encodeCursorValue);
           switch (constraint.kind) {
             case 'where': {
               const f = toFirestore.filter(constraint.condition);
@@ -279,7 +272,6 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
               break;
             }
             case 'orderBy':
-              ordered.push(constraint.field);
               acc.nonFilter.push(orderBy(constraint.field, constraint.direction));
               break;
             case 'limit':

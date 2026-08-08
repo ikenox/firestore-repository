@@ -3,8 +3,10 @@ import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import {
+  constraintsWithOrdering,
+  type Cursor,
+  encodeCursor,
   type FilterExpression,
-  orderByPaths,
   type Query,
   type QuerySource,
 } from 'firestore-repository/query';
@@ -282,27 +284,17 @@ export const buildFirestoreUtilities = <T extends Collection>(
       }
     },
     query: (query: Query<T>): firestore.Query => {
-      // The ordering is accumulated as the constraints are applied rather than
-      // read off the finished query: a cursor pairs with the `orderBy` clauses
-      // that PRECEDE it, which is also where the SDK validates the pairing.
-      const ordered = orderByPaths<T>(query.source);
-      // A value with no ordered field to pair with is passed through — the SDK
-      // rejects such a cursor itself ("Too many cursor values specified"), and
-      // that is the one place the rule should be stated.
-      const cursorOf = (values: readonly unknown[]): unknown[] =>
-        values.map((value, i) => {
-          const fieldPath = ordered[i];
-          return fieldPath === undefined ? value : encodeCursorValue(fieldPath, value);
-        });
-
       let q = toFirestore.source(query.source);
-      for (const constraint of query.constraints) {
+      // Which field each cursor value belongs to is `constraintsWithOrdering`'s
+      // to work out; this only has to encode against the field it is handed.
+      for (const { constraint, ordering } of constraintsWithOrdering(query)) {
+        const cursorOf = (values: Cursor<T['schema']>): unknown[] =>
+          encodeCursor(values, ordering, encodeCursorValue);
         switch (constraint.kind) {
           case 'where':
             q = q.where(toFirestore.filter(constraint.condition));
             break;
           case 'orderBy':
-            ordered.push(constraint.field);
             q = q.orderBy(constraint.field, constraint.direction);
             break;
           case 'limit':

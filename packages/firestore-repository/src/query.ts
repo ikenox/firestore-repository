@@ -91,21 +91,68 @@ export const query = <T extends Collection>(
 ): Query<T> => ({ kind: 'query', source, constraints });
 
 /**
- * The `orderBy` field paths a source is ordered by, in the order an executor
- * applies them — an extended query contributes its own ordering first.
+ * The query's constraints in application order, each paired with the ordering
+ * in effect where it appears.
  *
- * Cursor values pair with that ordering POSITIONALLY: `startAfter(a, b)` means
- * "after `a` in the first ordered field and `b` in the second". Nothing on a
- * cursor value itself says which field it belongs to, so this list is what
- * tells an executor which field's descriptor to encode each value with — a
- * reference cursor has to reach Firestore as a reference, exactly as a filter
- * operand does.
+ * Cursor values pair with that ordering POSITIONALLY — `startAfter(a, b)`
+ * means "after `a` in the first ordered field and `b` in the second" — and
+ * nothing on a cursor value itself says which field it belongs to. The
+ * ordering in effect at a cursor is whatever an extended source contributed
+ * plus the `orderBy` clauses PRECEDING the cursor, which is also where the
+ * SDKs validate the pairing (probed: a longer cursor is rejected at the
+ * `startAfter()` call, and an `orderBy` after a cursor is refused outright).
+ *
+ * Resolved here rather than in each executor so the rule has ONE home. What is
+ * left to an executor — encoding a value against the field it is handed — is
+ * the only part that differs per platform. Pair with {@link encodeCursor}.
+ */
+export const constraintsWithOrdering = <T extends Collection>(
+  query: Query<T>,
+): OrderedConstraint<T['schema']>[] => {
+  const ordering = sourceOrdering(query.source);
+  return query.constraints.map((constraint) => {
+    // Snapshot before extending: a clause orders the cursors that FOLLOW it,
+    // and a cursor never coexists with its own clause.
+    const applied = { constraint, ordering: [...ordering] };
+    if (isOrderBy(constraint)) {
+      ordering.push(constraint.field);
+    }
+    return applied;
+  });
+};
+
+/** One constraint together with the ordering in effect where it is applied. */
+export type OrderedConstraint<T extends DocumentSchema = DocumentSchema> = {
+  constraint: QueryConstraint<T>;
+  ordering: DocFieldPath<T>[];
+};
+
+/**
+ * A cursor's values, each encoded against the field it pairs with.
+ *
+ * A value with no ordered field to pair with is passed through untouched: the
+ * SDKs reject such a cursor themselves ("Too many cursor values specified"),
+ * and that is the one place the rule should be stated.
+ */
+export const encodeCursor = <T extends DocumentSchema>(
+  cursor: Cursor<T>,
+  ordering: readonly DocFieldPath<T>[],
+  encode: (fieldPath: DocFieldPath<T>, value: unknown) => unknown,
+): unknown[] =>
+  cursor.map((value, i) => {
+    const fieldPath = ordering[i];
+    return fieldPath === undefined ? value : encode(fieldPath, value);
+  });
+
+/**
+ * The ordering a source already carries — an extended query contributes its
+ * own, in the order an executor applies the chain.
  *
  * There is no implicit trailing slot: Firestore requires exactly as many
  * cursor values as `orderBy` clauses, so ordering by the document key needs an
  * explicit `orderBy('__name__')` (probed).
  */
-export const orderByPaths = <T extends Collection>(
+const sourceOrdering = <T extends Collection>(
   source: QuerySource<T>,
 ): DocFieldPath<T['schema']>[] => {
   switch (source.kind) {
@@ -113,8 +160,10 @@ export const orderByPaths = <T extends Collection>(
     case 'collectionGroup':
       return [];
     case 'query':
+      // Its own clauses come after everything IT extends, so the recursion has
+      // to run to the bottom of the chain rather than stopping one level up.
       return [
-        ...orderByPaths(source.source),
+        ...sourceOrdering(source.source),
         ...source.constraints.filter(isOrderBy).map((constraint) => constraint.field),
       ];
     default:
