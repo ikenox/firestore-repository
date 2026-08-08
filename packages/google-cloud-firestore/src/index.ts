@@ -3,11 +3,12 @@ import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type {
-  Cursor,
   CursorValue,
+  EndBound,
   FilterExpression,
   Query,
   QuerySource,
+  StartBound,
 } from 'firestore-repository/query';
 import {
   type AppModel,
@@ -284,13 +285,7 @@ export const buildFirestoreUtilities = <T extends Collection>(
     },
     query: (query: Query<T>): firestore.Query => {
       let q = toFirestore.source(query.source);
-      // Which field each cursor value belongs to was settled when the query was
-      // built; this only has to encode each value against the field it carries.
       for (const constraint of query.constraints) {
-        const cursorOf = (values: Cursor<CursorValue<T['schema']>>): unknown[] =>
-          values.map(({ value, field }) =>
-            field === undefined ? value : encodeCursorValue(field, value),
-          );
         switch (constraint.kind) {
           case 'where':
             q = q.where(toFirestore.filter(constraint.condition));
@@ -307,23 +302,43 @@ export const buildFirestoreUtilities = <T extends Collection>(
           case 'offset':
             q = q.offset(constraint.offset);
             break;
-          case 'startAt':
-            q = q.startAt(...cursorOf(constraint.cursor));
-            break;
-          case 'startAfter':
-            q = q.startAfter(...cursorOf(constraint.cursor));
-            break;
-          case 'endAt':
-            q = q.endAt(...cursorOf(constraint.cursor));
-            break;
-          case 'endBefore':
-            q = q.endBefore(...cursorOf(constraint.cursor));
-            break;
           default:
             return assertNever(constraint);
         }
       }
+      // The bounds go last: the SDK only accepts a cursor once every clause it
+      // pairs with is already on the query.
+      if (query.start !== undefined) {
+        q = toFirestore.bound(q, query.start);
+      }
+      if (query.end !== undefined) {
+        q = toFirestore.bound(q, query.end);
+      }
       return q;
+    },
+    /**
+     * Applies a bound, encoding each cursor value against the field it carries
+     * — which field that is was settled when the query was built.
+     */
+    bound: (
+      q: firestore.Query,
+      bound: StartBound<CursorValue<T['schema']>> | EndBound<CursorValue<T['schema']>>,
+    ): firestore.Query => {
+      const values = bound.cursor.map(({ value, field }) =>
+        field === undefined ? value : encodeCursorValue(field, value),
+      );
+      switch (bound.kind) {
+        case 'startAt':
+          return q.startAt(...values);
+        case 'startAfter':
+          return q.startAfter(...values);
+        case 'endAt':
+          return q.endAt(...values);
+        case 'endBefore':
+          return q.endBefore(...values);
+        default:
+          return assertNever(bound);
+      }
     },
     filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
       switch (expr.kind) {

@@ -10,8 +10,11 @@ import {
   limit,
   orderBy,
   type Query,
+  endAt,
+  endBefore,
   query,
   startAfter,
+  startAt,
   subcollection,
   where,
 } from './query.js';
@@ -98,82 +101,76 @@ describe('query', () => {
     });
   });
 
-  // Cursor values pair with the ordering by POSITION, and nothing on a value
-  // says which field that is. `query` settles it at construction — both halves
-  // of the answer, the inherited ordering and the constraint list, are in hand
-  // only there — so a stored query already says what each value means.
-  describe('cursor resolution', () => {
-    const cursorOf = (q: Query<typeof authorsCollection>) =>
-      q.constraints.flatMap((constraint) =>
-        constraint.kind === 'startAfter' ? [constraint.cursor] : [],
-      );
-
-    it('leaves values unpaired when nothing is ordered', () => {
-      expect(cursorOf(query(collection(authorsCollection), startAfter(1)))).toStrictEqual([
-        [{ value: 1, field: undefined }],
-      ]);
-    });
+  // A query has ONE result window, not a sequence of them, so `query` lifts the
+  // bounds out of the constraint list — and pairs each of their values with the
+  // field it belongs to, which nothing on a value itself says.
+  describe('bounds', () => {
+    const authors = collection(authorsCollection);
 
     it('pairs each value with the field at its own position', () => {
-      expect(
-        cursorOf(
-          query(
-            collection(authorsCollection),
-            orderBy('rank'),
-            orderBy('name'),
-            startAfter(1, 'a'),
-          ),
-        ),
-      ).toStrictEqual([
-        [
+      const q = query(authors, orderBy('rank'), orderBy('name'), startAfter(1, 'a'));
+      expect(q.start).toStrictEqual({
+        kind: 'startAfter',
+        cursor: [
           { value: 1, field: 'rank' },
           { value: 'a', field: 'name' },
         ],
+      });
+    });
+
+    it('leaves values unpaired when nothing is ordered', () => {
+      expect(query(authors, startAfter(1)).start?.cursor).toStrictEqual([
+        { value: 1, field: undefined },
       ]);
     });
 
-    // A clause orders the cursors that FOLLOW it. If its own position counted,
-    // every cursor would pair one field too far along.
-    it('applies a clause only to the cursors after it', () => {
-      expect(
-        cursorOf(
-          query(collection(authorsCollection), startAfter(1), orderBy('rank'), startAfter(2)),
-        ),
-      ).toStrictEqual([[{ value: 1, field: undefined }], [{ value: 2, field: 'rank' }]]);
+    // Lifting the bound out is what makes this true: it pairs with the query's
+    // whole ordering, so where it sat among the arguments stops mattering.
+    it('pairs against the whole ordering, wherever the bound was written', () => {
+      const before = query(authors, startAfter(1, 'a'), orderBy('rank'), orderBy('name'));
+      const after = query(authors, orderBy('rank'), orderBy('name'), startAfter(1, 'a'));
+      expect(before.start).toStrictEqual(after.start);
     });
 
     it('inherits the ordering of an extended query, ahead of its own', () => {
-      const base = query(collection(authorsCollection), orderBy('rank'));
-      expect(cursorOf(query(base, orderBy('name'), startAfter(1, 'a')))).toStrictEqual([
-        [
-          { value: 1, field: 'rank' },
-          { value: 'a', field: 'name' },
-        ],
+      const base = query(authors, orderBy('rank'));
+      expect(query(base, orderBy('name'), startAfter(1, 'a')).start?.cursor).toStrictEqual([
+        { value: 1, field: 'rank' },
+        { value: 'a', field: 'name' },
       ]);
     });
 
     it('inherits through more than one level of extension', () => {
-      const base = query(collection(authorsCollection), orderBy('rank'));
-      const extended = query(base, orderBy('name'));
-      expect(cursorOf(query(extended, startAfter(1, 'a')))).toStrictEqual([
-        [
-          { value: 1, field: 'rank' },
-          { value: 'a', field: 'name' },
-        ],
+      const extended = query(query(authors, orderBy('rank')), orderBy('name'));
+      expect(query(extended, startAfter(1, 'a')).start?.cursor).toStrictEqual([
+        { value: 1, field: 'rank' },
+        { value: 'a', field: 'name' },
       ]);
     });
 
-    // The SDKs reject an over-long cursor themselves, so it is carried
-    // unpaired rather than rejected here.
+    // The SDKs reject an over-long cursor themselves, so it is carried unpaired
+    // rather than rejected here.
     it('leaves a value with no field to pair with unpaired', () => {
-      expect(
-        cursorOf(query(collection(authorsCollection), orderBy('rank'), startAfter(1, 'extra'))),
-      ).toStrictEqual([
-        [
-          { value: 1, field: 'rank' },
-          { value: 'extra', field: undefined },
-        ],
+      expect(query(authors, orderBy('rank'), startAfter(1, 'extra')).start?.cursor).toStrictEqual([
+        { value: 1, field: 'rank' },
+        { value: 'extra', field: undefined },
       ]);
+    });
+
+    // Matching the SDKs, where a second call replaces the first rather than
+    // narrowing the window further (probed).
+    it('keeps the last bound of each end', () => {
+      const q = query(authors, orderBy('rank'), startAfter(1), startAt(2), endBefore(9), endAt(8));
+      expect(q.start).toStrictEqual({ kind: 'startAt', cursor: [{ value: 2, field: 'rank' }] });
+      expect(q.end).toStrictEqual({ kind: 'endAt', cursor: [{ value: 8, field: 'rank' }] });
+    });
+
+    it('has neither bound when none was given', () => {
+      const q = query(authors, orderBy('rank'), limit(1));
+      expect(q.start).toBeUndefined();
+      expect(q.end).toBeUndefined();
+      // ...and the list keeps only what is not a bound.
+      expect(q.constraints.map(({ kind }) => kind)).toStrictEqual(['orderBy', 'limit']);
     });
   });
 

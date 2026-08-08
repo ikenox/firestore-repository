@@ -25,12 +25,15 @@ import { assertNever } from './util.js';
 export type Query<T extends Collection = Collection> = {
   kind: 'query';
   source: QuerySource<T>;
+  constraints: ListConstraint<T['schema']>[];
   /**
-   * Cursor values here are already paired with the field each one belongs to —
-   * {@link query} resolves that once, so a stored query says what it means
-   * without anyone having to re-walk the ordering.
+   * The bounds of the result window, at most one each — Firestore has no
+   * notion of several, and a repeated one simply replaces its predecessor
+   * (probed). Their values are already paired with the field each belongs to;
+   * see {@link query}.
    */
-  constraints: QueryConstraint<T['schema'], CursorValue<T['schema']>>[];
+  start?: StartBound<CursorValue<T['schema']>>;
+  end?: EndBound<CursorValue<T['schema']>>;
 };
 
 /**
@@ -93,53 +96,74 @@ export const collectionGroup = <T extends Collection>(def: T): CollectionGroupSo
 export const query = <T extends Collection>(
   source: QuerySource<T>,
   ...constraints: QueryConstraint<T['schema']>[]
-): Query<T> => ({ kind: 'query', source, constraints: resolveCursors(source, constraints) });
-
-/**
- * Pairs every cursor value with the field it belongs to.
- *
- * Cursor values pair with the ordering POSITIONALLY — `startAfter(a, b)` means
- * "after `a` in the first ordered field and `b` in the second" — and nothing
- * on a value itself says which field that is. The ordering at a cursor is what
- * an extended source contributed plus the `orderBy` clauses PRECEDING it,
- * which is also where the SDKs validate the pairing (probed: a longer cursor
- * is rejected at the `startAfter()` call, and an `orderBy` after a cursor is
- * refused outright).
- *
- * Done once here, at construction, rather than by each executor on every run:
- * both halves of the answer — the inherited ordering and the constraint list —
- * are in hand exactly here, and nowhere else are they both known.
- */
-const resolveCursors = <T extends Collection>(
-  source: QuerySource<T>,
-  constraints: QueryConstraint<T['schema']>[],
-): QueryConstraint<T['schema'], CursorValue<T['schema']>>[] => {
-  const ordering = sourceOrdering(source);
-  return constraints.map((constraint) => {
+): Query<T> => {
+  const listed: ListConstraint<T['schema']>[] = [];
+  let start: StartBound | undefined;
+  let end: EndBound | undefined;
+  for (const constraint of constraints) {
     switch (constraint.kind) {
-      case 'orderBy':
-        // A clause orders the cursors that FOLLOW it, so it is appended after
-        // its own entry is done with.
-        ordering.push(constraint.field);
-        return constraint;
+      // Later replaces earlier, as it does in the SDKs: a query has one
+      // window, not a sequence of them.
       case 'startAt':
       case 'startAfter':
+        start = constraint;
+        break;
       case 'endAt':
       case 'endBefore':
-        return {
-          ...constraint,
-          cursor: constraint.cursor.map((value, i) => ({ value, field: ordering[i] })),
-        };
+        end = constraint;
+        break;
       case 'where':
+      case 'orderBy':
       case 'limit':
       case 'limitToLast':
       case 'offset':
-        return constraint;
+        listed.push(constraint);
+        break;
       default:
         return assertNever(constraint);
     }
-  });
+  }
+
+  const ordering = [
+    ...sourceOrdering(source),
+    ...listed.filter(isOrderBy).map((constraint) => constraint.field),
+  ];
+  return {
+    kind: 'query',
+    source,
+    constraints: listed,
+    ...(start !== undefined ? { start: resolveBound(start, ordering) } : {}),
+    ...(end !== undefined ? { end: resolveBound(end, ordering) } : {}),
+  };
 };
+
+/**
+ * Pairs a bound's cursor values with the fields they belong to.
+ *
+ * Cursor values pair with the ordering POSITIONALLY — `startAfter(a, b)` means
+ * "after `a` in the first ordered field and `b` in the second" — and nothing
+ * on a value itself says which field that is. Resolving it at construction is
+ * what lets the bound be a field of the query: both halves of the answer, the
+ * inherited ordering and this query's own clauses, are in hand exactly here.
+ *
+ * The ordering used is the query's WHOLE ordering, not the clauses that
+ * happened to precede the cursor in the argument list. The SDKs only accept a
+ * cursor after every clause it pairs with (probed: an `orderBy` after a cursor
+ * is refused outright), so for any query they accept the two are the same —
+ * and lifting the bound out of the list makes the argument order stop
+ * mattering at all.
+ *
+ * A value with no ordered field to pair with keeps `field: undefined`. Not an
+ * error here: the SDKs reject such a cursor themselves ("Too many cursor
+ * values specified"), and that is the one place the rule should be stated.
+ */
+const resolveBound = <B extends StartBound | EndBound, T extends DocumentSchema>(
+  bound: B,
+  ordering: DocFieldPath<T>[],
+): B & { cursor: Cursor<CursorValue<T>> } => ({
+  ...bound,
+  cursor: bound.cursor.map((value, i) => ({ value, field: ordering[i] })),
+});
 
 /**
  * The ordering a source already carries — an extended query contributes its
@@ -169,22 +193,33 @@ const sourceOrdering = <T extends Collection>(
 };
 
 /** Narrows a constraint to an `orderBy`; the predicate is inferred, and so checked. */
-const isOrderBy = <T extends DocumentSchema, C>(constraint: QueryConstraint<T, C>) =>
+const isOrderBy = <T extends DocumentSchema>(constraint: ListConstraint<T>) =>
   constraint.kind === 'orderBy';
 
 /**
  * A query constraint
  */
-export type QueryConstraint<T extends DocumentSchema = DocumentSchema, C = unknown> =
+export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
+  | ListConstraint<T>
+  | StartBound
+  | EndBound;
+
+/**
+ * The constraints a built query keeps as a LIST. The bounds are not among them:
+ * a query has one result window rather than a sequence of them, so {@link query}
+ * lifts them out to its `start` / `end` fields.
+ */
+export type ListConstraint<T extends DocumentSchema = DocumentSchema> =
   | Where<T>
   | OrderBy<T>
-  | StartAt<C>
-  | StartAfter<C>
-  | EndAt<C>
-  | EndBefore<C>
   | Limit
   | LimitToLast
   | Offset;
+
+/** Where the result window starts. */
+export type StartBound<C = unknown> = StartAt<C> | StartAfter<C>;
+/** Where the result window ends. */
+export type EndBound<C = unknown> = EndAt<C> | EndBefore<C>;
 
 /**
  * A where constraint that wraps a filter expression

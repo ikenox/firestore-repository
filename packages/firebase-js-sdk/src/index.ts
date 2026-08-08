@@ -39,11 +39,12 @@ import {
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type {
-  Cursor,
   CursorValue,
+  EndBound,
   FilterExpression,
   Query,
   QuerySource,
+  StartBound,
 } from 'firestore-repository/query';
 import {
   type AppModel,
@@ -251,21 +252,12 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
     },
     query: (query: Query<T>): FirestoreQuery => {
       const base = toFirestore.source(query.source);
-      if (query.constraints.length === 0) {
-        return base;
-      }
 
-      // Which field each cursor value belongs to was settled when the query was
-      // built; this only has to encode each value against the field it carries.
       const { filter, nonFilter } = query.constraints.reduce<{
         filter?: FirestoreQueryFilterConstraint;
         nonFilter: QueryNonFilterConstraint[];
       }>(
         (acc, constraint) => {
-          const cursorOf = (values: Cursor<CursorValue<T['schema']>>): unknown[] =>
-            values.map(({ value, field }) =>
-              field === undefined ? value : encodeCursorValue(field, value),
-            );
           switch (constraint.kind) {
             case 'where': {
               const f = toFirestore.filter(constraint.condition);
@@ -284,18 +276,6 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
             case 'offset':
               // https://github.com/firebase/firebase-js-sdk/issues/479
               throw new Error('firebase-js-sdk does not support offset constraint');
-            case 'startAt':
-              acc.nonFilter.push(startAt(...cursorOf(constraint.cursor)));
-              break;
-            case 'startAfter':
-              acc.nonFilter.push(startAfter(...cursorOf(constraint.cursor)));
-              break;
-            case 'endAt':
-              acc.nonFilter.push(endAt(...cursorOf(constraint.cursor)));
-              break;
-            case 'endBefore':
-              acc.nonFilter.push(endBefore(...cursorOf(constraint.cursor)));
-              break;
             default:
               return assertNever(constraint);
           }
@@ -304,10 +284,42 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         { nonFilter: [] },
       );
 
+      // The bounds go last: the SDK only accepts a cursor once every clause it
+      // pairs with is already on the query.
+      if (query.start !== undefined) {
+        nonFilter.push(toFirestore.bound(query.start));
+      }
+      if (query.end !== undefined) {
+        nonFilter.push(toFirestore.bound(query.end));
+      }
+
       // Wrap single filter in and() to satisfy QueryCompositeFilterConstraint overload
       return filter
         ? firestoreQuery(base, and(filter), ...nonFilter)
         : firestoreQuery(base, ...nonFilter);
+    },
+    /**
+     * Builds a bound constraint, encoding each cursor value against the field
+     * it carries — which field that is was settled when the query was built.
+     */
+    bound: (
+      bound: StartBound<CursorValue<T['schema']>> | EndBound<CursorValue<T['schema']>>,
+    ): QueryNonFilterConstraint => {
+      const values = bound.cursor.map(({ value, field }) =>
+        field === undefined ? value : encodeCursorValue(field, value),
+      );
+      switch (bound.kind) {
+        case 'startAt':
+          return startAt(...values);
+        case 'startAfter':
+          return startAfter(...values);
+        case 'endAt':
+          return endAt(...values);
+        case 'endBefore':
+          return endBefore(...values);
+        default:
+          return assertNever(bound);
+      }
     },
     filter: (expr: FilterExpression<T['schema']>): FirestoreQueryFilterConstraint => {
       switch (expr.kind) {
