@@ -25,7 +25,12 @@ import { assertNever } from './util.js';
 export type Query<T extends Collection = Collection> = {
   kind: 'query';
   source: QuerySource<T>;
-  constraints: QueryConstraint<T['schema']>[];
+  /**
+   * Cursor values here are already paired with the field each one belongs to —
+   * {@link query} resolves that once, so a stored query says what it means
+   * without anyone having to re-walk the ordering.
+   */
+  constraints: QueryConstraint<T['schema'], CursorValue<T['schema']>>[];
 };
 
 /**
@@ -88,61 +93,53 @@ export const collectionGroup = <T extends Collection>(def: T): CollectionGroupSo
 export const query = <T extends Collection>(
   source: QuerySource<T>,
   ...constraints: QueryConstraint<T['schema']>[]
-): Query<T> => ({ kind: 'query', source, constraints });
+): Query<T> => ({ kind: 'query', source, constraints: resolveCursors(source, constraints) });
 
 /**
- * The query's constraints in application order, each paired with the ordering
- * in effect where it appears.
+ * Pairs every cursor value with the field it belongs to.
  *
- * Cursor values pair with that ordering POSITIONALLY — `startAfter(a, b)`
- * means "after `a` in the first ordered field and `b` in the second" — and
- * nothing on a cursor value itself says which field it belongs to. The
- * ordering in effect at a cursor is whatever an extended source contributed
- * plus the `orderBy` clauses PRECEDING the cursor, which is also where the
- * SDKs validate the pairing (probed: a longer cursor is rejected at the
- * `startAfter()` call, and an `orderBy` after a cursor is refused outright).
+ * Cursor values pair with the ordering POSITIONALLY — `startAfter(a, b)` means
+ * "after `a` in the first ordered field and `b` in the second" — and nothing
+ * on a value itself says which field that is. The ordering at a cursor is what
+ * an extended source contributed plus the `orderBy` clauses PRECEDING it,
+ * which is also where the SDKs validate the pairing (probed: a longer cursor
+ * is rejected at the `startAfter()` call, and an `orderBy` after a cursor is
+ * refused outright).
  *
- * Resolved here rather than in each executor so the rule has ONE home. What is
- * left to an executor — encoding a value against the field it is handed — is
- * the only part that differs per platform. Pair with {@link encodeCursor}.
+ * Done once here, at construction, rather than by each executor on every run:
+ * both halves of the answer — the inherited ordering and the constraint list —
+ * are in hand exactly here, and nowhere else are they both known.
  */
-export const constraintsWithOrdering = <T extends Collection>(
-  query: Query<T>,
-): OrderedConstraint<T['schema']>[] => {
-  const ordering = sourceOrdering(query.source);
-  return query.constraints.map((constraint) => {
-    // Snapshot before extending: a clause orders the cursors that FOLLOW it,
-    // and a cursor never coexists with its own clause.
-    const applied = { constraint, ordering: [...ordering] };
-    if (isOrderBy(constraint)) {
-      ordering.push(constraint.field);
+const resolveCursors = <T extends Collection>(
+  source: QuerySource<T>,
+  constraints: QueryConstraint<T['schema']>[],
+): QueryConstraint<T['schema'], CursorValue<T['schema']>>[] => {
+  const ordering = sourceOrdering(source);
+  return constraints.map((constraint) => {
+    switch (constraint.kind) {
+      case 'orderBy':
+        // A clause orders the cursors that FOLLOW it, so it is appended after
+        // its own entry is done with.
+        ordering.push(constraint.field);
+        return constraint;
+      case 'startAt':
+      case 'startAfter':
+      case 'endAt':
+      case 'endBefore':
+        return {
+          ...constraint,
+          cursor: constraint.cursor.map((value, i) => ({ value, field: ordering[i] })),
+        };
+      case 'where':
+      case 'limit':
+      case 'limitToLast':
+      case 'offset':
+        return constraint;
+      default:
+        return assertNever(constraint);
     }
-    return applied;
   });
 };
-
-/** One constraint together with the ordering in effect where it is applied. */
-export type OrderedConstraint<T extends DocumentSchema = DocumentSchema> = {
-  constraint: QueryConstraint<T>;
-  ordering: DocFieldPath<T>[];
-};
-
-/**
- * A cursor's values, each encoded against the field it pairs with.
- *
- * A value with no ordered field to pair with is passed through untouched: the
- * SDKs reject such a cursor themselves ("Too many cursor values specified"),
- * and that is the one place the rule should be stated.
- */
-export const encodeCursor = <T extends DocumentSchema>(
-  cursor: Cursor<T>,
-  ordering: readonly DocFieldPath<T>[],
-  encode: (fieldPath: DocFieldPath<T>, value: unknown) => unknown,
-): unknown[] =>
-  cursor.map((value, i) => {
-    const fieldPath = ordering[i];
-    return fieldPath === undefined ? value : encode(fieldPath, value);
-  });
 
 /**
  * The ordering a source already carries — an extended query contributes its
@@ -172,19 +169,19 @@ const sourceOrdering = <T extends Collection>(
 };
 
 /** Narrows a constraint to an `orderBy`; the predicate is inferred, and so checked. */
-const isOrderBy = <T extends DocumentSchema>(constraint: QueryConstraint<T>) =>
+const isOrderBy = <T extends DocumentSchema, C>(constraint: QueryConstraint<T, C>) =>
   constraint.kind === 'orderBy';
 
 /**
  * A query constraint
  */
-export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
+export type QueryConstraint<T extends DocumentSchema = DocumentSchema, C = unknown> =
   | Where<T>
   | OrderBy<T>
-  | StartAt<T>
-  | StartAfter<T>
-  | EndAt<T>
-  | EndBefore<T>
+  | StartAt<C>
+  | StartAfter<C>
+  | EndAt<C>
+  | EndBefore<C>
   | Limit
   | LimitToLast
   | Offset;
@@ -223,41 +220,43 @@ export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast
 export type Offset = { kind: 'offset'; offset: number };
 
 /** A cursor constraint that starts at the given values (inclusive) */
-export type StartAt<T extends DocumentSchema> = { kind: 'startAt'; cursor: Cursor<T> };
-/** Creates a startAt cursor constraint (inclusive) */
-export const startAt = <T extends DocumentSchema>(...cursor: Cursor<T>): StartAt<T> => ({
-  kind: 'startAt',
-  cursor,
-});
+export type StartAt<C = unknown> = { kind: 'startAt'; cursor: Cursor<C> };
+/** Creates a startAt cursor constraint */
+export const startAt = (...cursor: Cursor): StartAt => ({ kind: 'startAt', cursor });
 
 /** A cursor constraint that starts after the given values (exclusive) */
-export type StartAfter<T extends DocumentSchema> = { kind: 'startAfter'; cursor: Cursor<T> };
-/** Creates a startAfter cursor constraint (exclusive) */
-export const startAfter = <T extends DocumentSchema>(...cursor: Cursor<T>): StartAfter<T> => ({
-  kind: 'startAfter',
-  cursor,
-});
+export type StartAfter<C = unknown> = { kind: 'startAfter'; cursor: Cursor<C> };
+/** Creates a startAfter cursor constraint */
+export const startAfter = (...cursor: Cursor): StartAfter => ({ kind: 'startAfter', cursor });
 
 /** A cursor constraint that ends at the given values (inclusive) */
-export type EndAt<T extends DocumentSchema> = { kind: 'endAt'; cursor: Cursor<T> };
-/** Creates an endAt cursor constraint (inclusive) */
-export const endAt = <T extends DocumentSchema>(...cursor: Cursor<T>): EndAt<T> => ({
-  kind: 'endAt',
-  cursor,
-});
+export type EndAt<C = unknown> = { kind: 'endAt'; cursor: Cursor<C> };
+/** Creates an endAt cursor constraint */
+export const endAt = (...cursor: Cursor): EndAt => ({ kind: 'endAt', cursor });
 
 /** A cursor constraint that ends before the given values (exclusive) */
-export type EndBefore<T extends DocumentSchema> = { kind: 'endBefore'; cursor: Cursor<T> };
-/** Creates an endBefore cursor constraint (exclusive) */
-export const endBefore = <T extends DocumentSchema>(...cursor: Cursor<T>): EndBefore<T> => ({
-  kind: 'endBefore',
-  cursor,
-});
+export type EndBefore<C = unknown> = { kind: 'endBefore'; cursor: Cursor<C> };
+/** Creates an endBefore cursor constraint */
+export const endBefore = (...cursor: Cursor): EndBefore => ({ kind: 'endBefore', cursor });
 
 /**
- * A list of values that correspond to the fields specified by the orderBy clause
+ * The values of a cursor, one per field the query is ordered by.
+ *
+ * `C` is `unknown` as a caller writes it, and {@link CursorValue} once
+ * {@link query} has paired each value with its field.
  */
-export type Cursor<_T extends DocumentSchema> = unknown[];
+export type Cursor<C = unknown> = C[];
+
+/** One cursor value together with the ordered field it belongs to. */
+export type CursorValue<T extends DocumentSchema = DocumentSchema> = {
+  value: unknown;
+  /**
+   * Absent when the cursor carries more values than the query is ordered by.
+   * Not an error here: the SDKs reject such a cursor themselves, and that is
+   * the one place the rule should be stated.
+   */
+  field: DocFieldPath<T> | undefined;
+};
 
 /**
  * A query filter expression

@@ -38,13 +38,12 @@ import {
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import {
-  constraintsWithOrdering,
-  type Cursor,
-  encodeCursor,
-  type FilterExpression,
-  type Query,
-  type QuerySource,
+import type {
+  Cursor,
+  CursorValue,
+  FilterExpression,
+  Query,
+  QuerySource,
 } from 'firestore-repository/query';
 import {
   type AppModel,
@@ -256,15 +255,17 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         return base;
       }
 
-      // Which field each cursor value belongs to is `constraintsWithOrdering`'s
-      // to work out; this only has to encode against the field it is handed.
-      const { filter, nonFilter } = constraintsWithOrdering(query).reduce<{
+      // Which field each cursor value belongs to was settled when the query was
+      // built; this only has to encode each value against the field it carries.
+      const { filter, nonFilter } = query.constraints.reduce<{
         filter?: FirestoreQueryFilterConstraint;
         nonFilter: QueryNonFilterConstraint[];
       }>(
-        (acc, { constraint, ordering }) => {
-          const cursorOf = (values: Cursor<T['schema']>): unknown[] =>
-            encodeCursor(values, ordering, encodeCursorValue);
+        (acc, constraint) => {
+          const cursorOf = (values: Cursor<CursorValue<T['schema']>>): unknown[] =>
+            values.map(({ value, field }) =>
+              field === undefined ? value : encodeCursorValue(field, value),
+            );
           switch (constraint.kind) {
             case 'where': {
               const f = toFirestore.filter(constraint.condition);

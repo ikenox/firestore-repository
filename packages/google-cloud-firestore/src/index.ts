@@ -2,13 +2,12 @@ import type * as firestore from '@google-cloud/firestore';
 import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import {
-  constraintsWithOrdering,
-  type Cursor,
-  encodeCursor,
-  type FilterExpression,
-  type Query,
-  type QuerySource,
+import type {
+  Cursor,
+  CursorValue,
+  FilterExpression,
+  Query,
+  QuerySource,
 } from 'firestore-repository/query';
 import {
   type AppModel,
@@ -285,11 +284,13 @@ export const buildFirestoreUtilities = <T extends Collection>(
     },
     query: (query: Query<T>): firestore.Query => {
       let q = toFirestore.source(query.source);
-      // Which field each cursor value belongs to is `constraintsWithOrdering`'s
-      // to work out; this only has to encode against the field it is handed.
-      for (const { constraint, ordering } of constraintsWithOrdering(query)) {
-        const cursorOf = (values: Cursor<T['schema']>): unknown[] =>
-          encodeCursor(values, ordering, encodeCursorValue);
+      // Which field each cursor value belongs to was settled when the query was
+      // built; this only has to encode each value against the field it carries.
+      for (const constraint of query.constraints) {
+        const cursorOf = (values: Cursor<CursorValue<T['schema']>>): unknown[] =>
+          values.map(({ value, field }) =>
+            field === undefined ? value : encodeCursorValue(field, value),
+          );
         switch (constraint.kind) {
           case 'where':
             q = q.where(toFirestore.filter(constraint.condition));
