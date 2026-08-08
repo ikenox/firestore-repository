@@ -151,7 +151,7 @@ describe('query', () => {
 
     it('refuses a cursor longer than the ordering', () => {
       expect(() => query(authors, orderBy('rank'), startAfter(1, 'extra'))).toThrow(
-        /2 cursor value\(s\), but the query is ordered by 1 field\(s\)/,
+        /cursor of 2 value\(s\) cannot pair with a query ordered by 1 field\(s\)/,
       );
     });
 

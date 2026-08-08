@@ -132,19 +132,21 @@ export const query = <T extends Collection>(
     kind: 'query',
     source,
     constraints: listed,
-    ...(start !== undefined ? { start: resolveBound(start, ordering) } : {}),
-    ...(end !== undefined ? { end: resolveBound(end, ordering) } : {}),
+    ...(start !== undefined
+      ? { start: { ...start, cursor: resolveCursor(start.cursor, ordering) } }
+      : {}),
+    ...(end !== undefined ? { end: { ...end, cursor: resolveCursor(end.cursor, ordering) } } : {}),
   };
 };
 
 /**
- * Pairs a bound's cursor values with the fields they belong to.
+ * Pairs a cursor's values with the fields they belong to.
  *
  * Cursor values pair with the ordering POSITIONALLY — `startAfter(a, b)` means
  * "after `a` in the first ordered field and `b` in the second" — and nothing
  * on a value itself says which field that is. Resolving it at construction is
- * what lets the bound be a field of the query: both halves of the answer, the
- * inherited ordering and this query's own clauses, are in hand exactly here.
+ * what lets a bound be a field of the query: both halves of the answer, the
+ * inherited ordering and this query's own clauses, are in hand exactly there.
  *
  * The ordering used is the query's WHOLE ordering, not the clauses that
  * happened to precede the bound in the argument list. The SDKs only accept a
@@ -159,21 +161,23 @@ export const query = <T extends Collection>(
  * with a field it actually belongs to. Fewer values than clauses is fine — a
  * cursor may bound a prefix of the ordering.
  */
-const resolveBound = <B extends StartBound | EndBound, T extends DocumentSchema>(
-  bound: B,
+const resolveCursor = <T extends DocumentSchema>(
+  cursor: Cursor,
   ordering: DocFieldPath<T>[],
-): { kind: B['kind']; cursor: CursorValue<T>[] } => ({
-  ...bound,
-  cursor: bound.cursor.map((value, i) => {
+): CursorValue<T>[] =>
+  cursor.map((value, i) => {
+    // Checked per value rather than by comparing lengths up front, so the
+    // in-range case narrows away the `undefined` instead of being asserted.
     const field = ordering[i];
     if (field === undefined) {
       throw new Error(
-        `${bound.kind}() was given ${bound.cursor.length} cursor value(s), but the query is ordered by ${ordering.length} field(s)${ordering.length === 0 ? ' — a cursor needs an orderBy() to pair with' : ''}`,
+        `a cursor of ${cursor.length} value(s) cannot pair with a query ordered by ${ordering.length} field(s)${
+          ordering.length === 0 ? ' — a cursor needs an orderBy() to pair with' : ''
+        }`,
       );
     }
     return { value, field };
-  }),
-});
+  });
 
 /**
  * The ordering a source already carries — an extended query contributes its
