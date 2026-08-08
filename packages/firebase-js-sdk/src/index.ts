@@ -39,12 +39,11 @@ import {
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
 import type {
-  CursorValue,
-  EndBound,
   FilterExpression,
   Query,
   QuerySource,
-  StartBound,
+  ResolvedEndBound,
+  ResolvedStartBound,
 } from 'firestore-repository/query';
 import {
   type AppModel,
@@ -303,7 +302,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
      * it carries — which field that is was settled when the query was built.
      */
     bound: (
-      bound: StartBound<CursorValue<T['schema']>> | EndBound<CursorValue<T['schema']>>,
+      bound: ResolvedStartBound<T['schema']> | ResolvedEndBound<T['schema']>,
     ): QueryNonFilterConstraint => {
       const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value));
       switch (bound.kind) {

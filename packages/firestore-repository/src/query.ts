@@ -32,8 +32,8 @@ export type Query<T extends Collection = Collection> = {
    * (probed). Their values are already paired with the field each belongs to;
    * see {@link query}.
    */
-  start?: StartBound<CursorValue<T['schema']>>;
-  end?: EndBound<CursorValue<T['schema']>>;
+  start?: ResolvedStartBound<T['schema']>;
+  end?: ResolvedEndBound<T['schema']>;
 };
 
 /**
@@ -162,7 +162,7 @@ export const query = <T extends Collection>(
 const resolveBound = <B extends StartBound | EndBound, T extends DocumentSchema>(
   bound: B,
   ordering: DocFieldPath<T>[],
-): B & { cursor: Cursor<CursorValue<T>> } => ({
+): { kind: B['kind']; cursor: CursorValue<T>[] } => ({
   ...bound,
   cursor: bound.cursor.map((value, i) => {
     const field = ordering[i];
@@ -226,10 +226,28 @@ export type ListConstraint<T extends DocumentSchema = DocumentSchema> =
   | LimitToLast
   | Offset;
 
-/** Where the result window starts. */
-export type StartBound<C = unknown> = StartAt<C> | StartAfter<C>;
-/** Where the result window ends. */
-export type EndBound<C = unknown> = EndAt<C> | EndBefore<C>;
+/** Where the result window starts, as a caller writes it. */
+export type StartBound = StartAt | StartAfter;
+/** Where the result window ends, as a caller writes it. */
+export type EndBound = EndAt | EndBefore;
+
+/**
+ * A bound in a BUILT query: every value paired with the field it belongs to.
+ *
+ * A separate type from {@link StartBound} rather than the same one at another
+ * precision, because the two are different claims. What a caller writes is a
+ * list of raw values; what a query holds has been checked against the ordering
+ * and can no longer contain a value that belongs nowhere.
+ */
+export type ResolvedStartBound<T extends DocumentSchema = DocumentSchema> = {
+  kind: StartBound['kind'];
+  cursor: CursorValue<T>[];
+};
+/** The counterpart of {@link ResolvedStartBound} for the upper bound. */
+export type ResolvedEndBound<T extends DocumentSchema = DocumentSchema> = {
+  kind: EndBound['kind'];
+  cursor: CursorValue<T>[];
+};
 
 /**
  * A where constraint that wraps a filter expression
@@ -265,32 +283,27 @@ export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast
 export type Offset = { kind: 'offset'; offset: number };
 
 /** A cursor constraint that starts at the given values (inclusive) */
-export type StartAt<C = unknown> = { kind: 'startAt'; cursor: Cursor<C> };
+export type StartAt = { kind: 'startAt'; cursor: Cursor };
 /** Creates a startAt cursor constraint */
 export const startAt = (...cursor: Cursor): StartAt => ({ kind: 'startAt', cursor });
 
 /** A cursor constraint that starts after the given values (exclusive) */
-export type StartAfter<C = unknown> = { kind: 'startAfter'; cursor: Cursor<C> };
+export type StartAfter = { kind: 'startAfter'; cursor: Cursor };
 /** Creates a startAfter cursor constraint */
 export const startAfter = (...cursor: Cursor): StartAfter => ({ kind: 'startAfter', cursor });
 
 /** A cursor constraint that ends at the given values (inclusive) */
-export type EndAt<C = unknown> = { kind: 'endAt'; cursor: Cursor<C> };
+export type EndAt = { kind: 'endAt'; cursor: Cursor };
 /** Creates an endAt cursor constraint */
 export const endAt = (...cursor: Cursor): EndAt => ({ kind: 'endAt', cursor });
 
 /** A cursor constraint that ends before the given values (exclusive) */
-export type EndBefore<C = unknown> = { kind: 'endBefore'; cursor: Cursor<C> };
+export type EndBefore = { kind: 'endBefore'; cursor: Cursor };
 /** Creates an endBefore cursor constraint */
 export const endBefore = (...cursor: Cursor): EndBefore => ({ kind: 'endBefore', cursor });
 
-/**
- * The values of a cursor, one per field the query is ordered by.
- *
- * `C` is `unknown` as a caller writes it, and {@link CursorValue} once
- * {@link query} has paired each value with its field.
- */
-export type Cursor<C = unknown> = C[];
+/** The values of a cursor as a caller writes them, one per ordered field. */
+export type Cursor = unknown[];
 
 /**
  * One cursor value together with the ordered field it belongs to.
