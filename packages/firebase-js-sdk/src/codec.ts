@@ -212,6 +212,33 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
 }
 
 /**
+ * Operand schemas, shared across every call that names the same schema and
+ * database. Building one is expensive enough to dominate query conversion when
+ * repeated, and `toSdkQuery` builds its converter per call by design, so the
+ * memo cannot live in the converter's closure.
+ *
+ * The database is part of the key because encoding a document ref binds the
+ * `Firestore` instance into the schema (`doc(db, ...)`), so two databases
+ * cannot share one. Both keys are held weakly: entries die with the schema or
+ * the database they belong to.
+ */
+const operandSchemaCaches = new WeakMap<Firestore, WeakMap<DocumentSchema, Map<string, ZodAny>>>();
+
+const operandSchemaCache = (schema: DocumentSchema, db: Firestore): Map<string, ZodAny> => {
+  let perDb = operandSchemaCaches.get(db);
+  if (perDb === undefined) {
+    perDb = new WeakMap();
+    operandSchemaCaches.set(db, perDb);
+  }
+  let perSchema = perDb.get(schema);
+  if (perSchema === undefined) {
+    perSchema = new Map();
+    perDb.set(schema, perSchema);
+  }
+  return perSchema;
+};
+
+/**
  * Builds the encoder for filter-condition operands, memoizing the operand
  * schema per (field path, operator) like `buildEncodeSchema` builds the
  * write schema once per collection. The operand schema reuses the write
@@ -230,7 +257,7 @@ export function buildEncodeFilterValue(
   schema: DocumentSchema,
   db: Firestore,
 ): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
-  const operandSchemas = new Map<string, ZodAny>();
+  const operandSchemas = operandSchemaCache(schema, db);
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
     let operandSchema = operandSchemas.get(key);

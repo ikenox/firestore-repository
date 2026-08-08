@@ -130,6 +130,19 @@ describe('buildEncodeFilterValue', () => {
     expect(() => encode('author', '==', ['Posts', 'p1'])).toThrow();
     expect(() => encode('anyRef', '==', ['odd-length'])).toThrow();
   });
+
+  // Operand schemas are memoized across calls, and encoding a reference binds
+  // the `Firestore` instance into the schema — so the memo has to be keyed by
+  // the database as well as the schema. Reusing one schema across databases is
+  // what a dropped database key would silently corrupt.
+  it('keeps operands bound to the database they were encoded for', () => {
+    const otherDb = new Firestore({ projectId: 'codec-guard-test-other' });
+    const encodeOther = buildEncodeFilterValue(schema, otherDb);
+
+    expect(encode('author', '==', ['Authors', 'a1'])).toStrictEqual(db.doc('Authors/a1'));
+    expect(encodeOther('author', '==', ['Authors', 'a1'])).toStrictEqual(otherDb.doc('Authors/a1'));
+    expect(encodeOther('author', '==', ['Authors', 'a1'])).not.toStrictEqual(db.doc('Authors/a1'));
+  });
 });
 
 describe('array server operations', () => {
