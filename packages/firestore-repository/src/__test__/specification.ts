@@ -1064,6 +1064,46 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
     });
 
+    describe('cursor values are encoded per ordered field', () => {
+      // A cursor is compared against the STORED value, so it has to reach
+      // Firestore in the representation the field was written in. Only
+      // descriptors whose encoded form differs from their plain-JS one can
+      // show this, and the failure is silent: a mismatched cursor matches
+      // nothing and returns an empty page rather than erroring.
+      const cursorCollection = rootCollection({
+        name: `CursorEncoding_${randomString()}`,
+        schema: { ref: docRef(authorsCollection), spot: geoPoint() },
+      });
+      const ids = ['d1', 'd2', 'd3'];
+
+      beforeAll(async () => {
+        await createRepository(cursorCollection).batchSet(
+          ids.map((id, i) => ({
+            id: [id],
+            data: {
+              ref: refPath(authorsCollection, [`a${i + 1}`]),
+              spot: { latitude: i + 1, longitude: i + 1 },
+            },
+          })),
+        );
+      });
+
+      const cursorCases = [
+        { field: 'ref', cursor: refPath(authorsCollection, ['a2']) },
+        { field: 'spot', cursor: { latitude: 2, longitude: 2 } },
+      ] as const satisfies {
+        field: DocFieldPath<(typeof cursorCollection)['schema']>;
+        cursor: unknown;
+      }[];
+
+      it.each(cursorCases)('ordered by a $field field', async ({ field, cursor }) => {
+        const docs = await createRepository(cursorCollection).list(
+          query(collection(cursorCollection), orderBy(field), startAfter(cursor)),
+        );
+        expect(docs.toArray().map((doc) => doc.id[0])).toStrictEqual(['d3']);
+      });
+    });
+
     describe('decode failures', () => {
       // Two collection definitions over ONE collection name: the value is
       // written under a schema that admits it and read under one that does

@@ -91,6 +91,42 @@ export const query = <T extends Collection>(
 ): Query<T> => ({ kind: 'query', source, constraints });
 
 /**
+ * The `orderBy` field paths a source is ordered by, in the order an executor
+ * applies them — an extended query contributes its own ordering first.
+ *
+ * Cursor values pair with that ordering POSITIONALLY: `startAfter(a, b)` means
+ * "after `a` in the first ordered field and `b` in the second". Nothing on a
+ * cursor value itself says which field it belongs to, so this list is what
+ * tells an executor which field's descriptor to encode each value with — a
+ * reference cursor has to reach Firestore as a reference, exactly as a filter
+ * operand does.
+ *
+ * There is no implicit trailing slot: Firestore requires exactly as many
+ * cursor values as `orderBy` clauses, so ordering by the document key needs an
+ * explicit `orderBy('__name__')` (probed).
+ */
+export const orderByPaths = <T extends Collection>(
+  source: QuerySource<T>,
+): DocFieldPath<T['schema']>[] => {
+  switch (source.kind) {
+    case 'collection':
+    case 'collectionGroup':
+      return [];
+    case 'query':
+      return [
+        ...orderByPaths(source.source),
+        ...source.constraints.filter(isOrderBy).map((constraint) => constraint.field),
+      ];
+    default:
+      return assertNever(source);
+  }
+};
+
+/** Narrows a constraint to an `orderBy`; the predicate is inferred, and so checked. */
+const isOrderBy = <T extends DocumentSchema>(constraint: QueryConstraint<T>) =>
+  constraint.kind === 'orderBy';
+
+/**
  * A query constraint
  */
 export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =

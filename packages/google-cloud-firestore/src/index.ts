@@ -2,7 +2,12 @@ import type * as firestore from '@google-cloud/firestore';
 import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import type { FilterExpression, Query, QuerySource } from 'firestore-repository/query';
+import {
+  type FilterExpression,
+  orderByPaths,
+  type Query,
+  type QuerySource,
+} from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
@@ -22,7 +27,12 @@ import {
 import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
+import {
+  buildDecodeSchema,
+  buildEncodeCursorValue,
+  buildEncodeFilterValue,
+  buildEncodeSchema,
+} from './codec.js';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = {
@@ -255,6 +265,7 @@ export const buildFirestoreUtilities = <T extends Collection>(
   const decodeSchema = buildDecodeSchema(collection.schema);
   const encodeSchema = buildEncodeSchema(collection.schema, db);
   const encodeFilterValue = buildEncodeFilterValue(collection.schema, db);
+  const encodeCursorValue = buildEncodeCursorValue(collection.schema, db);
 
   const toFirestore = {
     docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
@@ -271,39 +282,55 @@ export const buildFirestoreUtilities = <T extends Collection>(
       }
     },
     query: (query: Query<T>): firestore.Query => {
-      const base = toFirestore.source(query.source);
-      return query.constraints.reduce((q, constraint) => {
+      // The ordering is accumulated as the constraints are applied rather than
+      // read off the finished query: a cursor pairs with the `orderBy` clauses
+      // that PRECEDE it, which is also where the SDK validates the pairing.
+      const ordered = orderByPaths<T>(query.source);
+      // A value with no ordered field to pair with is passed through — the SDK
+      // rejects such a cursor itself ("Too many cursor values specified"), and
+      // that is the one place the rule should be stated.
+      const cursorOf = (values: readonly unknown[]): unknown[] =>
+        values.map((value, i) => {
+          const fieldPath = ordered[i];
+          return fieldPath === undefined ? value : encodeCursorValue(fieldPath, value);
+        });
+
+      let q = toFirestore.source(query.source);
+      for (const constraint of query.constraints) {
         switch (constraint.kind) {
           case 'where':
-            return q.where(toFirestore.filter(constraint.condition));
+            q = q.where(toFirestore.filter(constraint.condition));
+            break;
           case 'orderBy':
-            return q.orderBy(constraint.field, constraint.direction);
+            ordered.push(constraint.field);
+            q = q.orderBy(constraint.field, constraint.direction);
+            break;
           case 'limit':
-            return q.limit(constraint.limit);
+            q = q.limit(constraint.limit);
+            break;
           case 'limitToLast':
-            return q.limitToLast(constraint.limit);
+            q = q.limitToLast(constraint.limit);
+            break;
           case 'offset':
-            return q.offset(constraint.offset);
-          case 'startAt': {
-            const { cursor } = constraint;
-            return q.startAt(...cursor);
-          }
-          case 'startAfter': {
-            const { cursor } = constraint;
-            return q.startAfter(...cursor);
-          }
-          case 'endAt': {
-            const { cursor } = constraint;
-            return q.endAt(...cursor);
-          }
-          case 'endBefore': {
-            const { cursor } = constraint;
-            return q.endBefore(...cursor);
-          }
+            q = q.offset(constraint.offset);
+            break;
+          case 'startAt':
+            q = q.startAt(...cursorOf(constraint.cursor));
+            break;
+          case 'startAfter':
+            q = q.startAfter(...cursorOf(constraint.cursor));
+            break;
+          case 'endAt':
+            q = q.endAt(...cursorOf(constraint.cursor));
+            break;
+          case 'endBefore':
+            q = q.endBefore(...cursorOf(constraint.cursor));
+            break;
           default:
             return assertNever(constraint);
         }
-      }, base);
+      }
+      return q;
     },
     filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
       switch (expr.kind) {

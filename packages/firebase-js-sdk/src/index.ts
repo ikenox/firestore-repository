@@ -38,7 +38,12 @@ import {
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import type { FilterExpression, Query, QuerySource } from 'firestore-repository/query';
+import {
+  type FilterExpression,
+  orderByPaths,
+  type Query,
+  type QuerySource,
+} from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
@@ -58,7 +63,12 @@ import {
 import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
+import {
+  buildDecodeSchema,
+  buildEncodeCursorValue,
+  buildEncodeFilterValue,
+  buildEncodeSchema,
+} from './codec.js';
 
 /** Platform-specific environment types for Firebase JS SDK */
 export type Env = { transaction: Transaction; writeBatch: WriteBatch; query: FirestoreQuery };
@@ -221,6 +231,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
 export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, coll: T) => {
   const decodeSchema = buildDecodeSchema(coll.schema);
   const encodeFilterValue = buildEncodeFilterValue(coll.schema, db);
+  const encodeCursorValue = buildEncodeCursorValue(coll.schema, db);
   const encodeSchema = buildEncodeSchema(coll.schema, db);
 
   const toFirestore = {
@@ -243,6 +254,19 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
         return base;
       }
 
+      // The ordering is accumulated as the constraints are applied rather than
+      // read off the finished query: a cursor pairs with the `orderBy` clauses
+      // that PRECEDE it, which is also where the SDK validates the pairing.
+      const ordered = orderByPaths<T>(query.source);
+      // A value with no ordered field to pair with is passed through — the SDK
+      // rejects such a cursor itself, and that is the one place the rule
+      // should be stated.
+      const cursorOf = (values: readonly unknown[]): unknown[] =>
+        values.map((value, i) => {
+          const fieldPath = ordered[i];
+          return fieldPath === undefined ? value : encodeCursorValue(fieldPath, value);
+        });
+
       const { filter, nonFilter } = query.constraints.reduce<{
         filter?: FirestoreQueryFilterConstraint;
         nonFilter: QueryNonFilterConstraint[];
@@ -255,6 +279,7 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
               break;
             }
             case 'orderBy':
+              ordered.push(constraint.field);
               acc.nonFilter.push(orderBy(constraint.field, constraint.direction));
               break;
             case 'limit':
@@ -266,26 +291,18 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
             case 'offset':
               // https://github.com/firebase/firebase-js-sdk/issues/479
               throw new Error('firebase-js-sdk does not support offset constraint');
-            case 'startAt': {
-              const { cursor } = constraint;
-              acc.nonFilter.push(startAt(...cursor));
+            case 'startAt':
+              acc.nonFilter.push(startAt(...cursorOf(constraint.cursor)));
               break;
-            }
-            case 'startAfter': {
-              const { cursor } = constraint;
-              acc.nonFilter.push(startAfter(...cursor));
+            case 'startAfter':
+              acc.nonFilter.push(startAfter(...cursorOf(constraint.cursor)));
               break;
-            }
-            case 'endAt': {
-              const { cursor } = constraint;
-              acc.nonFilter.push(endAt(...cursor));
+            case 'endAt':
+              acc.nonFilter.push(endAt(...cursorOf(constraint.cursor)));
               break;
-            }
-            case 'endBefore': {
-              const { cursor } = constraint;
-              acc.nonFilter.push(endBefore(...cursor));
+            case 'endBefore':
+              acc.nonFilter.push(endBefore(...cursorOf(constraint.cursor)));
               break;
-            }
             default:
               return assertNever(constraint);
           }
