@@ -25,7 +25,15 @@ import { assertNever } from './util.js';
 export type Query<T extends Collection = Collection> = {
   kind: 'query';
   source: QuerySource<T>;
-  constraints: QueryConstraint<T['schema']>[];
+  constraints: ListConstraint<T['schema']>[];
+  /**
+   * The bounds of the result window, at most one each — Firestore has no
+   * notion of several, and a repeated one simply replaces its predecessor
+   * (probed). Their values are already paired with the field each belongs to;
+   * see {@link query}.
+   */
+  start?: ResolvedStartBound<T['schema']> | undefined;
+  end?: ResolvedEndBound<T['schema']> | undefined;
 };
 
 /**
@@ -88,21 +96,160 @@ export const collectionGroup = <T extends Collection>(def: T): CollectionGroupSo
 export const query = <T extends Collection>(
   source: QuerySource<T>,
   ...constraints: QueryConstraint<T['schema']>[]
-): Query<T> => ({ kind: 'query', source, constraints });
+): Query<T> => {
+  const listed: ListConstraint<T['schema']>[] = [];
+  let start: StartBound | undefined;
+  let end: EndBound | undefined;
+  for (const constraint of constraints) {
+    switch (constraint.kind) {
+      // Later replaces earlier, as it does in the SDKs: a query has one
+      // window, not a sequence of them.
+      case 'startAt':
+      case 'startAfter':
+        start = constraint;
+        break;
+      case 'endAt':
+      case 'endBefore':
+        end = constraint;
+        break;
+      case 'where':
+      case 'orderBy':
+      case 'limit':
+      case 'limitToLast':
+      case 'offset':
+        listed.push(constraint);
+        break;
+      default:
+        return assertNever(constraint);
+    }
+  }
+
+  const ordering = [
+    ...sourceOrdering(source),
+    ...listed.filter(isOrderBy).map((constraint) => constraint.field),
+  ];
+  return {
+    kind: 'query',
+    source,
+    constraints: listed,
+    start: start && { ...start, cursor: resolveCursor(start.cursor, ordering) },
+    end: end && { ...end, cursor: resolveCursor(end.cursor, ordering) },
+  };
+};
+
+/**
+ * Pairs a cursor's values with the fields they belong to.
+ *
+ * Cursor values pair with the ordering POSITIONALLY — `startAfter(a, b)` means
+ * "after `a` in the first ordered field and `b` in the second" — and nothing
+ * on a value itself says which field that is. Resolving it at construction is
+ * what lets a bound be a field of the query: both halves of the answer, the
+ * inherited ordering and this query's own clauses, are in hand exactly there.
+ *
+ * The ordering used is the query's WHOLE ordering, not the clauses that
+ * happened to precede the bound in the argument list. The SDKs only accept a
+ * cursor after every clause it pairs with (probed: an `orderBy` after a cursor
+ * is refused outright), so for any query they accept the two are the same —
+ * and lifting the bound out of the list makes the argument order stop
+ * mattering at all.
+ *
+ * @throws if the cursor carries more values than the query is ordered by.
+ * Firestore rejects that too, but only once the query runs; refusing it here
+ * fails at the mistake, and leaves every {@link CursorValue} in a built query
+ * with a field it actually belongs to. Fewer values than clauses is fine — a
+ * cursor may bound a prefix of the ordering.
+ */
+const resolveCursor = <T extends DocumentSchema>(
+  cursor: Cursor,
+  ordering: DocFieldPath<T>[],
+): CursorValue<T>[] =>
+  cursor.map((value, i) => {
+    // Checked per value rather than by comparing lengths up front, so the
+    // in-range case narrows away the `undefined` instead of being asserted.
+    const field = ordering[i];
+    if (field === undefined) {
+      throw new Error(
+        `a cursor of ${cursor.length} value(s) cannot pair with a query ordered by ${ordering.length} field(s)${
+          ordering.length === 0 ? ' — a cursor needs an orderBy() to pair with' : ''
+        }`,
+      );
+    }
+    return { value, field };
+  });
+
+/**
+ * The ordering a source already carries — an extended query contributes its
+ * own, in the order an executor applies the chain.
+ *
+ * There is no implicit trailing slot: Firestore requires exactly as many
+ * cursor values as `orderBy` clauses, so ordering by the document key needs an
+ * explicit `orderBy('__name__')` (probed).
+ */
+const sourceOrdering = <T extends Collection>(
+  source: QuerySource<T>,
+): DocFieldPath<T['schema']>[] => {
+  switch (source.kind) {
+    case 'collection':
+    case 'collectionGroup':
+      return [];
+    case 'query':
+      // Its own clauses come after everything IT extends, so the recursion has
+      // to run to the bottom of the chain rather than stopping one level up.
+      return [
+        ...sourceOrdering(source.source),
+        ...source.constraints.filter(isOrderBy).map((constraint) => constraint.field),
+      ];
+    default:
+      return assertNever(source);
+  }
+};
+
+/** Narrows a constraint to an `orderBy`; the predicate is inferred, and so checked. */
+const isOrderBy = <T extends DocumentSchema>(constraint: ListConstraint<T>) =>
+  constraint.kind === 'orderBy';
 
 /**
  * A query constraint
  */
 export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
+  | ListConstraint<T>
+  | StartBound
+  | EndBound;
+
+/**
+ * The constraints a built query keeps as a LIST. The bounds are not among them:
+ * a query has one result window rather than a sequence of them, so {@link query}
+ * lifts them out to its `start` / `end` fields.
+ */
+export type ListConstraint<T extends DocumentSchema = DocumentSchema> =
   | Where<T>
   | OrderBy<T>
-  | StartAt<T>
-  | StartAfter<T>
-  | EndAt<T>
-  | EndBefore<T>
   | Limit
   | LimitToLast
   | Offset;
+
+/** Where the result window starts, as a caller writes it. */
+export type StartBound = StartAt | StartAfter;
+/** Where the result window ends, as a caller writes it. */
+export type EndBound = EndAt | EndBefore;
+
+/**
+ * A bound in a BUILT query: every value paired with the field it belongs to.
+ *
+ * A separate type from {@link StartBound} rather than the same one at another
+ * precision, because the two are different claims. What a caller writes is a
+ * list of raw values; what a query holds has been checked against the ordering
+ * and can no longer contain a value that belongs nowhere.
+ */
+export type ResolvedStartBound<T extends DocumentSchema = DocumentSchema> = {
+  kind: StartBound['kind'];
+  cursor: CursorValue<T>[];
+};
+/** The counterpart of {@link ResolvedStartBound} for the upper bound. */
+export type ResolvedEndBound<T extends DocumentSchema = DocumentSchema> = {
+  kind: EndBound['kind'];
+  cursor: CursorValue<T>[];
+};
 
 /**
  * A where constraint that wraps a filter expression
@@ -138,41 +285,38 @@ export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast
 export type Offset = { kind: 'offset'; offset: number };
 
 /** A cursor constraint that starts at the given values (inclusive) */
-export type StartAt<T extends DocumentSchema> = { kind: 'startAt'; cursor: Cursor<T> };
-/** Creates a startAt cursor constraint (inclusive) */
-export const startAt = <T extends DocumentSchema>(...cursor: Cursor<T>): StartAt<T> => ({
-  kind: 'startAt',
-  cursor,
-});
+export type StartAt = { kind: 'startAt'; cursor: Cursor };
+/** Creates a startAt cursor constraint */
+export const startAt = (...cursor: Cursor): StartAt => ({ kind: 'startAt', cursor });
 
 /** A cursor constraint that starts after the given values (exclusive) */
-export type StartAfter<T extends DocumentSchema> = { kind: 'startAfter'; cursor: Cursor<T> };
-/** Creates a startAfter cursor constraint (exclusive) */
-export const startAfter = <T extends DocumentSchema>(...cursor: Cursor<T>): StartAfter<T> => ({
-  kind: 'startAfter',
-  cursor,
-});
+export type StartAfter = { kind: 'startAfter'; cursor: Cursor };
+/** Creates a startAfter cursor constraint */
+export const startAfter = (...cursor: Cursor): StartAfter => ({ kind: 'startAfter', cursor });
 
 /** A cursor constraint that ends at the given values (inclusive) */
-export type EndAt<T extends DocumentSchema> = { kind: 'endAt'; cursor: Cursor<T> };
-/** Creates an endAt cursor constraint (inclusive) */
-export const endAt = <T extends DocumentSchema>(...cursor: Cursor<T>): EndAt<T> => ({
-  kind: 'endAt',
-  cursor,
-});
+export type EndAt = { kind: 'endAt'; cursor: Cursor };
+/** Creates an endAt cursor constraint */
+export const endAt = (...cursor: Cursor): EndAt => ({ kind: 'endAt', cursor });
 
 /** A cursor constraint that ends before the given values (exclusive) */
-export type EndBefore<T extends DocumentSchema> = { kind: 'endBefore'; cursor: Cursor<T> };
-/** Creates an endBefore cursor constraint (exclusive) */
-export const endBefore = <T extends DocumentSchema>(...cursor: Cursor<T>): EndBefore<T> => ({
-  kind: 'endBefore',
-  cursor,
-});
+export type EndBefore = { kind: 'endBefore'; cursor: Cursor };
+/** Creates an endBefore cursor constraint */
+export const endBefore = (...cursor: Cursor): EndBefore => ({ kind: 'endBefore', cursor });
+
+/** The values of a cursor as a caller writes them, one per ordered field. */
+export type Cursor = unknown[];
 
 /**
- * A list of values that correspond to the fields specified by the orderBy clause
+ * One cursor value together with the ordered field it belongs to.
+ *
+ * Always paired: {@link query} refuses a cursor with no field to pair against,
+ * so nothing downstream has to handle a value that belongs nowhere.
  */
-export type Cursor<_T extends DocumentSchema> = unknown[];
+export type CursorValue<T extends DocumentSchema = DocumentSchema> = {
+  value: unknown;
+  field: DocFieldPath<T>;
+};
 
 /**
  * A query filter expression

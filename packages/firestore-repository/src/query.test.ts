@@ -10,7 +10,11 @@ import {
   limit,
   orderBy,
   type Query,
+  endAt,
+  endBefore,
   query,
+  startAfter,
+  startAt,
   subcollection,
   where,
 } from './query.js';
@@ -94,6 +98,84 @@ describe('query', () => {
           query(collection(c), where(gte('rank', min)), orderBy('rank', 'desc'), limit(20));
         expectTypeOf(f(authorsCollection, 1)).toEqualTypeOf<Query<typeof authorsCollection>>();
       });
+    });
+  });
+
+  // A query has ONE result window, not a sequence of them, so `query` lifts the
+  // bounds out of the constraint list — and pairs each of their values with the
+  // field it belongs to, which nothing on a value itself says.
+  describe('bounds', () => {
+    const authors = collection(authorsCollection);
+
+    it('pairs each value with the field at its own position', () => {
+      const q = query(authors, orderBy('rank'), orderBy('name'), startAfter(1, 'a'));
+      expect(q.start).toStrictEqual({
+        kind: 'startAfter',
+        cursor: [
+          { value: 1, field: 'rank' },
+          { value: 'a', field: 'name' },
+        ],
+      });
+    });
+
+    // Firestore rejects this too, but only once the query runs. Refusing it
+    // here fails at the mistake, and is what lets every `CursorValue` in a
+    // built query carry a field it actually belongs to.
+    it('refuses a cursor with nothing to pair against', () => {
+      expect(() => query(authors, startAfter(1))).toThrow(/needs an orderBy\(\) to pair with/);
+    });
+
+    // Lifting the bound out is what makes this true: it pairs with the query's
+    // whole ordering, so where it sat among the arguments stops mattering.
+    it('pairs against the whole ordering, wherever the bound was written', () => {
+      const before = query(authors, startAfter(1, 'a'), orderBy('rank'), orderBy('name'));
+      const after = query(authors, orderBy('rank'), orderBy('name'), startAfter(1, 'a'));
+      expect(before.start).toStrictEqual(after.start);
+    });
+
+    it('inherits the ordering of an extended query, ahead of its own', () => {
+      const base = query(authors, orderBy('rank'));
+      expect(query(base, orderBy('name'), startAfter(1, 'a')).start?.cursor).toStrictEqual([
+        { value: 1, field: 'rank' },
+        { value: 'a', field: 'name' },
+      ]);
+    });
+
+    it('inherits through more than one level of extension', () => {
+      const extended = query(query(authors, orderBy('rank')), orderBy('name'));
+      expect(query(extended, startAfter(1, 'a')).start?.cursor).toStrictEqual([
+        { value: 1, field: 'rank' },
+        { value: 'a', field: 'name' },
+      ]);
+    });
+
+    it('refuses a cursor longer than the ordering', () => {
+      expect(() => query(authors, orderBy('rank'), startAfter(1, 'extra'))).toThrow(
+        /cursor of 2 value\(s\) cannot pair with a query ordered by 1 field\(s\)/,
+      );
+    });
+
+    // Fewer is fine: a cursor may bound a prefix of the ordering.
+    it('accepts a cursor shorter than the ordering', () => {
+      expect(
+        query(authors, orderBy('rank'), orderBy('name'), startAfter(1)).start?.cursor,
+      ).toStrictEqual([{ value: 1, field: 'rank' }]);
+    });
+
+    // Matching the SDKs, where a second call replaces the first rather than
+    // narrowing the window further (probed).
+    it('keeps the last bound of each end', () => {
+      const q = query(authors, orderBy('rank'), startAfter(1), startAt(2), endBefore(9), endAt(8));
+      expect(q.start).toStrictEqual({ kind: 'startAt', cursor: [{ value: 2, field: 'rank' }] });
+      expect(q.end).toStrictEqual({ kind: 'endAt', cursor: [{ value: 8, field: 'rank' }] });
+    });
+
+    it('has neither bound when none was given', () => {
+      const q = query(authors, orderBy('rank'), limit(1));
+      expect(q.start).toBeUndefined();
+      expect(q.end).toBeUndefined();
+      // ...and the list keeps only what is not a bound.
+      expect(q.constraints.map(({ kind }) => kind)).toStrictEqual(['orderBy', 'limit']);
     });
   });
 

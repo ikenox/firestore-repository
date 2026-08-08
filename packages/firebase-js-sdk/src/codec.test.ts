@@ -14,6 +14,7 @@ import {
   bool,
   bytes as bytesType,
   docRef,
+  type DocFieldPath,
   double,
   type FieldType,
   geoPoint as geoPointType,
@@ -33,6 +34,7 @@ import { assert, describe, expect, it } from 'vitest';
 
 import {
   buildDecodeSchema,
+  buildEncodeCursorValue,
   buildEncodeFilterValue,
   buildEncodeSchema,
   isBytes,
@@ -317,5 +319,55 @@ describe('the uninhabited descriptor', () => {
   it('encodes the empty array and nothing else', () => {
     expect(buildEncodeSchema(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
     expect(() => buildEncodeSchema(schema, db).parse({ xs: ['a'] })).toThrow();
+  });
+});
+
+describe('buildEncodeCursorValue', () => {
+  // A cursor value is one value of the field the query is ordered by, so it
+  // takes that field's descriptor. Only descriptors whose encoded form differs
+  // from their plain-JS one can show the difference; the descriptor coverage
+  // itself belongs to the write codec, which these delegate to.
+  const authors = rootCollection({ name: 'Authors', schema: { name: string() } });
+  const when = new Date('2020-01-02T03:04:05.000Z');
+  const schema = {
+    author: docRef(authors),
+    spot: geoPointType(),
+    at: timestamp(),
+    blob: bytesType(),
+    rank: int64(),
+    tags: array(string()),
+  };
+  const encode = buildEncodeCursorValue(schema, db);
+
+  const cases: [DocFieldPath<typeof schema>, unknown, unknown][] = [
+    ['author', ['Authors', 'a1'], doc(db, 'Authors/a1')],
+    ['spot', { latitude: 12.3, longitude: 45.6 }, new GeoPoint(12.3, 45.6)],
+    ['at', when, Timestamp.fromDate(when)],
+    ['blob', Uint8Array.from([1, 2, 3]), Bytes.fromUint8Array(Uint8Array.from([1, 2, 3]))],
+    ['rank', 1, 1],
+  ];
+  it.each(cases)("encodes a %s cursor with that field's descriptor", (path, written, encoded) => {
+    expect(encode(path, written)).toStrictEqual(encoded);
+  });
+
+  // The memo key is the field path, so a second field must not reuse the
+  // first one's schema.
+  it('keeps one schema per field path', () => {
+    expect(encode('author', ['Authors', 'a1'])).toStrictEqual(doc(db, 'Authors/a1'));
+    expect(encode('spot', { latitude: 1, longitude: 2 })).toStrictEqual(new GeoPoint(1, 2));
+    expect(encode('author', ['Authors', 'a2'])).toStrictEqual(doc(db, 'Authors/a2'));
+  });
+
+  it('rejects a value the ordered field does not admit', () => {
+    expect(() => encode('author', ['NotAuthors', 'x1'])).toThrow();
+    expect(() => encode('rank', 'not a number')).toThrow();
+  });
+
+  // The document key is the one field the two SDKs disagree on, so it is left
+  // to the caller and the SDK — see the function's JSDoc.
+  it('passes a __name__ cursor through untouched', () => {
+    expect(encode('__name__', 'd1')).toBe('d1');
+    const ref = doc(db, 'Authors/a1');
+    expect(encode('__name__', ref)).toBe(ref);
   });
 });

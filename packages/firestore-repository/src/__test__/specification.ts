@@ -1064,6 +1064,80 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
     });
 
+    describe('cursor values are encoded per ordered field', () => {
+      // A cursor is compared against the STORED value, so it has to reach
+      // Firestore in the representation the field was written in. Only
+      // descriptors whose encoded form differs from their plain-JS one can
+      // show this, and the failure is silent: a mismatched cursor matches
+      // nothing and returns an empty page rather than erroring.
+      const cursorCollection = rootCollection({
+        name: `CursorEncoding_${randomString()}`,
+        schema: { ref: docRef(authorsCollection), spot: geoPoint() },
+      });
+      const ids = ['d1', 'd2', 'd3'];
+
+      beforeAll(async () => {
+        await createRepository(cursorCollection).batchSet(
+          ids.map((id, i) => ({
+            id: [id],
+            data: {
+              ref: refPath(authorsCollection, [`a${i + 1}`]),
+              spot: { latitude: i + 1, longitude: i + 1 },
+            },
+          })),
+        );
+      });
+
+      const cursorCases = [
+        { field: 'ref', cursor: refPath(authorsCollection, ['a2']) },
+        { field: 'spot', cursor: { latitude: 2, longitude: 2 } },
+      ] as const satisfies {
+        field: DocFieldPath<(typeof cursorCollection)['schema']>;
+        cursor: unknown;
+      }[];
+
+      const ref2 = refPath(authorsCollection, ['a2']);
+      const spot2 = { latitude: 2, longitude: 2 };
+      const after = async (q: Query<typeof cursorCollection>) =>
+        (await createRepository(cursorCollection).list(q)).toArray().map((doc) => doc.id[0]);
+
+      it.each(cursorCases)('ordered by a $field field', async ({ field, cursor }) => {
+        expect(
+          await after(query(collection(cursorCollection), orderBy(field), startAfter(cursor))),
+        ).toStrictEqual(['d3']);
+      });
+
+      // Values pair with the ordering by POSITION, so a single ordered field
+      // cannot show the pairing is right. Here the two positions take
+      // different descriptors, so swapping them would not merely mismatch —
+      // it would fail to encode at all.
+      it('pairs each value with the field at its own position', async () => {
+        expect(
+          await after(
+            query(
+              collection(cursorCollection),
+              orderBy('spot'),
+              orderBy('ref'),
+              startAfter(spot2, ref2),
+            ),
+          ),
+        ).toStrictEqual(['d3']);
+      });
+
+      // The ordering an extended query inherits counts too: the `orderBy` is
+      // in the source, the cursor in the query built on top of it.
+      it('pairs against an ordering inherited from the extended query', async () => {
+        const ordered = query(collection(cursorCollection), orderBy('ref'));
+        expect(await after(query(ordered, startAfter(ref2)))).toStrictEqual(['d3']);
+      });
+
+      it('encodes over a collection group the same way', async () => {
+        expect(
+          await after(query(collectionGroup(cursorCollection), orderBy('ref'), startAfter(ref2))),
+        ).toStrictEqual(['d3']);
+      });
+    });
+
     describe('decode failures', () => {
       // Two collection definitions over ONE collection name: the value is
       // written under a schema that admits it and read under one that does

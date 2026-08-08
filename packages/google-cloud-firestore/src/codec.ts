@@ -231,21 +231,60 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
  */
-export function buildEncodeFilterValue(
-  schema: DocumentSchema,
+export function buildEncodeFilterValue<S extends DocumentSchema>(
+  schema: S,
   db: firestore.Firestore,
-): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
+): (fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown {
   const operandSchemas = new Map<string, ZodAny>();
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
     let operandSchema = operandSchemas.get(key);
     if (operandSchema === undefined) {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
-      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
       operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
       operandSchemas.set(key, operandSchema);
     }
     return operandSchema.parse(value);
+  };
+}
+
+/**
+ * Builds the encoder for cursor values, memoizing per field path.
+ *
+ * A cursor value is a READ-space value of the field the query is ordered by,
+ * and reaches Firestore through the write codec for the same reason
+ * {@link buildEncodeFilterValue} does: a field's read representation is a
+ * subset of its write `input` for every descriptor, and the write conversions
+ * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`, geopoint / bytes /
+ * vector to their SDK classes) are exactly the forms a cursor must compare
+ * against. Unlike a filter operand there is no operator to widen the shape —
+ * a cursor value is always one value of the field itself.
+ *
+ * `'__name__'` is the exception and passes through untouched. Its cursor form
+ * is the one place the two SDKs disagree — the admin SDK takes a
+ * `DocumentReference`, while the client SDK demands a string that means a bare
+ * document id for a collection query but a full database-relative path for a
+ * collection group — so normalizing it needs a representation decision this
+ * encoder cannot make alone. Tracked with the rest of `__name__`'s operand
+ * typing; until then a cursor on the key takes whatever the SDK takes, as it
+ * did before cursor values were encoded at all.
+ */
+export function buildEncodeCursorValue<S extends DocumentSchema>(
+  schema: S,
+  db: firestore.Firestore,
+): (fieldPath: DocFieldPath<S>, value: unknown) => unknown {
+  const valueSchemas = new Map<string, ZodAny>();
+  return (fieldPath, value) => {
+    if (fieldPath === '__name__') {
+      return value;
+    }
+    let valueSchema = valueSchemas.get(fieldPath);
+    if (valueSchema === undefined) {
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
+      valueSchema = buildEncodeField(fieldType, db);
+      valueSchemas.set(fieldPath, valueSchema);
+    }
+    return valueSchema.parse(value);
   };
 }
 
