@@ -1096,11 +1096,54 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         cursor: unknown;
       }[];
 
+      const ref2 = refPath(authorsCollection, ['a2']);
+      const spot2 = { latitude: 2, longitude: 2 };
+      const after = async (q: Query<typeof cursorCollection>) =>
+        (await createRepository(cursorCollection).list(q)).toArray().map((doc) => doc.id[0]);
+
       it.each(cursorCases)('ordered by a $field field', async ({ field, cursor }) => {
-        const docs = await createRepository(cursorCollection).list(
-          query(collection(cursorCollection), orderBy(field), startAfter(cursor)),
-        );
-        expect(docs.toArray().map((doc) => doc.id[0])).toStrictEqual(['d3']);
+        expect(
+          await after(query(collection(cursorCollection), orderBy(field), startAfter(cursor))),
+        ).toStrictEqual(['d3']);
+      });
+
+      // Values pair with the ordering by POSITION, so a single ordered field
+      // cannot show the pairing is right. Here the two positions take
+      // different descriptors, so swapping them would not merely mismatch —
+      // it would fail to encode at all.
+      it('pairs each value with the field at its own position', async () => {
+        expect(
+          await after(
+            query(
+              collection(cursorCollection),
+              orderBy('spot'),
+              orderBy('ref'),
+              startAfter(spot2, ref2),
+            ),
+          ),
+        ).toStrictEqual(['d3']);
+      });
+
+      // The ordering an extended query inherits counts too: the `orderBy` is
+      // in the source, the cursor in the query built on top of it.
+      it('pairs against an ordering inherited from the extended query', async () => {
+        const ordered = query(collection(cursorCollection), orderBy('ref'));
+        expect(await after(query(ordered, startAfter(ref2)))).toStrictEqual(['d3']);
+      });
+
+      it('encodes over a collection group the same way', async () => {
+        expect(
+          await after(query(collectionGroup(cursorCollection), orderBy('ref'), startAfter(ref2))),
+        ).toStrictEqual(['d3']);
+      });
+
+      // A value with no ordered field to pair with is passed through, leaving
+      // the SDK to reject the cursor — which it does, rather than the library
+      // silently dropping or mis-encoding it.
+      it('leaves a cursor longer than the ordering to the SDK', async () => {
+        await expect(
+          after(query(collection(cursorCollection), orderBy('ref'), startAfter(ref2, spot2))),
+        ).rejects.toThrow();
       });
     });
 
