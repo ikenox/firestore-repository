@@ -1,47 +1,99 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { authorsCollection, postsCollection } from './__test__/specification.js';
-import { type FilterOperand, filterOperand, limit, orderBy, query } from './query.js';
+import {
+  collectionGroup,
+  collection,
+  type FilterOperand,
+  filterOperand,
+  gte,
+  limit,
+  orderBy,
+  type Query,
+  query,
+  subcollection,
+  where,
+} from './query.js';
+import type { ParentDocRef } from './repository.js';
 import {
   type ArrayType,
   array,
+  type Collection,
+  type DoubleType,
   type Int64Type,
   int64,
   type NullType,
+  type RootCollection,
   type StringType,
   string,
+  type SubCollection,
   type UnionType,
 } from './schema.js';
 
 describe('query', () => {
-  describe('query function argument', () => {
+  describe('query source', () => {
     it('root collection', () => {
-      query({ collection: authorsCollection });
-      query({ collection: authorsCollection, group: false });
-      query({ collection: authorsCollection }, orderBy('rank'), limit(1));
-
-      // collection group
-      query({ collection: authorsCollection, group: true });
-      query({ collection: authorsCollection, group: true });
-      query({ collection: authorsCollection, group: true }, orderBy('rank'), limit(1));
+      query(collection(authorsCollection));
+      query(collection(authorsCollection), orderBy('rank'), limit(1));
+      // @ts-expect-error a subcollection needs a parent to locate it, so it is not a `collection`
+      query(collection(postsCollection));
     });
 
     it('subcollection', () => {
-      query({ collection: postsCollection, parent: ['123'] as const });
-      query(
-        { collection: postsCollection, parent: ['123'] as const },
-        orderBy('postedAt'),
-        limit(1),
-      );
-      // @ts-expect-error parent is required for subcollection
-      query({ collection: postsCollection });
-      // @ts-expect-error parent is required for subcollection
-      query({ collection: postsCollection, group: false });
+      query(subcollection(postsCollection, ['123']));
+      query(subcollection(postsCollection, ['123']), orderBy('postedAt'), limit(1));
+      // @ts-expect-error a root collection has no parent document to locate it
+      query(subcollection(authorsCollection, []));
+      // @ts-expect-error the parent tuple must match the collection's ancestry
+      query(subcollection(postsCollection, ['123', 'extra']));
+    });
 
-      // collection group
-      query({ collection: postsCollection, group: true });
-      query({ collection: postsCollection, group: true });
-      query({ collection: postsCollection, group: true }, orderBy('postedAt'), limit(1));
+    it('collection group', () => {
+      query(collectionGroup(authorsCollection));
+      query(collectionGroup(postsCollection), orderBy('postedAt'), limit(1));
+    });
+
+    it('another query, which extends it', () => {
+      const base = query(collection(authorsCollection), orderBy('rank'));
+      expectTypeOf(query(base, limit(1))).toEqualTypeOf<Query<typeof authorsCollection>>();
+    });
+
+    // Why the source is built by fixed-arity factories instead of one object
+    // literal shaped per collection flavor. Expressing that shape needs a
+    // conditional type, which never resolves over an unresolved type parameter
+    // — TypeScript then demands a value assignable to BOTH branches, and no
+    // literal is. Every one of these was unwritable before.
+    describe('is buildable from a generic helper', () => {
+      it('over a root collection', () => {
+        const f = <T extends RootCollection>(c: T) => query(collection(c), limit(20));
+        expectTypeOf(f(authorsCollection)).toEqualTypeOf<Query<typeof authorsCollection>>();
+      });
+
+      it('over a subcollection', () => {
+        const f = <T extends SubCollection>(c: T, parent: ParentDocRef<T>) =>
+          query(subcollection(c, parent), limit(20));
+        expectTypeOf(f(postsCollection, ['123'])).toEqualTypeOf<Query<typeof postsCollection>>();
+      });
+
+      it('over any collection', () => {
+        const f = <T extends Collection>(c: T) => query(collectionGroup(c), limit(20));
+        expectTypeOf(f(postsCollection)).toEqualTypeOf<Query<typeof postsCollection>>();
+      });
+
+      it('extending a query it was given', () => {
+        const f = <T extends Collection>(q: Query<T>) => query(q, limit(5));
+        expectTypeOf(f(query(collectionGroup(postsCollection)))).toEqualTypeOf<
+          Query<typeof postsCollection>
+        >();
+      });
+
+      // Field paths resolve through the constraint too, as long as the helper
+      // bounds the schema it reads.
+      it('with constraints over the bounded schema', () => {
+        const f = <T extends RootCollection<{ rank: DoubleType }>>(c: T, min: number) =>
+          query(collection(c), where(gte('rank', min)), orderBy('rank', 'desc'), limit(20));
+        expectTypeOf(f(authorsCollection, 1)).toEqualTypeOf<Query<typeof authorsCollection>>();
+      });
     });
   });
 

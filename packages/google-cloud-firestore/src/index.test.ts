@@ -5,7 +5,7 @@ import {
   defineRepositorySpecificationTests,
 } from 'firestore-repository/__test__/specification';
 import { uniqueCollection } from 'firestore-repository/__test__/util';
-import { query } from 'firestore-repository/query';
+import { collection, query } from 'firestore-repository/query';
 import { type PlainModel, plainMapper } from 'firestore-repository/repository';
 import type { Doc } from 'firestore-repository/repository';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -159,7 +159,7 @@ describe('repository', async () => {
     it('offset', async () => {
       const [, ...rest] = items;
       const result = (
-        await repository.list(query({ collection: repository.collection }, offset(1)))
+        await repository.list(query(collection(repository.collection), offset(1)))
       ).toArray();
       expect(result).toStrictEqual(rest);
     });
