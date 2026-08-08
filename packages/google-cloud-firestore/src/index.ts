@@ -324,9 +324,7 @@ export const buildFirestoreUtilities = <T extends Collection>(
       q: firestore.Query,
       bound: StartBound<CursorValue<T['schema']>> | EndBound<CursorValue<T['schema']>>,
     ): firestore.Query => {
-      const values = bound.cursor.map(({ value, field }) =>
-        field === undefined ? value : encodeCursorValue(field, value),
-      );
+      const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value));
       switch (bound.kind) {
         case 'startAt':
           return q.startAt(...values);

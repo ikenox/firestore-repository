@@ -118,10 +118,11 @@ describe('query', () => {
       });
     });
 
-    it('leaves values unpaired when nothing is ordered', () => {
-      expect(query(authors, startAfter(1)).start?.cursor).toStrictEqual([
-        { value: 1, field: undefined },
-      ]);
+    // Firestore rejects this too, but only once the query runs. Refusing it
+    // here fails at the mistake, and is what lets every `CursorValue` in a
+    // built query carry a field it actually belongs to.
+    it('refuses a cursor with nothing to pair against', () => {
+      expect(() => query(authors, startAfter(1))).toThrow(/needs an orderBy\(\) to pair with/);
     });
 
     // Lifting the bound out is what makes this true: it pairs with the query's
@@ -148,13 +149,17 @@ describe('query', () => {
       ]);
     });
 
-    // The SDKs reject an over-long cursor themselves, so it is carried unpaired
-    // rather than rejected here.
-    it('leaves a value with no field to pair with unpaired', () => {
-      expect(query(authors, orderBy('rank'), startAfter(1, 'extra')).start?.cursor).toStrictEqual([
-        { value: 1, field: 'rank' },
-        { value: 'extra', field: undefined },
-      ]);
+    it('refuses a cursor longer than the ordering', () => {
+      expect(() => query(authors, orderBy('rank'), startAfter(1, 'extra'))).toThrow(
+        /2 cursor value\(s\), but the query is ordered by 1 field\(s\)/,
+      );
+    });
+
+    // Fewer is fine: a cursor may bound a prefix of the ordering.
+    it('accepts a cursor shorter than the ordering', () => {
+      expect(
+        query(authors, orderBy('rank'), orderBy('name'), startAfter(1)).start?.cursor,
+      ).toStrictEqual([{ value: 1, field: 'rank' }]);
     });
 
     // Matching the SDKs, where a second call replaces the first rather than

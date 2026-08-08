@@ -1136,15 +1136,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           await after(query(collectionGroup(cursorCollection), orderBy('ref'), startAfter(ref2))),
         ).toStrictEqual(['d3']);
       });
-
-      // A value with no ordered field to pair with is passed through, leaving
-      // the SDK to reject the cursor — which it does, rather than the library
-      // silently dropping or mis-encoding it.
-      it('leaves a cursor longer than the ordering to the SDK', async () => {
-        await expect(
-          after(query(collection(cursorCollection), orderBy('ref'), startAfter(ref2, spot2))),
-        ).rejects.toThrow();
-      });
     });
 
     describe('decode failures', () => {

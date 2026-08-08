@@ -147,22 +147,32 @@ export const query = <T extends Collection>(
  * inherited ordering and this query's own clauses, are in hand exactly here.
  *
  * The ordering used is the query's WHOLE ordering, not the clauses that
- * happened to precede the cursor in the argument list. The SDKs only accept a
+ * happened to precede the bound in the argument list. The SDKs only accept a
  * cursor after every clause it pairs with (probed: an `orderBy` after a cursor
  * is refused outright), so for any query they accept the two are the same —
  * and lifting the bound out of the list makes the argument order stop
  * mattering at all.
  *
- * A value with no ordered field to pair with keeps `field: undefined`. Not an
- * error here: the SDKs reject such a cursor themselves ("Too many cursor
- * values specified"), and that is the one place the rule should be stated.
+ * @throws if the cursor carries more values than the query is ordered by.
+ * Firestore rejects that too, but only once the query runs; refusing it here
+ * fails at the mistake, and leaves every {@link CursorValue} in a built query
+ * with a field it actually belongs to. Fewer values than clauses is fine — a
+ * cursor may bound a prefix of the ordering.
  */
 const resolveBound = <B extends StartBound | EndBound, T extends DocumentSchema>(
   bound: B,
   ordering: DocFieldPath<T>[],
 ): B & { cursor: Cursor<CursorValue<T>> } => ({
   ...bound,
-  cursor: bound.cursor.map((value, i) => ({ value, field: ordering[i] })),
+  cursor: bound.cursor.map((value, i) => {
+    const field = ordering[i];
+    if (field === undefined) {
+      throw new Error(
+        `${bound.kind}() was given ${bound.cursor.length} cursor value(s), but the query is ordered by ${ordering.length} field(s)${ordering.length === 0 ? ' — a cursor needs an orderBy() to pair with' : ''}`,
+      );
+    }
+    return { value, field };
+  }),
 });
 
 /**
@@ -282,15 +292,15 @@ export const endBefore = (...cursor: Cursor): EndBefore => ({ kind: 'endBefore',
  */
 export type Cursor<C = unknown> = C[];
 
-/** One cursor value together with the ordered field it belongs to. */
+/**
+ * One cursor value together with the ordered field it belongs to.
+ *
+ * Always paired: {@link query} refuses a cursor with no field to pair against,
+ * so nothing downstream has to handle a value that belongs nowhere.
+ */
 export type CursorValue<T extends DocumentSchema = DocumentSchema> = {
   value: unknown;
-  /**
-   * Absent when the cursor carries more values than the query is ordered by.
-   * Not an error here: the SDKs reject such a cursor themselves, and that is
-   * the one place the rule should be stated.
-   */
-  field: DocFieldPath<T> | undefined;
+  field: DocFieldPath<T>;
 };
 
 /**
