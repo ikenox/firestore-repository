@@ -260,14 +260,10 @@ export function buildEncodeFilterValue<S extends DocumentSchema>(
  * against. Unlike a filter operand there is no operator to widen the shape —
  * a cursor value is always one value of the field itself.
  *
- * `'__name__'` is the exception and passes through untouched. Its cursor form
- * is the one place the two SDKs disagree — the admin SDK takes a
- * `DocumentReference`, while the client SDK demands a string that means a bare
- * document id for a collection query but a full database-relative path for a
- * collection group — so normalizing it needs a representation decision this
- * encoder cannot make alone. Tracked with the rest of `__name__`'s operand
- * typing; until then a cursor on the key takes whatever the SDK takes, as it
- * did before cursor values were encoded at all.
+ * `'__name__'` needs nothing special here: the admin SDK takes a
+ * `DocumentReference` for the document key exactly as it does for a reference
+ * field, which is what the descriptor's encoder already produces. The client
+ * SDK is the one that differs — see its own codec.
  */
 export function buildEncodeCursorValue<S extends DocumentSchema>(
   schema: S,
@@ -275,9 +271,6 @@ export function buildEncodeCursorValue<S extends DocumentSchema>(
 ): (fieldPath: DocFieldPath<S>, value: unknown) => unknown {
   const valueSchemas = new Map<string, ZodAny>();
   return (fieldPath, value) => {
-    if (fieldPath === '__name__') {
-      return value;
-    }
     let valueSchema = valueSchemas.get(fieldPath);
     if (valueSchema === undefined) {
       const fieldType = fieldTypeOfPath(schema, fieldPath);

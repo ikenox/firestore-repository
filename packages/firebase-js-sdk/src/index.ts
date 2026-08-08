@@ -38,12 +38,14 @@ import {
 } from '@firebase/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import type {
-  FilterExpression,
-  Query,
-  QuerySource,
-  ResolvedEndBound,
-  ResolvedStartBound,
+import {
+  type FilterExpression,
+  type Query,
+  queryScope,
+  type QueryScope,
+  type QuerySource,
+  type ResolvedEndBound,
+  type ResolvedStartBound,
 } from 'firestore-repository/query';
 import {
   type AppModel,
@@ -285,11 +287,14 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
 
       // The bounds go last: the SDK only accepts a cursor once every clause it
       // pairs with is already on the query.
+      // The document key's cursor form depends on what the query reads, so the
+      // scope travels with the bound — see this package's `encodeKeyCursor`.
+      const scope = queryScope(query.source);
       if (query.start !== undefined) {
-        nonFilter.push(toFirestore.bound(query.start));
+        nonFilter.push(toFirestore.bound(query.start, scope));
       }
       if (query.end !== undefined) {
-        nonFilter.push(toFirestore.bound(query.end));
+        nonFilter.push(toFirestore.bound(query.end, scope));
       }
 
       // Wrap single filter in and() to satisfy QueryCompositeFilterConstraint overload
@@ -303,8 +308,9 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
      */
     bound: (
       bound: ResolvedStartBound<T['schema']> | ResolvedEndBound<T['schema']>,
+      scope: QueryScope,
     ): QueryNonFilterConstraint => {
-      const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value));
+      const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value, scope));
       switch (bound.kind) {
         case 'startAt':
           return startAt(...values);

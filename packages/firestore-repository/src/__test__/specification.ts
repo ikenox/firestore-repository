@@ -804,6 +804,20 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           multiple: ['rank', 'profile.age'],
           multipleOrderSingleCursor: ['rank', 'profile.age'],
         } as const satisfies Record<string, DocFieldPath<AuthorsCollection['schema']>[]>;
+        // A `__name__` cursor takes a reference path, exactly as a `__name__`
+        // filter operand does — a bare document id cannot name its ancestors,
+        // which a collection group cursor needs. The table below lists plain
+        // ids, resolved here against the collection instance under test, which
+        // only this scope knows.
+        const toCursorValues = (
+          testName: keyof typeof queryCursorTestCases,
+          values: unknown[],
+        ): unknown[] =>
+          testName === 'id'
+            ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the `id` rows of the table are document ids by construction
+              values.map((id) => refPath(repository.collection, [id as string]))
+            : values;
+
         const defineQueryCursorTests = (
           cursorFunc: typeof startAt | typeof startAfter | typeof endAt | typeof endBefore,
           tests: Record<
@@ -812,19 +826,20 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           >,
         ) => {
           describe(cursorFunc.name, () => {
-            for (const [testName, asserts] of Object.entries(tests)) {
-              it(testName, async () => {
-                const orderByConstraints = queryCursorTestCases[
-                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Object.entries loses type information of object keys
-                  testName as keyof typeof queryCursorTestCases
-                ].map((f) => orderBy<(typeof repository.collection)['schema']>(f));
+            for (const [name, asserts] of Object.entries(tests)) {
+              it(name, async () => {
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Object.entries loses type information of object keys
+                const testName = name as keyof typeof queryCursorTestCases;
+                const orderByConstraints = queryCursorTestCases[testName].map((f) =>
+                  orderBy<(typeof repository.collection)['schema']>(f),
+                );
 
                 for (const [cursorValues, expected] of asserts) {
                   await expectQuery(
                     query(
                       collection(repository.collection),
                       ...orderByConstraints,
-                      cursorFunc(...cursorValues),
+                      cursorFunc(...toCursorValues(testName, cursorValues)),
                     ),
                     expected,
                   );
@@ -1129,6 +1144,36 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       it('pairs against an ordering inherited from the extended query', async () => {
         const ordered = query(collection(cursorCollection), orderBy('ref'));
         expect(await after(query(ordered, startAfter(ref2)))).toStrictEqual(['d3']);
+      });
+
+      // The document key is the one field the two SDKs render differently — and
+      // differently again per scope: within a collection the client SDK wants
+      // the bare document id, across a collection group the full path, and it
+      // takes the `DocumentReference` the admin SDK wants in neither. Both
+      // rows below are the same `RefPath` operand, which is what lets one
+      // cursor work everywhere.
+      it('orders by the document key within a collection', async () => {
+        expect(
+          await after(
+            query(
+              collection(cursorCollection),
+              orderBy('__name__'),
+              startAfter(refPath(cursorCollection, ['d2'])),
+            ),
+          ),
+        ).toStrictEqual(['d3']);
+      });
+
+      it('orders by the document key across a collection group', async () => {
+        expect(
+          await after(
+            query(
+              collectionGroup(cursorCollection),
+              orderBy('__name__'),
+              startAfter(refPath(cursorCollection, ['d2'])),
+            ),
+          ),
+        ).toStrictEqual(['d3']);
       });
 
       it('encodes over a collection group the same way', async () => {

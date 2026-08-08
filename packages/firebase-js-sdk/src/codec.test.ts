@@ -347,27 +347,42 @@ describe('buildEncodeCursorValue', () => {
     ['rank', 1, 1],
   ];
   it.each(cases)("encodes a %s cursor with that field's descriptor", (path, written, encoded) => {
-    expect(encode(path, written)).toStrictEqual(encoded);
+    expect(encode(path, written, 'collection')).toStrictEqual(encoded);
   });
 
   // The memo key is the field path, so a second field must not reuse the
   // first one's schema.
   it('keeps one schema per field path', () => {
-    expect(encode('author', ['Authors', 'a1'])).toStrictEqual(doc(db, 'Authors/a1'));
-    expect(encode('spot', { latitude: 1, longitude: 2 })).toStrictEqual(new GeoPoint(1, 2));
-    expect(encode('author', ['Authors', 'a2'])).toStrictEqual(doc(db, 'Authors/a2'));
+    expect(encode('author', ['Authors', 'a1'], 'collection')).toStrictEqual(doc(db, 'Authors/a1'));
+    expect(encode('spot', { latitude: 1, longitude: 2 }, 'collection')).toStrictEqual(
+      new GeoPoint(1, 2),
+    );
+    expect(encode('author', ['Authors', 'a2'], 'collection')).toStrictEqual(doc(db, 'Authors/a2'));
   });
 
   it('rejects a value the ordered field does not admit', () => {
-    expect(() => encode('author', ['NotAuthors', 'x1'])).toThrow();
-    expect(() => encode('rank', 'not a number')).toThrow();
+    expect(() => encode('author', ['NotAuthors', 'x1'], 'collection')).toThrow();
+    expect(() => encode('rank', 'not a number', 'collection')).toThrow();
   });
 
-  // The document key is the one field the two SDKs disagree on, so it is left
-  // to the caller and the SDK — see the function's JSDoc.
-  it('passes a __name__ cursor through untouched', () => {
-    expect(encode('__name__', 'd1')).toBe('d1');
-    const ref = doc(db, 'Authors/a1');
-    expect(encode('__name__', ref)).toBe(ref);
+  // The document key takes a `RefPath` like a `__name__` filter does, and is
+  // rendered into the string this SDK wants — which differs per scope.
+  it('renders a __name__ cursor as the document id within a collection', () => {
+    expect(encode('__name__', ['Authors', 'a1'], 'collection')).toBe('a1');
+    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'], 'collection')).toBe('p1');
+  });
+
+  it('renders a __name__ cursor as the full path across a collection group', () => {
+    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'], 'collectionGroup')).toBe(
+      'Authors/a1/Posts/p1',
+    );
+  });
+
+  // The forms the SDK itself would take, which the library does not: a bare id
+  // cannot name its ancestors, and a `DocumentReference` this SDK rejects.
+  it('rejects a __name__ cursor that is not a reference path', () => {
+    expect(() => encode('__name__', 'a1', 'collection')).toThrow();
+    expect(() => encode('__name__', doc(db, 'Authors/a1'), 'collection')).toThrow();
+    expect(() => encode('__name__', ['odd'], 'collection')).toThrow();
   });
 });

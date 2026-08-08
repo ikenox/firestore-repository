@@ -12,7 +12,7 @@ import {
   serverTimestamp as firestoreServerTimestamp,
   vector,
 } from '@firebase/firestore';
-import { filterOperand, type WhereFilterOp } from 'firestore-repository/query';
+import { filterOperand, type QueryScope, type WhereFilterOp } from 'firestore-repository/query';
 import {
   type Collection,
   type DocFieldPath,
@@ -266,23 +266,17 @@ export function buildEncodeFilterValue<S extends DocumentSchema>(
  * against. Unlike a filter operand there is no operator to widen the shape —
  * a cursor value is always one value of the field itself.
  *
- * `'__name__'` is the exception and passes through untouched. Its cursor form
- * is the one place the two SDKs disagree — the admin SDK takes a
- * `DocumentReference`, while the client SDK demands a string that means a bare
- * document id for a collection query but a full database-relative path for a
- * collection group — so normalizing it needs a representation decision this
- * encoder cannot make alone. Tracked with the rest of `__name__`'s operand
- * typing; until then a cursor on the key takes whatever the SDK takes, as it
- * did before cursor values were encoded at all.
+ * `'__name__'` is the exception, and the reason this takes a {@link QueryScope}
+ * — see {@link encodeKeyCursor}.
  */
 export function buildEncodeCursorValue<S extends DocumentSchema>(
   schema: S,
   db: Firestore,
-): (fieldPath: DocFieldPath<S>, value: unknown) => unknown {
+): (fieldPath: DocFieldPath<S>, value: unknown, scope: QueryScope) => unknown {
   const valueSchemas = new Map<string, ZodAny>();
-  return (fieldPath, value) => {
+  return (fieldPath, value, scope) => {
     if (fieldPath === '__name__') {
-      return value;
+      return encodeKeyCursor(value, scope);
     }
     let valueSchema = valueSchemas.get(fieldPath);
     if (valueSchema === undefined) {
@@ -293,6 +287,39 @@ export function buildEncodeCursorValue<S extends DocumentSchema>(
     return valueSchema.parse(value);
   };
 }
+
+/**
+ * The document key as this SDK wants it in a cursor: a STRING, whose meaning
+ * depends on what the query reads (probed, and enforced in `dist/index.node.mjs`).
+ *
+ * - a collection query wants the bare document id, and rejects anything
+ *   containing a slash;
+ * - a collection group query wants the full database-relative path, and
+ *   rejects a bare id.
+ *
+ * A `DocumentReference` — which the admin SDK does take — is rejected in both.
+ * That divergence is why the library's own operand is the {@link RefPath}
+ * segment path, the same as a `__name__` filter takes: it is the only form
+ * that can produce all three, since a bare id cannot name its ancestors.
+ */
+const encodeKeyCursor = (value: unknown, scope: QueryScope): string => {
+  const path = refPathSchema('unknown').parse(value);
+  switch (scope) {
+    case 'collection': {
+      const id = path.at(-1);
+      if (id === undefined) {
+        // `refPathSchema` admits nothing shorter than two segments, so this is
+        // unreachable — stated rather than asserted away.
+        throw new Error(`reference path [${path.join(', ')}] has no document id`);
+      }
+      return id;
+    }
+    case 'collectionGroup':
+      return path.join('/');
+    default:
+      return assertNever(scope);
+  }
+};
 
 /**
  * A zod schema for a `RefPath` segment path. A known collection's tuple shape
