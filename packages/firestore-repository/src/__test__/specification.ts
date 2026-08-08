@@ -1138,28 +1138,28 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
     });
 
-    describe('decode failures', () => {
-      // Two collection definitions over ONE collection name: the value is
-      // written under a schema that admits it and read under one that does
-      // not. That is the portable way to produce an undecodable document —
-      // what is stored is legal Firestore data, and only the reading schema
-      // rejects it, so no raw SDK write is needed.
-      //
-      // A fresh name per test: a collection-wide read reports the FIRST
-      // document it cannot decode, so an undecodable document left behind by
-      // a sibling test would otherwise decide the outcome.
-      const undecodableCollection = () => {
-        const name = `DecodeError_${randomString()}`;
-        const writable = rootCollection({ name, schema: { value: string() } });
-        const unreadable = rootCollection({ name, schema: { value: int64() } });
-        return {
-          name,
-          unreadable,
-          writeUndecodable: (id: string) =>
-            createRepository(writable).set({ id: [id], data: { value: 'not a number' } }),
-        };
+    // Two collection definitions over ONE collection name: the value is
+    // written under a schema that admits it and read under one that does
+    // not. That is the portable way to produce an undecodable document —
+    // what is stored is legal Firestore data, and only the reading schema
+    // rejects it, so no raw SDK write is needed.
+    //
+    // A fresh name per test: a collection-wide read reports the FIRST
+    // document it cannot decode, so an undecodable document left behind by
+    // a sibling test would otherwise decide the outcome.
+    const undecodableCollection = () => {
+      const name = `DecodeError_${randomString()}`;
+      const writable = rootCollection({ name, schema: { value: string() } });
+      const unreadable = rootCollection({ name, schema: { value: int64() } });
+      return {
+        name,
+        unreadable,
+        writeUndecodable: (id: string) =>
+          createRepository(writable).set({ id: [id], data: { value: 'not a number' } }),
       };
+    };
 
+    describe('decode failures', () => {
       it('get reports which document failed', async () => {
         const { name, unreadable, writeUndecodable } = undecodableCollection();
         const id = randomString();
@@ -1259,6 +1259,86 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         expect(dbValue).toStrictEqual(value);
       });
+    });
+
+    describe('snapshot listener decode failures', () => {
+      // Decoding runs inside the SDK's own next-handler, where a thrown error
+      // reaches neither callback and escapes as an uncaught exception. Both
+      // listeners must instead report it on the channel a caller watches, and
+      // END the subscription — `error` already means "this subscription is
+      // over" for a stream failure, and has to keep meaning that here.
+      type Undecodable = ReturnType<typeof undecodableCollection>['unreadable'];
+
+      const listenerCases = [
+        {
+          title: 'getOnSnapshot',
+          listen: (
+            repository: PlainRepository<Undecodable, Env>,
+            _coll: Undecodable,
+            id: string,
+            next: () => void,
+            error: (e: Error) => void,
+          ) => repository.getOnSnapshot([id], next, error),
+        },
+        {
+          title: 'listOnSnapshot',
+          listen: (
+            repository: PlainRepository<Undecodable, Env>,
+            coll: Undecodable,
+            _id: string,
+            next: () => void,
+            error: (e: Error) => void,
+          ) => repository.listOnSnapshot(query(collection(coll)), next, error),
+        },
+      ];
+
+      it.each(listenerCases)(
+        '$title reports an undecodable document to error and ends the subscription',
+        async ({ listen }) => {
+          const { name, unreadable, writeUndecodable } = undecodableCollection();
+          const id = randomString();
+          await writeUndecodable(id);
+
+          const errors: Error[] = [];
+          let delivered = 0;
+          let report: () => void;
+          const reported = new Promise((resolve) => {
+            report = () => resolve(null);
+          });
+
+          const unsubscribe = listen(
+            createRepository(unreadable),
+            unreadable,
+            id,
+            () => {
+              delivered += 1;
+            },
+            (e) => {
+              errors.push(e);
+              report();
+            },
+          );
+          await reported;
+
+          // An undecodable document has no model to hand over, so `next` never
+          // fires — and the failure arrives on `error`, naming the document,
+          // rather than escaping the stream.
+          expect(delivered).toBe(0);
+          expect(errors.length).toBe(1);
+          const [error] = errors;
+          assert(error instanceof DocumentDecodeError);
+          expect(error.documentPath).toBe(`${name}/${id}`);
+
+          // The subscription is over: a further write reaches neither callback,
+          // rather than raising the same error on every snapshot.
+          await writeUndecodable(id);
+          await sleep(500);
+          expect(delivered).toBe(0);
+          expect(errors.length).toBe(1);
+
+          unsubscribe();
+        },
+      );
     });
 
     describe('custom mapper with serializer/deserializer', () => {

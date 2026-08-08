@@ -102,6 +102,13 @@ repository.getOnSnapshot('user1', (doc) => {
 await repository.delete('user2');
 ```
 
+> [!NOTE]
+> `getOnSnapshot` and `listOnSnapshot` take an optional third argument, an `error`
+> callback. It receives a stream failure **and** a document that does not decode
+> against your schema, and either one ends the subscription — subscribe again to
+> recover. Without that callback the failure is rethrown asynchronously, so it is
+> never silently dropped.
+
 ### Query
 
 Field paths in query conditions are **automatically derived from the schema type**, not just plain strings — so typos and invalid paths are caught at compile time. The filter value is also **type-checked based on the field type and operator** (e.g., `array-contains` expects the element type of the array field).

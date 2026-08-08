@@ -22,7 +22,12 @@ export interface Repository<
   get: (ref: Model['id'], options?: TransactionOption<Env>) => Promise<Model['read'] | undefined>;
 
   /**
-   * Listens to a single document for changes
+   * Listens to a single document for changes.
+   *
+   * `error` receives BOTH a stream failure and a document that does not decode
+   * against the schema, and either ENDS the subscription — see
+   * {@link subscribeDecoded} for what that costs and why. With no `error`
+   * handler the failure is rethrown asynchronously rather than dropped.
    */
   getOnSnapshot: (
     ref: Model['id'],
@@ -36,7 +41,11 @@ export interface Repository<
   list: (query: Query<T>) => Promise<IteratorObject<Model['read']>>;
 
   /**
-   * Listens to documents matching the specified query for changes
+   * Listens to documents matching the specified query for changes.
+   *
+   * A single document that does not decode fails the whole snapshot — there is
+   * no partial delivery — and is reported on `error` exactly like a stream
+   * failure; see {@link getOnSnapshot} for the shared error contract.
    */
   listOnSnapshot: (
     query: Query<T>,
@@ -176,6 +185,79 @@ export type DocData<
   T extends Collection = Collection,
   Mode extends 'read' | 'write' = 'read',
 > = FieldValue<MapType<T['schema']>, Mode>;
+
+/**
+ * Subscribes to a snapshot stream whose payload has to be DECODED before the
+ * consumer sees it, keeping every failure on the ONE channel a caller watches.
+ *
+ * Decoding cannot be left where the SDK would run it: an exception thrown
+ * inside the SDK's own next-handler escapes through its watch stream as an
+ * uncaught exception, reaching neither {@link next} nor {@link error}. So it
+ * runs here, guarded, and a failure takes the same path a stream failure does.
+ *
+ * Two consequences to know as a caller:
+ *
+ * - **A failure ENDS the subscription.** The SDKs close the stream before
+ *   invoking their error callback, so `error` already means "this subscription
+ *   is over"; a decode failure unsubscribes first so it keeps meaning exactly
+ *   that — and a document that stays undecodable cannot then raise an error on
+ *   every snapshot. Recovering means subscribing again.
+ * - **With no `error` handler the failure is rethrown**, asynchronously and
+ *   outside the SDK's stream, rather than logged or dropped: nothing about a
+ *   document that will not decode should be invisible, and this package writes
+ *   nothing to the console. (The admin SDK's own fallback for a missing handler
+ *   IS `console.error`; the divergence is deliberate.)
+ *
+ * {@link next} is invoked OUTSIDE the guarded region — an exception from the
+ * consumer's own handler is not a stream failure and must not be reported as
+ * one.
+ */
+export const subscribeDecoded = <Snapshot, Model>(
+  subscribe: (next: (snapshot: Snapshot) => void, error: (error: Error) => void) => Unsubscribe,
+  decode: (snapshot: Snapshot) => Model,
+  next: (model: Model) => void,
+  error?: (error: Error) => void,
+): Unsubscribe => {
+  let unsubscribe: Unsubscribe | undefined;
+  let ended = false;
+
+  const end = (): void => {
+    ended = true;
+    unsubscribe?.();
+  };
+
+  const fail = (e: Error): void => {
+    end();
+    if (error) {
+      error(e);
+      return;
+    }
+    queueMicrotask(() => {
+      throw e;
+    });
+  };
+
+  unsubscribe = subscribe((snapshot) => {
+    if (ended) {
+      return;
+    }
+    let model: Model;
+    try {
+      model = decode(snapshot);
+    } catch (e) {
+      fail(e instanceof Error ? e : new Error(String(e)));
+      return;
+    }
+    next(model);
+  }, fail);
+
+  if (ended) {
+    // A failure landed before `subscribe` returned, so `end()` had no
+    // unsubscribe to call — release the subscription now.
+    unsubscribe();
+  }
+  return end;
+};
 
 /** Creates a plain mapper that passes documents through without transformation */
 export const plainMapper = <T extends Collection>(_collection: T): Mapper<T, PlainModel<T>> => ({
