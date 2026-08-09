@@ -107,7 +107,7 @@ await repository.delete('user2');
 Field paths in query conditions are **automatically derived from the schema type**, not just plain strings — so typos and invalid paths are caught at compile time. The filter value is also **type-checked based on the field type and operator** (e.g., `array-contains` expects the element type of the array field).
 
 ```ts
-import { eq, gte, limit, query, where } from 'firestore-repository/query';
+import { collection, eq, gte, limit, query, where } from 'firestore-repository/query';
 import { average, count, sum } from 'firestore-repository/aggregate';
 // Backend only: @firebase/firestore does not support offset constraints.
 import { offset } from '@firestore-repository/google-cloud-firestore/query';
@@ -116,7 +116,7 @@ import { offset } from '@firestore-repository/google-cloud-firestore/query';
 // Field paths like 'profile.age' are auto-completed and type-checked against the schema.
 // The value `20` is validated as `number` because `profile.age` is `number`.
 const q = query(
-  { collection: users },
+  collection(users),
   where(gte('profile.age', 20), eq('profile.gender', 'male')),
   // where(gte('profile.age', 'foo')) // ← Compile error: string is not assignable to number
   // where(eq('nonExistent', 1))      // ← Compile error: invalid field path
@@ -358,7 +358,7 @@ import { toSdkQuery } from '@firestore-repository/google-cloud-firestore';
 // For web frontend
 import { toSdkQuery } from '@firestore-repository/firebase-js-sdk';
 
-const q = query({ collection: users }, where(gte('profile.age', 20)), limit(10));
+const q = query(collection(users), where(gte('profile.age', 20)), limit(10));
 
 const { metrics } = await toSdkQuery(db, q).explain({ analyze: true });
 

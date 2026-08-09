@@ -4,6 +4,7 @@ import {
   bool,
   bytes as bytesType,
   docRef,
+  type DocFieldPath,
   double,
   type FieldType,
   geoPoint as geoPointType,
@@ -18,11 +19,12 @@ import {
   union,
   vector as vectorType,
 } from 'firestore-repository/schema';
-import { arrayRemove, arrayUnion } from 'firestore-repository/server-value';
+import { arrayRemove, arrayUnion, increment } from 'firestore-repository/server-value';
 import { assert, describe, expect, it } from 'vitest';
 
 import {
   buildDecodeSchema,
+  buildEncodeCursorValue,
   buildEncodeFilterValue,
   buildEncodeSchema,
   isDocumentReference,
@@ -165,6 +167,45 @@ describe('buildEncodeFilterValue', () => {
   });
 });
 
+describe('numeric descriptors', () => {
+  const schema = { count: int64(), score: double(), nested: map({ count: int64() }) };
+
+  it('rejects fractional int64 values when encoding', () => {
+    const encode = buildEncodeSchema(schema, db);
+
+    expect(encode.parse({ count: 1, score: 1.5, nested: { count: 2 } })).toStrictEqual({
+      count: 1,
+      score: 1.5,
+      nested: { count: 2 },
+    });
+    expect(() => encode.parse({ count: 1.5, score: 1.5, nested: { count: 2 } })).toThrow();
+    expect(() => encode.parse({ count: 1, score: 1.5, nested: { count: 2.5 } })).toThrow();
+  });
+
+  it('rejects fractional int64 values when decoding', () => {
+    const decode = buildDecodeSchema(schema);
+
+    expect(decode.parse({ count: 1, score: 1.5, nested: { count: 2 } })).toStrictEqual({
+      count: 1,
+      score: 1.5,
+      nested: { count: 2 },
+    });
+    expect(() => decode.parse({ count: 1.5, score: 1.5, nested: { count: 2 } })).toThrow();
+    expect(() => decode.parse({ count: 1, score: 1.5, nested: { count: 2.5 } })).toThrow();
+  });
+
+  it('requires integer increment amounts for int64 fields', () => {
+    const encode = buildEncodeSchema(schema, db);
+
+    expect(() =>
+      encode.parse({ count: increment(1), score: increment(1.5), nested: { count: 2 } }),
+    ).not.toThrow();
+    expect(() =>
+      encode.parse({ count: increment(1.5), score: increment(1.5), nested: { count: 2 } }),
+    ).toThrow();
+  });
+});
+
 describe('array server operations', () => {
   // A value reaches an array field in one of three forms — a plain array and the
   // two server operations — and ALL of them carry element values, so all three
@@ -300,5 +341,62 @@ describe('the uninhabited descriptor', () => {
   it('encodes the empty array and nothing else', () => {
     expect(buildEncodeSchema(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
     expect(() => buildEncodeSchema(schema, db).parse({ xs: ['a'] })).toThrow();
+  });
+});
+
+describe('buildEncodeCursorValue', () => {
+  // A cursor value is one value of the field the query is ordered by, so it
+  // takes that field's descriptor. Only descriptors whose encoded form differs
+  // from their plain-JS one can show the difference; the descriptor coverage
+  // itself belongs to the write codec, which these delegate to.
+  const authors = rootCollection({ name: 'Authors', schema: { name: string() } });
+  const when = new Date('2020-01-02T03:04:05.000Z');
+  const schema = {
+    author: docRef(authors),
+    spot: geoPointType(),
+    at: timestamp(),
+    blob: bytesType(),
+    rank: int64(),
+    tags: array(string()),
+  };
+  const encode = buildEncodeCursorValue(schema, db);
+
+  const cases: [DocFieldPath<typeof schema>, unknown, unknown][] = [
+    ['author', ['Authors', 'a1'], db.doc('Authors/a1')],
+    ['spot', { latitude: 12.3, longitude: 45.6 }, new GeoPoint(12.3, 45.6)],
+    ['at', when, Timestamp.fromDate(when)],
+    ['blob', Uint8Array.from([1, 2, 3]), Buffer.from([1, 2, 3])],
+    ['rank', 1, 1],
+  ];
+  it.each(cases)("encodes a %s cursor with that field's descriptor", (path, written, encoded) => {
+    expect(encode(path, written)).toStrictEqual(encoded);
+  });
+
+  // The memo key is the field path, so a second field must not reuse the
+  // first one's schema.
+  it('keeps one schema per field path', () => {
+    expect(encode('author', ['Authors', 'a1'])).toStrictEqual(db.doc('Authors/a1'));
+    expect(encode('spot', { latitude: 1, longitude: 2 })).toStrictEqual(new GeoPoint(1, 2));
+    expect(encode('author', ['Authors', 'a2'])).toStrictEqual(db.doc('Authors/a2'));
+  });
+
+  it('rejects a value the ordered field does not admit', () => {
+    expect(() => encode('author', ['NotAuthors', 'x1'])).toThrow();
+    expect(() => encode('rank', 'not a number')).toThrow();
+  });
+
+  // The document key takes a `RefPath` like a `__name__` filter does. This SDK
+  // wants the same `DocumentReference` for both, so the descriptor's own
+  // encoder covers it with nothing extra.
+  it('encodes a __name__ cursor to a DocumentReference', () => {
+    expect(encode('__name__', ['Authors', 'a1'])).toStrictEqual(db.doc('Authors/a1'));
+    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'])).toStrictEqual(
+      db.doc('Authors/a1/Posts/p1'),
+    );
+  });
+
+  it('rejects a __name__ cursor that is not a reference path', () => {
+    expect(() => encode('__name__', 'a1')).toThrow();
+    expect(() => encode('__name__', ['odd'])).toThrow();
   });
 });

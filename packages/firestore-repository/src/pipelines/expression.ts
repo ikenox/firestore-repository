@@ -203,7 +203,7 @@ export class VectorValue {
  * reference comparisons meaningful: probed, the pipeline backend never
  * matches `__name__` against ANY string form (id / relative path / full
  * resource path — all `false`), only against a reference value. Build the
- * segment path from a repository-side id with `refPath(collection, id)`
+ * segment path from a repository-side id with `refPath(collection, ...id)`
  * (`path.js`).
  */
 export class DocRefValue<T extends Collection | 'unknown' = 'unknown'> {
@@ -219,26 +219,26 @@ export class DocRefValue<T extends Collection | 'unknown' = 'unknown'> {
   /** Context-free form: an untyped segment path — `DocRefType<'unknown'>`. */
   static of(this: void, path: readonly string[]): DocRefValue;
   /**
-   * Collection + address form: `DocRefValue.of(authors, ['a1'])`, typed
+   * Collection + address form: `DocRefValue.of(authors, 'a1')`, typed
    * `DocRefType<Authors>`. Receiving the collection DEFINITION is what makes
    * the known-collection typing possible (a segment tuple alone cannot
    * recover the collection type); the address is normalized to the same
    * segment-path payload, so the wire form is identical to the
-   * context-free flavor.
+   * context-free flavor. The ids are rest arguments, matching `refPath`.
    */
-  static of<T extends Collection>(this: void, collection: T, id: DocRef<T>): DocRefValue<T>;
+  static of<T extends Collection>(this: void, collection: T, ...id: DocRef<T>): DocRefValue<T>;
   static of(
     this: void,
     first: readonly string[] | Collection,
-    id?: [...string[], string],
+    ...id: string[]
   ): DocRefValue<Collection | 'unknown'> {
     if (isSegments(first)) {
       return new DocRefValue(docRef(), first);
     }
-    if (id === undefined) {
-      throw new Error('the collection form requires an id tuple');
+    if (!isDocRef(id)) {
+      throw new Error('the collection form requires at least a document id');
     }
-    return new DocRefValue(docRef(first), refPath(first, id));
+    return new DocRefValue(docRef(first), refPath(first, ...id));
   }
 }
 
@@ -249,6 +249,11 @@ export const docRefValue = DocRefValue.of;
 // unions (the `isConstantArray` precedent) — the annotation deliberately
 // overrides it.
 const isSegments = (v: readonly string[] | Collection): v is readonly string[] => Array.isArray(v);
+
+// The rest parameter of the implementation signature widens the overload's
+// `DocRef<T>` to `string[]`; this recovers the non-empty shape a `DocRef`
+// declares, so the collection form still reaches `refPath` typed.
+const isDocRef = (id: string[]): id is [...string[], string] => id.length > 0;
 
 /**
  * The value domain `constant()` accepts — everything with an unambiguous

@@ -184,7 +184,7 @@ export const toSdkPipeline = <Schema extends DocumentSchema, Id extends Pipeline
   let sdk: SdkPipeline;
   switch (input.kind) {
     case 'collection':
-      sdk = db.pipeline().collection(collectionPath(input.collection, input.parent));
+      sdk = db.pipeline().collection(collectionPath(input.collection, ...input.parent));
       break;
     case 'collectionGroup':
       sdk = db.pipeline().collectionGroup(input.collection.name);

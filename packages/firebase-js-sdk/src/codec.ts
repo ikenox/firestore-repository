@@ -12,7 +12,11 @@ import {
   serverTimestamp as firestoreServerTimestamp,
   vector,
 } from '@firebase/firestore';
-import { filterOperandTypeOf, type WhereFilterOp } from 'firestore-repository/query';
+import {
+  filterOperandTypeOf,
+  type QueryScope,
+  type WhereFilterOp,
+} from 'firestore-repository/query';
 import {
   type Collection,
   type DocFieldPath,
@@ -54,7 +58,13 @@ type SchemaCache = {
   perDb: WeakMap<Firestore, DbSchemaCache>;
 };
 
-type DbSchemaCache = { encode?: z.ZodObject<z.ZodRawShape>; operands: Map<string, ZodAny> };
+type DbSchemaCache = {
+  encode?: z.ZodObject<z.ZodRawShape>;
+  /** Filter operands, keyed by `${operator}:${fieldPath}`. */
+  operands: Map<string, ZodAny>;
+  /** Cursor values, keyed by field path. */
+  cursors: Map<string, ZodAny>;
+};
 
 const cacheFor = (schema: DocumentSchema): SchemaCache => {
   let cache = schemaCaches.get(schema);
@@ -69,7 +79,7 @@ const dbCacheFor = (schema: DocumentSchema, db: Firestore): DbSchemaCache => {
   const { perDb } = cacheFor(schema);
   let cache = perDb.get(db);
   if (cache === undefined) {
-    cache = { operands: new Map() };
+    cache = { operands: new Map(), cursors: new Map() };
     perDb.set(db, cache);
   }
   return cache;
@@ -95,6 +105,7 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'bool':
       return z.boolean();
     case 'int64':
+      return z.int();
     case 'double':
       return z.number();
     case 'null':
@@ -186,6 +197,16 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
     case 'vector':
       return z.array(z.number()).transform((arr) => vector(arr));
     case 'int64':
+      return zodUnion([
+        z.int(),
+        z
+          .unknown()
+          .refine(isIncrement)
+          .refine((v) => Number.isInteger(v.amount), {
+            message: 'int64 increment amount must be an integer',
+          })
+          .transform((v) => firestoreIncrement(v.amount)),
+      ]);
     case 'double':
       return zodUnion([
         z.number(),
@@ -270,23 +291,89 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
-export function buildEncodeFilterValue(
-  schema: DocumentSchema,
+export function buildEncodeFilterValue<S extends DocumentSchema>(
+  schema: S,
   db: Firestore,
-): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
-  const { operands } = dbCacheFor(schema, db);
+): (fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown {
+  const operandSchemas = dbCacheFor(schema, db).operands;
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
-    let operandSchema = operands.get(key);
+    let operandSchema = operandSchemas.get(key);
     if (operandSchema === undefined) {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
-      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
       operandSchema = buildEncodeField(filterOperandTypeOf(fieldType, opStr), db);
-      operands.set(key, operandSchema);
+      operandSchemas.set(key, operandSchema);
     }
     return operandSchema.parse(value);
   };
 }
+
+/**
+ * Builds the encoder for cursor values, memoizing per field path.
+ *
+ * A cursor value is a READ-space value of the field the query is ordered by,
+ * and reaches Firestore through the write codec for the same reason
+ * {@link buildEncodeFilterValue} does: a field's read representation is a
+ * subset of its write `input` for every descriptor, and the write conversions
+ * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`, geopoint / bytes /
+ * vector to their SDK classes) are exactly the forms a cursor must compare
+ * against. Unlike a filter operand there is no operator to widen the shape —
+ * a cursor value is always one value of the field itself.
+ *
+ * `'__name__'` is the exception, and the reason this takes a {@link QueryScope}
+ * — see {@link encodeKeyCursor}.
+ */
+export function buildEncodeCursorValue<S extends DocumentSchema>(
+  schema: S,
+  db: Firestore,
+): (fieldPath: DocFieldPath<S>, value: unknown, scope: QueryScope) => unknown {
+  const valueSchemas = dbCacheFor(schema, db).cursors;
+  return (fieldPath, value, scope) => {
+    if (fieldPath === '__name__') {
+      return encodeKeyCursor(value, scope);
+    }
+    let valueSchema = valueSchemas.get(fieldPath);
+    if (valueSchema === undefined) {
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
+      valueSchema = buildEncodeField(fieldType, db);
+      valueSchemas.set(fieldPath, valueSchema);
+    }
+    return valueSchema.parse(value);
+  };
+}
+
+/**
+ * The document key as this SDK wants it in a cursor: a STRING, whose meaning
+ * depends on what the query reads (probed, and enforced in `dist/index.node.mjs`).
+ *
+ * - a collection query wants the bare document id, and rejects anything
+ *   containing a slash;
+ * - a collection group query wants the full database-relative path, and
+ *   rejects a bare id.
+ *
+ * A `DocumentReference` — which the admin SDK does take — is rejected in both.
+ * That divergence is why the library's own operand is the {@link RefPath}
+ * segment path, the same as a `__name__` filter takes: it is the only form
+ * that can produce all three, since a bare id cannot name its ancestors.
+ */
+const encodeKeyCursor = (value: unknown, scope: QueryScope): string => {
+  const path = refPathSchema('unknown').parse(value);
+  switch (scope) {
+    case 'collection': {
+      const id = path.at(-1);
+      if (id === undefined) {
+        // `refPathSchema` admits nothing shorter than two segments, so this is
+        // unreachable — stated rather than asserted away.
+        throw new Error(`reference path [${path.join(', ')}] has no document id`);
+      }
+      return id;
+    }
+    case 'collectionGroup':
+      return path.join('/');
+    default:
+      return assertNever(scope);
+  }
+};
 
 /**
  * A zod schema for a `RefPath` segment path. A known collection's tuple shape

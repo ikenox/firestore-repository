@@ -48,7 +48,13 @@ type SchemaCache = {
   perDb: WeakMap<firestore.Firestore, DbSchemaCache>;
 };
 
-type DbSchemaCache = { encode?: z.ZodObject<z.ZodRawShape>; operands: Map<string, ZodAny> };
+type DbSchemaCache = {
+  encode?: z.ZodObject<z.ZodRawShape>;
+  /** Filter operands, keyed by `${operator}:${fieldPath}`. */
+  operands: Map<string, ZodAny>;
+  /** Cursor values, keyed by field path. */
+  cursors: Map<string, ZodAny>;
+};
 
 const cacheFor = (schema: DocumentSchema): SchemaCache => {
   let cache = schemaCaches.get(schema);
@@ -63,7 +69,7 @@ const dbCacheFor = (schema: DocumentSchema, db: firestore.Firestore): DbSchemaCa
   const { perDb } = cacheFor(schema);
   let cache = perDb.get(db);
   if (cache === undefined) {
-    cache = { operands: new Map() };
+    cache = { operands: new Map(), cursors: new Map() };
     perDb.set(db, cache);
   }
   return cache;
@@ -89,6 +95,7 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     case 'bool':
       return z.boolean();
     case 'int64':
+      return z.int();
     case 'double':
       return z.number();
     case 'null':
@@ -180,6 +187,16 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
     case 'vector':
       return z.array(z.number()).transform((arr) => FieldValue.vector(arr));
     case 'int64':
+      return zodUnion([
+        z.int(),
+        z
+          .unknown()
+          .refine(isIncrement)
+          .refine((v) => Number.isInteger(v.amount), {
+            message: 'int64 increment amount must be an integer',
+          })
+          .transform((v) => FieldValue.increment(v.amount)),
+      ]);
     case 'double':
       return zodUnion([
         z.number(),
@@ -264,21 +281,53 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
-export function buildEncodeFilterValue(
-  schema: DocumentSchema,
+export function buildEncodeFilterValue<S extends DocumentSchema>(
+  schema: S,
   db: firestore.Firestore,
-): (fieldPath: string, opStr: WhereFilterOp, value: unknown) => unknown {
-  const { operands } = dbCacheFor(schema, db);
+): (fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown {
+  const operandSchemas = dbCacheFor(schema, db).operands;
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
-    let operandSchema = operands.get(key);
+    let operandSchema = operandSchemas.get(key);
     if (operandSchema === undefined) {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
-      const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
       operandSchema = buildEncodeField(filterOperandTypeOf(fieldType, opStr), db);
-      operands.set(key, operandSchema);
+      operandSchemas.set(key, operandSchema);
     }
     return operandSchema.parse(value);
+  };
+}
+
+/**
+ * Builds the encoder for cursor values, memoizing per field path.
+ *
+ * A cursor value is a READ-space value of the field the query is ordered by,
+ * and reaches Firestore through the write codec for the same reason
+ * {@link buildEncodeFilterValue} does: a field's read representation is a
+ * subset of its write `input` for every descriptor, and the write conversions
+ * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`, geopoint / bytes /
+ * vector to their SDK classes) are exactly the forms a cursor must compare
+ * against. Unlike a filter operand there is no operator to widen the shape —
+ * a cursor value is always one value of the field itself.
+ *
+ * `'__name__'` needs nothing special here: the admin SDK takes a
+ * `DocumentReference` for the document key exactly as it does for a reference
+ * field, which is what the descriptor's encoder already produces. The client
+ * SDK is the one that differs — see its own codec.
+ */
+export function buildEncodeCursorValue<S extends DocumentSchema>(
+  schema: S,
+  db: firestore.Firestore,
+): (fieldPath: DocFieldPath<S>, value: unknown) => unknown {
+  const valueSchemas = dbCacheFor(schema, db).cursors;
+  return (fieldPath, value) => {
+    let valueSchema = valueSchemas.get(fieldPath);
+    if (valueSchema === undefined) {
+      const fieldType = fieldTypeOfPath(schema, fieldPath);
+      valueSchema = buildEncodeField(fieldType, db);
+      valueSchemas.set(fieldPath, valueSchema);
+    }
+    return valueSchema.parse(value);
   };
 }
 

@@ -11,8 +11,13 @@ import { Pipeline } from './pipeline.js';
  * The trailing `parent` argument of a collection-input factory: required for a
  * subcollection (the parent document ids locating the instance), optional for a
  * root collection (whose only valid value is the empty tuple `[]` — accepted so
- * generic code can pass a `ParentDocRef` through uniformly). Mirrors
- * `QueryBaseInput`'s root/subcollection split.
+ * generic code can pass a `ParentDocRef` through uniformly).
+ *
+ * Being a conditional, it does not resolve over an unresolved type parameter,
+ * so a generic caller must pass a `ParentDocRef<T>` (assignable to both
+ * branches) — omitting it is not expressible there. `query`'s sources avoid
+ * that by splitting into fixed-arity factories instead; this input has not
+ * followed yet.
  */
 type ParentArg<T extends Collection> = T['parent']['length'] extends 0
   ? [parent?: ParentDocRef<T>]

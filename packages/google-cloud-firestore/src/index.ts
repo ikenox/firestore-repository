@@ -2,7 +2,14 @@ import type * as firestore from '@google-cloud/firestore';
 import { AggregateField, Filter, Transaction } from '@google-cloud/firestore';
 import type { Aggregated, AggregateSpec } from 'firestore-repository/aggregate';
 import { collectionPath, documentPath } from 'firestore-repository/path';
-import { type FilterExpression, type Query, queryCollection } from 'firestore-repository/query';
+import {
+  type FilterExpression,
+  type Query,
+  queryCollection,
+  type QuerySource,
+  type ResolvedEndBound,
+  type ResolvedStartBound,
+} from 'firestore-repository/query';
 import {
   type AppModel,
   Doc,
@@ -19,28 +26,23 @@ import {
   type Unsubscribe,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
-import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
+import type {
+  Collection,
+  DocumentSchema,
+  RootCollection,
+  SubCollection,
+} from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema, buildEncodeFilterValue, buildEncodeSchema } from './codec.js';
+import {
+  buildDecodeSchema,
+  buildEncodeCursorValue,
+  buildEncodeFilterValue,
+  buildEncodeSchema,
+} from './codec.js';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = { transaction: firestore.Transaction; writeBatch: firestore.WriteBatch };
-
-/**
- * Builds the `@google-cloud/firestore` query this library would run for `query`,
- * without running it.
- *
- * This is the escape hatch to SDK features the repository interface does not
- * wrap — `explain()` / `explainStream()` to inspect the query plan, `stream()`,
- * `findNearest()`, and whatever the SDK gains next. The returned query is an
- * ordinary SDK object, so its results are SDK snapshots, not this library's
- * models: decoding them back is the caller's job.
- */
-export const toSdkQuery = <T extends Collection>(
-  db: firestore.Firestore,
-  query: Query<T>,
-): firestore.Query => buildQueryConverter(db, queryCollection(query)).query(query);
 
 /** Extended repository interface for Google Cloud Firestore with additional methods (create, batchCreate, batchGet) */
 export interface GoogleCloudFirestoreRepository<
@@ -87,12 +89,8 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   collection: T,
   mapper: Mapper<T, Model>,
 ): GoogleCloudFirestoreRepository<T, Model> => {
-  const { toFirestore, fromFirestore, batchWriteOperation, encodeSchema } = buildFirestoreUtilities(
-    db,
-    collection,
-  );
   // oxlint-disable-next-line typescript/no-explicit-any -- Zod output is passed to Firestore SDK
-  const encode = (data: unknown): any => encodeSchema.parse(data);
+  const encode = (data: unknown): any => encodeDocData(db, collection, data);
 
   return {
     collection,
@@ -101,9 +99,9 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       ref: Model['id'],
       options?: TransactionOption<Env>,
     ): Promise<Model['read'] | undefined> => {
-      const docRef = toFirestore.docRef(mapper.toDocRef(ref));
+      const docRef = toSdkDocRef(db, collection, mapper.toDocRef(ref));
       const documentSnapshot = await (options?.tx ? options.tx.get(docRef) : docRef.get());
-      const doc = fromFirestore.document(documentSnapshot);
+      const doc = fromSdkDocument(collection, documentSnapshot);
       if (!doc) {
         return undefined;
       }
@@ -115,17 +113,19 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       next: (snapshot: Model['read'] | undefined) => void,
       error?: (error: Error) => void,
     ): Unsubscribe => {
-      const docRef = toFirestore.docRef(mapper.toDocRef(ref));
+      const docRef = toSdkDocRef(db, collection, mapper.toDocRef(ref));
       return docRef.onSnapshot((snapshot) => {
-        const doc = fromFirestore.document(snapshot);
+        const doc = fromSdkDocument(collection, snapshot);
         next(doc ? mapper.fromFirestore(doc) : undefined);
       }, error);
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
-      const firestoreQuery = toFirestore.query(query);
+      const firestoreQuery = toSdkQuery(db, query);
       const { docs } = await firestoreQuery.get();
-      return docs.values().map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc)));
+      return docs
+        .values()
+        .map((doc) => mapper.fromFirestore(fromSdkDocumentMustExist(collection, doc)));
     },
 
     listOnSnapshot: (
@@ -133,10 +133,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       next: (snapshot: Model['read'][]) => void,
       error?: (error: Error) => void,
     ): Unsubscribe => {
-      const firestoreQuery = toFirestore.query(query);
+      const firestoreQuery = toSdkQuery(db, query);
       return firestoreQuery.onSnapshot((snapshot) => {
         next(
-          snapshot.docs.map((doc) => mapper.fromFirestore(fromFirestore.documentMustExist(doc))),
+          snapshot.docs.map((doc) =>
+            mapper.fromFirestore(fromSdkDocumentMustExist(collection, doc)),
+          ),
         );
       }, error);
     },
@@ -162,7 +164,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
         }
       }
 
-      const firestoreQuery = toFirestore.query(query);
+      const firestoreQuery = toSdkQuery(db, query);
       const res = await firestoreQuery.aggregate(aggregateSpec).get();
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- there is no way to infer correct type
       return res.data() as Aggregated<U>;
@@ -170,14 +172,14 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
 
     create: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite.id);
+      const docRef = toSdkDocRef(db, collection, docToWrite.id);
       const data = encode(docToWrite.data);
       await (options?.tx ? options.tx.create(docRef, data) : docRef.create(data));
     },
 
     set: async (model: Model['write'], options?: WriteTransactionOption<Env>): Promise<void> => {
       const docToWrite = mapper.toFirestore(model);
-      const docRef = toFirestore.docRef(docToWrite.id);
+      const docRef = toSdkDocRef(db, collection, docToWrite.id);
       const data = encode(docToWrite.data);
       await (options?.tx
         ? options.tx instanceof Transaction
@@ -187,7 +189,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     },
 
     delete: async (ref: Model['id'], options?: WriteTransactionOption<Env>): Promise<void> => {
-      const docRef = toFirestore.docRef(mapper.toDocRef(ref));
+      const docRef = toSdkDocRef(db, collection, mapper.toDocRef(ref));
       await (options?.tx ? options.tx.delete(docRef) : docRef.delete());
     },
 
@@ -198,10 +200,10 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       if (refs.length === 0) {
         return [];
       }
-      const docRefs = refs.map((ref) => toFirestore.docRef(mapper.toDocRef(ref)));
+      const docRefs = refs.map((ref) => toSdkDocRef(db, collection, mapper.toDocRef(ref)));
       const docs = await (options?.tx ? options.tx.getAll(...docRefs) : db.getAll(...docRefs));
       return docs.map((doc) => {
-        const d = fromFirestore.document(doc);
+        const d = fromSdkDocument(collection, doc);
         return d ? mapper.fromFirestore(d) : undefined;
       });
     },
@@ -214,11 +216,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
         const d = mapper.toFirestore(m);
         return { id: d.id, data: encode(d.data) };
       });
-      await batchWriteOperation(
+      await batchWrite(
+        db,
         docs,
         {
-          batch: (batch, doc) => batch.set(toFirestore.docRef(doc.id), doc.data),
-          transaction: (tx, doc) => tx.set(toFirestore.docRef(doc.id), doc.data),
+          batch: (batch, doc) => batch.set(toSdkDocRef(db, collection, doc.id), doc.data),
+          transaction: (tx, doc) => tx.set(toSdkDocRef(db, collection, doc.id), doc.data),
         },
         options,
       );
@@ -232,11 +235,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
         const d = mapper.toFirestore(m);
         return { id: d.id, data: encode(d.data) };
       });
-      await batchWriteOperation(
+      await batchWrite(
+        db,
         docs,
         {
-          batch: (batch, doc) => batch.create(toFirestore.docRef(doc.id), doc.data),
-          transaction: (tx, doc) => tx.create(toFirestore.docRef(doc.id), doc.data),
+          batch: (batch, doc) => batch.create(toSdkDocRef(db, collection, doc.id), doc.data),
+          transaction: (tx, doc) => tx.create(toSdkDocRef(db, collection, doc.id), doc.data),
         },
         options,
       );
@@ -247,11 +251,12 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
       options?: WriteTransactionOption<Env>,
     ): Promise<void> => {
       const docRefs = refs.map(mapper.toDocRef);
-      await batchWriteOperation(
+      await batchWrite(
+        db,
         docRefs,
         {
-          batch: (batch, ref) => batch.delete(toFirestore.docRef(ref)),
-          transaction: (tx, ref) => tx.delete(toFirestore.docRef(ref)),
+          batch: (batch, ref) => batch.delete(toSdkDocRef(db, collection, ref)),
+          transaction: (tx, ref) => tx.delete(toSdkDocRef(db, collection, ref)),
         },
         options,
       );
@@ -259,10 +264,125 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
   };
 };
 
+/** Builds the SDK reference for a document address. */
+export const toSdkDocRef = <T extends Collection>(
+  db: firestore.Firestore,
+  collection: T,
+  ref: DocRef<T>,
+): firestore.DocumentReference => db.doc(documentPath(collection, ...ref));
+
 /**
- * @internal Converts an SDK document reference into this library's tuple form.
- * Shared with the pipeline adapter, which resolves row identities the same way.
+ * Builds the `@google-cloud/firestore` query this library would run for `query`,
+ * without running it.
+ *
+ * This is the escape hatch to SDK features the repository interface does not
+ * wrap — `explain()` / `explainStream()` to inspect the query plan, `stream()`,
+ * `findNearest()`, and whatever the SDK gains next. The returned query is an
+ * ordinary SDK object, so its results are SDK snapshots, not this library's
+ * models: decoding them back is the caller's job.
  */
+export const toSdkQuery = <T extends Collection>(
+  db: firestore.Firestore,
+  query: Query<T>,
+): firestore.Query => {
+  const { schema } = queryCollection(query);
+  let q = toSdkSource(db, query.source);
+  for (const constraint of query.constraints) {
+    switch (constraint.kind) {
+      case 'where':
+        q = q.where(toSdkFilter(db, schema, constraint.condition));
+        break;
+      case 'orderBy':
+        q = q.orderBy(constraint.field, constraint.direction);
+        break;
+      case 'limit':
+        q = q.limit(constraint.limit);
+        break;
+      case 'limitToLast':
+        q = q.limitToLast(constraint.limit);
+        break;
+      case 'offset':
+        q = q.offset(constraint.offset);
+        break;
+      default:
+        return assertNever(constraint);
+    }
+  }
+  // The bounds go last: the SDK only accepts a cursor once every clause it
+  // pairs with is already on the query.
+  if (query.start !== undefined) {
+    q = toSdkBound(db, schema, q, query.start);
+  }
+  if (query.end !== undefined) {
+    q = toSdkBound(db, schema, q, query.end);
+  }
+  return q;
+};
+
+const toSdkSource = <T extends Collection>(
+  db: firestore.Firestore,
+  source: QuerySource<T>,
+): firestore.Query => {
+  switch (source.kind) {
+    case 'collection':
+      return db.collection(collectionPath(source.collection, ...source.parent));
+    case 'collectionGroup':
+      return db.collectionGroup(source.collection.name);
+    case 'query':
+      return toSdkQuery(db, source);
+    default:
+      return assertNever(source);
+  }
+};
+
+/**
+ * Applies a bound, encoding each cursor value against the field it carries —
+ * which field that is was settled when the query was built.
+ */
+const toSdkBound = <S extends DocumentSchema>(
+  db: firestore.Firestore,
+  schema: S,
+  q: firestore.Query,
+  bound: ResolvedStartBound<S> | ResolvedEndBound<S>,
+): firestore.Query => {
+  const encodeCursorValue = buildEncodeCursorValue(schema, db);
+  const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value));
+  switch (bound.kind) {
+    case 'startAt':
+      return q.startAt(...values);
+    case 'startAfter':
+      return q.startAfter(...values);
+    case 'endAt':
+      return q.endAt(...values);
+    case 'endBefore':
+      return q.endBefore(...values);
+    default:
+      return assertNever(bound);
+  }
+};
+
+const toSdkFilter = <S extends DocumentSchema>(
+  db: firestore.Firestore,
+  schema: S,
+  expr: FilterExpression<S>,
+): firestore.Filter => {
+  switch (expr.kind) {
+    case 'fieldValueCondition':
+      return Filter.where(
+        expr.fieldPath,
+        expr.opStr,
+        buildEncodeFilterValue(schema, db)(expr.fieldPath, expr.opStr, expr.value),
+      );
+    case 'and':
+      return Filter.and(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
+    case 'or':
+      return Filter.or(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
+    default:
+      return assertNever(expr);
+  }
+};
+
+/** Converts an SDK document reference into this library's address form. */
 export const fromSdkDocRef = <T extends Collection>(
   ref: firestore.DocumentReference,
 ): DocRef<T> => {
@@ -277,145 +397,75 @@ export const fromSdkDocRef = <T extends Collection>(
   return docRef.reverse() as DocRef<T>;
 };
 
-/**
- * @internal Shared conversion helpers between this library's types and the SDK's.
- * Exported only so the pipeline adapter in this package can reuse them — the
- * supported entry points are {@link toSdkQuery} and the repository factories.
- */
-const buildQueryConverter = <T extends Collection>(db: firestore.Firestore, collection: T) => {
-  const encodeFilterValue = buildEncodeFilterValue(collection.schema, db);
-
-  const converter = {
-    query: (query: Query<T>): firestore.Query => {
-      let base: firestore.Query;
-      if ('collection' in query.base) {
-        base = query.base.group
-          ? db.collectionGroup(query.base.collection.name)
-          : db.collection(collectionPath(query.base.collection, query.base.parent));
-      } else if ('extends' in query.base) {
-        base = converter.query(query.base.extends);
-      } else {
-        return assertNever(query.base);
-      }
-      return (
-        query.constraints?.reduce((q, constraint) => {
-          switch (constraint.kind) {
-            case 'where':
-              return q.where(converter.filter(constraint.condition));
-            case 'orderBy':
-              return q.orderBy(constraint.field, constraint.direction);
-            case 'limit':
-              return q.limit(constraint.limit);
-            case 'limitToLast':
-              return q.limitToLast(constraint.limit);
-            case 'offset':
-              return q.offset(constraint.offset);
-            case 'startAt': {
-              const { cursor } = constraint;
-              return q.startAt(...cursor);
-            }
-            case 'startAfter': {
-              const { cursor } = constraint;
-              return q.startAfter(...cursor);
-            }
-            case 'endAt': {
-              const { cursor } = constraint;
-              return q.endAt(...cursor);
-            }
-            case 'endBefore': {
-              const { cursor } = constraint;
-              return q.endBefore(...cursor);
-            }
-            default:
-              return assertNever(constraint);
-          }
-        }, base) ?? base
-      );
-    },
-    filter: (expr: FilterExpression<T['schema']>): firestore.Filter => {
-      switch (expr.kind) {
-        case 'fieldValueCondition':
-          return Filter.where(
-            expr.fieldPath,
-            expr.opStr,
-            encodeFilterValue(expr.fieldPath, expr.opStr, expr.value),
-          );
-        case 'and':
-          return Filter.and(...expr.filters.map(converter.filter));
-        case 'or':
-          return Filter.or(...expr.filters.map(converter.filter));
-        default:
-          return assertNever(expr);
-      }
-    },
+const fromSdkDocumentMustExist = <T extends Collection>(
+  collection: T,
+  document: firestore.DocumentSnapshot,
+): Doc<T> => {
+  const data = document.data();
+  if (!data) {
+    throw new Error(`document "${document.ref.path}" must exist`);
+  }
+  return {
+    id: fromSdkDocRef(document.ref),
+    data: decodeDocData(collection, data, document.ref.path),
   };
-  return converter;
 };
 
-export const buildFirestoreUtilities = <T extends Collection>(
+/** Decodes an SDK snapshot into this library's document, or undefined if absent. */
+export const fromSdkDocument = <T extends Collection>(
+  collection: T,
+  document: firestore.DocumentSnapshot,
+): Doc<T> | undefined => {
+  if (!document.exists) {
+    return undefined;
+  }
+  return fromSdkDocumentMustExist(collection, document);
+};
+
+/**
+ * Decodes raw Firestore document data into the schema's read type, attributing
+ * a validation failure to `documentPath` — the decoder itself only knows the
+ * field path within the document.
+ */
+const decodeDocData = <T extends Collection>(
+  collection: T,
+  data: firestore.DocumentData,
+  documentPath: string,
+): DocData<T> => {
+  try {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
+    return buildDecodeSchema(collection.schema).parse(data) as DocData<T>;
+  } catch (e) {
+    throw new DocumentDecodeError(documentPath, e);
+  }
+};
+
+/** Encodes a document's data for the SDK, applying the schema's write conversions. */
+const encodeDocData = <T extends Collection>(
   db: firestore.Firestore,
   collection: T,
-) => {
-  const decodeSchema = buildDecodeSchema(collection.schema);
-  const encodeSchema = buildEncodeSchema(collection.schema, db);
+  data: unknown,
+): unknown => buildEncodeSchema(collection.schema, db).parse(data);
 
-  const toFirestore = {
-    docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
-    ...buildQueryConverter(db, collection),
-  };
-  const fromFirestore = {
-    documentMustExist: (document: firestore.DocumentSnapshot): Doc<T> => {
-      const data = document.data();
-      if (!data) {
-        throw new Error(`document "${document.ref.path}" must exist`);
-      }
-      return {
-        id: fromFirestore.docRef(document.ref),
-        data: fromFirestore.decode(data, document.ref.path),
-      };
-    },
-    document: (document: firestore.DocumentSnapshot): Doc<T> | undefined => {
-      if (!document.exists) {
-        return undefined;
-      }
-      return fromFirestore.documentMustExist(document);
-    },
-    /**
-     * Decodes raw Firestore document data into the schema's read type,
-     * attributing a validation failure to `documentPath` — the decoder itself
-     * only knows the field path within the document.
-     */
-    decode: (data: firestore.DocumentData, documentPath: string): DocData<T> => {
-      try {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
-        return decodeSchema.parse(data) as DocData<T>;
-      } catch (e) {
-        throw new DocumentDecodeError(documentPath, e);
-      }
-    },
-    docRef: (ref: firestore.DocumentReference): DocRef<T> => fromSdkDocRef(ref),
-  };
-  const batchWriteOperation = async <U>(
-    targets: U[],
-    runner: {
-      batch: (batch: firestore.WriteBatch, target: U) => void;
-      transaction: (transaction: firestore.Transaction, target: U) => void;
-    },
-    options?: WriteTransactionOption<Env>,
-  ): Promise<void> => {
-    const tx = options?.tx;
-    if (tx) {
-      if (tx instanceof Transaction) {
-        targets.forEach((target) => void runner.transaction(tx, target));
-      } else {
-        targets.forEach((target) => void runner.batch(tx, target));
-      }
+const batchWrite = async <U>(
+  db: firestore.Firestore,
+  targets: U[],
+  runner: {
+    batch: (batch: firestore.WriteBatch, target: U) => void;
+    transaction: (transaction: firestore.Transaction, target: U) => void;
+  },
+  options?: WriteTransactionOption<Env>,
+): Promise<void> => {
+  const tx = options?.tx;
+  if (tx) {
+    if (tx instanceof Transaction) {
+      targets.forEach((target) => void runner.transaction(tx, target));
     } else {
-      const batch = db.batch();
-      targets.forEach((target) => void runner.batch(batch, target));
-      await batch.commit();
+      targets.forEach((target) => void runner.batch(tx, target));
     }
-  };
-
-  return { fromFirestore, toFirestore, batchWriteOperation, encodeSchema };
+  } else {
+    const batch = db.batch();
+    targets.forEach((target) => void runner.batch(batch, target));
+    await batch.commit();
+  }
 };

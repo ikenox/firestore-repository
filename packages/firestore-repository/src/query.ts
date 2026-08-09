@@ -8,88 +8,292 @@ import {
   type FieldType,
   type FieldTypeOfPath,
   type FieldValue,
+  type RootCollection,
+  type SubCollection,
 } from './schema.js';
 import { assertNever } from './util.js';
 
 /**
- * A universal query definition
+ * A universal query definition: a {@link QuerySource} plus the constraints
+ * applied to it.
+ *
+ * A query is ITSELF a source, which is what makes extending one
+ * (`query(existing, limit(5))`) an ordinary call rather than a separate input
+ * form — the same relationship the SDK has, where `query()` accepts a
+ * `CollectionReference` or another `Query` alike.
  */
 export type Query<T extends Collection = Collection> = {
-  base: QueryBase<T>;
-  constraints?: QueryConstraint<T['schema']>[] | undefined;
+  kind: 'query';
+  source: QuerySource<T>;
+  constraints: ListConstraint<T['schema']>[];
+  /**
+   * The bounds of the result window, at most one each — Firestore has no
+   * notion of several, and a repeated one simply replaces its predecessor
+   * (probed). Their values are already paired with the field each belongs to;
+   * see {@link query}.
+   */
+  start?: ResolvedStartBound<T['schema']> | undefined;
+  end?: ResolvedEndBound<T['schema']> | undefined;
 };
 
 /**
- * A starting point to build a new query
+ * Where a query's rows come from — a single collection instance, a collection
+ * group, or another query.
+ *
+ * Deliberately built by the three factories below rather than accepted as an
+ * object literal shaped per collection flavor. A literal would have to say
+ * "`parent` is required for a subcollection and absent for a root collection"
+ * as a CONDITIONAL type, and a conditional over an unresolved type parameter
+ * never resolves: TypeScript then demands a value assignable to BOTH branches,
+ * which no literal satisfies. That made every generic helper —
+ * `<T extends RootCollection>(c: T) => query(...)` — impossible to write. Each
+ * factory instead has a fixed arity, so nothing needs deferring.
+ *
+ * The member shapes mirror the pipeline's {@link InputStage} of the same names.
  */
-export type QueryBase<T extends Collection> =
-  /**
-   * Target collection to query
-   */
-  | { collection: T; parent: ParentDocRef<T>; group?: false }
-  /**
-   * Collection group query
-   */
-  | { collection: T; group: true }
-  /**
-   * Extends another query
-   */
-  | { extends: Query<T> };
+export type QuerySource<T extends Collection = Collection> =
+  | CollectionSource<T>
+  | CollectionGroupSource<T>
+  | Query<T>;
 
-/** Input type for specifying the base of a query */
-export type QueryBaseInput<T extends Collection = Collection> =
-  /**
-   * Target collection to query
-   */
-  | (T['parent']['length'] extends 0
-      ? // Root Collection
-        { collection: T; group?: false; parent?: ParentDocRef<T> }
-      : // Subcollection
-        { collection: T; group?: false; parent: ParentDocRef<T> })
-  /**
-   * Collection group query
-   */
-  | { collection: T; group: true }
-  /**
-   * Extends another query
-   */
-  | { extends: Query<T> };
+/** A single collection instance; `parent` locates it when it is a subcollection. */
+export type CollectionSource<T extends Collection = Collection> = {
+  kind: 'collection';
+  collection: T;
+  parent: ParentDocRef<T>;
+};
+
+/** Every instance of a collection across the database, regardless of parent. */
+export type CollectionGroupSource<T extends Collection = Collection> = {
+  kind: 'collectionGroup';
+  collection: T;
+};
+
+/** A root collection, which has no parent document to locate it. */
+export const collection = <T extends RootCollection>(def: T): CollectionSource<T> => ({
+  kind: 'collection',
+  collection: def,
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a root collection's `parent` is `[]`, which the compiler cannot reduce `ParentDocRef<T>` to over an unresolved `T`
+  parent: [] as ParentDocRef<T>,
+});
+
+/** One instance of a subcollection, located by its parent document ids. */
+export const subcollection = <T extends SubCollection>(
+  def: T,
+  parent: ParentDocRef<T>,
+): CollectionSource<T> => ({ kind: 'collection', collection: def, parent });
+
+/** Every instance of a collection across the database, regardless of parent. */
+export const collectionGroup = <T extends Collection>(def: T): CollectionGroupSource<T> => ({
+  kind: 'collectionGroup',
+  collection: def,
+});
 
 /**
- * Builds a new query
+ * Builds a query over a source. Passing an existing {@link Query} extends it —
+ * a query is a source (see {@link QuerySource}).
  */
 export const query = <T extends Collection>(
-  base: QueryBaseInput<T>,
+  source: QuerySource<T>,
   ...constraints: QueryConstraint<T['schema']>[]
 ): Query<T> => {
-  if ('extends' in base || base.group) {
-    return { base, constraints };
+  const listed: ListConstraint<T['schema']>[] = [];
+  let start: StartBound | undefined;
+  let end: EndBound | undefined;
+  for (const constraint of constraints) {
+    switch (constraint.kind) {
+      // Later replaces earlier, as it does in the SDKs: a query has one
+      // window, not a sequence of them.
+      case 'startAt':
+      case 'startAfter':
+        start = constraint;
+        break;
+      case 'endAt':
+      case 'endBefore':
+        end = constraint;
+        break;
+      case 'where':
+      case 'orderBy':
+      case 'limit':
+      case 'limitToLast':
+      case 'offset':
+        listed.push(constraint);
+        break;
+      default:
+        return assertNever(constraint);
+    }
   }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- schema without validation
-  return { base: { ...base, parent: base.parent ?? ([] as ParentDocRef<T>) }, constraints };
+
+  const ordering = [
+    ...sourceOrdering(source),
+    ...listed.filter(isOrderBy).map((constraint) => constraint.field),
+  ];
+  return {
+    kind: 'query',
+    source,
+    constraints: listed,
+    start: start && { ...start, cursor: resolveCursor(start.cursor, ordering) },
+    end: end && { ...end, cursor: resolveCursor(end.cursor, ordering) },
+  };
 };
 
 /**
- * Resolves the collection a query targets, unwrapping `extends` bases until it
- * reaches the one that names a collection. Every {@link QueryBase} either names
- * a collection or extends another query, so this always terminates.
+ * Pairs a cursor's values with the fields they belong to.
+ *
+ * Cursor values pair with the ordering POSITIONALLY — `startAfter(a, b)` means
+ * "after `a` in the first ordered field and `b` in the second" — and nothing
+ * on a value itself says which field that is. Resolving it at construction is
+ * what lets a bound be a field of the query: both halves of the answer, the
+ * inherited ordering and this query's own clauses, are in hand exactly there.
+ *
+ * The ordering used is the query's WHOLE ordering, not the clauses that
+ * happened to precede the bound in the argument list. The SDKs only accept a
+ * cursor after every clause it pairs with (probed: an `orderBy` after a cursor
+ * is refused outright), so for any query they accept the two are the same —
+ * and lifting the bound out of the list makes the argument order stop
+ * mattering at all.
+ *
+ * @throws if the cursor carries more values than the query is ordered by.
+ * Firestore rejects that too, but only once the query runs; refusing it here
+ * fails at the mistake, and leaves every {@link CursorValue} in a built query
+ * with a field it actually belongs to. Fewer values than clauses is fine — a
+ * cursor may bound a prefix of the ordering.
  */
-export const queryCollection = <T extends Collection>(query: Query<T>): T =>
-  'extends' in query.base ? queryCollection(query.base.extends) : query.base.collection;
+const resolveCursor = <T extends DocumentSchema>(
+  cursor: Cursor,
+  ordering: DocFieldPath<T>[],
+): CursorValue<T>[] =>
+  cursor.map((value, i) => {
+    // Checked per value rather than by comparing lengths up front, so the
+    // in-range case narrows away the `undefined` instead of being asserted.
+    const field = ordering[i];
+    if (field === undefined) {
+      throw new Error(
+        `a cursor of ${cursor.length} value(s) cannot pair with a query ordered by ${ordering.length} field(s)${
+          ordering.length === 0 ? ' — a cursor needs an orderBy() to pair with' : ''
+        }`,
+      );
+    }
+    return { value, field };
+  });
+
+/** Whether a query reads one collection instance, or every instance of it. */
+export type QueryScope = 'collection' | 'collectionGroup';
+
+/**
+ * The scope a query reads in — the kind of input its source chain bottoms out
+ * at, however many extensions sit on top.
+ *
+ * It matters to executors because the document key means different things in
+ * the two: within one collection a key is a document id, while across a
+ * collection group it has to name the instance too. Only the client SDK makes
+ * that visible, in the cursor form it accepts for `orderBy('__name__')`.
+ */
+export const queryScope = <T extends Collection>(source: QuerySource<T>): QueryScope => {
+  switch (source.kind) {
+    case 'collection':
+      return 'collection';
+    case 'collectionGroup':
+      return 'collectionGroup';
+    case 'query':
+      return queryScope(source.source);
+    default:
+      return assertNever(source);
+  }
+};
+
+/**
+ * The collection a source's rows come from, however many extensions sit on top.
+ *
+ * An executor needs it to reach anything derived from the schema — encoding a
+ * filter's operands, decoding the documents that come back — while a caller
+ * holding only a built query no longer has the collection in hand.
+ */
+export const queryCollection = <T extends Collection>(source: QuerySource<T>): T => {
+  switch (source.kind) {
+    case 'collection':
+    case 'collectionGroup':
+      return source.collection;
+    case 'query':
+      return queryCollection(source.source);
+    default:
+      return assertNever(source);
+  }
+};
+
+/**
+ * The ordering a source already carries — an extended query contributes its
+ * own, in the order an executor applies the chain.
+ *
+ * There is no implicit trailing slot: Firestore requires exactly as many
+ * cursor values as `orderBy` clauses, so ordering by the document key needs an
+ * explicit `orderBy('__name__')` (probed).
+ */
+const sourceOrdering = <T extends Collection>(
+  source: QuerySource<T>,
+): DocFieldPath<T['schema']>[] => {
+  switch (source.kind) {
+    case 'collection':
+    case 'collectionGroup':
+      return [];
+    case 'query':
+      // Its own clauses come after everything IT extends, so the recursion has
+      // to run to the bottom of the chain rather than stopping one level up.
+      return [
+        ...sourceOrdering(source.source),
+        ...source.constraints.filter(isOrderBy).map((constraint) => constraint.field),
+      ];
+    default:
+      return assertNever(source);
+  }
+};
+
+/** Narrows a constraint to an `orderBy`; the predicate is inferred, and so checked. */
+const isOrderBy = <T extends DocumentSchema>(constraint: ListConstraint<T>) =>
+  constraint.kind === 'orderBy';
 
 /**
  * A query constraint
  */
 export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
+  | ListConstraint<T>
+  | StartBound
+  | EndBound;
+
+/**
+ * The constraints a built query keeps as a LIST. The bounds are not among them:
+ * a query has one result window rather than a sequence of them, so {@link query}
+ * lifts them out to its `start` / `end` fields.
+ */
+export type ListConstraint<T extends DocumentSchema = DocumentSchema> =
   | Where<T>
   | OrderBy<T>
-  | StartAt<T>
-  | StartAfter<T>
-  | EndAt<T>
-  | EndBefore<T>
   | Limit
   | LimitToLast
   | Offset;
+
+/** Where the result window starts, as a caller writes it. */
+export type StartBound = StartAt | StartAfter;
+/** Where the result window ends, as a caller writes it. */
+export type EndBound = EndAt | EndBefore;
+
+/**
+ * A bound in a BUILT query: every value paired with the field it belongs to.
+ *
+ * A separate type from {@link StartBound} rather than the same one at another
+ * precision, because the two are different claims. What a caller writes is a
+ * list of raw values; what a query holds has been checked against the ordering
+ * and can no longer contain a value that belongs nowhere.
+ */
+export type ResolvedStartBound<T extends DocumentSchema = DocumentSchema> = {
+  kind: StartBound['kind'];
+  cursor: CursorValue<T>[];
+};
+/** The counterpart of {@link ResolvedStartBound} for the upper bound. */
+export type ResolvedEndBound<T extends DocumentSchema = DocumentSchema> = {
+  kind: EndBound['kind'];
+  cursor: CursorValue<T>[];
+};
 
 /**
  * A where constraint that wraps a filter expression
@@ -125,41 +329,38 @@ export const limitToLast = (limit: number): LimitToLast => ({ kind: 'limitToLast
 export type Offset = { kind: 'offset'; offset: number };
 
 /** A cursor constraint that starts at the given values (inclusive) */
-export type StartAt<T extends DocumentSchema> = { kind: 'startAt'; cursor: Cursor<T> };
-/** Creates a startAt cursor constraint (inclusive) */
-export const startAt = <T extends DocumentSchema>(...cursor: Cursor<T>): StartAt<T> => ({
-  kind: 'startAt',
-  cursor,
-});
+export type StartAt = { kind: 'startAt'; cursor: Cursor };
+/** Creates a startAt cursor constraint */
+export const startAt = (...cursor: Cursor): StartAt => ({ kind: 'startAt', cursor });
 
 /** A cursor constraint that starts after the given values (exclusive) */
-export type StartAfter<T extends DocumentSchema> = { kind: 'startAfter'; cursor: Cursor<T> };
-/** Creates a startAfter cursor constraint (exclusive) */
-export const startAfter = <T extends DocumentSchema>(...cursor: Cursor<T>): StartAfter<T> => ({
-  kind: 'startAfter',
-  cursor,
-});
+export type StartAfter = { kind: 'startAfter'; cursor: Cursor };
+/** Creates a startAfter cursor constraint */
+export const startAfter = (...cursor: Cursor): StartAfter => ({ kind: 'startAfter', cursor });
 
 /** A cursor constraint that ends at the given values (inclusive) */
-export type EndAt<T extends DocumentSchema> = { kind: 'endAt'; cursor: Cursor<T> };
-/** Creates an endAt cursor constraint (inclusive) */
-export const endAt = <T extends DocumentSchema>(...cursor: Cursor<T>): EndAt<T> => ({
-  kind: 'endAt',
-  cursor,
-});
+export type EndAt = { kind: 'endAt'; cursor: Cursor };
+/** Creates an endAt cursor constraint */
+export const endAt = (...cursor: Cursor): EndAt => ({ kind: 'endAt', cursor });
 
 /** A cursor constraint that ends before the given values (exclusive) */
-export type EndBefore<T extends DocumentSchema> = { kind: 'endBefore'; cursor: Cursor<T> };
-/** Creates an endBefore cursor constraint (exclusive) */
-export const endBefore = <T extends DocumentSchema>(...cursor: Cursor<T>): EndBefore<T> => ({
-  kind: 'endBefore',
-  cursor,
-});
+export type EndBefore = { kind: 'endBefore'; cursor: Cursor };
+/** Creates an endBefore cursor constraint */
+export const endBefore = (...cursor: Cursor): EndBefore => ({ kind: 'endBefore', cursor });
+
+/** The values of a cursor as a caller writes them, one per ordered field. */
+export type Cursor = unknown[];
 
 /**
- * A list of values that correspond to the fields specified by the orderBy clause
+ * One cursor value together with the ordered field it belongs to.
+ *
+ * Always paired: {@link query} refuses a cursor with no field to pair against,
+ * so nothing downstream has to handle a value that belongs nowhere.
  */
-export type Cursor<_T extends DocumentSchema> = unknown[];
+export type CursorValue<T extends DocumentSchema = DocumentSchema> = {
+  value: unknown;
+  field: DocFieldPath<T>;
+};
 
 /**
  * A query filter expression

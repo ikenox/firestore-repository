@@ -17,17 +17,17 @@ the collection names from the collection definition:
 import { refPath } from 'firestore-repository/path';
 
 // root collection
-query({ collection: authors }, where(eq('__name__', refPath(authors, ['author1']))));
+query({ collection: authors }, where(eq('__name__', refPath(authors, 'author1'))));
 query({ collection: authors }, orderBy('__name__', 'asc'));
 
 // subcollection — the address carries the parent id, refPath expands the names
 query(
   { collection: posts, parent: ['author1'] },
-  where(eq('__name__', refPath(posts, ['author1', '1']))), // ['Authors', 'author1', 'Posts', '1']
+  where(eq('__name__', refPath(posts, 'author1', '1'))), // ['Authors', 'author1', 'Posts', '1']
 );
 
 // collection group — the SAME operand form
-query({ collection: posts, group: true }, where(eq('__name__', refPath(posts, ['author1', '1']))));
+query({ collection: posts, group: true }, where(eq('__name__', refPath(posts, 'author1', '1'))));
 ```
 
 The adapters encode the segment path to a `DocumentReference` value before it reaches the SDK.
