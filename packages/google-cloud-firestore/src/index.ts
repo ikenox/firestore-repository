@@ -269,11 +269,12 @@ export const buildFirestoreUtilities = <T extends Collection>(
   const encodeCursorValue = buildEncodeCursorValue(collection.schema, db);
 
   const toFirestore = {
-    docRef: (ref: DocRef<T>): firestore.DocumentReference => db.doc(documentPath(collection, ref)),
+    docRef: (ref: DocRef<T>): firestore.DocumentReference =>
+      db.doc(documentPath(collection, ...ref)),
     source: (source: QuerySource<T>): firestore.Query => {
       switch (source.kind) {
         case 'collection':
-          return db.collection(collectionPath(source.collection, source.parent));
+          return db.collection(collectionPath(source.collection, ...source.parent));
         case 'collectionGroup':
           return db.collectionGroup(source.collection.name);
         case 'query':

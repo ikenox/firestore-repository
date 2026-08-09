@@ -49,7 +49,7 @@ export const executor = (db: Firestore): PipelineQueryExecutor => {
     switch (input.kind) {
       case 'collection':
         collection = input.collection;
-        sdk = db.pipeline().collection(collectionPath(collection, input.parent));
+        sdk = db.pipeline().collection(collectionPath(collection, ...input.parent));
         break;
       case 'collectionGroup':
         collection = input.collection;

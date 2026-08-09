@@ -238,11 +238,11 @@ export const buildFirestoreUtilities = <T extends Collection>(db: Firestore, col
   const encodeSchema = buildEncodeSchema(coll.schema, db);
 
   const toFirestore = {
-    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ref)),
+    docRef: (ref: DocRef<T>): FirestoreDocumentReference => doc(db, documentPath(coll, ...ref)),
     source: (source: QuerySource<T>): FirestoreQuery => {
       switch (source.kind) {
         case 'collection':
-          return collection(db, collectionPath(source.collection, source.parent));
+          return collection(db, collectionPath(source.collection, ...source.parent));
         case 'collectionGroup':
           return collectionGroup(db, source.collection.name);
         case 'query':

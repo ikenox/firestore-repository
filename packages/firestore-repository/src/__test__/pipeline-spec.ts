@@ -709,7 +709,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
         // genuine reference value.
         await expectPipeline(
           source().where((field) =>
-            equal(field('__name__'), constant(docRefValue(refPath(liveCollection(), ['a1'])))),
+            equal(field('__name__'), constant(docRefValue(refPath(liveCollection(), 'a1')))),
           ),
           [a1],
         );
@@ -728,7 +728,7 @@ export const definePipelineSpecificationTests = <Env extends FirestoreEnvironmen
       it('reference: a docRefValue inside a constant map decodes to a RefPath', async () => {
         await expectPipeline(
           one().select(() => [
-            constant({ author: docRefValue(refPath(liveCollection(), ['a2'])) }).as('m'),
+            constant({ author: docRefValue(refPath(liveCollection(), 'a2')) }).as('m'),
           ]),
           [{ data: { m: { author: [collectionName(), 'a2'] } } }],
         );

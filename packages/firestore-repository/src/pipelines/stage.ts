@@ -20,7 +20,7 @@ export type InputStage =
    * A single collection instance. `parent` locates it when it is a
    * subcollection (the parent document ids, pairing with
    * `collection.parent`) — empty for a root collection. Executors resolve the
-   * full path via `collectionPath(collection, parent)`; there is no separate
+   * full path via `collectionPath(collection, ...parent)`; there is no separate
    * "subcollection" input stage kind (the official `subcollection` stage is
    * sub-pipeline-only syntactic sugar and cannot start an executable pipeline).
    */
