@@ -101,7 +101,7 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     collection,
   );
   // oxlint-disable-next-line typescript/no-explicit-any -- Zod output is passed to Firestore SDK
-  const encode = (data: unknown): any => encodeSchema.parse(data);
+  const encode = (data: unknown): unknown => encodeSchema.parse(data);
 
   return {
     collection,
