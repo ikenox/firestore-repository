@@ -19,6 +19,7 @@ import {
   type FieldType,
   geoPoint as geoPointType,
   int64,
+  type Int64Type,
   literal,
   map,
   neverType,
@@ -319,6 +320,42 @@ describe('the uninhabited descriptor', () => {
   it('encodes the empty array and nothing else', () => {
     expect(buildEncodeSchema(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
     expect(() => buildEncodeSchema(schema, db).parse({ xs: ['a'] })).toThrow();
+  });
+});
+
+describe('a key the schema does not declare', () => {
+  // Where a field record is built, the decoder is strict — one case per site:
+  // the document root and a nested map.
+  const schema = { name: string(), profile: map({ age: int64() }) };
+
+  it('fails the read rather than dropping the stored value', () => {
+    expect(() =>
+      buildDecodeSchema(schema).parse({ name: 'a', profile: { age: 1 }, extra: 1 }),
+    ).toThrow(/unrecognized key/i);
+    expect(() =>
+      buildDecodeSchema(schema).parse({ name: 'a', profile: { age: 1, bio: 'x' } }),
+    ).toThrow(/unrecognized key/i);
+  });
+
+  // An index-signature field record resolves to an open value type while `map`
+  // receives an EMPTY object at runtime, so every stored entry is a key the
+  // schema does not declare. Until a dynamic-key descriptor exists, reading
+  // such a document must not hand back `{}` — that is what a write-back would
+  // then store.
+  it('rejects an index-signature field record, which the types let through', () => {
+    const dynamic = { tagCounts: map({} as Record<string, Int64Type>) };
+    expect(() => buildDecodeSchema(dynamic).parse({ tagCounts: { news: 3 } })).toThrow(
+      /unrecognized key/i,
+    );
+  });
+
+  // The deliberate asymmetry: on the way out, a key the caller supplied that
+  // the schema does not declare is normalized away. Nothing stored is at risk,
+  // and the type system already rejects it in all but the exotic cases.
+  it('is normalized away on the way out', () => {
+    expect(
+      buildEncodeSchema(schema, db).parse({ name: 'a', profile: { age: 1 }, extra: 1 }),
+    ).toStrictEqual({ name: 'a', profile: { age: 1 } });
   });
 });
 

@@ -1205,6 +1205,25 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         };
       };
 
+      it('an undeclared stored field fails the read instead of being dropped', async () => {
+        // Written under a schema that declares the field and read under one
+        // that does not — the portable stand-in for a document a newer version
+        // of the schema produced. Dropping it silently would hand back a model
+        // whose write-back erases the stored value.
+        const name = `UndeclaredField_${randomString()}`;
+        const wide = rootCollection({ name, schema: { value: string(), extra: string() } });
+        const narrow = rootCollection({ name, schema: { value: string() } });
+        const id = randomString();
+        await createRepository(wide).set({ id: [id], data: { value: 'v', extra: 'keep me' } });
+
+        const error = await createRepository(narrow)
+          .get([id])
+          .catch((e: unknown) => e);
+
+        assert(error instanceof DocumentDecodeError);
+        expect(error.documentPath).toBe(`${name}/${id}`);
+      });
+
       it('get reports which document failed', async () => {
         const { name, unreadable, writeUndecodable } = undecodableCollection();
         const id = randomString();
