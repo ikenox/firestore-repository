@@ -365,7 +365,7 @@ export type FilterOperand<T extends FieldType, U extends WhereFilterOp> = {
  * on a field — the field's own type for comparisons, a list of it for
  * `in`/`not-in`, the array's element type for `array-contains(-any)`.
  */
-export const filterOperand = (fieldType: FieldType, opStr: WhereFilterOp): FieldType => {
+export const filterOperandTypeOf = (fieldType: FieldType, opStr: WhereFilterOp): FieldType => {
   switch (opStr) {
     case '<':
     case '<=':

@@ -12,7 +12,7 @@ import {
   serverTimestamp as firestoreServerTimestamp,
   vector,
 } from '@firebase/firestore';
-import { filterOperand, type WhereFilterOp } from 'firestore-repository/query';
+import { filterOperandTypeOf, type WhereFilterOp } from 'firestore-repository/query';
 import {
   type Collection,
   type DocFieldPath,
@@ -268,7 +268,7 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
  * string conventions (see docs/querying-by-document-id.md): a reference
  * works in every scope. The operand's shape per operator (`in` takes a list
  * of field values, `array-contains` an element, ...) comes from
- * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
+ * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
 export function buildEncodeFilterValue(
   schema: DocumentSchema,
@@ -281,7 +281,7 @@ export function buildEncodeFilterValue(
     if (operandSchema === undefined) {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `fieldPath` comes from a filter already typed against the schema
       const fieldType = fieldTypeOfPath(schema, fieldPath as DocFieldPath<DocumentSchema>);
-      operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
+      operandSchema = buildEncodeField(filterOperandTypeOf(fieldType, opStr), db);
       operands.set(key, operandSchema);
     }
     return operandSchema.parse(value);
