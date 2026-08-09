@@ -50,6 +50,7 @@ import {
   double,
   geoPoint,
   int64,
+  type Int64Type,
   literal,
   map,
   nullType,
@@ -1180,6 +1181,29 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         expect(
           await after(query(collectionGroup(cursorCollection), orderBy('ref'), startAfter(ref2))),
         ).toStrictEqual(['d3']);
+      });
+    });
+
+    describe('undeclared write fields', () => {
+      // An index-signature field record is the case the type system cannot
+      // catch: `{ news: 3 }` type-checks against the open value type, while
+      // the record `map` actually received is EMPTY, so at runtime every entry
+      // is a key the schema does not declare. Pinned end to end because the
+      // consequence is about the stored document, not just the codec: the
+      // write has to fail rather than land as `{}`.
+      it('fail the write instead of landing as a stripped document', async () => {
+        const name = `UndeclaredField_${randomString()}`;
+        const dynamic = rootCollection({
+          name,
+          schema: { tagCounts: map({} as Record<string, Int64Type>) },
+        });
+        const repository = createRepository(dynamic);
+        const id = randomString();
+
+        await expect(
+          repository.set({ id: [id], data: { tagCounts: { news: 3 } } }),
+        ).rejects.toThrow(/unrecognized key/i);
+        expect(await repository.get([id])).toBeUndefined();
       });
     });
 

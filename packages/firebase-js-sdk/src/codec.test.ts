@@ -19,6 +19,7 @@ import {
   type FieldType,
   geoPoint as geoPointType,
   int64,
+  type Int64Type,
   literal,
   map,
   neverType,
@@ -319,6 +320,43 @@ describe('the uninhabited descriptor', () => {
   it('encodes the empty array and nothing else', () => {
     expect(buildEncodeSchema(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
     expect(() => buildEncodeSchema(schema, db).parse({ xs: ['a'] })).toThrow();
+  });
+});
+
+describe('a key the schema does not declare', () => {
+  // Where a field record is built, the encoder is strict — one case per site:
+  // the document root and a nested map. The rule is the encoder's own, not the
+  // backend's (the value never reaches Firestore), so it belongs here rather
+  // than in a live spec.
+  const schema = { name: string(), profile: map({ age: int64() }) };
+
+  it('fails the write rather than dropping the value', () => {
+    expect(() => buildEncodeSchema(schema, db).parse({ name: 'a', extra: 1 })).toThrow(
+      /unrecognized key/i,
+    );
+    expect(() =>
+      buildEncodeSchema(schema, db).parse({ name: 'a', profile: { age: 1, bio: 'x' } }),
+    ).toThrow(/unrecognized key/i);
+  });
+
+  // The trap that motivates the rule: an index-signature field record type-checks
+  // and resolves to an open value type, while `map` receives an EMPTY object at
+  // runtime — so every entry is a key the schema does not declare. Until a
+  // dynamic-key descriptor exists, this must fail loudly instead of writing `{}`.
+  it('rejects an index-signature field record, which the types let through', () => {
+    const dynamic = { tagCounts: map({} as Record<string, Int64Type>) };
+    expect(() => buildEncodeSchema(dynamic, db).parse({ tagCounts: { news: 3 } })).toThrow(
+      /unrecognized key/i,
+    );
+  });
+
+  // The deliberate asymmetry: Firestore has no migrations, so a stored document
+  // carrying a field this schema does not know about is normal, and a read must
+  // not fail on it.
+  it('is accepted on the way back, and dropped', () => {
+    expect(
+      buildDecodeSchema(schema).parse({ name: 'a', profile: { age: 1 }, extra: 1 }),
+    ).toStrictEqual({ name: 'a', profile: { age: 1 } });
   });
 });
 
