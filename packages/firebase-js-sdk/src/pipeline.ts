@@ -145,7 +145,7 @@ import type { TransformStage } from 'firestore-repository/pipelines/stage';
 import type { DocumentSchema } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema } from './codec.js';
+import { dataDecoder } from './codec.js';
 import { fromSdkDocRef } from './index.js';
 
 /**
@@ -220,7 +220,7 @@ export const fromSdkPipelineResults = <
 ): PipelineResult<Schema, Id>[] => {
   // Rows are decoded with the pipeline's FINAL schema (the leaf node's), not
   // the source collection's — stages like `select` reshape the rows.
-  const decodeRow = buildDecodeSchema(pipeline.node.schema);
+  const decodeRow = dataDecoder(pipeline.node.schema);
   return snapshot.results.map((r) => {
     const data = decodeRow.parse(r.data());
     const id = r.ref ? fromSdkDocRef(r.ref) : undefined;

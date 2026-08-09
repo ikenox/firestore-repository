@@ -34,12 +34,7 @@ import type {
 } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import {
-  buildDecodeSchema,
-  buildEncodeCursorValue,
-  buildEncodeFilterValue,
-  buildEncodeSchema,
-} from './codec.js';
+import { dataDecoder, cursorValueEncoder, filterOperandEncoder, dataEncoder } from './codec.js';
 
 /** Platform-specific environment types for Google Cloud Firestore */
 export type Env = { transaction: firestore.Transaction; writeBatch: firestore.WriteBatch };
@@ -345,7 +340,7 @@ const toSdkBound = <S extends DocumentSchema>(
   q: firestore.Query,
   bound: ResolvedStartBound<S> | ResolvedEndBound<S>,
 ): firestore.Query => {
-  const encodeCursorValue = buildEncodeCursorValue(schema, db);
+  const encodeCursorValue = cursorValueEncoder(schema, db);
   const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value));
   switch (bound.kind) {
     case 'startAt':
@@ -371,7 +366,7 @@ const toSdkFilter = <S extends DocumentSchema>(
       return Filter.where(
         expr.fieldPath,
         expr.opStr,
-        buildEncodeFilterValue(schema, db)(expr.fieldPath, expr.opStr, expr.value),
+        filterOperandEncoder(schema, db)(expr.fieldPath, expr.opStr, expr.value),
       );
     case 'and':
       return Filter.and(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
@@ -434,7 +429,7 @@ const decodeDocData = <T extends Collection>(
 ): DocData<T> => {
   try {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Zod output is typed by the schema, which the compiler cannot infer from the runtime schema value
-    return buildDecodeSchema(collection.schema).parse(data) as DocData<T>;
+    return dataDecoder(collection.schema).parse(data) as DocData<T>;
   } catch (e) {
     throw new DocumentDecodeError(documentPath, e);
   }
@@ -445,7 +440,7 @@ const encodeDocData = <T extends Collection>(
   db: firestore.Firestore,
   collection: T,
   data: unknown,
-): unknown => buildEncodeSchema(collection.schema, db).parse(data);
+): unknown => dataEncoder(collection.schema, db).parse(data);
 
 const batchWrite = async <U>(
   db: firestore.Firestore,

@@ -49,8 +49,8 @@ const decoders = new WeakMap<DocumentSchema, z.ZodObject<z.ZodRawShape>>();
 const encoders = new WeakMap<DocumentSchema, WeakMap<firestore.Firestore, Encoders>>();
 
 type Encoders = {
-  /** The document's write schema. */
-  document?: z.ZodObject<z.ZodRawShape>;
+  /** The data schema for a write. */
+  data?: z.ZodObject<z.ZodRawShape>;
   /** Filter operands, keyed by `${operator}:${fieldPath}`. */
   operands: Map<string, ZodAny>;
   /** Cursor values, keyed by field path. */
@@ -71,7 +71,7 @@ const encodersFor = (schema: DocumentSchema, db: firestore.Firestore): Encoders 
   return forDb;
 };
 
-export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
+export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> => {
   let decode = decoders.get(schema);
   if (decode === undefined) {
     decode = z.object(
@@ -85,9 +85,9 @@ export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawS
     decoders.set(schema, decode);
   }
   return decode;
-}
+};
 
-function buildDecodeField(fieldType: FieldType): ZodAny {
+const buildDecodeField = (fieldType: FieldType): ZodAny => {
   switch (fieldType.type) {
     case 'string':
       return z.string();
@@ -146,14 +146,14 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     default:
       return assertNever(fieldType);
   }
-}
+};
 
-export function buildEncodeSchema(
+export const dataEncoder = (
   schema: DocumentSchema,
   db: firestore.Firestore,
-): z.ZodObject<z.ZodRawShape> {
+): z.ZodObject<z.ZodRawShape> => {
   const forDb = encodersFor(schema, db);
-  forDb.document ??= z.object(
+  forDb.data ??= z.object(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildEncodeField(v, db);
@@ -161,10 +161,10 @@ export function buildEncodeSchema(
       }),
     ),
   );
-  return forDb.document;
-}
+  return forDb.data;
+};
 
-function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny {
+const buildEncodeField = (fieldType: FieldType, db: firestore.Firestore): ZodAny => {
   switch (fieldType.type) {
     case 'string':
       return z.string();
@@ -263,11 +263,11 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
     default:
       return assertNever(fieldType);
   }
-}
+};
 
 /**
  * Builds the encoder for filter-condition operands, memoizing the operand
- * schema per (field path, operator) like `buildEncodeSchema` builds the
+ * schema per (field path, operator) like `dataEncoder` builds the
  * write schema once per collection. The operand schema reuses the write
  * codec (`buildEncodeField`): a field's READ representation is a subset of
  * its write `input` for every descriptor, and the write conversions
@@ -280,10 +280,10 @@ function buildEncodeField(fieldType: FieldType, db: firestore.Firestore): ZodAny
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
-export function buildEncodeFilterValue<S extends DocumentSchema>(
+export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
-): (fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown {
+): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
   const operandSchemas = encodersFor(schema, db).operands;
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
@@ -295,14 +295,14 @@ export function buildEncodeFilterValue<S extends DocumentSchema>(
     }
     return operandSchema.parse(value);
   };
-}
+};
 
 /**
  * Builds the encoder for cursor values, memoizing per field path.
  *
  * A cursor value is a READ-space value of the field the query is ordered by,
  * and reaches Firestore through the write codec for the same reason
- * {@link buildEncodeFilterValue} does: a field's read representation is a
+ * {@link filterOperandEncoder} does: a field's read representation is a
  * subset of its write `input` for every descriptor, and the write conversions
  * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`, geopoint / bytes /
  * vector to their SDK classes) are exactly the forms a cursor must compare
@@ -314,10 +314,10 @@ export function buildEncodeFilterValue<S extends DocumentSchema>(
  * field, which is what the descriptor's encoder already produces. The client
  * SDK is the one that differs — see its own codec.
  */
-export function buildEncodeCursorValue<S extends DocumentSchema>(
+export const cursorValueEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
-): (fieldPath: DocFieldPath<S>, value: unknown) => unknown {
+): ((fieldPath: DocFieldPath<S>, value: unknown) => unknown) => {
   const valueSchemas = encodersFor(schema, db).cursors;
   return (fieldPath, value) => {
     let valueSchema = valueSchemas.get(fieldPath);
@@ -328,14 +328,14 @@ export function buildEncodeCursorValue<S extends DocumentSchema>(
     }
     return valueSchema.parse(value);
   };
-}
+};
 
 /**
  * A zod schema for a `RefPath` segment path. A known collection's tuple shape
  * is exact — literal collection names at the even positions — while the
  * context-free flavor accepts any even-length segment path.
  */
-function refPathSchema(collection: Collection | 'unknown'): z.ZodType<string[]> {
+const refPathSchema = (collection: Collection | 'unknown'): z.ZodType<string[]> => {
   if (collection === 'unknown') {
     return z
       .array(z.string())
@@ -351,9 +351,9 @@ function refPathSchema(collection: Collection | 'unknown'): z.ZodType<string[]> 
         segments.length === names.length * 2 && names.every((name, i) => segments[i * 2] === name),
       { message: `not a reference path of collection '${collection.name}'` },
     );
-}
+};
 
-function zodUnion(schemas: ZodAny[]): ZodAny {
+const zodUnion = (schemas: ZodAny[]): ZodAny => {
   if (schemas.length === 0) {
     throw new Error('union must have at least one element');
   }
@@ -363,4 +363,4 @@ function zodUnion(schemas: ZodAny[]): ZodAny {
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return z.union(schemas as [ZodAny, ZodAny, ...ZodAny[]]);
-}
+};
