@@ -324,38 +324,37 @@ describe('the uninhabited descriptor', () => {
 });
 
 describe('a key the schema does not declare', () => {
-  // Where a field record is built, the encoder is strict — one case per site:
-  // the document root and a nested map. The rule is the encoder's own, not the
-  // backend's (the value never reaches Firestore), so it belongs here rather
-  // than in a live spec.
+  // Where a field record is built, the decoder is strict — one case per site:
+  // the document root and a nested map.
   const schema = { name: string(), profile: map({ age: int64() }) };
 
-  it('fails the write rather than dropping the value', () => {
-    expect(() => buildEncodeSchema(schema, db).parse({ name: 'a', extra: 1 })).toThrow(
-      /unrecognized key/i,
-    );
+  it('fails the read rather than dropping the stored value', () => {
     expect(() =>
-      buildEncodeSchema(schema, db).parse({ name: 'a', profile: { age: 1, bio: 'x' } }),
+      buildDecodeSchema(schema).parse({ name: 'a', profile: { age: 1 }, extra: 1 }),
+    ).toThrow(/unrecognized key/i);
+    expect(() =>
+      buildDecodeSchema(schema).parse({ name: 'a', profile: { age: 1, bio: 'x' } }),
     ).toThrow(/unrecognized key/i);
   });
 
-  // The trap that motivates the rule: an index-signature field record type-checks
-  // and resolves to an open value type, while `map` receives an EMPTY object at
-  // runtime — so every entry is a key the schema does not declare. Until a
-  // dynamic-key descriptor exists, this must fail loudly instead of writing `{}`.
+  // An index-signature field record resolves to an open value type while `map`
+  // receives an EMPTY object at runtime, so every stored entry is a key the
+  // schema does not declare. Until a dynamic-key descriptor exists, reading
+  // such a document must not hand back `{}` — that is what a write-back would
+  // then store.
   it('rejects an index-signature field record, which the types let through', () => {
     const dynamic = { tagCounts: map({} as Record<string, Int64Type>) };
-    expect(() => buildEncodeSchema(dynamic, db).parse({ tagCounts: { news: 3 } })).toThrow(
+    expect(() => buildDecodeSchema(dynamic).parse({ tagCounts: { news: 3 } })).toThrow(
       /unrecognized key/i,
     );
   });
 
-  // The deliberate asymmetry: Firestore has no migrations, so a stored document
-  // carrying a field this schema does not know about is normal, and a read must
-  // not fail on it.
-  it('is accepted on the way back, and dropped', () => {
+  // The deliberate asymmetry: on the way out, a key the caller supplied that
+  // the schema does not declare is normalized away. Nothing stored is at risk,
+  // and the type system already rejects it in all but the exotic cases.
+  it('is normalized away on the way out', () => {
     expect(
-      buildDecodeSchema(schema).parse({ name: 'a', profile: { age: 1 }, extra: 1 }),
+      buildEncodeSchema(schema, db).parse({ name: 'a', profile: { age: 1 }, extra: 1 }),
     ).toStrictEqual({ name: 'a', profile: { age: 1 } });
   });
 });

@@ -50,7 +50,6 @@ import {
   double,
   geoPoint,
   int64,
-  type Int64Type,
   literal,
   map,
   nullType,
@@ -1184,29 +1183,6 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
     });
 
-    describe('undeclared write fields', () => {
-      // An index-signature field record is the case the type system cannot
-      // catch: `{ news: 3 }` type-checks against the open value type, while
-      // the record `map` actually received is EMPTY, so at runtime every entry
-      // is a key the schema does not declare. Pinned end to end because the
-      // consequence is about the stored document, not just the codec: the
-      // write has to fail rather than land as `{}`.
-      it('fail the write instead of landing as a stripped document', async () => {
-        const name = `UndeclaredField_${randomString()}`;
-        const dynamic = rootCollection({
-          name,
-          schema: { tagCounts: map({} as Record<string, Int64Type>) },
-        });
-        const repository = createRepository(dynamic);
-        const id = randomString();
-
-        await expect(
-          repository.set({ id: [id], data: { tagCounts: { news: 3 } } }),
-        ).rejects.toThrow(/unrecognized key/i);
-        expect(await repository.get([id])).toBeUndefined();
-      });
-    });
-
     describe('decode failures', () => {
       // Two collection definitions over ONE collection name: the value is
       // written under a schema that admits it and read under one that does
@@ -1228,6 +1204,25 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             createRepository(writable).set({ id: [id], data: { value: 'not a number' } }),
         };
       };
+
+      it('an undeclared stored field fails the read instead of being dropped', async () => {
+        // Written under a schema that declares the field and read under one
+        // that does not — the portable stand-in for a document a newer version
+        // of the schema produced. Dropping it silently would hand back a model
+        // whose write-back erases the stored value.
+        const name = `UndeclaredField_${randomString()}`;
+        const wide = rootCollection({ name, schema: { value: string(), extra: string() } });
+        const narrow = rootCollection({ name, schema: { value: string() } });
+        const id = randomString();
+        await createRepository(wide).set({ id: [id], data: { value: 'v', extra: 'keep me' } });
+
+        const error = await createRepository(narrow)
+          .get([id])
+          .catch((e: unknown) => e);
+
+        assert(error instanceof DocumentDecodeError);
+        expect(error.documentPath).toBe(`${name}/${id}`);
+      });
 
       it('get reports which document failed', async () => {
         const { name, unreadable, writeUndecodable } = undecodableCollection();

@@ -35,8 +35,26 @@ type ZodAny = z.ZodType<any, any>;
 export const isBytes = (v: unknown) => v instanceof FirestoreBytes;
 export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumentReference;
 
+/**
+ * Decoding REJECTS a stored key the schema does not declare, rather than
+ * dropping it. The read itself is not where the harm lands: a dropped field
+ * comes back as a model the caller then writes again, and the write — which
+ * legitimately rewrites the whole document — erases from Firestore a value
+ * this process never knew existed. Read-modify-write is the ordinary way to
+ * change one field today (there is no partial-update API), so a silent drop
+ * here destroys STORED data, one round trip later and far from its cause.
+ *
+ * The cost is that adding a field becomes an ordered change: a reader must
+ * learn about a field before a writer starts producing it. That is the same
+ * discipline any other schema change already needs here, since a decode
+ * mismatch has always failed the read.
+ *
+ * Encoding is deliberately the opposite (`buildEncodeSchema`): a key the
+ * caller supplies that the schema does not declare is normalized away, and
+ * nothing stored is at risk.
+ */
 export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
-  return z.object(
+  return z.strictObject(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildDecodeField(v);
@@ -84,7 +102,8 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
         .refine(isDocumentReference)
         .transform((ref) => ref.path.split('/'));
     case 'map': {
-      return z.object(
+      // Strict for the same reason as the document root — see `buildDecodeSchema`.
+      return z.strictObject(
         Object.fromEntries(
           Object.entries(fieldType.fields).map(([k, v]) => {
             const s = buildDecodeField(v);
@@ -107,25 +126,11 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
   }
 }
 
-/**
- * Encoding REJECTS a key the schema does not declare, rather than dropping it.
- * A value handed to a write that Firestore would never receive is a mistaken
- * assumption on the caller's side, and silently discarding it produces a
- * document that disagrees with what the caller believes it stored. The type
- * system catches most of these, but not all — an index-signature field record
- * (`map({} as Record<string, Int64Type>)`) resolves to an open value type
- * while building an empty shape at runtime, so every entry would be dropped.
- *
- * Decoding is deliberately the opposite (`buildDecodeSchema`): Firestore has
- * no migrations, so meeting a stored document that carries a field a newer
- * version of the schema does not know about is normal, and failing the read
- * would make any additive schema change break every reader.
- */
 export function buildEncodeSchema(
   schema: DocumentSchema,
   db: Firestore,
 ): z.ZodObject<z.ZodRawShape> {
-  return z.strictObject(
+  return z.object(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildEncodeField(v, db);
@@ -189,8 +194,7 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
       );
     }
     case 'map': {
-      // Strict for the same reason as the document root — see `buildEncodeSchema`.
-      return z.strictObject(
+      return z.object(
         Object.fromEntries(
           Object.entries(fieldType.fields).map(([k, v]) => {
             const s = buildEncodeField(v, db);
