@@ -1373,7 +1373,7 @@ describe('document-reference values', () => {
   const authors = rootCollection({ name: 'authors', schema: { name: string() } });
 
   it('docRefValue is a dedicated node carrying a RefPath segment path', () => {
-    const ref = docRefValue(refPath(authors, ['a1']));
+    const ref = docRefValue(refPath(authors, 'a1'));
     // Cross-source: the segment array is produced by refPath, checked against
     // the independently-written path — not a construction restatement.
     expect(ref).toStrictEqual(DocRefValue.of(['authors', 'a1']));
@@ -1381,20 +1381,20 @@ describe('document-reference values', () => {
   });
 
   it('the collection+address form is typed with the known collection', () => {
-    const typed = docRefValue(authors, ['a1']);
+    const typed = docRefValue(authors, 'a1');
     // The address normalizes to the SAME segment payload as the value form —
     // only the descriptor claim gains the collection.
-    expect(typed.path).toStrictEqual(docRefValue(refPath(authors, ['a1'])).path);
+    expect(typed.path).toStrictEqual(docRefValue(refPath(authors, 'a1')).path);
     expectTypedStrictEqual(typed.type, docRef(authors));
     // @ts-expect-error -- the id tuple must match the collection's depth
-    void (() => docRefValue(authors, ['a1', 'extra']));
+    void (() => docRefValue(authors, 'a1', 'extra'));
     // Comparisons: typed and context-free flavors share the 'reference' tag.
-    equal(field(docRef(authors), 'ref'), docRefValue(authors, ['a1']));
-    equal(field(docRef(), '__name__'), docRefValue(authors, ['a1']));
+    equal(field(docRef(authors), 'ref'), docRefValue(authors, 'a1'));
+    equal(field(docRef(), '__name__'), docRefValue(authors, 'a1'));
   });
 
   it('compares against reference operands only (probed: strings never match)', () => {
-    const ref = constant(docRefValue(refPath(authors, ['a1'])));
+    const ref = constant(docRefValue(refPath(authors, 'a1')));
     equal(field(docRef(), '__name__'), ref);
     equal(field(docRef(authors), 'ref'), ref);
     // @ts-expect-error -- a reference never equals a string (always-false on the backend)
@@ -1419,7 +1419,7 @@ describe('document-reference values', () => {
   });
 
   it('doubles as a composite constant leaf, like geopoint/vector nodes', () => {
-    const c = constant({ author: docRefValue(refPath(authors, ['a1'])) });
+    const c = constant({ author: docRefValue(refPath(authors, 'a1')) });
     expectTypedStrictEqual(c.type, map({ author: docRef() }));
   });
 });
@@ -1547,7 +1547,7 @@ describe('operand lifting mechanism (toOperand / liftOperands / liftFields)', ()
     if (vnode.call.name === 'equal') {
       expect(vnode.call.right).toStrictEqual(constant(vectorValue([1, 2])));
     }
-    const rv = docRefValue(refPath(authors, ['a1']));
+    const rv = docRefValue(refPath(authors, 'a1'));
     const rnode = equal(field(docRef(), '__name__'), rv);
     if (rnode.call.name === 'equal') {
       expect(rnode.call.right).toStrictEqual(constant(rv));

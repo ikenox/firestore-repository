@@ -608,14 +608,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 collection(repository.collection),
-                where(eq('__name__', refPath(repository.collection, ['1']))),
+                where(eq('__name__', refPath(repository.collection, '1'))),
               ),
               [items[0]],
             );
             await expectQuery(
               query(
                 collection(repository.collection),
-                where(eq('__name__', refPath(repository.collection, ['2']))),
+                where(eq('__name__', refPath(repository.collection, '2'))),
               ),
               [items[1]],
             );
@@ -815,7 +815,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         ): unknown[] =>
           testName === 'id'
             ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the `id` rows of the table are document ids by construction
-              values.map((id) => refPath(repository.collection, [id as string]))
+              values.map((id) => refPath(repository.collection, id as string))
             : values;
 
         const defineQueryCursorTests = (
@@ -1015,14 +1015,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 subcollection(repository.collection, ['author1']),
-                where(eq('__name__', refPath(repository.collection, ['author1', '1']))),
+                where(eq('__name__', refPath(repository.collection, 'author1', '1'))),
               ),
               [items[0]],
             );
             await expectQuery(
               query(
                 subcollection(repository.collection, ['author1']),
-                where(eq('__name__', refPath(repository.collection, ['author1', '2']))),
+                where(eq('__name__', refPath(repository.collection, 'author1', '2'))),
               ),
               [items[1]],
             );
@@ -1056,14 +1056,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             await expectQuery(
               query(
                 collectionGroup(repository.collection),
-                where(eq('__name__', refPath(repository.collection, ['author1', '1']))),
+                where(eq('__name__', refPath(repository.collection, 'author1', '1'))),
               ),
               [items[0]],
             );
             await expectQuery(
               query(
                 collectionGroup(repository.collection),
-                where(eq('__name__', refPath(repository.collection, ['author2', '3']))),
+                where(eq('__name__', refPath(repository.collection, 'author2', '3'))),
               ),
               [items[2]],
             );
@@ -1096,7 +1096,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           ids.map((id, i) => ({
             id: [id],
             data: {
-              ref: refPath(authorsCollection, [`a${i + 1}`]),
+              ref: refPath(authorsCollection, `a${i + 1}`),
               spot: { latitude: i + 1, longitude: i + 1 },
             },
           })),
@@ -1104,14 +1104,14 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
       });
 
       const cursorCases = [
-        { field: 'ref', cursor: refPath(authorsCollection, ['a2']) },
+        { field: 'ref', cursor: refPath(authorsCollection, 'a2') },
         { field: 'spot', cursor: { latitude: 2, longitude: 2 } },
       ] as const satisfies {
         field: DocFieldPath<(typeof cursorCollection)['schema']>;
         cursor: unknown;
       }[];
 
-      const ref2 = refPath(authorsCollection, ['a2']);
+      const ref2 = refPath(authorsCollection, 'a2');
       const spot2 = { latitude: 2, longitude: 2 };
       const after = async (q: Query<typeof cursorCollection>) =>
         (await createRepository(cursorCollection).list(q)).toArray().map((doc) => doc.id[0]);
@@ -1158,7 +1158,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             query(
               collection(cursorCollection),
               orderBy('__name__'),
-              startAfter(refPath(cursorCollection, ['d2'])),
+              startAfter(refPath(cursorCollection, 'd2')),
             ),
           ),
         ).toStrictEqual(['d3']);
@@ -1170,7 +1170,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             query(
               collectionGroup(cursorCollection),
               orderBy('__name__'),
-              startAfter(refPath(cursorCollection, ['d2'])),
+              startAfter(refPath(cursorCollection, 'd2')),
             ),
           ),
         ).toStrictEqual(['d3']);
@@ -1288,7 +1288,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
             geoPoint: { latitude: 12.3, longitude: 45.6 },
             map: { a: 123, b: ['foo', 'bar'], nested: { c: 7 } },
             null: null,
-            docRef: refPath(authorsCollection, [randomString()]),
+            docRef: refPath(authorsCollection, randomString()),
             anyRef: ['SomeOtherCollection', 'some-doc-id'],
             str: randomString(),
             vector: [1, 2, 3, 4, 5],
@@ -1504,7 +1504,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         // encoding is pinned per descriptor in each platform's `codec.test.ts`.
         it('arrayUnion encodes its elements like a plain array element', async () => {
           const id = randomString();
-          const author = refPath(authorsCollection, [randomString()]);
+          const author = refPath(authorsCollection, randomString());
           const spot = { latitude: 12.3, longitude: 45.6 };
 
           await repository.set({

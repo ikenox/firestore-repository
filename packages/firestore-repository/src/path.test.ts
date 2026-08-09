@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { parseRefPath, collectionPath, documentPath, refPath, toDocRef } from './path.js';
+import type { DocRef, ParentDocRef } from './repository.js';
 import { type RefPath, rootCollection, string, subCollection } from './schema.js';
 
 describe('path', () => {
@@ -15,22 +16,17 @@ describe('path', () => {
 
   describe('collectionPath', () => {
     it('should return collection name for root collection', () => {
-      expect(collectionPath(users, [])).toBe('Users');
-      expect(collectionPath(posts, ['user1'])).toBe('Users/user1/Posts');
-      expect(collectionPath(comments, ['user1', 'post1'])).toBe('Users/user1/Posts/post1/Comments');
+      expect(collectionPath(users)).toBe('Users');
+      expect(collectionPath(posts, 'user1')).toBe('Users/user1/Posts');
+      expect(collectionPath(comments, 'user1', 'post1')).toBe('Users/user1/Posts/post1/Comments');
     });
   });
 
   describe('refPath', () => {
     it('interleaves collection names into the segment path', () => {
-      expect(refPath(users, ['user1'])).toStrictEqual(['Users', 'user1']);
-      expect(refPath(posts, ['user1', 'post1'])).toStrictEqual([
-        'Users',
-        'user1',
-        'Posts',
-        'post1',
-      ]);
-      expect(refPath(comments, ['user1', 'post1', 'comment1'])).toStrictEqual([
+      expect(refPath(users, 'user1')).toStrictEqual(['Users', 'user1']);
+      expect(refPath(posts, 'user1', 'post1')).toStrictEqual(['Users', 'user1', 'Posts', 'post1']);
+      expect(refPath(comments, 'user1', 'post1', 'comment1')).toStrictEqual([
         'Users',
         'user1',
         'Posts',
@@ -41,11 +37,38 @@ describe('path', () => {
     });
 
     it('types collection-name positions as literals', () => {
-      expectTypeOf(refPath(users, ['user1'])).toEqualTypeOf<['Users', string]>();
-      expectTypeOf(refPath(posts, ['user1', 'post1'])).toEqualTypeOf<
+      expectTypeOf(refPath(users, 'user1')).toEqualTypeOf<['Users', string]>();
+      expectTypeOf(refPath(posts, 'user1', 'post1')).toEqualTypeOf<
         ['Users', string, 'Posts', string]
       >();
       expectTypeOf<RefPath<'unknown'>>().toEqualTypeOf<string[]>();
+    });
+  });
+
+  // The ids are rest arguments, so the collection's depth is enforced by the
+  // ARITY of the call rather than by the length of a tuple argument. One case
+  // per variadic entry point, since each takes a different address type.
+  describe('the ids are an argument list of the exact depth a collection has', () => {
+    it('rejects a depth the collection does not have', () => {
+      // @ts-expect-error -- a Posts address needs the parent id too
+      void (() => refPath(posts, 'post1'));
+      // @ts-expect-error -- a Users address takes exactly one id
+      void (() => refPath(users, 'user1', 'post1'));
+      // @ts-expect-error -- documentPath takes the same address as refPath
+      void (() => documentPath(comments, 'user1', 'post1'));
+      // @ts-expect-error -- a root collection has no parent ids
+      void (() => collectionPath(users, 'user1'));
+      // @ts-expect-error -- collectionPath takes the PARENT address, one short of the document's
+      void (() => collectionPath(posts, 'user1', 'post1'));
+    });
+
+    it('accepts an address held as a DocRef, spread', () => {
+      const docRef: DocRef<typeof posts> = ['user1', 'post1'];
+      expect(refPath(posts, ...docRef)).toStrictEqual(['Users', 'user1', 'Posts', 'post1']);
+      expect(documentPath(posts, ...docRef)).toBe('Users/user1/Posts/post1');
+
+      const parent: ParentDocRef<typeof posts> = ['user1'];
+      expect(collectionPath(posts, ...parent)).toBe('Users/user1/Posts');
     });
   });
 
@@ -59,7 +82,7 @@ describe('path', () => {
       expect(
         toDocRef(comments, ['Users', 'user1', 'Posts', 'post1', 'Comments', 'comment1']),
       ).toStrictEqual(['user1', 'post1', 'comment1']);
-      expectTypeOf(toDocRef(posts, refPath(posts, ['user1', 'post1']))).toEqualTypeOf<
+      expectTypeOf(toDocRef(posts, refPath(posts, 'user1', 'post1'))).toEqualTypeOf<
         [string, string]
       >();
     });
@@ -76,7 +99,7 @@ describe('path', () => {
       void (() => toDocRef(users, ['Users', 'user1', 'Posts', 'post1']));
       // @ts-expect-error -- a Comments segment cannot appear in a Posts path
       void (() => toDocRef(posts, ['Users', 'user1', 'Comments', 'c1']));
-      const postsPath = refPath(posts, ['user1', 'post1']);
+      const postsPath = refPath(posts, 'user1', 'post1');
       // @ts-expect-error -- a typed RefPath of another collection is rejected
       void (() => toDocRef(users, postsPath));
       const untyped: string[] = ['Users', 'user1'];
@@ -124,9 +147,9 @@ describe('path', () => {
 
   describe('documentPath', () => {
     it('should return full path for document in subcollection (1 level)', () => {
-      expect(documentPath(users, ['user1'])).toBe('Users/user1');
-      expect(documentPath(posts, ['user1', 'post1'])).toBe('Users/user1/Posts/post1');
-      expect(documentPath(comments, ['user1', 'post1', 'comment1'])).toBe(
+      expect(documentPath(users, 'user1')).toBe('Users/user1');
+      expect(documentPath(posts, 'user1', 'post1')).toBe('Users/user1/Posts/post1');
+      expect(documentPath(comments, 'user1', 'post1', 'comment1')).toBe(
         'Users/user1/Posts/post1/Comments/comment1',
       );
     });

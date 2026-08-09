@@ -5,9 +5,15 @@ import type { Collection, RefPath } from './schema.js';
  * Converts an ids-only ADDRESS (`DocRef`, the repository interface's id
  * representation) into a reference VALUE (`RefPath` segment path) by
  * interleaving the collection names from the collection definition:
- * `refPath(posts, ['a1', 'p1'])` -> `['Authors', 'a1', 'Posts', 'p1']`.
+ * `refPath(posts, 'a1', 'p1')` -> `['Authors', 'a1', 'Posts', 'p1']`.
+ *
+ * The ids are taken as rest arguments so that the usual inline call needs no
+ * brackets; spread a `DocRef` you already hold (`refPath(posts, ...doc.id)`).
+ * The address is what varies in arity, which is why it — and not the
+ * reference VALUE that {@link parseRefPath} / {@link toDocRef} take — is the
+ * argument list.
  */
-export const refPath = <T extends Collection>(collection: T, docRef: DocRef<T>): RefPath<T> =>
+export const refPath = <T extends Collection>(collection: T, ...docRef: DocRef<T>): RefPath<T> =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- flatMap cannot preserve the interleaved tuple shape
   [...collection.parent, collection.name].flatMap((name, i) => [
     name,
@@ -58,15 +64,15 @@ export const toDocRef = <T extends Collection>(collection: T, path: RefPath<T>):
 /**
  * Returns the fully-qualified path of a document
  */
-export const documentPath = <T extends Collection>(collection: T, docRef: DocRef<T>): string =>
-  refPath(collection, docRef).join('/');
+export const documentPath = <T extends Collection>(collection: T, ...docRef: DocRef<T>): string =>
+  refPath(collection, ...docRef).join('/');
 
 /**
  * Returns the fully-qualified path of a collection
  */
 export const collectionPath = <T extends Collection>(
   collection: T,
-  parentDocRef: ParentDocRef<T>,
+  ...parentDocRef: ParentDocRef<T>
 ): string => {
   let path = '';
 
