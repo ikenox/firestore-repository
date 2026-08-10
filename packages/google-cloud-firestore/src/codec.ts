@@ -29,24 +29,19 @@ type ZodAny = z.ZodType<any, any>;
 export const isVectorValue = (v: unknown) => v instanceof FirestoreVectorValue;
 export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumentReference;
 
-/**
- * Built schemas are shared by every caller that names the same schema: building
- * one walks the whole descriptor tree, which dominates the work of a repeated
- * conversion, and the callers that would otherwise hold the memo are built per
- * call by design (`toSdkQuery`, and a pipeline's row decoder). Both maps hold
- * their keys weakly, so entries die with what they were built from.
- *
- * Decoders need only the schema — they read `ref.path` off whatever reference
- * they are handed.
- */
-const decoderCache = new WeakMap<DocumentSchema, z.ZodObject<z.ZodRawShape>>();
+/** A `Map` or `WeakMap` — whatever {@link memoize} is asked to store into. */
+type Store<K, V> = { get: (key: K) => V | undefined; set: (key: K, value: V) => unknown };
 
-/**
- * Encoders also depend on the database: turning a `RefPath` into a
- * `DocumentReference` binds that `Firestore` instance into the schema
- * (`db.doc(...)`), so two databases cannot share one.
- */
-const encoderCache = new WeakMap<DocumentSchema, WeakMap<firestore.Firestore, Encoders>>();
+/** Returns the stored value for `key`, building and storing it on a miss. */
+const memoize = <K, V>(store: Store<K, V>, key: K, build: () => V): V => {
+  const stored = store.get(key);
+  if (stored !== undefined) {
+    return stored;
+  }
+  const built = build();
+  store.set(key, built);
+  return built;
+};
 
 type Encoders = {
   /** The data schema for a write. */
@@ -57,35 +52,77 @@ type Encoders = {
   cursors: Map<string, ZodAny>;
 };
 
-const encodersFor = (schema: DocumentSchema, db: firestore.Firestore): Encoders => {
-  let encodersByDb = encoderCache.get(schema);
-  if (encodersByDb === undefined) {
-    encodersByDb = new WeakMap();
-    encoderCache.set(schema, encodersByDb);
-  }
-  let encoders = encodersByDb.get(db);
-  if (encoders === undefined) {
-    encoders = { operands: new Map(), cursors: new Map() };
-    encodersByDb.set(db, encoders);
-  }
-  return encoders;
-};
+/**
+ * Every built schema this module memoizes, and the only place one is stored.
+ * Callers pass how to build theirs and never touch a map, so what is cached
+ * under which key is answered here rather than at four call sites.
+ *
+ * Building a schema walks the whole descriptor tree, which dominates the work
+ * of a repeated conversion, and the callers that would otherwise hold the memo
+ * are built per call by design (`toSdkQuery`, and a pipeline's row decoder).
+ * Keys are held weakly throughout, so entries die with the schema or database
+ * they were built from.
+ *
+ * Decoders need only the schema — they read `ref.path` off whatever reference
+ * they are handed. Encoders also depend on the database, because turning a
+ * `RefPath` into a `DocumentReference` binds that `Firestore` instance into
+ * the schema (`db.doc(...)`), so two databases cannot share one. Those are
+ * keyed by database first, then schema, because that is the order the two
+ * differ in: an application holds one database and reaches many schemas
+ * through it, and a pipeline mints a fresh schema per stage chain. Nesting the
+ * other way would allocate an inner map per schema to hold a single entry.
+ */
+const cache = (() => {
+  const decoders = new WeakMap<DocumentSchema, z.ZodObject<z.ZodRawShape>>();
+  const encoders = new WeakMap<firestore.Firestore, WeakMap<DocumentSchema, Encoders>>();
 
-export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> => {
-  let decoder = decoderCache.get(schema);
-  if (decoder === undefined) {
-    decoder = z.object(
+  const encodersFor = (schema: DocumentSchema, db: firestore.Firestore): Encoders =>
+    memoize(
+      memoize(encoders, db, () => new WeakMap<DocumentSchema, Encoders>()),
+      schema,
+      () => ({ operands: new Map(), cursors: new Map() }),
+    );
+
+  return {
+    /** The decoder for a document's (or a pipeline row's) data. */
+    decoder: (schema: DocumentSchema, build: () => z.ZodObject<z.ZodRawShape>) =>
+      memoize(decoders, schema, build),
+
+    /** The encoder for a document's data on `db`. */
+    data: (
+      schema: DocumentSchema,
+      db: firestore.Firestore,
+      build: () => z.ZodObject<z.ZodRawShape>,
+    ) => {
+      const encoders = encodersFor(schema, db);
+      return (encoders.data ??= build());
+    },
+
+    /** The encoder for one filter operand, keyed by operator and field path. */
+    operand: (schema: DocumentSchema, db: firestore.Firestore, key: string, build: () => ZodAny) =>
+      memoize(encodersFor(schema, db).operands, key, build),
+
+    /** The encoder for one cursor value, keyed by field path. */
+    cursor: (
+      schema: DocumentSchema,
+      db: firestore.Firestore,
+      fieldPath: string,
+      build: () => ZodAny,
+    ) => memoize(encodersFor(schema, db).cursors, fieldPath, build),
+  };
+})();
+
+export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> =>
+  cache.decoder(schema, () =>
+    z.object(
       Object.fromEntries(
         Object.entries(schema).map(([k, v]) => {
           const s = buildDecodeField(v);
           return [k, v.optional ? s.optional() : s];
         }),
       ),
-    );
-    decoderCache.set(schema, decoder);
-  }
-  return decoder;
-};
+    ),
+  );
 
 const buildDecodeField = (fieldType: FieldType): ZodAny => {
   switch (fieldType.type) {
@@ -151,18 +188,17 @@ const buildDecodeField = (fieldType: FieldType): ZodAny => {
 export const dataEncoder = (
   schema: DocumentSchema,
   db: firestore.Firestore,
-): z.ZodObject<z.ZodRawShape> => {
-  const encoders = encodersFor(schema, db);
-  encoders.data ??= z.object(
-    Object.fromEntries(
-      Object.entries(schema).map(([k, v]) => {
-        const s = buildEncodeField(v, db);
-        return [k, v.optional ? s.optional() : s];
-      }),
+): z.ZodObject<z.ZodRawShape> =>
+  cache.data(schema, db, () =>
+    z.object(
+      Object.fromEntries(
+        Object.entries(schema).map(([k, v]) => {
+          const s = buildEncodeField(v, db);
+          return [k, v.optional ? s.optional() : s];
+        }),
+      ),
     ),
   );
-  return encoders.data;
-};
 
 const buildEncodeField = (fieldType: FieldType, db: firestore.Firestore): ZodAny => {
   switch (fieldType.type) {
@@ -284,17 +320,12 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
-  const { operands } = encodersFor(schema, db);
-  return (fieldPath, opStr, value) => {
-    const key = `${opStr}:${fieldPath}`;
-    let encoder = operands.get(key);
-    if (encoder === undefined) {
-      const fieldType = fieldTypeOfPath(schema, fieldPath);
-      encoder = buildEncodeField(filterOperandTypeOf(fieldType, opStr), db);
-      operands.set(key, encoder);
-    }
-    return encoder.parse(value);
-  };
+  return (fieldPath, opStr, value) =>
+    cache
+      .operand(schema, db, `${opStr}:${fieldPath}`, () =>
+        buildEncodeField(filterOperandTypeOf(fieldTypeOfPath(schema, fieldPath), opStr), db),
+      )
+      .parse(value);
 };
 
 /**
@@ -318,16 +349,10 @@ export const cursorValueEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, value: unknown) => unknown) => {
-  const { cursors } = encodersFor(schema, db);
-  return (fieldPath, value) => {
-    let encoder = cursors.get(fieldPath);
-    if (encoder === undefined) {
-      const fieldType = fieldTypeOfPath(schema, fieldPath);
-      encoder = buildEncodeField(fieldType, db);
-      cursors.set(fieldPath, encoder);
-    }
-    return encoder.parse(value);
-  };
+  return (fieldPath, value) =>
+    cache
+      .cursor(schema, db, fieldPath, () => buildEncodeField(fieldTypeOfPath(schema, fieldPath), db))
+      .parse(value);
 };
 
 /**
