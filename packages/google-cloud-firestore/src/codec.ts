@@ -39,14 +39,14 @@ export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumen
  * Decoders need only the schema — they read `ref.path` off whatever reference
  * they are handed.
  */
-const decoders = new WeakMap<DocumentSchema, z.ZodObject<z.ZodRawShape>>();
+const decoderCache = new WeakMap<DocumentSchema, z.ZodObject<z.ZodRawShape>>();
 
 /**
  * Encoders also depend on the database: turning a `RefPath` into a
  * `DocumentReference` binds that `Firestore` instance into the schema
  * (`db.doc(...)`), so two databases cannot share one.
  */
-const encoders = new WeakMap<DocumentSchema, WeakMap<firestore.Firestore, Encoders>>();
+const encoderCache = new WeakMap<DocumentSchema, WeakMap<firestore.Firestore, Encoders>>();
 
 type Encoders = {
   /** The data schema for a write. */
@@ -58,10 +58,10 @@ type Encoders = {
 };
 
 const encodersFor = (schema: DocumentSchema, db: firestore.Firestore): Encoders => {
-  let perDb = encoders.get(schema);
+  let perDb = encoderCache.get(schema);
   if (perDb === undefined) {
     perDb = new WeakMap();
-    encoders.set(schema, perDb);
+    encoderCache.set(schema, perDb);
   }
   let forDb = perDb.get(db);
   if (forDb === undefined) {
@@ -72,9 +72,9 @@ const encodersFor = (schema: DocumentSchema, db: firestore.Firestore): Encoders 
 };
 
 export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> => {
-  let decode = decoders.get(schema);
-  if (decode === undefined) {
-    decode = z.object(
+  let decoder = decoderCache.get(schema);
+  if (decoder === undefined) {
+    decoder = z.object(
       Object.fromEntries(
         Object.entries(schema).map(([k, v]) => {
           const s = buildDecodeField(v);
@@ -82,9 +82,9 @@ export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> 
         }),
       ),
     );
-    decoders.set(schema, decode);
+    decoderCache.set(schema, decoder);
   }
-  return decode;
+  return decoder;
 };
 
 const buildDecodeField = (fieldType: FieldType): ZodAny => {

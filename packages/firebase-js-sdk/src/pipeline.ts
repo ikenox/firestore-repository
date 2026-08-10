@@ -220,9 +220,9 @@ export const fromSdkPipelineResults = <
 ): PipelineResult<Schema, Id>[] => {
   // Rows are decoded with the pipeline's FINAL schema (the leaf node's), not
   // the source collection's — stages like `select` reshape the rows.
-  const decodeRow = dataDecoder(pipeline.node.schema);
+  const rowDecoder = dataDecoder(pipeline.node.schema);
   return snapshot.results.map((r) => {
-    const data = decodeRow.parse(r.data());
+    const data = rowDecoder.parse(r.data());
     const id = r.ref ? fromSdkDocRef(r.ref) : undefined;
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `data`/`id` are runtime values matching the caller's Schema/Id, which the compiler cannot prove here
     return (id === undefined ? { data } : { data, id }) as PipelineResult<Schema, Id>;
