@@ -58,17 +58,17 @@ type Encoders = {
 };
 
 const encodersFor = (schema: DocumentSchema, db: firestore.Firestore): Encoders => {
-  let perDb = encoderCache.get(schema);
-  if (perDb === undefined) {
-    perDb = new WeakMap();
-    encoderCache.set(schema, perDb);
+  let encodersByDb = encoderCache.get(schema);
+  if (encodersByDb === undefined) {
+    encodersByDb = new WeakMap();
+    encoderCache.set(schema, encodersByDb);
   }
-  let forDb = perDb.get(db);
-  if (forDb === undefined) {
-    forDb = { operands: new Map(), cursors: new Map() };
-    perDb.set(db, forDb);
+  let encoders = encodersByDb.get(db);
+  if (encoders === undefined) {
+    encoders = { operands: new Map(), cursors: new Map() };
+    encodersByDb.set(db, encoders);
   }
-  return forDb;
+  return encoders;
 };
 
 export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> => {
@@ -152,8 +152,8 @@ export const dataEncoder = (
   schema: DocumentSchema,
   db: firestore.Firestore,
 ): z.ZodObject<z.ZodRawShape> => {
-  const forDb = encodersFor(schema, db);
-  forDb.data ??= z.object(
+  const encoders = encodersFor(schema, db);
+  encoders.data ??= z.object(
     Object.fromEntries(
       Object.entries(schema).map(([k, v]) => {
         const s = buildEncodeField(v, db);
@@ -161,7 +161,7 @@ export const dataEncoder = (
       }),
     ),
   );
-  return forDb.data;
+  return encoders.data;
 };
 
 const buildEncodeField = (fieldType: FieldType, db: firestore.Firestore): ZodAny => {
@@ -284,16 +284,16 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
-  const operandSchemas = encodersFor(schema, db).operands;
+  const { operands } = encodersFor(schema, db);
   return (fieldPath, opStr, value) => {
     const key = `${opStr}:${fieldPath}`;
-    let operandSchema = operandSchemas.get(key);
-    if (operandSchema === undefined) {
+    let encoder = operands.get(key);
+    if (encoder === undefined) {
       const fieldType = fieldTypeOfPath(schema, fieldPath);
-      operandSchema = buildEncodeField(filterOperandTypeOf(fieldType, opStr), db);
-      operandSchemas.set(key, operandSchema);
+      encoder = buildEncodeField(filterOperandTypeOf(fieldType, opStr), db);
+      operands.set(key, encoder);
     }
-    return operandSchema.parse(value);
+    return encoder.parse(value);
   };
 };
 
@@ -318,15 +318,15 @@ export const cursorValueEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, value: unknown) => unknown) => {
-  const valueSchemas = encodersFor(schema, db).cursors;
+  const { cursors } = encodersFor(schema, db);
   return (fieldPath, value) => {
-    let valueSchema = valueSchemas.get(fieldPath);
-    if (valueSchema === undefined) {
+    let encoder = cursors.get(fieldPath);
+    if (encoder === undefined) {
       const fieldType = fieldTypeOfPath(schema, fieldPath);
-      valueSchema = buildEncodeField(fieldType, db);
-      valueSchemas.set(fieldPath, valueSchema);
+      encoder = buildEncodeField(fieldType, db);
+      cursors.set(fieldPath, encoder);
     }
-    return valueSchema.parse(value);
+    return encoder.parse(value);
   };
 };
 
