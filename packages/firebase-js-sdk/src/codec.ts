@@ -111,16 +111,13 @@ const cache = (() => {
    * The encoder for a field's own type — the only writer of the `fields` slot.
    * Both `field` and the sharing half of `operand` land here, so the two cannot
    * drift into filling the same entry by different means.
-   *
-   * The type arrives as a thunk because `field` reaches this holding only a
-   * path, and resolving one walks the schema: a hit must not pay for it.
    */
   const fieldEncoder = (
     encoders: Encoders,
     db: Firestore,
     fieldPath: string,
-    fieldType: () => FieldType,
-  ): ZodAny => memoize(encoders.fields, fieldPath, () => buildEncodeField(fieldType(), db));
+    fieldType: FieldType,
+  ): ZodAny => memoize(encoders.fields, fieldPath, () => buildEncodeField(fieldType, db));
 
   return {
     /** The decoder for a document's — or a pipeline row's — data. */
@@ -138,11 +135,16 @@ const cache = (() => {
         return (encoders.data ??= document(schema, (fieldType) => buildEncodeField(fieldType, db)));
       },
 
-      /** The encoder for one field's value, keyed by its path. */
+      /**
+       * The encoder for one field's value, keyed by its path.
+       *
+       * The field's type is resolved on the way in even when the entry already
+       * exists, which costs a walk of the path per call. Deferring it would buy
+       * back tens of nanoseconds against a round trip to Firestore, at the cost
+       * of every caller of {@link fieldEncoder} having to hand it a thunk.
+       */
       field: (schema: DocumentSchema, db: Firestore, fieldPath: string) =>
-        fieldEncoder(encodersFor(schema, db), db, fieldPath, () =>
-          fieldTypeOfPath(schema, fieldPath),
-        ),
+        fieldEncoder(encodersFor(schema, db), db, fieldPath, fieldTypeOfPath(schema, fieldPath)),
 
       /**
        * The encoder for one filter operand.
@@ -162,7 +164,7 @@ const cache = (() => {
           const fieldType = fieldTypeOfPath(schema, fieldPath);
           const operandType = filterOperandTypeOf(fieldType, opStr);
           return operandType === fieldType
-            ? fieldEncoder(encoders, db, fieldPath, () => operandType)
+            ? fieldEncoder(encoders, db, fieldPath, operandType)
             : buildEncodeField(operandType, db);
         });
       },
