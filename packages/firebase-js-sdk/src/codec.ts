@@ -392,7 +392,7 @@ export const cursorValueEncoder = <S extends DocumentSchema>(
  * that can produce all three, since a bare id cannot name its ancestors.
  */
 const encodeKeyCursor = (value: unknown, scope: QueryScope): string => {
-  const path = refPathSchema('unknown').parse(value);
+  const path = keyCursorPath.parse(value);
   switch (scope) {
     case 'collection': {
       const id = path.at(-1);
@@ -432,6 +432,14 @@ const refPathSchema = (collection: Collection | 'unknown'): z.ZodType<string[]> 
       { message: `not a reference path of collection '${collection.name}'` },
     );
 };
+
+/**
+ * The operand `__name__` takes in a cursor, which is the context-free flavor:
+ * a cursor names a document anywhere the query can reach, so no collection
+ * constrains it. Built once — unlike the per-field encoders it has no schema or
+ * database to be keyed by, and rebuilding it per call showed up at 16us.
+ */
+const keyCursorPath = refPathSchema('unknown');
 
 const zodUnion = (schemas: ZodAny[]): ZodAny => {
   if (schemas.length === 0) {
