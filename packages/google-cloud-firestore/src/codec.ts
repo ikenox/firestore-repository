@@ -112,13 +112,20 @@ const cache = (() => {
       db: firestore.Firestore,
       fieldPath: string,
       opStr: WhereFilterOp,
-      fieldType: FieldType,
-      operandType: FieldType,
-      build: () => ZodAny,
-    ) =>
-      operandType === fieldType
-        ? memoize(encodersFor(schema, db).fields, fieldPath, build)
-        : memoize(encodersFor(schema, db).operands, `${opStr}:${fieldPath}`, build),
+      resolve: () => { fieldType: FieldType; operandType: FieldType },
+      build: (operandType: FieldType) => ZodAny,
+    ) => {
+      const encoders = encodersFor(schema, db);
+      // Resolving the operand's type means walking the field path and, for the
+      // list operators, allocating a wrapper — so it happens inside the miss,
+      // never on the way to an entry that already exists.
+      return memoize(encoders.operands, `${opStr}:${fieldPath}`, () => {
+        const { fieldType, operandType } = resolve();
+        return operandType === fieldType
+          ? memoize(encoders.fields, fieldPath, () => build(operandType))
+          : build(operandType);
+      });
+    },
 
     /** The encoder for one field's value, keyed by its path. */
     field: (
@@ -338,15 +345,20 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
-  return (fieldPath, opStr, value) => {
-    const fieldType = fieldTypeOfPath(schema, fieldPath);
-    const operandType = filterOperandTypeOf(fieldType, opStr);
-    return cache
-      .operand(schema, db, fieldPath, opStr, fieldType, operandType, () =>
-        buildEncodeField(operandType, db),
+  return (fieldPath, opStr, value) =>
+    cache
+      .operand(
+        schema,
+        db,
+        fieldPath,
+        opStr,
+        () => {
+          const fieldType = fieldTypeOfPath(schema, fieldPath);
+          return { fieldType, operandType: filterOperandTypeOf(fieldType, opStr) };
+        },
+        (operandType) => buildEncodeField(operandType, db),
       )
       .parse(value);
-  };
 };
 
 /**
