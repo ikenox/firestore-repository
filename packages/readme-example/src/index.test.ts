@@ -143,9 +143,16 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     createRepository: <T extends RootCollection>(
       collection: T,
     ) => Repository<T, RootCollectionPlainModel<T>, Env>;
-    // README's "Accessing the underlying SDK": the same rows, obtained through
-    // `toSdkPipeline` / `fromSdkPipelineResults` instead of the executor. Only
-    // the backend adapter supplies it — Query Explain is a backend-SDK feature.
+    // README's "Accessing the underlying SDK": runs a pipeline through
+    // `toSdkPipeline` / `fromSdkPipelineResults` instead of the executor.
+    //
+    // Typed as `execute` itself on purpose — that the escape hatch can stand
+    // in for the executor, same argument and same rows out, is exactly what
+    // the test checks, so the signature states it before any assertion runs.
+    //
+    // Optional because only the backend adapter supplies one: the section's
+    // example passes `explainOptions`, which the client SDK has no equivalent
+    // of.
     executeViaSdk?: PipelineQueryExecutor['execute'];
   };
 }) => {
@@ -356,6 +363,21 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
       };
     });
 
+    // README's "Accessing the underlying SDK", pipeline half: the same query as
+    // the test above, but run through `toSdkPipeline` -> the SDK's `execute()`
+    // -> `fromSdkPipelineResults` instead of through the executor. The adapter
+    // passes `explainOptions` on the way, which is the reason the escape hatch
+    // exists at all — the executor has nowhere to put them.
+    //
+    // What is asserted is the `User[]` annotation. `userMapper.fromFirestore`
+    // takes a `Doc<T>`, so rows that came back through the SDK have to arrive
+    // both shaped like `execute()`'s and still carrying read-identity: a
+    // decoder that dropped `id`, or reshaped `data`, stops compiling here (and
+    // would throw on the absent `id` if it somehow did not). Read it against
+    // the executor-based test above — the two paths must agree.
+    //
+    // Runs only where the Enterprise integration env is configured, since that
+    // is the only place the adapter supplies `executeViaSdk`.
     it.skipIf(!pipeline?.executeViaSdk)('accessing the underlying SDK', async () => {
       const rows = await pipeline!.executeViaSdk!(
         pipelineCollection(authors)
@@ -364,8 +386,6 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
           .limit(10),
       );
 
-      // The escape hatch decodes back to the rows `execute()` would have
-      // returned, identity included — so the same mapper still applies.
       const found: User[] = rows.map(userMapper.fromFirestore);
       console.log(found);
     });
@@ -473,16 +493,29 @@ describe('README example', () => {
         : {}),
     });
 
+    // README's "Accessing the underlying SDK", query half. Backend only: the
+    // section's worked example is Query Explain, which the client SDK has no
+    // equivalent of.
     describe('Accessing the underlying SDK', () => {
       const q = query(collection(users), where(gte('profile.age', 20)), limit(10));
 
+      // That a built query reaches the SDK at all: `toSdkQuery` has to accept
+      // a query this library built and hand back something the SDK's own
+      // methods hang off. Nothing is executed, because the point of the escape
+      // hatch is what the caller does with the object afterwards, and every
+      // such method belongs to the SDK rather than to this library.
       it('builds the SDK query', () => {
         const sdkQuery = toSdkQuery(db, q);
         console.log(sdkQuery);
       });
 
-      // Query Explain needs a real backend — the emulator answers any explain
-      // request with "No explain results" — so this is type-checked only.
+      // The README snippet itself, type-checked but deliberately never
+      // invoked: Query Explain needs a real backend, and the emulator answers
+      // any explain request with "No explain results" (probed). Declaring it
+      // still pins the shape the snippet relies on — `explain({analyze})`
+      // exists on what `toSdkQuery` returns, and its metrics carry
+      // `planSummary.indexesUsed` and `executionStats`. A signature change in
+      // the SDK breaks the build here rather than only the docs.
       const explain = async () => {
         const { metrics } = await toSdkQuery(db, q).explain({ analyze: true });
         console.log(metrics.planSummary.indexesUsed);

@@ -148,6 +148,9 @@ describe('filterOperandEncoder', () => {
       expect(encodeOther('author', '==', ['Authors', 'a1'])).toStrictEqual(
         otherDb.doc('Authors/a1'),
       );
+      // Pins that the assertion above can actually fail. Two references to the
+      // same path differ only in the instance they carry, so a comparison that
+      // did not look at it would pass whichever database produced them.
       expect(encodeOther('author', '==', ['Authors', 'a1'])).not.toStrictEqual(
         db.doc('Authors/a1'),
       );
