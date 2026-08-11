@@ -97,6 +97,21 @@ const cache = (() => {
       ),
     );
 
+  /**
+   * The encoder for a field's own type — the only writer of the `fields` slot.
+   * Both `field` and the sharing half of `operand` land here, so the two cannot
+   * drift into filling the same entry by different means.
+   *
+   * The type arrives as a thunk because `field` reaches this holding only a
+   * path, and resolving one walks the schema: a hit must not pay for it.
+   */
+  const fieldEncoder = (
+    encoders: Encoders,
+    db: firestore.Firestore,
+    fieldPath: string,
+    fieldType: () => FieldType,
+  ): ZodAny => memoize(encoders.fields, fieldPath, () => buildEncodeField(fieldType(), db));
+
   return {
     /** The decoder for a document's — or a pipeline row's — data. */
     decoder: (schema: DocumentSchema) =>
@@ -110,8 +125,8 @@ const cache = (() => {
 
     /** The encoder for one field's value, keyed by its path. */
     field: (schema: DocumentSchema, db: firestore.Firestore, fieldPath: string) =>
-      memoize(encodersFor(schema, db).fields, fieldPath, () =>
-        buildEncodeField(fieldTypeOfPath(schema, fieldPath), db),
+      fieldEncoder(encodersFor(schema, db), db, fieldPath, () =>
+        fieldTypeOfPath(schema, fieldPath),
       ),
 
     /**
@@ -137,7 +152,7 @@ const cache = (() => {
         const fieldType = fieldTypeOfPath(schema, fieldPath);
         const operandType = filterOperandTypeOf(fieldType, opStr);
         return operandType === fieldType
-          ? memoize(encoders.fields, fieldPath, () => buildEncodeField(operandType, db))
+          ? fieldEncoder(encoders, db, fieldPath, () => operandType)
           : buildEncodeField(operandType, db);
       });
     },
