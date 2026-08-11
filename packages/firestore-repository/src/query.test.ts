@@ -5,7 +5,7 @@ import {
   collectionGroup,
   collection,
   type FilterOperand,
-  filterOperand,
+  filterOperandTypeOf,
   gte,
   limit,
   orderBy,
@@ -212,15 +212,17 @@ describe('query', () => {
     >();
   });
 
-  it('filterOperand (runtime counterpart of FilterOperand)', () => {
+  it('filterOperandTypeOf (runtime counterpart of FilterOperand)', () => {
     const int = int64();
-    expect(filterOperand(int, '==')).toStrictEqual(int);
-    expect(filterOperand(int, '>')).toStrictEqual(int);
-    expect(filterOperand(int, 'in')).toStrictEqual(array(int));
-    expect(filterOperand(int, 'not-in')).toStrictEqual(array(int));
-    expect(filterOperand(array(string()), 'array-contains')).toStrictEqual(string());
-    expect(filterOperand(array(string()), 'array-contains-any')).toStrictEqual(array(string()));
+    expect(filterOperandTypeOf(int, '==')).toStrictEqual(int);
+    expect(filterOperandTypeOf(int, '>')).toStrictEqual(int);
+    expect(filterOperandTypeOf(int, 'in')).toStrictEqual(array(int));
+    expect(filterOperandTypeOf(int, 'not-in')).toStrictEqual(array(int));
+    expect(filterOperandTypeOf(array(string()), 'array-contains')).toStrictEqual(string());
+    expect(filterOperandTypeOf(array(string()), 'array-contains-any')).toStrictEqual(
+      array(string()),
+    );
     // type-level never — at runtime an explicit error
-    expect(() => filterOperand(int, 'array-contains')).toThrow(/requires an array field/);
+    expect(() => filterOperandTypeOf(int, 'array-contains')).toThrow(/requires an array field/);
   });
 });

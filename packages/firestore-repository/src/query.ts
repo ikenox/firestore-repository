@@ -203,6 +203,25 @@ export const queryScope = <T extends Collection>(source: QuerySource<T>): QueryS
 };
 
 /**
+ * The collection a source's rows come from, however many extensions sit on top.
+ *
+ * An executor needs it to reach anything derived from the schema — encoding a
+ * filter's operands, decoding the documents that come back — while a caller
+ * holding only a built query no longer has the collection in hand.
+ */
+export const queryCollection = <T extends Collection>(source: QuerySource<T>): T => {
+  switch (source.kind) {
+    case 'collection':
+    case 'collectionGroup':
+      return source.collection;
+    case 'query':
+      return queryCollection(source.source);
+    default:
+      return assertNever(source);
+  }
+};
+
+/**
  * The ordering a source already carries — an extended query contributes its
  * own, in the order an executor applies the chain.
  *
@@ -547,7 +566,7 @@ export type FilterOperand<T extends FieldType, U extends WhereFilterOp> = {
  * on a field — the field's own type for comparisons, a list of it for
  * `in`/`not-in`, the array's element type for `array-contains(-any)`.
  */
-export const filterOperand = (fieldType: FieldType, opStr: WhereFilterOp): FieldType => {
+export const filterOperandTypeOf = (fieldType: FieldType, opStr: WhereFilterOp): FieldType => {
   switch (opStr) {
     case '<':
     case '<=':

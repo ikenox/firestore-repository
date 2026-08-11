@@ -34,6 +34,17 @@
 
 Follow the project's linting and formatting rules enforced by `pnpm check`.
 
+- **Define functions as `const` with an arrow function**, not with a `function`
+  declaration. The only exception is an overloaded function, which the syntax
+  requires: `docRef` and the type-level mirrors in `pipelines/expression.ts`
+  are declared with `function` for that reason alone.
+- **Reserve `build*` for names that actually build something on every call.**
+  A function that hands back a memoized value is named for what it returns
+  (`dataDecoder`, `filterOperandEncoder`), so a caller can tell from the name
+  whether calling it in a loop is wasteful. In `codec.ts` the two live side by
+  side: `dataDecoder(schema)` is a cache lookup, while `buildDecodeField`
+  underneath it walks the descriptor.
+
 ## Design principles
 
 - **Systemic consistency is the top priority — no ad-hoc special cases.** A

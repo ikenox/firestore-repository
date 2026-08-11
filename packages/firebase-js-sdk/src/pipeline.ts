@@ -116,6 +116,7 @@ import {
   type Expression as SdkExpression,
   type Ordering as SdkOrdering,
   type Pipeline as SdkPipeline,
+  type PipelineSnapshot as SdkPipelineSnapshot,
   type Selectable as SdkSelectable,
 } from '@firebase/firestore/pipelines';
 import { collectionPath } from 'firestore-repository/path';
@@ -141,11 +142,11 @@ import type {
 import type { SearchOrdering, SearchQuery } from 'firestore-repository/pipelines/search';
 import { selectionPath, type SelectionNode } from 'firestore-repository/pipelines/selection';
 import type { TransformStage } from 'firestore-repository/pipelines/stage';
-import type { Collection, DocumentSchema } from 'firestore-repository/schema';
+import type { DocumentSchema } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
-import { buildDecodeSchema } from './codec.js';
-import { buildFirestoreUtilities } from './index.js';
+import { dataDecoder } from './codec.js';
+import { fromSdkDocRef } from './index.js';
 
 /**
  * Builds a {@link PipelineQueryExecutor} backed by the `@firebase/firestore`
@@ -161,45 +162,71 @@ import { buildFirestoreUtilities } from './index.js';
 export const executor = (db: Firestore): PipelineQueryExecutor => {
   const execute = async <Schema extends DocumentSchema, Id extends PipelineRowIdentity>(
     pipeline: Pipeline<Schema, Id>,
-  ): Promise<PipelineResult<Schema, Id>[]> => {
-    const { input, transforms } = pipeline.stages();
-    let collection: Collection;
-    let sdk: SdkPipeline;
-    switch (input.kind) {
-      case 'collection':
-        collection = input.collection;
-        sdk = db.pipeline().collection(collectionPath(collection, ...input.parent));
-        break;
-      case 'collectionGroup':
-        collection = input.collection;
-        sdk = db.pipeline().collectionGroup(collection.name);
-        break;
-      case 'database':
-      case 'documents':
-      case 'literals':
-        throw new Error(
-          `firebase pipeline executor: input stage "${input.kind}" not supported yet`,
-        );
-      default:
-        return assertNever(input);
-    }
-    for (const stage of transforms) {
-      sdk = applyStage(db, sdk, stage);
-    }
-
-    const { fromFirestore } = buildFirestoreUtilities(db, collection);
-    // Rows are decoded with the pipeline's FINAL schema (the leaf node's), not
-    // the source collection's — stages like `select` reshape the rows.
-    const decodeRow = buildDecodeSchema(pipeline.node.schema);
-    const snapshot = await executePipeline(sdk);
-    return snapshot.results.map((r) => {
-      const data = decodeRow.parse(r.data());
-      const id = r.ref ? fromFirestore.docRef(r.ref) : undefined;
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `data`/`id` are runtime values matching the caller's Schema/Id, which the compiler cannot prove here
-      return (id === undefined ? { data } : { data, id }) as PipelineResult<Schema, Id>;
-    });
-  };
+  ): Promise<PipelineResult<Schema, Id>[]> =>
+    fromSdkPipelineResults(pipeline, await executePipeline(toSdkPipeline(db, pipeline)));
   return { execute };
+};
+
+/**
+ * Builds the `@firebase/firestore` pipeline this library would run for
+ * `pipeline`, without running it.
+ *
+ * This is the escape hatch to execution options the executor does not expose —
+ * `execute({pipeline, indexMode})` and whatever the SDK gains next. Pair it with
+ * {@link fromSdkPipelineResults} to decode the snapshot back into this library's
+ * typed rows.
+ */
+export const toSdkPipeline = <Schema extends DocumentSchema, Id extends PipelineRowIdentity>(
+  db: Firestore,
+  pipeline: Pipeline<Schema, Id>,
+): SdkPipeline => {
+  const { input, transforms } = pipeline.stages();
+  let sdk: SdkPipeline;
+  switch (input.kind) {
+    case 'collection':
+      sdk = db.pipeline().collection(collectionPath(input.collection, ...input.parent));
+      break;
+    case 'collectionGroup':
+      sdk = db.pipeline().collectionGroup(input.collection.name);
+      break;
+    case 'database':
+    case 'documents':
+    case 'literals':
+      throw new Error(`firebase pipeline executor: input stage "${input.kind}" not supported yet`);
+    default:
+      return assertNever(input);
+  }
+  for (const stage of transforms) {
+    sdk = applyStage(db, sdk, stage);
+  }
+  return sdk;
+};
+
+/**
+ * Decodes a snapshot produced by {@link toSdkPipeline}'s SDK pipeline into the
+ * same rows {@link PipelineQueryExecutor.execute} returns.
+ *
+ * `pipeline` is required again because the row types come from it: the decoder
+ * is built from the pipeline's final schema, and `Schema` / `Id` flow from it
+ * into the result type. Passing a snapshot produced by a different pipeline
+ * therefore decodes against the wrong schema and throws.
+ */
+export const fromSdkPipelineResults = <
+  Schema extends DocumentSchema,
+  Id extends PipelineRowIdentity,
+>(
+  pipeline: Pipeline<Schema, Id>,
+  snapshot: SdkPipelineSnapshot,
+): PipelineResult<Schema, Id>[] => {
+  // Rows are decoded with the pipeline's FINAL schema (the leaf node's), not
+  // the source collection's — stages like `select` reshape the rows.
+  const rowDecoder = dataDecoder(pipeline.node.schema);
+  return snapshot.results.map((r) => {
+    const data = rowDecoder.parse(r.data());
+    const id = r.ref ? fromSdkDocRef(r.ref) : undefined;
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `data`/`id` are runtime values matching the caller's Schema/Id, which the compiler cannot prove here
+    return (id === undefined ? { data } : { data, id }) as PipelineResult<Schema, Id>;
+  });
 };
 
 const applyStage = (db: Firestore, sdk: SdkPipeline, stage: TransformStage): SdkPipeline => {

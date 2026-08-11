@@ -33,10 +33,10 @@ import { arrayRemove, arrayUnion, increment } from 'firestore-repository/server-
 import { assert, describe, expect, it } from 'vitest';
 
 import {
-  buildDecodeSchema,
-  buildEncodeCursorValue,
-  buildEncodeFilterValue,
-  buildEncodeSchema,
+  dataDecoder,
+  cursorValueEncoder,
+  filterOperandEncoder,
+  dataEncoder,
   isBytes,
   isDocumentReference,
 } from './codec.js';
@@ -80,7 +80,7 @@ describe('isDocumentReference', () => {
   });
 });
 
-describe('buildEncodeFilterValue', () => {
+describe('filterOperandEncoder', () => {
   const authors = rootCollection({ name: 'Authors', schema: { name: string() } });
   const schema = {
     rank: int64(),
@@ -89,7 +89,7 @@ describe('buildEncodeFilterValue', () => {
     reviewers: array(docRef(authors)),
     meta: map({ editor: docRef(authors) }),
   };
-  const encode = buildEncodeFilterValue(schema, db);
+  const encode = filterOperandEncoder(schema, db);
   const refDoc = (path: string) => doc(db, path);
 
   it('passes non-reference operands through', () => {
@@ -143,13 +143,51 @@ describe('buildEncodeFilterValue', () => {
     expect(() => encode('author', '==', ['Posts', 'p1'])).toThrow();
     expect(() => encode('anyRef', '==', ['odd-length'])).toThrow();
   });
+
+  // Built schemas are memoized across calls, and encoding a reference binds the
+  // `Firestore` instance into the schema — so the memo has to be keyed by the
+  // database as well as the schema. Reusing one schema across databases is what
+  // a dropped database key would silently corrupt: the result is a structurally
+  // valid reference pointing at the wrong database, not an error.
+  describe('encoders stay bound to the database they were built for', () => {
+    const otherDb = getFirestore(
+      initializeApp({ projectId: 'codec-guard-test-other' }, 'codec-guard-test-other'),
+    );
+
+    it('filter operands', () => {
+      const encodeOther = filterOperandEncoder(schema, otherDb);
+
+      expect(encode('author', '==', ['Authors', 'a1'])).toStrictEqual(refDoc('Authors/a1'));
+      expect(encodeOther('author', '==', ['Authors', 'a1'])).toStrictEqual(
+        doc(otherDb, 'Authors/a1'),
+      );
+      // Pins that the assertion above can actually fail. Two references to the
+      // same path differ only in the instance they carry, so a comparison that
+      // did not look at it would pass whichever database produced them.
+      expect(encodeOther('author', '==', ['Authors', 'a1'])).not.toStrictEqual(
+        refDoc('Authors/a1'),
+      );
+    });
+
+    it('document data', () => {
+      const docSchema = { author: docRef(authors) };
+      const written = { author: ['Authors', 'a1'] };
+
+      expect(dataEncoder(docSchema, db).parse(written)).toStrictEqual({
+        author: refDoc('Authors/a1'),
+      });
+      expect(dataEncoder(docSchema, otherDb).parse(written)).toStrictEqual({
+        author: doc(otherDb, 'Authors/a1'),
+      });
+    });
+  });
 });
 
 describe('numeric descriptors', () => {
   const schema = { count: int64(), score: double(), nested: map({ count: int64() }) };
 
   it('rejects fractional int64 values when encoding', () => {
-    const encode = buildEncodeSchema(schema, db);
+    const encode = dataEncoder(schema, db);
 
     expect(encode.parse({ count: 1, score: 1.5, nested: { count: 2 } })).toStrictEqual({
       count: 1,
@@ -161,7 +199,7 @@ describe('numeric descriptors', () => {
   });
 
   it('rejects fractional int64 values when decoding', () => {
-    const decode = buildDecodeSchema(schema);
+    const decode = dataDecoder(schema);
 
     expect(decode.parse({ count: 1, score: 1.5, nested: { count: 2 } })).toStrictEqual({
       count: 1,
@@ -173,7 +211,7 @@ describe('numeric descriptors', () => {
   });
 
   it('requires integer increment amounts for int64 fields', () => {
-    const encode = buildEncodeSchema(schema, db);
+    const encode = dataEncoder(schema, db);
 
     expect(() =>
       encode.parse({ count: increment(1), score: increment(1.5), nested: { count: 2 } }),
@@ -246,7 +284,7 @@ describe('array server operations', () => {
   };
 
   describe.each(Object.entries(elementCases))('%s element', (_name, elementCase) => {
-    const encode = buildEncodeSchema({ xs: array(elementCase.descriptor) }, db);
+    const encode = dataEncoder({ xs: array(elementCase.descriptor) }, db);
 
     if ('uninhabited' in elementCase) {
       // Its only inhabitant is the empty list, which the plain form alone can
@@ -282,7 +320,7 @@ describe('array server operations', () => {
   });
 
   describe('an element the descriptor does not admit', () => {
-    const encode = buildEncodeSchema({ xs: array(docRef(authors)) }, db);
+    const encode = dataEncoder({ xs: array(docRef(authors)) }, db);
     const bad = ['NotAuthors', 'x1'];
 
     it('is rejected in all three forms', () => {
@@ -312,17 +350,17 @@ describe('the uninhabited descriptor', () => {
   const schema = { xs: array(neverType()) };
 
   it('decodes the empty array and nothing else', () => {
-    expect(buildDecodeSchema(schema).parse({ xs: [] })).toStrictEqual({ xs: [] });
-    expect(() => buildDecodeSchema(schema).parse({ xs: ['a'] })).toThrow();
+    expect(dataDecoder(schema).parse({ xs: [] })).toStrictEqual({ xs: [] });
+    expect(() => dataDecoder(schema).parse({ xs: ['a'] })).toThrow();
   });
 
   it('encodes the empty array and nothing else', () => {
-    expect(buildEncodeSchema(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
-    expect(() => buildEncodeSchema(schema, db).parse({ xs: ['a'] })).toThrow();
+    expect(dataEncoder(schema, db).parse({ xs: [] })).toStrictEqual({ xs: [] });
+    expect(() => dataEncoder(schema, db).parse({ xs: ['a'] })).toThrow();
   });
 });
 
-describe('buildEncodeCursorValue', () => {
+describe('cursorValueEncoder', () => {
   // A cursor value is one value of the field the query is ordered by, so it
   // takes that field's descriptor. Only descriptors whose encoded form differs
   // from their plain-JS one can show the difference; the descriptor coverage
@@ -337,7 +375,7 @@ describe('buildEncodeCursorValue', () => {
     rank: int64(),
     tags: array(string()),
   };
-  const encode = buildEncodeCursorValue(schema, db);
+  const encode = cursorValueEncoder(schema, db);
 
   const cases: [DocFieldPath<typeof schema>, unknown, unknown][] = [
     ['author', ['Authors', 'a1'], doc(db, 'Authors/a1')],

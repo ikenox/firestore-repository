@@ -12,7 +12,11 @@ import {
   serverTimestamp as firestoreServerTimestamp,
   vector,
 } from '@firebase/firestore';
-import { filterOperand, type QueryScope, type WhereFilterOp } from 'firestore-repository/query';
+import {
+  filterOperandTypeOf,
+  type QueryScope,
+  type WhereFilterOp,
+} from 'firestore-repository/query';
 import {
   type Collection,
   type DocFieldPath,
@@ -35,18 +39,132 @@ type ZodAny = z.ZodType<any, any>;
 export const isBytes = (v: unknown) => v instanceof FirestoreBytes;
 export const isDocumentReference = (v: unknown) => v instanceof FirestoreDocumentReference;
 
-export function buildDecodeSchema(schema: DocumentSchema): z.ZodObject<z.ZodRawShape> {
-  return z.object(
-    Object.fromEntries(
-      Object.entries(schema).map(([k, v]) => {
-        const s = buildDecodeField(v);
-        return [k, v.optional ? s.optional() : s];
-      }),
-    ),
-  );
-}
+/** A `Map` or `WeakMap` — whatever {@link memoize} is asked to store into. */
+type Store<K, V> = { get: (key: K) => V | undefined; set: (key: K, value: V) => unknown };
 
-function buildDecodeField(fieldType: FieldType): ZodAny {
+/** Returns the stored value for `key`, building and storing it on a miss. */
+const memoize = <K, V>(store: Store<K, V>, key: K, build: () => V): V => {
+  const stored = store.get(key);
+  if (stored !== undefined) {
+    return stored;
+  }
+  const built = build();
+  store.set(key, built);
+  return built;
+};
+
+type Encoders = {
+  /** The data schema for a write. */
+  data?: z.ZodObject<z.ZodRawShape>;
+  /** Filter operands, keyed by `${operator}:${fieldPath}`. */
+  operands: Map<string, ZodAny>;
+  /** Whole-field values, keyed by field path. */
+  fields: Map<string, ZodAny>;
+};
+
+/**
+ * Every built schema this module memoizes, and the only place one is stored.
+ * Callers pass how to build theirs and never touch a map, so what is cached
+ * under which key is answered here rather than at four call sites.
+ *
+ * Building a schema walks the whole descriptor tree, which dominates the work
+ * of a repeated conversion, and the callers that would otherwise hold the memo
+ * are built per call by design (`toSdkQuery`, and a pipeline's row decoder).
+ * Keys are held weakly throughout, so entries die with the schema or database
+ * they were built from.
+ *
+ * Decoders need only the schema — they read `ref.path` off whatever reference
+ * they are handed. Encoders also depend on the database, because turning a
+ * `RefPath` into a `DocumentReference` binds that `Firestore` instance into
+ * the schema (`doc(db, ...)`), so two databases cannot share one. Those are
+ * keyed by database first, then schema, because that is the order the two
+ * differ in: an application holds one database and reaches many schemas
+ * through it, and a pipeline mints a fresh schema per stage chain. Nesting the
+ * other way would allocate an inner map per schema to hold a single entry.
+ */
+const cache = (() => {
+  const decoders = new WeakMap<DocumentSchema, z.ZodObject<z.ZodRawShape>>();
+  const encoders = new WeakMap<Firestore, WeakMap<DocumentSchema, Encoders>>();
+
+  const encodersFor = (schema: DocumentSchema, db: Firestore): Encoders =>
+    memoize(
+      memoize(encoders, db, () => new WeakMap<DocumentSchema, Encoders>()),
+      schema,
+      () => ({ operands: new Map(), fields: new Map() }),
+    );
+
+  /** Assembles a document-shaped schema out of a per-field one. */
+  const document = (
+    schema: DocumentSchema,
+    ofField: (fieldType: FieldType) => ZodAny,
+  ): z.ZodObject<z.ZodRawShape> =>
+    z.object(
+      Object.fromEntries(
+        Object.entries(schema).map(([k, v]) => {
+          const s = ofField(v);
+          return [k, v.optional ? s.optional() : s];
+        }),
+      ),
+    );
+
+  const encoder = {
+    /** The encoder for a document's data. */
+    data: (schema: DocumentSchema, db: Firestore) => {
+      const encoders = encodersFor(schema, db);
+      return (encoders.data ??= document(schema, (fieldType) => buildEncodeField(fieldType, db)));
+    },
+
+    /**
+     * The encoder for one field's value, keyed by its path.
+     *
+     * The only writer of the `fields` slot: `operand` shares an entry by
+     * calling this rather than filling one itself, so the two cannot drift
+     * into building it differently.
+     */
+    field: (schema: DocumentSchema, db: Firestore, fieldPath: string): ZodAny =>
+      memoize(encodersFor(schema, db).fields, fieldPath, () =>
+        buildEncodeField(fieldTypeOfPath(schema, fieldPath), db),
+      ),
+
+    /**
+     * The encoder for one filter operand.
+     *
+     * An operand whose type is the field's own — every comparison operator —
+     * shares the field entry rather than taking one of its own, since the two
+     * would build the same schema. The operators that reshape the operand
+     * (`in` wraps it in a list, `array-contains` unwraps to the element) get
+     * their own entry, keyed by operator and path.
+     */
+    operand: (schema: DocumentSchema, db: Firestore, fieldPath: string, opStr: WhereFilterOp) =>
+      // Resolving the operand's type walks the field path and, for the list
+      // operators, allocates a wrapper — so it happens inside the miss, never
+      // on the way to an entry that already exists.
+      memoize(encodersFor(schema, db).operands, `${opStr}:${fieldPath}`, () => {
+        const fieldType = fieldTypeOfPath(schema, fieldPath);
+        const operandType = filterOperandTypeOf(fieldType, opStr);
+        return operandType === fieldType
+          ? encoder.field(schema, db, fieldPath)
+          : buildEncodeField(operandType, db);
+      }),
+  };
+
+  return {
+    /** The decoder for a document's — or a pipeline row's — data. */
+    decoder: (schema: DocumentSchema) =>
+      memoize(decoders, schema, () => document(schema, buildDecodeField)),
+
+    /**
+     * The encoders, which unlike the decoder are reached per database: encoding
+     * a reference binds that `Firestore` instance into the schema.
+     */
+    encoder,
+  };
+})();
+
+export const dataDecoder = (schema: DocumentSchema): z.ZodObject<z.ZodRawShape> =>
+  cache.decoder(schema);
+
+const buildDecodeField = (fieldType: FieldType): ZodAny => {
   switch (fieldType.type) {
     case 'string':
       return z.string();
@@ -105,23 +223,12 @@ function buildDecodeField(fieldType: FieldType): ZodAny {
     default:
       return assertNever(fieldType);
   }
-}
+};
 
-export function buildEncodeSchema(
-  schema: DocumentSchema,
-  db: Firestore,
-): z.ZodObject<z.ZodRawShape> {
-  return z.object(
-    Object.fromEntries(
-      Object.entries(schema).map(([k, v]) => {
-        const s = buildEncodeField(v, db);
-        return [k, v.optional ? s.optional() : s];
-      }),
-    ),
-  );
-}
+export const dataEncoder = (schema: DocumentSchema, db: Firestore): z.ZodObject<z.ZodRawShape> =>
+  cache.encoder.data(schema, db);
 
-function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
+const buildEncodeField = (fieldType: FieldType, db: Firestore): ZodAny => {
   switch (fieldType.type) {
     case 'string':
       return z.string();
@@ -220,11 +327,11 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
     default:
       return assertNever(fieldType);
   }
-}
+};
 
 /**
  * Builds the encoder for filter-condition operands, memoizing the operand
- * schema per (field path, operator) like `buildEncodeSchema` builds the
+ * schema per (field path, operator) like `dataEncoder` builds the
  * write schema once per collection. The operand schema reuses the write
  * codec (`buildEncodeField`): a field's READ representation is a subset of
  * its write `input` for every descriptor, and the write conversions
@@ -235,31 +342,22 @@ function buildEncodeField(fieldType: FieldType, db: Firestore): ZodAny {
  * string conventions (see docs/querying-by-document-id.md): a reference
  * works in every scope. The operand's shape per operator (`in` takes a list
  * of field values, `array-contains` an element, ...) comes from
- * `filterOperand`, the runtime counterpart of the `FilterOperand` type.
+ * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
-export function buildEncodeFilterValue<S extends DocumentSchema>(
+export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: Firestore,
-): (fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown {
-  const operandSchemas = new Map<string, ZodAny>();
-  return (fieldPath, opStr, value) => {
-    const key = `${opStr}:${fieldPath}`;
-    let operandSchema = operandSchemas.get(key);
-    if (operandSchema === undefined) {
-      const fieldType = fieldTypeOfPath(schema, fieldPath);
-      operandSchema = buildEncodeField(filterOperand(fieldType, opStr), db);
-      operandSchemas.set(key, operandSchema);
-    }
-    return operandSchema.parse(value);
-  };
-}
+): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
+  return (fieldPath, opStr, value) =>
+    cache.encoder.operand(schema, db, fieldPath, opStr).parse(value);
+};
 
 /**
  * Builds the encoder for cursor values, memoizing per field path.
  *
  * A cursor value is a READ-space value of the field the query is ordered by,
  * and reaches Firestore through the write codec for the same reason
- * {@link buildEncodeFilterValue} does: a field's read representation is a
+ * {@link filterOperandEncoder} does: a field's read representation is a
  * subset of its write `input` for every descriptor, and the write conversions
  * (`RefPath` -> `DocumentReference`, `Date` -> `Timestamp`, geopoint / bytes /
  * vector to their SDK classes) are exactly the forms a cursor must compare
@@ -269,24 +367,15 @@ export function buildEncodeFilterValue<S extends DocumentSchema>(
  * `'__name__'` is the exception, and the reason this takes a {@link QueryScope}
  * — see {@link encodeKeyCursor}.
  */
-export function buildEncodeCursorValue<S extends DocumentSchema>(
+export const cursorValueEncoder = <S extends DocumentSchema>(
   schema: S,
   db: Firestore,
-): (fieldPath: DocFieldPath<S>, value: unknown, scope: QueryScope) => unknown {
-  const valueSchemas = new Map<string, ZodAny>();
-  return (fieldPath, value, scope) => {
-    if (fieldPath === '__name__') {
-      return encodeKeyCursor(value, scope);
-    }
-    let valueSchema = valueSchemas.get(fieldPath);
-    if (valueSchema === undefined) {
-      const fieldType = fieldTypeOfPath(schema, fieldPath);
-      valueSchema = buildEncodeField(fieldType, db);
-      valueSchemas.set(fieldPath, valueSchema);
-    }
-    return valueSchema.parse(value);
-  };
-}
+): ((fieldPath: DocFieldPath<S>, value: unknown, scope: QueryScope) => unknown) => {
+  return (fieldPath, value, scope) =>
+    fieldPath === '__name__'
+      ? encodeKeyCursor(value, scope)
+      : cache.encoder.field(schema, db, fieldPath).parse(value);
+};
 
 /**
  * The document key as this SDK wants it in a cursor: a STRING, whose meaning
@@ -303,7 +392,7 @@ export function buildEncodeCursorValue<S extends DocumentSchema>(
  * that can produce all three, since a bare id cannot name its ancestors.
  */
 const encodeKeyCursor = (value: unknown, scope: QueryScope): string => {
-  const path = refPathSchema('unknown').parse(value);
+  const path = keyCursorPath.parse(value);
   switch (scope) {
     case 'collection': {
       const id = path.at(-1);
@@ -326,7 +415,7 @@ const encodeKeyCursor = (value: unknown, scope: QueryScope): string => {
  * is exact — literal collection names at the even positions — while the
  * context-free flavor accepts any even-length segment path.
  */
-function refPathSchema(collection: Collection | 'unknown'): z.ZodType<string[]> {
+const refPathSchema = (collection: Collection | 'unknown'): z.ZodType<string[]> => {
   if (collection === 'unknown') {
     return z
       .array(z.string())
@@ -342,9 +431,17 @@ function refPathSchema(collection: Collection | 'unknown'): z.ZodType<string[]> 
         segments.length === names.length * 2 && names.every((name, i) => segments[i * 2] === name),
       { message: `not a reference path of collection '${collection.name}'` },
     );
-}
+};
 
-function zodUnion(schemas: ZodAny[]): ZodAny {
+/**
+ * The operand `__name__` takes in a cursor, which is the context-free flavor:
+ * a cursor names a document anywhere the query can reach, so no collection
+ * constrains it. Built once — unlike the per-field encoders it has no schema or
+ * database to be keyed by, and rebuilding it per call showed up at 16us.
+ */
+const keyCursorPath = refPathSchema('unknown');
+
+const zodUnion = (schemas: ZodAny[]): ZodAny => {
   if (schemas.length === 0) {
     throw new Error('union must have at least one element');
   }
@@ -354,4 +451,4 @@ function zodUnion(schemas: ZodAny[]): ZodAny {
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return z.union(schemas as [ZodAny, ZodAny, ...ZodAny[]]);
-}
+};
