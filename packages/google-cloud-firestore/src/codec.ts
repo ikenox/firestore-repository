@@ -48,8 +48,8 @@ type Encoders = {
   data?: z.ZodObject<z.ZodRawShape>;
   /** Filter operands, keyed by `${operator}:${fieldPath}`. */
   operands: Map<string, ZodAny>;
-  /** Cursor values, keyed by field path. */
-  cursors: Map<string, ZodAny>;
+  /** Whole-field values, keyed by field path. */
+  fields: Map<string, ZodAny>;
 };
 
 /**
@@ -80,7 +80,7 @@ const cache = (() => {
     memoize(
       memoize(encoders, db, () => new WeakMap<DocumentSchema, Encoders>()),
       schema,
-      () => ({ operands: new Map(), cursors: new Map() }),
+      () => ({ operands: new Map(), fields: new Map() }),
     );
 
   return {
@@ -98,17 +98,35 @@ const cache = (() => {
       return (encoders.data ??= build());
     },
 
-    /** The encoder for one filter operand, keyed by operator and field path. */
-    operand: (schema: DocumentSchema, db: firestore.Firestore, key: string, build: () => ZodAny) =>
-      memoize(encodersFor(schema, db).operands, key, build),
+    /**
+     * The encoder for one filter operand.
+     *
+     * An operand whose type is the field's own — every comparison operator —
+     * shares the field entry rather than taking one of its own, since the two
+     * would build the same schema. The operators that reshape the operand
+     * (`in` wraps it in a list, `array-contains` unwraps to the element) get
+     * their own entry, keyed by operator and path.
+     */
+    operand: (
+      schema: DocumentSchema,
+      db: firestore.Firestore,
+      fieldPath: string,
+      opStr: WhereFilterOp,
+      fieldType: FieldType,
+      operandType: FieldType,
+      build: () => ZodAny,
+    ) =>
+      operandType === fieldType
+        ? memoize(encodersFor(schema, db).fields, fieldPath, build)
+        : memoize(encodersFor(schema, db).operands, `${opStr}:${fieldPath}`, build),
 
-    /** The encoder for one cursor value, keyed by field path. */
-    cursor: (
+    /** The encoder for one field's value, keyed by its path. */
+    field: (
       schema: DocumentSchema,
       db: firestore.Firestore,
       fieldPath: string,
       build: () => ZodAny,
-    ) => memoize(encodersFor(schema, db).cursors, fieldPath, build),
+    ) => memoize(encodersFor(schema, db).fields, fieldPath, build),
   };
 })();
 
@@ -320,12 +338,15 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
-  return (fieldPath, opStr, value) =>
-    cache
-      .operand(schema, db, `${opStr}:${fieldPath}`, () =>
-        buildEncodeField(filterOperandTypeOf(fieldTypeOfPath(schema, fieldPath), opStr), db),
+  return (fieldPath, opStr, value) => {
+    const fieldType = fieldTypeOfPath(schema, fieldPath);
+    const operandType = filterOperandTypeOf(fieldType, opStr);
+    return cache
+      .operand(schema, db, fieldPath, opStr, fieldType, operandType, () =>
+        buildEncodeField(operandType, db),
       )
       .parse(value);
+  };
 };
 
 /**
@@ -351,7 +372,7 @@ export const cursorValueEncoder = <S extends DocumentSchema>(
 ): ((fieldPath: DocFieldPath<S>, value: unknown) => unknown) => {
   return (fieldPath, value) =>
     cache
-      .cursor(schema, db, fieldPath, () => buildEncodeField(fieldTypeOfPath(schema, fieldPath), db))
+      .field(schema, db, fieldPath, () => buildEncodeField(fieldTypeOfPath(schema, fieldPath), db))
       .parse(value);
 };
 
