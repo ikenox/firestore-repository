@@ -107,25 +107,46 @@ const cache = (() => {
       ),
     );
 
-  /**
-   * The encoder for a field's own type — the only writer of the `fields` slot.
-   * Both `field` and the sharing half of `operand` land here, so the two cannot
-   * drift into filling the same entry by different means.
-   *
-   * It takes the schema and resolves the field's type itself, rather than being
-   * handed the type: resolving walks the path, and doing it here keeps that
-   * inside the miss. Passing the type in would put the walk on every call —
-   * 85ns per hit on a four-level path, measured.
-   */
-  const fieldEncoder = (
-    encoders: Encoders,
-    db: Firestore,
-    schema: DocumentSchema,
-    fieldPath: string,
-  ): ZodAny =>
-    memoize(encoders.fields, fieldPath, () =>
-      buildEncodeField(fieldTypeOfPath(schema, fieldPath), db),
-    );
+  const encoder = {
+    /** The encoder for a document's data. */
+    data: (schema: DocumentSchema, db: Firestore) => {
+      const encoders = encodersFor(schema, db);
+      return (encoders.data ??= document(schema, (fieldType) => buildEncodeField(fieldType, db)));
+    },
+
+    /**
+     * The encoder for one field's value, keyed by its path.
+     *
+     * The only writer of the `fields` slot: `operand` shares an entry by
+     * calling this rather than filling one itself, so the two cannot drift
+     * into building it differently.
+     */
+    field: (schema: DocumentSchema, db: Firestore, fieldPath: string): ZodAny =>
+      memoize(encodersFor(schema, db).fields, fieldPath, () =>
+        buildEncodeField(fieldTypeOfPath(schema, fieldPath), db),
+      ),
+
+    /**
+     * The encoder for one filter operand.
+     *
+     * An operand whose type is the field's own — every comparison operator —
+     * shares the field entry rather than taking one of its own, since the two
+     * would build the same schema. The operators that reshape the operand
+     * (`in` wraps it in a list, `array-contains` unwraps to the element) get
+     * their own entry, keyed by operator and path.
+     */
+    operand: (schema: DocumentSchema, db: Firestore, fieldPath: string, opStr: WhereFilterOp) =>
+      // Resolving the operand's type walks the field path and, for the list
+      // operators, allocates a wrapper — so it happens inside the miss, never
+      // on the way to an entry that already exists.
+      memoize(encodersFor(schema, db).operands, `${opStr}:${fieldPath}`, () => {
+        const fieldType = fieldTypeOfPath(schema, fieldPath);
+        const operandType = filterOperandTypeOf(fieldType, opStr);
+        return operandType === fieldType
+          ? encoder.field(schema, db, fieldPath)
+          : buildEncodeField(operandType, db);
+      }),
+  };
 
   return {
     /** The decoder for a document's — or a pipeline row's — data. */
@@ -136,40 +157,7 @@ const cache = (() => {
      * The encoders, which unlike the decoder are reached per database: encoding
      * a reference binds that `Firestore` instance into the schema.
      */
-    encoder: {
-      /** The encoder for a document's data. */
-      data: (schema: DocumentSchema, db: Firestore) => {
-        const encoders = encodersFor(schema, db);
-        return (encoders.data ??= document(schema, (fieldType) => buildEncodeField(fieldType, db)));
-      },
-
-      /** The encoder for one field's value, keyed by its path. */
-      field: (schema: DocumentSchema, db: Firestore, fieldPath: string) =>
-        fieldEncoder(encodersFor(schema, db), db, schema, fieldPath),
-
-      /**
-       * The encoder for one filter operand.
-       *
-       * An operand whose type is the field's own — every comparison operator —
-       * shares the field entry rather than taking one of its own, since the two
-       * would build the same schema. The operators that reshape the operand
-       * (`in` wraps it in a list, `array-contains` unwraps to the element) get
-       * their own entry, keyed by operator and path.
-       */
-      operand: (schema: DocumentSchema, db: Firestore, fieldPath: string, opStr: WhereFilterOp) => {
-        const encoders = encodersFor(schema, db);
-        // Resolving the operand's type walks the field path and, for the list
-        // operators, allocates a wrapper — so it happens inside the miss, never
-        // on the way to an entry that already exists.
-        return memoize(encoders.operands, `${opStr}:${fieldPath}`, () => {
-          const fieldType = fieldTypeOfPath(schema, fieldPath);
-          const operandType = filterOperandTypeOf(fieldType, opStr);
-          return operandType === fieldType
-            ? fieldEncoder(encoders, db, schema, fieldPath)
-            : buildEncodeField(operandType, db);
-        });
-      },
-    },
+    encoder,
   };
 })();
 
