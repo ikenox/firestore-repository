@@ -66,7 +66,6 @@ import {
 } from 'firestore-repository/repository';
 import {
   type Collection,
-  type DocumentSchema,
   type RootCollection,
   type SubCollection,
 } from 'firestore-repository/schema';
@@ -253,7 +252,7 @@ export const toSdkQuery = <T extends Collection>(
   db: Firestore,
   query: Query<T>,
 ): FirestoreQuery => {
-  const { schema } = queryCollection(query);
+  const collection = queryCollection(query);
   const base = toSdkSource(db, query.source);
 
   const { filter, nonFilter } = query.constraints.reduce<{
@@ -263,7 +262,7 @@ export const toSdkQuery = <T extends Collection>(
     (acc, constraint) => {
       switch (constraint.kind) {
         case 'where': {
-          const f = toSdkFilter(db, schema, constraint.condition);
+          const f = toSdkFilter(db, collection, constraint.condition);
           acc.filter = acc.filter ? and(acc.filter, f) : f;
           break;
         }
@@ -293,10 +292,10 @@ export const toSdkQuery = <T extends Collection>(
   // scope travels with the bound — see this package's `encodeKeyCursor`.
   const scope = queryScope(query.source);
   if (query.start !== undefined) {
-    nonFilter.push(toSdkBound(db, schema, query.start, scope));
+    nonFilter.push(toSdkBound(db, collection, query.start, scope));
   }
   if (query.end !== undefined) {
-    nonFilter.push(toSdkBound(db, schema, query.end, scope));
+    nonFilter.push(toSdkBound(db, collection, query.end, scope));
   }
 
   // Wrap single filter in and() to satisfy QueryCompositeFilterConstraint overload
@@ -325,13 +324,13 @@ const toSdkSource = <T extends Collection>(
  * Builds a bound constraint, encoding each cursor value against the field it
  * carries — which field that is was settled when the query was built.
  */
-const toSdkBound = <S extends DocumentSchema>(
+const toSdkBound = <T extends Collection>(
   db: Firestore,
-  schema: S,
-  bound: ResolvedStartBound<S> | ResolvedEndBound<S>,
+  collection: T,
+  bound: ResolvedStartBound<T> | ResolvedEndBound<T>,
   scope: QueryScope,
 ): QueryNonFilterConstraint => {
-  const encodeCursorValue = cursorValueEncoder(schema, db);
+  const encodeCursorValue = cursorValueEncoder(collection, db);
   const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value, scope));
   switch (bound.kind) {
     case 'startAt':
@@ -347,22 +346,22 @@ const toSdkBound = <S extends DocumentSchema>(
   }
 };
 
-const toSdkFilter = <S extends DocumentSchema>(
+const toSdkFilter = <T extends Collection>(
   db: Firestore,
-  schema: S,
-  expr: FilterExpression<S>,
+  collection: T,
+  expr: FilterExpression<T>,
 ): FirestoreQueryFilterConstraint => {
   switch (expr.kind) {
     case 'fieldValueCondition':
       return where(
         expr.fieldPath,
         expr.opStr,
-        filterOperandEncoder(schema, db)(expr.fieldPath, expr.opStr, expr.value),
+        filterOperandEncoder(collection, db)(expr.fieldPath, expr.opStr, expr.value),
       );
     case 'and':
-      return and(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
+      return and(...expr.filters.map((f) => toSdkFilter(db, collection, f)));
     case 'or':
-      return or(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
+      return or(...expr.filters.map((f) => toSdkFilter(db, collection, f)));
     default:
       return assertNever(expr);
   }

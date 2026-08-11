@@ -26,12 +26,7 @@ import {
   type Unsubscribe,
   type WriteTransactionOption,
 } from 'firestore-repository/repository';
-import type {
-  Collection,
-  DocumentSchema,
-  RootCollection,
-  SubCollection,
-} from 'firestore-repository/schema';
+import type { Collection, RootCollection, SubCollection } from 'firestore-repository/schema';
 import { assertNever } from 'firestore-repository/util';
 
 import { dataDecoder, cursorValueEncoder, filterOperandEncoder, dataEncoder } from './codec.js';
@@ -280,12 +275,12 @@ export const toSdkQuery = <T extends Collection>(
   db: firestore.Firestore,
   query: Query<T>,
 ): firestore.Query => {
-  const { schema } = queryCollection(query);
+  const collection = queryCollection(query);
   let q = toSdkSource(db, query.source);
   for (const constraint of query.constraints) {
     switch (constraint.kind) {
       case 'where':
-        q = q.where(toSdkFilter(db, schema, constraint.condition));
+        q = q.where(toSdkFilter(db, collection, constraint.condition));
         break;
       case 'orderBy':
         q = q.orderBy(constraint.field, constraint.direction);
@@ -306,10 +301,10 @@ export const toSdkQuery = <T extends Collection>(
   // The bounds go last: the SDK only accepts a cursor once every clause it
   // pairs with is already on the query.
   if (query.start !== undefined) {
-    q = toSdkBound(db, schema, q, query.start);
+    q = toSdkBound(db, collection, q, query.start);
   }
   if (query.end !== undefined) {
-    q = toSdkBound(db, schema, q, query.end);
+    q = toSdkBound(db, collection, q, query.end);
   }
   return q;
 };
@@ -334,13 +329,13 @@ const toSdkSource = <T extends Collection>(
  * Applies a bound, encoding each cursor value against the field it carries —
  * which field that is was settled when the query was built.
  */
-const toSdkBound = <S extends DocumentSchema>(
+const toSdkBound = <T extends Collection>(
   db: firestore.Firestore,
-  schema: S,
+  collection: T,
   q: firestore.Query,
-  bound: ResolvedStartBound<S> | ResolvedEndBound<S>,
+  bound: ResolvedStartBound<T> | ResolvedEndBound<T>,
 ): firestore.Query => {
-  const encodeCursorValue = cursorValueEncoder(schema, db);
+  const encodeCursorValue = cursorValueEncoder(collection, db);
   const values = bound.cursor.map(({ value, field }) => encodeCursorValue(field, value));
   switch (bound.kind) {
     case 'startAt':
@@ -356,22 +351,22 @@ const toSdkBound = <S extends DocumentSchema>(
   }
 };
 
-const toSdkFilter = <S extends DocumentSchema>(
+const toSdkFilter = <T extends Collection>(
   db: firestore.Firestore,
-  schema: S,
-  expr: FilterExpression<S>,
+  collection: T,
+  expr: FilterExpression<T>,
 ): firestore.Filter => {
   switch (expr.kind) {
     case 'fieldValueCondition':
       return Filter.where(
         expr.fieldPath,
         expr.opStr,
-        filterOperandEncoder(schema, db)(expr.fieldPath, expr.opStr, expr.value),
+        filterOperandEncoder(collection, db)(expr.fieldPath, expr.opStr, expr.value),
       );
     case 'and':
-      return Filter.and(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
+      return Filter.and(...expr.filters.map((f) => toSdkFilter(db, collection, f)));
     case 'or':
-      return Filter.or(...expr.filters.map((f) => toSdkFilter(db, schema, f)));
+      return Filter.or(...expr.filters.map((f) => toSdkFilter(db, collection, f)));
     default:
       return assertNever(expr);
   }
