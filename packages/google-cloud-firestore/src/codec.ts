@@ -117,44 +117,50 @@ const cache = (() => {
     decoder: (schema: DocumentSchema) =>
       memoize(decoders, schema, () => document(schema, buildDecodeField)),
 
-    /** The encoder for a document's data on `db`. */
-    data: (schema: DocumentSchema, db: firestore.Firestore) => {
-      const encoders = encodersFor(schema, db);
-      return (encoders.data ??= document(schema, (fieldType) => buildEncodeField(fieldType, db)));
-    },
-
-    /** The encoder for one field's value, keyed by its path. */
-    field: (schema: DocumentSchema, db: firestore.Firestore, fieldPath: string) =>
-      fieldEncoder(encodersFor(schema, db), db, fieldPath, () =>
-        fieldTypeOfPath(schema, fieldPath),
-      ),
-
     /**
-     * The encoder for one filter operand.
-     *
-     * An operand whose type is the field's own — every comparison operator —
-     * shares the field entry rather than taking one of its own, since the two
-     * would build the same schema. The operators that reshape the operand
-     * (`in` wraps it in a list, `array-contains` unwraps to the element) get
-     * their own entry, keyed by operator and path.
+     * The encoders, which unlike the decoder are reached per database: encoding
+     * a reference binds that `Firestore` instance into the schema.
      */
-    operand: (
-      schema: DocumentSchema,
-      db: firestore.Firestore,
-      fieldPath: string,
-      opStr: WhereFilterOp,
-    ) => {
-      const encoders = encodersFor(schema, db);
-      // Resolving the operand's type walks the field path and, for the list
-      // operators, allocates a wrapper — so it happens inside the miss, never
-      // on the way to an entry that already exists.
-      return memoize(encoders.operands, `${opStr}:${fieldPath}`, () => {
-        const fieldType = fieldTypeOfPath(schema, fieldPath);
-        const operandType = filterOperandTypeOf(fieldType, opStr);
-        return operandType === fieldType
-          ? fieldEncoder(encoders, db, fieldPath, () => operandType)
-          : buildEncodeField(operandType, db);
-      });
+    encoder: {
+      /** The encoder for a document's data. */
+      data: (schema: DocumentSchema, db: firestore.Firestore) => {
+        const encoders = encodersFor(schema, db);
+        return (encoders.data ??= document(schema, (fieldType) => buildEncodeField(fieldType, db)));
+      },
+
+      /** The encoder for one field's value, keyed by its path. */
+      field: (schema: DocumentSchema, db: firestore.Firestore, fieldPath: string) =>
+        fieldEncoder(encodersFor(schema, db), db, fieldPath, () =>
+          fieldTypeOfPath(schema, fieldPath),
+        ),
+
+      /**
+       * The encoder for one filter operand.
+       *
+       * An operand whose type is the field's own — every comparison operator —
+       * shares the field entry rather than taking one of its own, since the two
+       * would build the same schema. The operators that reshape the operand
+       * (`in` wraps it in a list, `array-contains` unwraps to the element) get
+       * their own entry, keyed by operator and path.
+       */
+      operand: (
+        schema: DocumentSchema,
+        db: firestore.Firestore,
+        fieldPath: string,
+        opStr: WhereFilterOp,
+      ) => {
+        const encoders = encodersFor(schema, db);
+        // Resolving the operand's type walks the field path and, for the list
+        // operators, allocates a wrapper — so it happens inside the miss, never
+        // on the way to an entry that already exists.
+        return memoize(encoders.operands, `${opStr}:${fieldPath}`, () => {
+          const fieldType = fieldTypeOfPath(schema, fieldPath);
+          const operandType = filterOperandTypeOf(fieldType, opStr);
+          return operandType === fieldType
+            ? fieldEncoder(encoders, db, fieldPath, () => operandType)
+            : buildEncodeField(operandType, db);
+        });
+      },
     },
   };
 })();
@@ -226,7 +232,7 @@ const buildDecodeField = (fieldType: FieldType): ZodAny => {
 export const dataEncoder = (
   schema: DocumentSchema,
   db: firestore.Firestore,
-): z.ZodObject<z.ZodRawShape> => cache.data(schema, db);
+): z.ZodObject<z.ZodRawShape> => cache.encoder.data(schema, db);
 
 const buildEncodeField = (fieldType: FieldType, db: firestore.Firestore): ZodAny => {
   switch (fieldType.type) {
@@ -348,7 +354,8 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
-  return (fieldPath, opStr, value) => cache.operand(schema, db, fieldPath, opStr).parse(value);
+  return (fieldPath, opStr, value) =>
+    cache.encoder.operand(schema, db, fieldPath, opStr).parse(value);
 };
 
 /**
@@ -372,7 +379,7 @@ export const cursorValueEncoder = <S extends DocumentSchema>(
   schema: S,
   db: firestore.Firestore,
 ): ((fieldPath: DocFieldPath<S>, value: unknown) => unknown) => {
-  return (fieldPath, value) => cache.field(schema, db, fieldPath).parse(value);
+  return (fieldPath, value) => cache.encoder.field(schema, db, fieldPath).parse(value);
 };
 
 /**
