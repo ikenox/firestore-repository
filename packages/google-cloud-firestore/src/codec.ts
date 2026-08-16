@@ -11,6 +11,7 @@ import {
   type Collection,
   type DocFieldPath,
   type DocumentSchema,
+  docRef,
   type FieldType,
   fieldTypeOfPath,
 } from 'firestore-repository/schema';
@@ -341,12 +342,38 @@ const buildEncodeField = (fieldType: FieldType, db: firestore.Firestore): ZodAny
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
-export const filterOperandEncoder = <S extends DocumentSchema>(
-  schema: S,
+export const filterOperandEncoder = <T extends Collection>(
+  collection: T,
   db: firestore.Firestore,
-): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
+): ((fieldPath: DocFieldPath<T['schema']>, opStr: WhereFilterOp, value: unknown) => unknown) => {
+  const keyOperand = keyOperandEncoder(collection, db);
   return (fieldPath, opStr, value) =>
-    cache.encoder.operand(schema, db, fieldPath, opStr).parse(value);
+    fieldPath === '__name__'
+      ? keyOperand(opStr).parse(value)
+      : cache.encoder.operand(collection.schema, db, fieldPath, opStr).parse(value);
+};
+
+/**
+ * The encoder for the reserved key, which unlike every other field depends on
+ * the COLLECTION and not only the schema: inside a query the document key is a
+ * reference of the collection being queried, so `refPathSchema` checks the
+ * segment names and the depth rather than accepting any even-length path.
+ *
+ * The type already rules a wrong path out for a type-checked caller
+ * (`FilterOperandValue`, `query.ts`); the check is what stops a lying type
+ * assertion from quietly addressing a document that can never match — the
+ * `toDocRef` rationale (`path.js`).
+ *
+ * Kept out of {@link cache}, whose encoder entries are keyed by schema: two
+ * collections may SHARE one schema object (`{ ...users, name: other }`), and a
+ * key encoder cached under it would then be handed to the wrong collection.
+ * One instance per encoder, memoized per operator like the shared cache does.
+ */
+const keyOperandEncoder = (collection: Collection, db: firestore.Firestore) => {
+  const fieldType = docRef(collection);
+  const byOperator = new Map<WhereFilterOp, ZodAny>();
+  return (opStr: WhereFilterOp): ZodAny =>
+    memoize(byOperator, opStr, () => buildEncodeField(filterOperandTypeOf(fieldType, opStr), db));
 };
 
 /**
@@ -361,16 +388,21 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
  * against. Unlike a filter operand there is no operator to widen the shape —
  * a cursor value is always one value of the field itself.
  *
- * `'__name__'` needs nothing special here: the admin SDK takes a
+ * `'__name__'` takes no special RENDERING here: the admin SDK wants a
  * `DocumentReference` for the document key exactly as it does for a reference
  * field, which is what the descriptor's encoder already produces. The client
- * SDK is the one that differs — see its own codec.
+ * SDK is the one that differs — see its own codec. It does take its own
+ * encoder, for the reason {@link keyOperandEncoder} gives.
  */
-export const cursorValueEncoder = <S extends DocumentSchema>(
-  schema: S,
+export const cursorValueEncoder = <T extends Collection>(
+  collection: T,
   db: firestore.Firestore,
-): ((fieldPath: DocFieldPath<S>, value: unknown) => unknown) => {
-  return (fieldPath, value) => cache.encoder.field(schema, db, fieldPath).parse(value);
+): ((fieldPath: DocFieldPath<T['schema']>, value: unknown) => unknown) => {
+  const keyValue = buildEncodeField(docRef(collection), db);
+  return (fieldPath, value) =>
+    fieldPath === '__name__'
+      ? keyValue.parse(value)
+      : cache.encoder.field(collection.schema, db, fieldPath).parse(value);
 };
 
 /**

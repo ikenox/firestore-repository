@@ -21,6 +21,7 @@ import {
   type Collection,
   type DocFieldPath,
   type DocumentSchema,
+  docRef,
   type FieldType,
   fieldTypeOfPath,
 } from 'firestore-repository/schema';
@@ -344,12 +345,38 @@ const buildEncodeField = (fieldType: FieldType, db: Firestore): ZodAny => {
  * of field values, `array-contains` an element, ...) comes from
  * `filterOperandTypeOf`, the runtime counterpart of the `FilterOperand` type.
  */
-export const filterOperandEncoder = <S extends DocumentSchema>(
-  schema: S,
+export const filterOperandEncoder = <T extends Collection>(
+  collection: T,
   db: Firestore,
-): ((fieldPath: DocFieldPath<S>, opStr: WhereFilterOp, value: unknown) => unknown) => {
+): ((fieldPath: DocFieldPath<T['schema']>, opStr: WhereFilterOp, value: unknown) => unknown) => {
+  const keyOperand = keyOperandEncoder(collection, db);
   return (fieldPath, opStr, value) =>
-    cache.encoder.operand(schema, db, fieldPath, opStr).parse(value);
+    fieldPath === '__name__'
+      ? keyOperand(opStr).parse(value)
+      : cache.encoder.operand(collection.schema, db, fieldPath, opStr).parse(value);
+};
+
+/**
+ * The encoder for the reserved key, which unlike every other field depends on
+ * the COLLECTION and not only the schema: inside a query the document key is a
+ * reference of the collection being queried, so `refPathSchema` checks the
+ * segment names and the depth rather than accepting any even-length path.
+ *
+ * The type already rules a wrong path out for a type-checked caller
+ * (`FilterOperandValue`, `query.ts`); the check is what stops a lying type
+ * assertion from quietly addressing a document that can never match — the
+ * `toDocRef` rationale (`path.js`).
+ *
+ * Kept out of {@link cache}, whose encoder entries are keyed by schema: two
+ * collections may SHARE one schema object (`{ ...users, name: other }`), and a
+ * key encoder cached under it would then be handed to the wrong collection.
+ * One instance per encoder, memoized per operator like the shared cache does.
+ */
+const keyOperandEncoder = (collection: Collection, db: Firestore) => {
+  const fieldType = docRef(collection);
+  const byOperator = new Map<WhereFilterOp, ZodAny>();
+  return (opStr: WhereFilterOp): ZodAny =>
+    memoize(byOperator, opStr, () => buildEncodeField(filterOperandTypeOf(fieldType, opStr), db));
 };
 
 /**
@@ -367,14 +394,17 @@ export const filterOperandEncoder = <S extends DocumentSchema>(
  * `'__name__'` is the exception, and the reason this takes a {@link QueryScope}
  * — see {@link encodeKeyCursor}.
  */
-export const cursorValueEncoder = <S extends DocumentSchema>(
-  schema: S,
+export const cursorValueEncoder = <T extends Collection>(
+  collection: T,
   db: Firestore,
-): ((fieldPath: DocFieldPath<S>, value: unknown, scope: QueryScope) => unknown) => {
+): ((fieldPath: DocFieldPath<T['schema']>, value: unknown, scope: QueryScope) => unknown) => {
+  // Built once per encoder rather than per value, and per COLLECTION rather
+  // than shared — see {@link keyOperandEncoder} for both halves of that.
+  const keyPath = refPathSchema(collection);
   return (fieldPath, value, scope) =>
     fieldPath === '__name__'
-      ? encodeKeyCursor(value, scope)
-      : cache.encoder.field(schema, db, fieldPath).parse(value);
+      ? encodeKeyCursor(keyPath.parse(value), scope)
+      : cache.encoder.field(collection.schema, db, fieldPath).parse(value);
 };
 
 /**
@@ -391,8 +421,7 @@ export const cursorValueEncoder = <S extends DocumentSchema>(
  * segment path, the same as a `__name__` filter takes: it is the only form
  * that can produce all three, since a bare id cannot name its ancestors.
  */
-const encodeKeyCursor = (value: unknown, scope: QueryScope): string => {
-  const path = keyCursorPath.parse(value);
+const encodeKeyCursor = (path: string[], scope: QueryScope): string => {
   switch (scope) {
     case 'collection': {
       const id = path.at(-1);
@@ -432,14 +461,6 @@ const refPathSchema = (collection: Collection | 'unknown'): z.ZodType<string[]> 
       { message: `not a reference path of collection '${collection.name}'` },
     );
 };
-
-/**
- * The operand `__name__` takes in a cursor, which is the context-free flavor:
- * a cursor names a document anywhere the query can reach, so no collection
- * constrains it. Built once — unlike the per-field encoders it has no schema or
- * database to be keyed by, and rebuilding it per call showed up at 16us.
- */
-const keyCursorPath = refPathSchema('unknown');
 
 const zodUnion = (schemas: ZodAny[]): ZodAny => {
   if (schemas.length === 0) {
