@@ -25,6 +25,7 @@ import {
   nullType,
   rootCollection,
   string,
+  subCollection,
   timestamp,
   union,
   vector as vectorType,
@@ -89,7 +90,8 @@ describe('filterOperandEncoder', () => {
     reviewers: array(docRef(authors)),
     meta: map({ editor: docRef(authors) }),
   };
-  const encode = filterOperandEncoder(schema, db);
+  const products = rootCollection({ name: 'Products', schema });
+  const encode = filterOperandEncoder(products, db);
   const refDoc = (path: string) => doc(db, path);
 
   it('passes non-reference operands through', () => {
@@ -103,12 +105,27 @@ describe('filterOperandEncoder', () => {
     }
   });
 
-  it('encodes the context-free flavor (__name__ / docRef()) the same way', () => {
-    expect(encode('__name__', '==', ['SomeCollection', 'x1'])).toStrictEqual(
-      refDoc('SomeCollection/x1'),
-    );
+  // A `docRef()` DATA field is genuinely context-free — it may hold a
+  // reference to any collection — while the reserved key is not: inside a
+  // query it is a reference of the collection being queried.
+  it('encodes a context-free reference field from any collection', () => {
     expect(encode('anyRef', '==', ['SomeCollection', 'x1'])).toStrictEqual(
       refDoc('SomeCollection/x1'),
+    );
+  });
+
+  it('encodes the reserved key as a reference of the queried collection', () => {
+    expect(encode('__name__', '==', ['Products', 'p1'])).toStrictEqual(refDoc('Products/p1'));
+  });
+
+  it('refuses a reserved-key operand addressing another collection', () => {
+    // The type already rules this out; the runtime check is what stops a lying
+    // assertion from quietly addressing a document that can never match.
+    expect(() => encode('__name__', '==', ['SomeCollection', 'x1'])).toThrow(
+      /reference path of collection 'Products'/,
+    );
+    expect(() => encode('__name__', '==', ['Products', 'p1', 'Parts', 'x1'])).toThrow(
+      /reference path of collection 'Products'/,
     );
   });
 
@@ -155,7 +172,7 @@ describe('filterOperandEncoder', () => {
     );
 
     it('filter operands', () => {
-      const encodeOther = filterOperandEncoder(schema, otherDb);
+      const encodeOther = filterOperandEncoder(products, otherDb);
 
       expect(encode('author', '==', ['Authors', 'a1'])).toStrictEqual(refDoc('Authors/a1'));
       expect(encodeOther('author', '==', ['Authors', 'a1'])).toStrictEqual(
@@ -180,6 +197,22 @@ describe('filterOperandEncoder', () => {
         author: doc(otherDb, 'Authors/a1'),
       });
     });
+  });
+
+  // Built schemas are memoized per SCHEMA, and two collections may share one
+  // schema object (`{ ...users, name: other }` — what `readme-example` does).
+  // Every other field encodes identically under such a pair, so the shared
+  // entry is right; the reserved key does not, which is why its encoder is
+  // built per collection instead of cached.
+  it('stays bound to the collection too, for the reserved key', () => {
+    const twin = rootCollection({ name: 'Twin', schema: products.schema });
+    const encodeTwin = filterOperandEncoder(twin, db);
+
+    expect(encode('__name__', '==', ['Products', 'p1'])).toStrictEqual(refDoc('Products/p1'));
+    expect(encodeTwin('__name__', '==', ['Twin', 't1'])).toStrictEqual(refDoc('Twin/t1'));
+    expect(() => encodeTwin('__name__', '==', ['Products', 'p1'])).toThrow(
+      /reference path of collection 'Twin'/,
+    );
   });
 });
 
@@ -375,7 +408,8 @@ describe('cursorValueEncoder', () => {
     rank: int64(),
     tags: array(string()),
   };
-  const encode = cursorValueEncoder(schema, db);
+  const products = rootCollection({ name: 'Products', schema });
+  const encode = cursorValueEncoder(products, db);
 
   const cases: [DocFieldPath<typeof schema>, unknown, unknown][] = [
     ['author', ['Authors', 'a1'], doc(db, 'Authors/a1')],
@@ -405,14 +439,24 @@ describe('cursorValueEncoder', () => {
 
   // The document key takes a `RefPath` like a `__name__` filter does, and is
   // rendered into the string this SDK wants — which differs per scope.
+  // A subcollection, so the two scopes render visibly different strings.
+  const parts = subCollection({ name: 'Parts', parent: ['Products'], schema: { n: string() } });
+  const encodePart = cursorValueEncoder(parts, db);
+
   it('renders a __name__ cursor as the document id within a collection', () => {
-    expect(encode('__name__', ['Authors', 'a1'], 'collection')).toBe('a1');
-    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'], 'collection')).toBe('p1');
+    expect(encode('__name__', ['Products', 'p1'], 'collection')).toBe('p1');
+    expect(encodePart('__name__', ['Products', 'p1', 'Parts', 'x1'], 'collection')).toBe('x1');
   });
 
   it('renders a __name__ cursor as the full path across a collection group', () => {
-    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'], 'collectionGroup')).toBe(
-      'Authors/a1/Posts/p1',
+    expect(encodePart('__name__', ['Products', 'p1', 'Parts', 'x1'], 'collectionGroup')).toBe(
+      'Products/p1/Parts/x1',
+    );
+  });
+
+  it('refuses a __name__ cursor addressing another collection', () => {
+    expect(() => encode('__name__', ['Authors', 'a1'], 'collection')).toThrow(
+      /reference path of collection 'Products'/,
     );
   });
 

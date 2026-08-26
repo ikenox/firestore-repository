@@ -15,20 +15,33 @@ the collection names from the collection definition:
 
 ```ts
 import { refPath } from 'firestore-repository/path';
+import { collection, collectionGroup, subcollection } from 'firestore-repository/query';
 
 // root collection
-query({ collection: authors }, where(eq('__name__', refPath(authors, 'author1'))));
-query({ collection: authors }, orderBy('__name__', 'asc'));
+query(collection(authors), where(eq('__name__', refPath(authors, 'author1'))));
+query(collection(authors), orderBy('__name__', 'asc'));
 
 // subcollection — the address carries the parent id, refPath expands the names
 query(
-  { collection: posts, parent: ['author1'] },
+  subcollection(posts, ['author1']),
   where(eq('__name__', refPath(posts, 'author1', '1'))), // ['Authors', 'author1', 'Posts', '1']
 );
 
 // collection group — the SAME operand form
-query({ collection: posts, group: true }, where(eq('__name__', refPath(posts, 'author1', '1'))));
+query(collectionGroup(posts), where(eq('__name__', refPath(posts, 'author1', '1'))));
 ```
+
+The operand is typed as the **queried collection's** `RefPath`, so a path of another collection or
+of the wrong depth is a compile error:
+
+```ts
+query(collection(authors), where(eq('__name__', refPath(posts, 'author1', '1')))); // ✗ compile error
+query(collection(authors), where(eq('__name__', ['anything', 'goes']))); // ✗ compile error
+```
+
+A `docRef()` **data** field is different: it is context-free by design — it may hold a reference to
+any collection — so its operand stays the wide `string[]`. Only the reserved key gains the queried
+collection, because only there is the collection fixed.
 
 The adapters encode the segment path to a `DocumentReference` value before it reaches the SDK.
 This matters because a reference value is the one operand form the raw SDKs accept uniformly; the
@@ -56,9 +69,11 @@ combinations above are simply not expressible.
 
 The behavior described here is verified against both SDK implementations
 (`@google-cloud/firestore` and `@firebase/firestore`) in the shared specification tests
-(`packages/firestore-repository/src/__test__/specification.ts`). Note: cursor constraints
-(`startAt` etc.) are currently untyped pass-through, so a `__name__` cursor value must be given in
-the form the raw SDK expects.
+(`packages/firestore-repository/src/__test__/specification.ts`). Cursor values are given as the
+same `RefPath`; the adapters render it into whatever form each SDK wants for the query's scope (a
+`DocumentReference` for the admin SDK, a bare id or a full path for the client SDK). Cursors are
+not yet typed per ordered field — see #29 — but they are validated against the queried collection
+at runtime, as filters are.
 
 ## Pipeline queries
 

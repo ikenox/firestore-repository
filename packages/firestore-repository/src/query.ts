@@ -3,7 +3,6 @@ import {
   type ArrayType,
   array,
   type Collection,
-  type DocumentSchema,
   type DocFieldPath,
   type FieldType,
   type FieldTypeOfPath,
@@ -25,15 +24,15 @@ import { assertNever } from './util.js';
 export type Query<T extends Collection = Collection> = {
   kind: 'query';
   source: QuerySource<T>;
-  constraints: ListConstraint<T['schema']>[];
+  constraints: ListConstraint<T>[];
   /**
    * The bounds of the result window, at most one each — Firestore has no
    * notion of several, and a repeated one simply replaces its predecessor
    * (probed). Their values are already paired with the field each belongs to;
    * see {@link query}.
    */
-  start?: ResolvedStartBound<T['schema']> | undefined;
-  end?: ResolvedEndBound<T['schema']> | undefined;
+  start?: ResolvedStartBound<T> | undefined;
+  end?: ResolvedEndBound<T> | undefined;
 };
 
 /**
@@ -95,9 +94,9 @@ export const collectionGroup = <T extends Collection>(def: T): CollectionGroupSo
  */
 export const query = <T extends Collection>(
   source: QuerySource<T>,
-  ...constraints: QueryConstraint<T['schema']>[]
+  ...constraints: QueryConstraint<T>[]
 ): Query<T> => {
-  const listed: ListConstraint<T['schema']>[] = [];
+  const listed: ListConstraint<T>[] = [];
   let start: StartBound | undefined;
   let end: EndBound | undefined;
   for (const constraint of constraints) {
@@ -159,9 +158,9 @@ export const query = <T extends Collection>(
  * with a field it actually belongs to. Fewer values than clauses is fine — a
  * cursor may bound a prefix of the ordering.
  */
-const resolveCursor = <T extends DocumentSchema>(
+const resolveCursor = <T extends Collection>(
   cursor: Cursor,
-  ordering: DocFieldPath<T>[],
+  ordering: DocFieldPath<T['schema']>[],
 ): CursorValue<T>[] =>
   cursor.map((value, i) => {
     // Checked per value rather than by comparing lengths up front, so the
@@ -249,13 +248,13 @@ const sourceOrdering = <T extends Collection>(
 };
 
 /** Narrows a constraint to an `orderBy`; the predicate is inferred, and so checked. */
-const isOrderBy = <T extends DocumentSchema>(constraint: ListConstraint<T>) =>
+const isOrderBy = <T extends Collection>(constraint: ListConstraint<T>) =>
   constraint.kind === 'orderBy';
 
 /**
  * A query constraint
  */
-export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
+export type QueryConstraint<T extends Collection = Collection> =
   | ListConstraint<T>
   | StartBound
   | EndBound;
@@ -265,7 +264,7 @@ export type QueryConstraint<T extends DocumentSchema = DocumentSchema> =
  * a query has one result window rather than a sequence of them, so {@link query}
  * lifts them out to its `start` / `end` fields.
  */
-export type ListConstraint<T extends DocumentSchema = DocumentSchema> =
+export type ListConstraint<T extends Collection = Collection> =
   | Where<T>
   | OrderBy<T>
   | Limit
@@ -285,12 +284,12 @@ export type EndBound = EndAt | EndBefore;
  * list of raw values; what a query holds has been checked against the ordering
  * and can no longer contain a value that belongs nowhere.
  */
-export type ResolvedStartBound<T extends DocumentSchema = DocumentSchema> = {
+export type ResolvedStartBound<T extends Collection = Collection> = {
   kind: StartBound['kind'];
   cursor: CursorValue<T>[];
 };
 /** The counterpart of {@link ResolvedStartBound} for the upper bound. */
-export type ResolvedEndBound<T extends DocumentSchema = DocumentSchema> = {
+export type ResolvedEndBound<T extends Collection = Collection> = {
   kind: EndBound['kind'];
   cursor: CursorValue<T>[];
 };
@@ -298,20 +297,20 @@ export type ResolvedEndBound<T extends DocumentSchema = DocumentSchema> = {
 /**
  * A where constraint that wraps a filter expression
  */
-export type Where<T extends DocumentSchema = DocumentSchema> = {
+export type Where<T extends Collection = Collection> = {
   kind: 'where';
   condition: FilterExpression<T>;
 };
 
 /** A constraint that sorts results by a field */
-export type OrderBy<T extends DocumentSchema> = {
+export type OrderBy<T extends Collection> = {
   kind: 'orderBy';
-  field: DocFieldPath<T>;
+  field: DocFieldPath<T['schema']>;
   direction?: 'asc' | 'desc' | undefined;
 };
 /** Creates an orderBy constraint */
-export const orderBy = <T extends DocumentSchema>(
-  field: DocFieldPath<T>,
+export const orderBy = <T extends Collection>(
+  field: DocFieldPath<T['schema']>,
   direction?: 'asc' | 'desc' | undefined,
 ): OrderBy<T> => ({ kind: 'orderBy', field, direction });
 
@@ -357,15 +356,15 @@ export type Cursor = unknown[];
  * Always paired: {@link query} refuses a cursor with no field to pair against,
  * so nothing downstream has to handle a value that belongs nowhere.
  */
-export type CursorValue<T extends DocumentSchema = DocumentSchema> = {
+export type CursorValue<T extends Collection = Collection> = {
   value: unknown;
-  field: DocFieldPath<T>;
+  field: DocFieldPath<T['schema']>;
 };
 
 /**
  * A query filter expression
  */
-export type FilterExpression<T extends DocumentSchema = DocumentSchema> =
+export type FilterExpression<T extends Collection = Collection> =
   | FieldValueCondition<T>
   | Or<T>
   | And<T>;
@@ -374,8 +373,8 @@ export type FilterExpression<T extends DocumentSchema = DocumentSchema> =
  * A single filter condition with a field path, operator, and value
  */
 export type FieldValueCondition<
-  Schema extends DocumentSchema,
-  Path extends DocFieldPath<Schema> = DocFieldPath<Schema>,
+  Schema extends Collection,
+  Path extends DocFieldPath<Schema['schema']> = DocFieldPath<Schema['schema']>,
   Op extends WhereFilterOp = WhereFilterOp,
 > = {
   kind: 'fieldValueCondition';
@@ -385,10 +384,10 @@ export type FieldValueCondition<
 };
 
 export type FilterOperandValue<
-  Schema extends DocumentSchema,
-  Path extends DocFieldPath<Schema> = DocFieldPath<Schema>,
+  Schema extends Collection,
+  Path extends DocFieldPath<Schema['schema']> = DocFieldPath<Schema['schema']>,
   Op extends WhereFilterOp = WhereFilterOp,
-> = FieldValue<FilterOperand<FieldTypeOfPath<Schema, Path>, Op>, 'read'>;
+> = FieldValue<FilterOperand<FieldTypeOfPath<Schema['schema'], Path, Schema>, Op>, 'read'>;
 
 /**
  * Wraps filter expressions as a query constraint.
@@ -402,9 +401,10 @@ export type FilterOperandValue<
  * // Multiple filters (combined with AND)
  * where(eq('name', 'John'), gte('age', 20))
  */
-export const where = <T extends DocumentSchema>(
-  ...conditions: FilterExpression<T>[]
-): Where<T> => ({ kind: 'where', condition: and<T>(...conditions) });
+export const where = <T extends Collection>(...conditions: FilterExpression<T>[]): Where<T> => ({
+  kind: 'where',
+  condition: and<T>(...conditions),
+});
 
 /**
  * Creates an equality filter (==).
@@ -413,7 +413,7 @@ export const where = <T extends DocumentSchema>(
  * @example
  * eq('status', 'active')
  */
-export const eq = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const eq = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '=='>,
 ): FieldValueCondition<T, Path, '=='> => fieldValueCondition(fieldPath, '==', value);
@@ -425,7 +425,7 @@ export const eq = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * ne('status', 'deleted')
  */
-export const ne = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const ne = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '!='>,
 ): FieldValueCondition<T, Path, '!='> => fieldValueCondition(fieldPath, '!=', value);
@@ -437,7 +437,7 @@ export const ne = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * lt('age', 18)
  */
-export const lt = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const lt = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '<'>,
 ): FieldValueCondition<T, Path, '<'> => fieldValueCondition(fieldPath, '<', value);
@@ -449,7 +449,7 @@ export const lt = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * lte('price', 100)
  */
-export const lte = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const lte = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '<='>,
 ): FieldValueCondition<T, Path, '<='> => fieldValueCondition(fieldPath, '<=', value);
@@ -461,7 +461,7 @@ export const lte = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * gt('score', 50)
  */
-export const gt = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const gt = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '>'>,
 ): FieldValueCondition<T, Path, '>'> => fieldValueCondition(fieldPath, '>', value);
@@ -473,7 +473,7 @@ export const gt = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * gte('age', 20)
  */
-export const gte = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const gte = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, '>='>,
 ): FieldValueCondition<T, Path, '>='> => fieldValueCondition(fieldPath, '>=', value);
@@ -485,7 +485,7 @@ export const gte = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * arrayContains('tags', 'featured')
  */
-export const arrayContains = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const arrayContains = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'array-contains'>,
 ): FieldValueCondition<T, Path, 'array-contains'> =>
@@ -498,7 +498,7 @@ export const arrayContains = <T extends DocumentSchema, Path extends DocFieldPat
  * @example
  * arrayContainsAny('tags', ['featured', 'new'])
  */
-export const arrayContainsAny = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const arrayContainsAny = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'array-contains-any'>,
 ): FieldValueCondition<T, Path, 'array-contains-any'> =>
@@ -511,7 +511,7 @@ export const arrayContainsAny = <T extends DocumentSchema, Path extends DocField
  * @example
  * inArray('status', ['active', 'pending'])
  */
-export const inArray = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const inArray = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'in'>,
 ): FieldValueCondition<T, Path, 'in'> => fieldValueCondition(fieldPath, 'in', value);
@@ -523,14 +523,14 @@ export const inArray = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
  * @example
  * notIn('status', ['deleted', 'archived'])
  */
-export const notIn = <T extends DocumentSchema, Path extends DocFieldPath<T>>(
+export const notIn = <T extends Collection, Path extends DocFieldPath<T['schema']>>(
   fieldPath: Path,
   value: FilterOperandValue<T, Path, 'not-in'>,
 ): FieldValueCondition<T, Path, 'not-in'> => fieldValueCondition(fieldPath, 'not-in', value);
 
 const fieldValueCondition = <
-  Schema extends DocumentSchema,
-  Path extends DocFieldPath<Schema>,
+  Schema extends Collection,
+  Path extends DocFieldPath<Schema['schema']>,
   Op extends WhereFilterOp,
 >(
   fieldPath: Path,
@@ -606,17 +606,17 @@ export type WhereFilterOp =
   | 'array-contains-any';
 
 /** A composite filter that matches if any of the given filters match */
-export type Or<T extends DocumentSchema> = { kind: 'or'; filters: FilterExpression<T>[] };
+export type Or<T extends Collection> = { kind: 'or'; filters: FilterExpression<T>[] };
 /** A composite filter that matches if all of the given filters match */
-export type And<T extends DocumentSchema> = { kind: 'and'; filters: FilterExpression<T>[] };
+export type And<T extends Collection> = { kind: 'and'; filters: FilterExpression<T>[] };
 
 /** Creates an OR composite filter */
-export const or = <T extends DocumentSchema>(...filters: FilterExpression<T>[]): Or<T> => ({
+export const or = <T extends Collection>(...filters: FilterExpression<T>[]): Or<T> => ({
   kind: 'or',
   filters,
 });
 /** Creates an AND composite filter */
-export const and = <T extends DocumentSchema>(...filters: FilterExpression<T>[]): And<T> => ({
+export const and = <T extends Collection>(...filters: FilterExpression<T>[]): And<T> => ({
   kind: 'and',
   filters,
 });

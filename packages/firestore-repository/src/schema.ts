@@ -693,11 +693,30 @@ export type MapFieldPath<T extends MapType['fields']> = MapType['fields'] extend
     }[keyof T & string];
 
 /**
- * Resolves field value type at the specified path.
+ * Resolves the descriptor at a field path.
+ *
+ * `C` is the collection the schema belongs to, when the caller knows it. It
+ * changes one answer: the reserved key, which a schema alone cannot resolve
+ * precisely — a schema does not name a collection, so the key can only be
+ * "some reference", `DocRefType<'unknown'>` (`RefPath<'unknown'>`, i.e. any
+ * `string[]`). Given the collection, the key of one of its documents is a
+ * reference OF that collection, and a path of the wrong collection or the
+ * wrong depth stops compiling.
+ *
+ * It defaults to `'unknown'` because a collection is not always in scope: a
+ * query fixes one, while a pipeline stage resolves paths against rows that a
+ * `select` may have detached from any document. The two answers are the same
+ * descriptor at different precision — the gradient {@link DocRefType} and
+ * {@link RefPath} are built around — rather than two different lookups.
+ *
  * (Field names containing dots would collide with the path separator, but the
  * schema factories reject them — see {@link WithoutDottedFieldNames}.)
  */
-export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>> = U extends keyof T
+export type FieldTypeOfPath<
+  T extends DocumentSchema,
+  U extends DocFieldPath<T>,
+  C extends Collection | 'unknown' = 'unknown',
+> = U extends keyof T
   ? // root field
     T[U]
   : U extends `${infer P}.${infer R}`
@@ -708,13 +727,16 @@ export type FieldTypeOfPath<T extends DocumentSchema, U extends DocFieldPath<T>>
         : never
       : never
     : U extends '__name__'
-      ? DocRefType<'unknown'>
+      ? DocRefType<C>
       : never;
 
 /**
- * Runtime counterpart of {@link FieldTypeOfPath}: resolves the `FieldType`
- * descriptor stored in `schema` at `path` (dotted for nested maps; `'__name__'`
- * resolves to a context-free `DocRefType<'unknown'>`, mirroring the type).
+ * Runtime counterpart of {@link FieldTypeOfPath} at its DEFAULT precision —
+ * the instantiation whose `C` is `'unknown'`, which is what a caller holding
+ * only a schema can ask for. It takes no collection because there is nothing
+ * to resolve with one: the reserved key is the only path a collection changes
+ * the answer for, and that answer is just `docRef(collection)`. A caller that
+ * has the collection builds it directly (the codecs' query-operand encoders).
  */
 export const fieldTypeOfPath = <T extends DocumentSchema, U extends DocFieldPath<T>>(
   schema: T,

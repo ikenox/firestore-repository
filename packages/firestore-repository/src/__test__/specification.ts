@@ -578,10 +578,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
           describe('fieldValueConditions', () => {
             const tests: Record<
               string,
-              [
-                condition: FilterExpression<AuthorsCollection['schema']>,
-                expected: Doc<AuthorsCollection>[],
-              ]
+              [condition: FilterExpression<AuthorsCollection>, expected: Doc<AuthorsCollection>[]]
             > = {
               '==': [eq('name', 'author1'), [items[0]]],
               '!=': [ne('name', 'author1'), [items[1], items[2]]],
@@ -831,7 +828,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
                 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Object.entries loses type information of object keys
                 const testName = name as keyof typeof queryCursorTestCases;
                 const orderByConstraints = queryCursorTestCases[testName].map((f) =>
-                  orderBy<(typeof repository.collection)['schema']>(f),
+                  orderBy<typeof repository.collection>(f),
                 );
 
                 for (const [cursorValues, expected] of asserts) {

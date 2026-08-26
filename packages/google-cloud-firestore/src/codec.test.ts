@@ -79,7 +79,8 @@ describe('filterOperandEncoder', () => {
     reviewers: array(docRef(authors)),
     meta: map({ editor: docRef(authors) }),
   };
-  const encode = filterOperandEncoder(schema, db);
+  const products = rootCollection({ name: 'Products', schema });
+  const encode = filterOperandEncoder(products, db);
 
   it('passes non-reference operands through', () => {
     expect(encode('rank', '==', 1)).toBe(1);
@@ -92,12 +93,27 @@ describe('filterOperandEncoder', () => {
     }
   });
 
-  it('encodes the context-free flavor (__name__ / docRef()) the same way', () => {
-    expect(encode('__name__', '==', ['SomeCollection', 'x1'])).toStrictEqual(
-      db.doc('SomeCollection/x1'),
-    );
+  // A `docRef()` DATA field is genuinely context-free — it may hold a
+  // reference to any collection — while the reserved key is not: inside a
+  // query it is a reference of the collection being queried.
+  it('encodes a context-free reference field from any collection', () => {
     expect(encode('anyRef', '==', ['SomeCollection', 'x1'])).toStrictEqual(
       db.doc('SomeCollection/x1'),
+    );
+  });
+
+  it('encodes the reserved key as a reference of the queried collection', () => {
+    expect(encode('__name__', '==', ['Products', 'p1'])).toStrictEqual(db.doc('Products/p1'));
+  });
+
+  it('refuses a reserved-key operand addressing another collection', () => {
+    // The type already rules this out; the runtime check is what stops a lying
+    // assertion from quietly addressing a document that can never match.
+    expect(() => encode('__name__', '==', ['SomeCollection', 'x1'])).toThrow(
+      /reference path of collection 'Products'/,
+    );
+    expect(() => encode('__name__', '==', ['Products', 'p1', 'Parts', 'x1'])).toThrow(
+      /reference path of collection 'Products'/,
     );
   });
 
@@ -142,7 +158,7 @@ describe('filterOperandEncoder', () => {
     const otherDb = new Firestore({ projectId: 'codec-guard-test-other' });
 
     it('filter operands', () => {
-      const encodeOther = filterOperandEncoder(schema, otherDb);
+      const encodeOther = filterOperandEncoder(products, otherDb);
 
       expect(encode('author', '==', ['Authors', 'a1'])).toStrictEqual(db.doc('Authors/a1'));
       expect(encodeOther('author', '==', ['Authors', 'a1'])).toStrictEqual(
@@ -167,6 +183,22 @@ describe('filterOperandEncoder', () => {
         author: otherDb.doc('Authors/a1'),
       });
     });
+  });
+
+  // Built schemas are memoized per SCHEMA, and two collections may share one
+  // schema object (`{ ...users, name: other }` — what `readme-example` does).
+  // Every other field encodes identically under such a pair, so the shared
+  // entry is right; the reserved key does not, which is why its encoder is
+  // built per collection instead of cached.
+  it('stays bound to the collection too, for the reserved key', () => {
+    const twin = rootCollection({ name: 'Twin', schema: products.schema });
+    const encodeTwin = filterOperandEncoder(twin, db);
+
+    expect(encode('__name__', '==', ['Products', 'p1'])).toStrictEqual(db.doc('Products/p1'));
+    expect(encodeTwin('__name__', '==', ['Twin', 't1'])).toStrictEqual(db.doc('Twin/t1'));
+    expect(() => encodeTwin('__name__', '==', ['Products', 'p1'])).toThrow(
+      /reference path of collection 'Twin'/,
+    );
   });
 });
 
@@ -362,7 +394,8 @@ describe('cursorValueEncoder', () => {
     rank: int64(),
     tags: array(string()),
   };
-  const encode = cursorValueEncoder(schema, db);
+  const products = rootCollection({ name: 'Products', schema });
+  const encode = cursorValueEncoder(products, db);
 
   const cases: [DocFieldPath<typeof schema>, unknown, unknown][] = [
     ['author', ['Authors', 'a1'], db.doc('Authors/a1')],
@@ -392,9 +425,12 @@ describe('cursorValueEncoder', () => {
   // wants the same `DocumentReference` for both, so the descriptor's own
   // encoder covers it with nothing extra.
   it('encodes a __name__ cursor to a DocumentReference', () => {
-    expect(encode('__name__', ['Authors', 'a1'])).toStrictEqual(db.doc('Authors/a1'));
-    expect(encode('__name__', ['Authors', 'a1', 'Posts', 'p1'])).toStrictEqual(
-      db.doc('Authors/a1/Posts/p1'),
+    expect(encode('__name__', ['Products', 'p1'])).toStrictEqual(db.doc('Products/p1'));
+  });
+
+  it('refuses a __name__ cursor addressing another collection', () => {
+    expect(() => encode('__name__', ['Authors', 'a1'])).toThrow(
+      /reference path of collection 'Products'/,
     );
   });
 

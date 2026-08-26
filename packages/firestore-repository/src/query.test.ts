@@ -1,12 +1,15 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { authorsCollection, postsCollection } from './__test__/specification.js';
+import { refPath } from './path.js';
 import {
   collectionGroup,
   collection,
   type FilterOperand,
+  eq,
   filterOperandTypeOf,
   gte,
+  inArray,
   limit,
   orderBy,
   type Query,
@@ -23,10 +26,12 @@ import {
   type ArrayType,
   array,
   type Collection,
+  docRef,
   type DoubleType,
   type Int64Type,
   int64,
   type NullType,
+  rootCollection,
   type RootCollection,
   type StringType,
   string,
@@ -104,6 +109,57 @@ describe('query', () => {
   // A query has ONE result window, not a sequence of them, so `query` lifts the
   // bounds out of the constraint list — and pairs each of their values with the
   // field it belongs to, which nothing on a value itself says.
+  // The reserved key is the one field whose value type needs the COLLECTION,
+  // not just the schema: `FieldTypeOfPath` can only answer `RefPath<'unknown'>`
+  // (any `string[]`), while inside a query the collection is fixed. Type-only
+  // cases — no runtime behaviour is being claimed here, only what compiles.
+  describe('the reserved key as a filter operand', () => {
+    it('is a reference path of the queried collection', () => {
+      query(collection(authorsCollection), where(eq('__name__', refPath(authorsCollection, 'a1'))));
+      query(
+        subcollection(postsCollection, ['a1']),
+        where(eq('__name__', refPath(postsCollection, 'a1', 'p1'))),
+      );
+      // A collection group fixes the collection NAMES just as an instance does;
+      // only the ancestor ids vary, which a `RefPath` already leaves open.
+      query(
+        collectionGroup(postsCollection),
+        where(eq('__name__', refPath(postsCollection, 'a1', 'p1'))),
+      );
+    });
+
+    it('refuses a path that is not of the queried collection', () => {
+      // @ts-expect-error -- an arbitrary segment array, the looseness this replaced
+      query(collection(authorsCollection), where(eq('__name__', ['anything', 'goes', 'here'])));
+      query(
+        collection(authorsCollection),
+        // @ts-expect-error -- another collection's reference
+        where(eq('__name__', refPath(postsCollection, 'a1', 'p1'))),
+      );
+      // @ts-expect-error -- the right collection at the wrong depth
+      query(subcollection(postsCollection, ['a1']), where(eq('__name__', ['Posts', 'p1'])));
+    });
+
+    it('is shaped by the operator like any other field', () => {
+      const a1 = refPath(authorsCollection, 'a1');
+      const a2 = refPath(authorsCollection, 'a2');
+      query(collection(authorsCollection), where(inArray('__name__', [a1, a2])));
+      // @ts-expect-error -- `in` takes a LIST of references, not one
+      query(collection(authorsCollection), where(inArray('__name__', a1)));
+    });
+
+    // A `docRef()` data field is context-free BY DESIGN — it may hold a
+    // reference to any collection — so it keeps the wide operand. Only the
+    // reserved key gains the queried collection.
+    it('leaves a context-free reference field wide', () => {
+      const bookmarks = rootCollection({ name: 'Bookmarks', schema: { target: docRef() } });
+      query(collection(bookmarks), where(eq('target', ['SomeCollection', 'x1'])));
+      query(collection(bookmarks), where(eq('target', ['A', 'a1', 'B', 'b1'])));
+      // @ts-expect-error -- the key of a Bookmarks query is still a Bookmarks reference
+      query(collection(bookmarks), where(eq('__name__', ['SomeCollection', 'x1'])));
+    });
+  });
+
   describe('bounds', () => {
     const authors = collection(authorsCollection);
 

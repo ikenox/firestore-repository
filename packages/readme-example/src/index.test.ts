@@ -156,7 +156,10 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     executeViaSdk?: PipelineQueryExecutor['execute'];
   };
 }) => {
-  const repository = createRepository({ ...users, name: `${users.name}-${randomString()}` });
+  // A per-run collection name keeps the examples from colliding; `as const`
+  // keeps the name a literal, which the query constraints resolve against.
+  const collectionDef = { ...users, name: `${users.name}-${randomString()}` } as const;
+  const repository = createRepository(collectionDef);
 
   describe('Basic operations for a single document', () => {
     it('set', async () => {
@@ -190,7 +193,7 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
 
   describe('Query', () => {
     const q = query(
-      collection(users),
+      collection(collectionDef),
       where(gte('profile.age', 20)),
       where(eq('profile.gender', 'male')),
       limit(10),

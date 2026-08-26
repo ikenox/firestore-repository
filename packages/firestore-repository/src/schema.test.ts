@@ -491,6 +491,19 @@ describe('document', () => {
       expectTypeOf(fieldTypeOfPath(schema, '__name__')).toEqualTypeOf<DocRefType<'unknown'>>();
     });
 
+    // The reserved key is the only path a collection changes the answer for,
+    // and the two answers are the same descriptor at different precision.
+    it('sharpens the reserved __name__ when the collection is known', () => {
+      const authors = rootCollection({ name: 'Authors', schema });
+      expectTypeOf<FieldTypeOfPath<typeof schema, '__name__', typeof authors>>().toEqualTypeOf<
+        DocRefType<typeof authors>
+      >();
+      // Every other path answers the same at either precision.
+      expectTypeOf<FieldTypeOfPath<typeof schema, 's', typeof authors>>().toEqualTypeOf<
+        FieldTypeOfPath<typeof schema, 's'>
+      >();
+    });
+
     it('throws for a path that does not exist at runtime (defensive guard)', () => {
       expect(() =>
         // @ts-expect-error -- deliberately invalid path to exercise the runtime guard
