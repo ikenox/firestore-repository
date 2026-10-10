@@ -186,8 +186,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       it('getOnSnapshot', async () => {
         let finish: () => void;
-        const finished = new Promise((resolve) => {
+        let fail: (error: unknown) => void;
+        const finished = new Promise((resolve, reject) => {
           finish = () => resolve(null);
+          fail = reject;
         });
 
         const updated1 = params.mutate(items[0]);
@@ -201,15 +203,19 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
         ];
 
         const received: (Doc<T> | undefined)[] = [];
-        const unsubscribe = repository.getOnSnapshot(items[0].id, (snapshot) => {
-          received.push(snapshot);
-          const op = operations.shift();
-          if (op) {
-            op();
-          } else {
-            finish();
-          }
-        });
+        const unsubscribe = repository.getOnSnapshot(
+          items[0].id,
+          (snapshot) => {
+            received.push(snapshot);
+            const op = operations.shift();
+            if (op) {
+              op();
+            } else {
+              finish();
+            }
+          },
+          (error) => fail(error),
+        );
 
         await finished;
 
@@ -236,8 +242,10 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
       it('listOnSnapshot', async () => {
         let finish: () => void;
-        const finished = new Promise((resolve) => {
+        let fail: (error: unknown) => void;
+        const finished = new Promise((resolve, reject) => {
           finish = () => resolve(null);
+          fail = reject;
         });
 
         const updated0 = params.mutate(items[0]);
@@ -262,6 +270,7 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
               finish();
             }
           },
+          (error) => fail(error),
         );
 
         await finished;
@@ -1242,6 +1251,72 @@ export const defineRepositorySpecificationTests = <Env extends FirestoreEnvironm
 
         assert(error instanceof DocumentDecodeError);
         expect(error.documentPath).toBe(`${name}/${broken}`);
+      });
+
+      // A decode failure reaches `error` and detaches the listener: rewriting
+      // the document afterwards calls neither callback again.
+      it('getOnSnapshot reports the failure and stops listening', async () => {
+        const { name, unreadable, writeUndecodable } = undecodableCollection();
+        const id = randomString();
+        await writeUndecodable(id);
+
+        const received: ({ next: unknown } | { error: unknown })[] = [];
+        let reported: () => void;
+        const errorReported = new Promise<void>((resolve) => {
+          reported = resolve;
+        });
+        createRepository(unreadable).getOnSnapshot(
+          [id],
+          (snapshot) => received.push({ next: snapshot }),
+          (error) => {
+            received.push({ error });
+            reported();
+          },
+        );
+        await errorReported;
+        await writeUndecodable(id);
+        await createRepository(unreadable).set({ id: [id], data: { value: 1 } });
+        await sleep(100);
+
+        expect(received).toStrictEqual([
+          { error: new DocumentDecodeError(`${name}/${id}`, expect.anything()) },
+        ]);
+        const [entry] = received;
+        assert(entry && 'error' in entry && entry.error instanceof DocumentDecodeError);
+        expect(entry.error.documentPath).toBe(`${name}/${id}`);
+      });
+
+      it('listOnSnapshot reports the failure and stops listening', async () => {
+        const { name, unreadable, writeUndecodable } = undecodableCollection();
+        const readable = randomString();
+        const broken = randomString();
+        await createRepository(unreadable).set({ id: [readable], data: { value: 1 } });
+        await writeUndecodable(broken);
+
+        const received: ({ next: unknown } | { error: unknown })[] = [];
+        let reported: () => void;
+        const errorReported = new Promise<void>((resolve) => {
+          reported = resolve;
+        });
+        createRepository(unreadable).listOnSnapshot(
+          query(collection(unreadable)),
+          (docs) => received.push({ next: docs }),
+          (error) => {
+            received.push({ error });
+            reported();
+          },
+        );
+        await errorReported;
+        await writeUndecodable(broken);
+        await createRepository(unreadable).set({ id: [broken], data: { value: 2 } });
+        await sleep(100);
+
+        expect(received).toStrictEqual([
+          { error: new DocumentDecodeError(`${name}/${broken}`, expect.anything()) },
+        ]);
+        const [entry] = received;
+        assert(entry && 'error' in entry && entry.error instanceof DocumentDecodeError);
+        expect(entry.error.documentPath).toBe(`${name}/${broken}`);
       });
     });
 

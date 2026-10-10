@@ -101,13 +101,28 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     getOnSnapshot: (
       ref: Model['id'],
       next: (snapshot: Model['read'] | undefined) => void,
-      error?: (error: Error) => void,
+      error: (error: unknown) => void,
     ): Unsubscribe => {
       const docRef = toSdkDocRef(db, collection, mapper.toDocRef(ref));
-      return docRef.onSnapshot((snapshot) => {
-        const doc = fromSdkDocument(collection, snapshot);
-        next(doc ? mapper.fromFirestore(doc) : undefined);
+      // The SDK calls the snapshot callback asynchronously, never from within
+      // `onSnapshot`, so `unsubscribe` is initialized before the callback
+      // reads it.
+      const unsubscribe = docRef.onSnapshot((snapshot) => {
+        let model: Model['read'] | undefined;
+        try {
+          const doc = fromSdkDocument(collection, snapshot);
+          model = doc ? mapper.fromFirestore(doc) : undefined;
+        } catch (e) {
+          // A throw from this callback never reaches the SDK's error callback:
+          // it escapes as an uncaught exception and stalls the listener's
+          // stream. Detach first, then report it like an SDK failure.
+          unsubscribe();
+          error(e);
+          return;
+        }
+        next(model);
       }, error);
+      return unsubscribe;
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
@@ -121,16 +136,29 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     listOnSnapshot: (
       query: Query<T>,
       next: (snapshot: Model['read'][]) => void,
-      error?: (error: Error) => void,
+      error: (error: unknown) => void,
     ): Unsubscribe => {
       const firestoreQuery = toSdkQuery(db, query);
-      return firestoreQuery.onSnapshot((snapshot) => {
-        next(
-          snapshot.docs.map((doc) =>
+      // The SDK calls the snapshot callback asynchronously, never from within
+      // `onSnapshot`, so `unsubscribe` is initialized before the callback
+      // reads it.
+      const unsubscribe = firestoreQuery.onSnapshot((snapshot) => {
+        let models: Model['read'][];
+        try {
+          models = snapshot.docs.map((doc) =>
             mapper.fromFirestore(fromSdkDocumentMustExist(collection, doc)),
-          ),
-        );
+          );
+        } catch (e) {
+          // A throw from this callback never reaches the SDK's error callback:
+          // it escapes as an uncaught exception and stalls the listener's
+          // stream. Detach first, then report it like an SDK failure.
+          unsubscribe();
+          error(e);
+          return;
+        }
+        next(models);
       }, error);
+      return unsubscribe;
     },
 
     aggregate: async <U extends AggregateSpec<T['schema']>>(
