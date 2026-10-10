@@ -319,9 +319,7 @@ const pipeline = collection(users)
     groups: [field('profile.gender').as('gender')],
     accumulators: [average(field('profile.age')).as('avgAge'), countAll().as('count')],
   }))
-  // After `aggregate`, `field(...)` offers the aggregated names (`gender`,
-  // `avgAge`, `count`) instead of the source schema, and `1` is validated as
-  // `number` because `count` is `number`.
+  // `field(...)` now completes and type-checks the aggregated names (`count` is `number`).
   .where((field) => greaterThan(field('count'), 1));
 
 // Execute it. The result type is derived from the pipeline's final shape:
