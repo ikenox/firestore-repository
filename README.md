@@ -312,14 +312,14 @@ const pipe = executor(db);
 
 // Build a multi-stage pipeline. `field(...)` paths are auto-completed and
 // type-checked against the schema, and `20` is validated as `number` because
-// `profile.age` is `number`.
+// `profile.age` is `number`. After `aggregate`, `field(...)` completes and
+// type-checks the aggregated names instead (`count` is `number`).
 const pipeline = collection(users)
   .where((field) => greaterThanOrEqual(field('profile.age'), 20))
   .aggregate((field) => ({
     groups: [field('profile.gender').as('gender')],
     accumulators: [average(field('profile.age')).as('avgAge'), countAll().as('count')],
   }))
-  // `field(...)` now completes and type-checks the aggregated names (`count` is `number`).
   .where((field) => greaterThan(field('count'), 1));
 
 // Execute it. The result type is derived from the pipeline's final shape:
