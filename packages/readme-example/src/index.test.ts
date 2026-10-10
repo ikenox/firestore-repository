@@ -30,6 +30,7 @@ import { average, count, sum } from 'firestore-repository/aggregate';
 import {
   average as pipelineAverage,
   countAll as pipelineCountAll,
+  greaterThan as pipelineGreaterThan,
   greaterThanOrEqual as pipelineGreaterThanOrEqual,
 } from 'firestore-repository/pipelines/expression';
 import { asc as pipelineAsc } from 'firestore-repository/pipelines/ordering';
@@ -338,7 +339,8 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
             pipelineAverage(field('profile.age')).as('avgAge'),
             pipelineCountAll().as('count'),
           ],
-        }));
+        }))
+        .where((field) => pipelineGreaterThan(field('count'), 1));
       const rows = await pipeline!.executor.execute(q);
       console.log(rows);
     });
