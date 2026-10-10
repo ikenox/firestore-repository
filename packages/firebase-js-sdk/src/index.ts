@@ -118,16 +118,31 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     getOnSnapshot: (
       ref: Model['id'],
       next: (snapshot: Model['read'] | undefined) => void,
-      error?: (error: Error) => void,
+      error: (error: unknown) => void,
     ): Unsubscribe => {
       const docRef = toSdkDocRef(db, collection, mapper.toDocRef(ref));
-      return onSnapshot(docRef, {
+      // The SDK calls the observer asynchronously, never from within
+      // `onSnapshot`, so `unsubscribe` is initialized before the observer
+      // reads it.
+      const unsubscribe = onSnapshot(docRef, {
         next: (snapshot) => {
-          const doc = fromSdkDocument(collection, snapshot);
-          next(doc ? mapper.fromFirestore(doc) : undefined);
+          let model: Model['read'] | undefined;
+          try {
+            const doc = fromSdkDocument(collection, snapshot);
+            model = doc ? mapper.fromFirestore(doc) : undefined;
+          } catch (e) {
+            // A throw from the observer never reaches its `error`: it escapes
+            // as an uncaught exception. Detach first, then report it like an
+            // SDK failure.
+            unsubscribe();
+            error(e);
+            return;
+          }
+          next(model);
         },
-        error: (e) => error?.(e),
+        error,
       });
+      return unsubscribe;
     },
 
     list: async (query: Query<T>): Promise<IteratorObject<Model['read']>> => {
@@ -141,14 +156,32 @@ export const repositoryWithMapper = <T extends Collection, Model extends AppMode
     listOnSnapshot: (
       query: Query<T>,
       next: (snapshot: Model['read'][]) => void,
-      error?: (error: Error) => void,
+      error: (error: unknown) => void,
     ): Unsubscribe => {
       const firestoreQueryObj = toSdkQuery(db, query);
-      return onSnapshot(firestoreQueryObj, {
-        next: ({ docs }) =>
-          next(docs.map((doc) => mapper.fromFirestore(fromSdkDocumentMustExist(collection, doc)))),
-        error: (e) => error?.(e),
+      // The SDK calls the observer asynchronously, never from within
+      // `onSnapshot`, so `unsubscribe` is initialized before the observer
+      // reads it.
+      const unsubscribe = onSnapshot(firestoreQueryObj, {
+        next: ({ docs }) => {
+          let models: Model['read'][];
+          try {
+            models = docs.map((doc) =>
+              mapper.fromFirestore(fromSdkDocumentMustExist(collection, doc)),
+            );
+          } catch (e) {
+            // A throw from the observer never reaches its `error`: it escapes
+            // as an uncaught exception. Detach first, then report it like an
+            // SDK failure.
+            unsubscribe();
+            error(e);
+            return;
+          }
+          next(models);
+        },
+        error,
       });
+      return unsubscribe;
     },
 
     aggregate: async <U extends AggregateSpec<T['schema']>>(

@@ -64,6 +64,9 @@ const console = {
   log: (_arg: unknown) => {
     /*no-op*/
   },
+  error: (_arg: unknown) => {
+    /*no-op*/
+  },
 };
 
 // define a collection
@@ -182,9 +185,15 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     });
 
     it('getOnSnapshot', () => {
-      repository.getOnSnapshot('user1', (doc) => {
-        console.log(doc);
-      });
+      repository.getOnSnapshot(
+        'user1',
+        (doc) => {
+          console.log(doc);
+        },
+        (error) => {
+          console.error(error);
+        },
+      );
     });
 
     it('delete', async () => {
@@ -205,9 +214,15 @@ const defineReadmeExampleTests = <Env extends FirestoreEnvironment>({
     });
 
     it('listOnSnapshot', () => {
-      repository.listOnSnapshot(q, (docs) => {
-        console.log(docs);
-      });
+      repository.listOnSnapshot(
+        q,
+        (docs) => {
+          console.log(docs);
+        },
+        (error) => {
+          console.error(error);
+        },
+      );
     });
 
     it('aggregate', async () => {

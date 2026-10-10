@@ -77,6 +77,8 @@ const repository = rootCollectionRepository(db, users);
 
 All operations are **type-safe** based on the schema you defined. The `data` field is typed according to your schema, so invalid data is caught at compile time.
 
+A listener failure, including a document that does not match the schema, is passed to the error callback, and the listener stops at that point.
+
 ```ts
 // Set a document
 await repository.set({
@@ -94,9 +96,15 @@ await repository.create({
 const doc = await repository.get('user1');
 
 // Listen to a document
-repository.getOnSnapshot('user1', (doc) => {
-  console.log(doc);
-});
+repository.getOnSnapshot(
+  'user1',
+  (doc) => {
+    console.log(doc);
+  },
+  (error) => {
+    console.error(error);
+  },
+);
 
 // Delete a document
 await repository.delete('user2');
@@ -128,9 +136,15 @@ const q = query(
 const docs = await repository.list(q);
 
 // Listen to documents
-repository.listOnSnapshot(q, (docs) => {
-  console.log(docs);
-});
+repository.listOnSnapshot(
+  q,
+  (docs) => {
+    console.log(docs);
+  },
+  (error) => {
+    console.error(error);
+  },
+);
 
 // Aggregate
 const result = await repository.aggregate(q, {

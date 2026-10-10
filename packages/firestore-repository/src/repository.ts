@@ -22,12 +22,22 @@ export interface Repository<
   get: (ref: Model['id'], options?: TransactionOption<Env>) => Promise<Model['read'] | undefined>;
 
   /**
-   * Listens to a single document for changes
+   * Listens to a single document for changes.
+   *
+   * A failure of the listener — one reported by the Firestore SDK or a
+   * {@link DocumentDecodeError} for a snapshot that does not match the schema
+   * — is passed to `error`, and the listener is detached at that point:
+   * neither callback is called again.
+   *
+   * `error` is required because a decode failure has nowhere else to go: it
+   * happens inside the SDK's snapshot callback, where a throw does not reach
+   * the caller and can leave the listener and the process broken. It takes
+   * `unknown` because a custom mapper may throw a non-`Error` value.
    */
   getOnSnapshot: (
     ref: Model['id'],
     next: (snapshot: Model['read'] | undefined) => void,
-    error?: (error: Error) => void,
+    error: (error: unknown) => void,
   ) => Unsubscribe;
 
   /**
@@ -36,12 +46,20 @@ export interface Repository<
   list: (query: Query<T>) => Promise<IteratorObject<Model['read']>>;
 
   /**
-   * Listens to documents matching the specified query for changes
+   * Listens to documents matching the specified query for changes.
+   *
+   * A failure of the listener — one reported by the Firestore SDK or a
+   * {@link DocumentDecodeError} for a document in a snapshot that does not
+   * match the schema — is passed to `error`, and the listener is detached at
+   * that point: neither callback is called again.
+   *
+   * `error` is required, and takes `unknown`, for the same reasons as in
+   * {@link Repository.getOnSnapshot}.
    */
   listOnSnapshot: (
     query: Query<T>,
     next: (snapshot: Model['read'][]) => void,
-    error?: (error: Error) => void,
+    error: (error: unknown) => void,
   ) => Unsubscribe;
 
   /**
